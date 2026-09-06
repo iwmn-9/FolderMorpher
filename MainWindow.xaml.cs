@@ -159,7 +159,15 @@ namespace AstraSize
 
             PathTextBox.Text = tab.TargetPath;
             FileTreeDataGrid.ItemsSource = tab.VisibleFlatList;
-            ExtensionsDataGrid.ItemsSource = tab.ExtensionList;
+            if (tab.RootNode != null)
+            {
+                UpdateDynamicInsightsForNode(tab.RootNode);
+            }
+            else
+            {
+                TopFilesDataGrid.ItemsSource = null;
+                FolderChildSharesDataGrid.ItemsSource = null;
+            }
 
             UpdateMetricsCards(tab);
             StatusTextBlock.Text = string.IsNullOrEmpty(tab.StatusMessage) ? "準備完了" : tab.StatusMessage;
@@ -304,7 +312,6 @@ namespace AstraSize
                 _currentTab.AggregateExtensions();
 
                 FileTreeDataGrid.ItemsSource = _currentTab.VisibleFlatList;
-                ExtensionsDataGrid.ItemsSource = _currentTab.ExtensionList;
                 UpdateDynamicInsightsForNode(root);
 
                 UpdateMetricsCards(_currentTab);
@@ -407,11 +414,120 @@ namespace AstraSize
 
         private void UpdateDynamicInsightsForNode(FileItemNode node)
         {
-            if (InsightsTargetScopeTextBlock == null || TopFilesDataGrid == null || ExtensionsDataGrid == null) return;
+            if (InsightsTargetScopeTextBlock == null || TopFilesDataGrid == null || FolderChildSharesDataGrid == null) return;
             InsightsTargetScopeTextBlock.Text = $"スコープ: {node.Name}";
-            var (topFiles, extStats) = DiskScanService.GetInsightsForNode(node);
+
+            // 1. Top 10 largest files in this subtree
+            var (topFiles, _) = DiskScanService.GetInsightsForNode(node);
             TopFilesDataGrid.ItemsSource = topFiles;
-            ExtensionsDataGrid.ItemsSource = extStats;
+
+            // 2. Direct children breakdown (relative shares in this folder)
+            long parentSize = node.Size > 0 ? node.Size : 1;
+            var childShares = node.Children
+                .OrderByDescending(c => c.Size)
+                .Select(c => new FolderChildShareItem
+                {
+                    OriginalNode = c,
+                    Name = c.Name,
+                    FullPath = c.FullPath,
+                    Size = c.Size,
+                    IsDirectory = c.IsDirectory,
+                    RelativeSharePercentage = Math.Min(100.0, (double)c.Size / parentSize * 100.0),
+                    FileCount = c.FileCount,
+                    FolderCount = c.FolderCount
+                })
+                .ToList();
+
+            FolderChildSharesDataGrid.ItemsSource = childShares;
+        }
+
+        private void FolderChildSharesDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (FolderChildSharesDataGrid.SelectedItem is FolderChildShareItem shareItem && shareItem.OriginalNode != null)
+            {
+                var targetNode = shareItem.OriginalNode;
+                if (!targetNode.IsDirectory)
+                {
+                    OpenExplorerWithSelection(targetNode.FullPath);
+                    return;
+                }
+
+                SelectAndFocusTreeNode(targetNode);
+            }
+        }
+
+        private void SelectAndFocusTreeNode(FileItemNode targetNode)
+        {
+            if (_currentTab == null) return;
+
+            // Expand all ancestors to make node visible
+            var curr = targetNode.Parent;
+            while (curr != null)
+            {
+                curr.IsExpanded = true;
+                curr = curr.Parent;
+            }
+
+            // Flatten tree and re-bind
+            _currentTab.FlattenTree();
+            FileTreeDataGrid.ItemsSource = _currentTab.VisibleFlatList;
+
+            // Select and scroll to node
+            targetNode.IsSelected = true;
+            FileTreeDataGrid.SelectedItem = targetNode;
+            FileTreeDataGrid.ScrollIntoView(targetNode);
+
+            // Update insights
+            UpdateDynamicInsightsForNode(targetNode);
+        }
+
+        private void TopFilesDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (TopFilesDataGrid.SelectedItem is LargestFileInfo fileInfo && !string.IsNullOrEmpty(fileInfo.FullPath))
+            {
+                OpenExplorerWithSelection(fileInfo.FullPath);
+            }
+        }
+
+        private void CtxTopFileOpenExplorer_Click(object sender, RoutedEventArgs e)
+        {
+            if (TopFilesDataGrid.SelectedItem is LargestFileInfo fileInfo && !string.IsNullOrEmpty(fileInfo.FullPath))
+            {
+                OpenExplorerWithSelection(fileInfo.FullPath);
+            }
+        }
+
+        private void CtxTopFileCopyPath_Click(object sender, RoutedEventArgs e)
+        {
+            if (TopFilesDataGrid.SelectedItem is LargestFileInfo fileInfo && !string.IsNullOrEmpty(fileInfo.FullPath))
+            {
+                Clipboard.SetText(fileInfo.FullPath);
+                ShowToast($"パスをコピーしました: {fileInfo.Name}");
+            }
+        }
+
+        private void OpenExplorerWithSelection(string filePath)
+        {
+            try
+            {
+                if (File.Exists(filePath) || Directory.Exists(filePath))
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = $"/select,\"{filePath}\"",
+                        UseShellExecute = true
+                    });
+                }
+                else
+                {
+                    MessageBox.Show($"対象のパスが見つかりません:\n{filePath}", "通知", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"エクスプローラー起動エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void CtxOpenLiveAcl_Click(object sender, RoutedEventArgs e)
@@ -529,7 +645,18 @@ namespace AstraSize
             {
                 _liveAclPrincipals.Clear();
                 foreach (var p in _adPrincipals) _liveAclPrincipals.Add(p);
+                UpdateLiveAclNoticeState();
             };
+
+            UpdateLiveAclNoticeState();
+        }
+
+        private void UpdateLiveAclNoticeState()
+        {
+            if (LiveAclEmptyNoticeBorder == null || LiveAclPrincipalsListBox == null) return;
+            bool showNotice = _liveAclPrincipals.Count == 0;
+            LiveAclEmptyNoticeBorder.Visibility = showNotice ? Visibility.Visible : Visibility.Collapsed;
+            LiveAclPrincipalsListBox.Visibility = showNotice ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void LiveAclBrowseButton_Click(object sender, RoutedEventArgs e)
@@ -835,8 +962,9 @@ namespace AstraSize
             }
             else
             {
-                DomainStatusText.Text = "🔵 企業標準ロール";
-                DomainStatusBadge.Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#E0F2FE")!;
+                DomainStatusText.Text = "🟡 ローカル環境 (AD未接続)";
+                DomainStatusBadge.Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FEF3C7")!;
+                DomainStatusText.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#B45309")!;
             }
         }
 
@@ -845,6 +973,7 @@ namespace AstraSize
             var list = await _adService.SearchPrincipalsAsync(filter);
             _adPrincipals.Clear();
             foreach (var item in list) _adPrincipals.Add(item);
+            UpdateLiveAclNoticeState();
         }
 
         private async void AdSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)

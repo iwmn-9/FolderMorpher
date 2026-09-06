@@ -271,22 +271,21 @@ namespace AstraSize.Services
             }, ct);
         }
 
-        private void CalculatePercentages(FileItemNode node, long parentSize)
+        private void CalculatePercentages(FileItemNode node, long rootSize)
         {
-            if (parentSize > 0)
+            if (rootSize > 0)
             {
-                node.Percentage = Math.Min(100.0, (double)node.Size / parentSize * 100.0);
+                node.Percentage = Math.Min(100.0, (double)node.Size / rootSize * 100.0);
             }
             else
             {
-                node.Percentage = 100.0;
+                node.Percentage = 0.0;
             }
 
             foreach (var child in node.Children)
             {
                 child.Parent = node;
-                long currentSize = node.Size > 0 ? node.Size : 1;
-                CalculatePercentages(child, currentSize);
+                CalculatePercentages(child, rootSize);
             }
         }
 

@@ -108,23 +108,8 @@ namespace AstraSize.Services
                     }
                 }
 
-                // If no results from AD or not in domain, supply preset enterprise roles & local groups
-                if (results.Count == 0)
-                {
-                    var query = filter.Trim();
-                    var filteredPresets = PresetEnterpriseRoles.Where(p =>
-                    {
-                        if (!includeUsers && p.PrincipalType == AdPrincipalType.User) return false;
-                        if (!includeGroups && p.PrincipalType == AdPrincipalType.Group) return false;
-                        if (string.IsNullOrEmpty(query)) return true;
-                        return p.AccountName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                               p.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                               p.Description.Contains(query, StringComparison.OrdinalIgnoreCase);
-                    }).ToList();
-
-                    results.AddRange(filteredPresets);
-                }
-
+                // If no results from AD or not in domain, do NOT supply dummy enterprise roles
+                // Return empty list so UI displays proper guidance for local PC environment
                 return results;
             });
         }

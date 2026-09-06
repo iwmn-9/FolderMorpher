@@ -53,10 +53,8 @@
                     <RadioButton x:Name="NavTabLinkFix" Style="{StaticResource NavTabButton}" Content="🔗 ショートカット修復 (LinkFixer)" Checked="NavTab_Checked"/>
                 </StackPanel>
 
-                <!-- Global Right Actions -->
+                <!-- Global Right Actions (Empty placeholder for clean design) -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="GlobalHistoryButton" Content="📈 容量推移グラフ" Height="32" Margin="0,0,8,0"
-                            Style="{StaticResource FluentButtonSecondary}" Click="HistoryButton_Click"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -160,8 +158,10 @@
                                     Style="{StaticResource FluentButtonPrimary}" Click="ScanButton_Click"/>
                             <Button x:Name="CancelButton" Content="中止" Height="32" Margin="0,0,8,0" Background="#E11D48"
                                     Style="{StaticResource FluentButtonPrimary}" Visibility="Collapsed" Click="CancelButton_Click"/>
-                            <Button x:Name="ExportButton" Content="Excel / CSV 出力" Height="32"
+                            <Button x:Name="ExportButton" Content="Excel / CSV 出力" Height="32" Margin="0,0,8,0"
                                     Style="{StaticResource FluentButtonSecondary}" Click="ExportButton_Click"/>
+                            <Button x:Name="TabHistoryButton" Content="📈 容量推移グラフ" Height="32"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="HistoryButton_Click"/>
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -270,19 +270,26 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
                                 <DataGridTextColumn Header="容量" Binding="{Binding FormattedSize}" Width="90" ElementStyle="{StaticResource RightAlignedCell}"/>
-                                <DataGridTemplateColumn Header="親比占有率" Width="105">
+                                <DataGridTemplateColumn Header="全体占有率" Width="115">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:FileItemNode}">
                                             <Grid Margin="4,2">
-                                                <ProgressBar Height="18" Minimum="0" Maximum="100" Value="{Binding Percentage}"
-                                                             Foreground="#2563EB" Background="#E2E8F0" BorderThickness="0"/>
-                                                <TextBlock Text="{Binding FormattedPercentage}"
-                                                           FontFamily="{StaticResource MonoFont}" FontSize="10" FontWeight="Bold"
-                                                           Foreground="#FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <TextBlock.Effect>
-                                                        <DropShadowEffect BlurRadius="2" ShadowDepth="1" Direction="315" Color="#000000" Opacity="0.6"/>
-                                                    </TextBlock.Effect>
-                                                </TextBlock>
+                                                <!-- Root: dash display -->
+                                                <TextBlock Text="―" FontSize="11" Foreground="#94A3B8"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           Visibility="{Binding DashVisibility}"/>
+                                                <!-- Non-root: Option A (mini bar on left, bold dark text on right) -->
+                                                <Grid Visibility="{Binding ProgressBarVisibility}">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="45"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <ProgressBar Grid.Column="0" Height="8" Minimum="0" Maximum="100" Value="{Binding Percentage}"
+                                                                 Foreground="#0284C7" Background="#E2E8F0" BorderThickness="0" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding PercentageFormatted}"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="11" FontWeight="SemiBold"
+                                                               Foreground="#0F172A" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="4,0,2,0"/>
+                                                </Grid>
                                             </Grid>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
@@ -315,31 +322,59 @@
 
                             <!-- Top 10 Largest Files DataGrid -->
                             <DataGrid x:Name="TopFilesDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
-                                      BorderThickness="0" Background="Transparent" RowHeight="24" SelectionMode="Single" Margin="0,0,0,10">
+                                      BorderThickness="0" Background="Transparent" RowHeight="24" SelectionMode="Single" Margin="0,0,0,10"
+                                      MouseDoubleClick="TopFilesDataGrid_MouseDoubleClick" ToolTip="ダブルクリックでエクスプローラーを開く">
+                                <DataGrid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="📂 エクスプローラーで表示" Click="CtxTopFileOpenExplorer_Click"/>
+                                        <MenuItem Header="📋 パスをコピー" Click="CtxTopFileCopyPath_Click"/>
+                                    </ContextMenu>
+                                </DataGrid.ContextMenu>
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="ファイル名" Binding="{Binding Name}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                     <DataGridTextColumn Header="サイズ" Binding="{Binding FormattedSize}" Width="75" ElementStyle="{StaticResource RightAlignedCell}"/>
                                 </DataGrid.Columns>
                             </DataGrid>
 
-                            <!-- Extensions Header -->
-                            <TextBlock Grid.Row="2" Text="📊 拡張子別 容量ブレイクダウン" FontWeight="Bold" FontSize="12" Foreground="#1E293B" Margin="0,4,0,6"/>
+                            <!-- Folder Direct Children Shares Header -->
+                            <Grid Grid.Row="2" Margin="0,6,0,6">
+                                <TextBlock Text="📁 選択フォルダの内訳 (直下シェア)" FontWeight="Bold" FontSize="12" Foreground="#1E293B"/>
+                                <TextBlock Text="Wクリックでツリー連動 ➔" FontSize="10" Foreground="#0284C7" HorizontalAlignment="Right"/>
+                            </Grid>
 
-                            <!-- Extensions Breakdown DataGrid -->
-                            <DataGrid x:Name="ExtensionsDataGrid" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True"
-                                      BorderThickness="0" Background="Transparent" RowHeight="24" SelectionMode="Single">
+                            <!-- Folder Direct Children Shares DataGrid -->
+                            <DataGrid x:Name="FolderChildSharesDataGrid" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True"
+                                      BorderThickness="0" Background="Transparent" RowHeight="26" SelectionMode="Single"
+                                      MouseDoubleClick="FolderChildSharesDataGrid_MouseDoubleClick" ToolTip="ダブルクリックで該当フォルダへドリルダウン">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="拡張子" Binding="{Binding Extension}" Width="75" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                    <DataGridTextColumn Header="容量" Binding="{Binding FormattedSize}" Width="75" ElementStyle="{StaticResource RightAlignedCell}"/>
-                                    <DataGridTemplateColumn Header="割合" Width="*">
+                                    <DataGridTemplateColumn Header="項目名" Width="*">
                                         <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <ProgressBar Height="5" Minimum="0" Maximum="100" Value="{Binding Percentage}"
-                                                             Foreground="#0284C7" Background="#F1F5F9" BorderThickness="0" Margin="4,0"/>
+                                            <DataTemplate DataType="{x:Type models:FolderChildShareItem}">
+                                                <StackPanel Orientation="Horizontal" Margin="4,0">
+                                                    <TextBlock Text="{Binding IconGlyph}" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding Name}" FontWeight="Medium" FontSize="11" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="%" Binding="{Binding FormattedPercentage}" Width="45" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                    <DataGridTextColumn Header="容量" Binding="{Binding FormattedSize}" Width="75" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                    <DataGridTemplateColumn Header="直下シェア" Width="105">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate DataType="{x:Type models:FolderChildShareItem}">
+                                                <Grid Margin="4,2">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="45"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <ProgressBar Grid.Column="0" Height="8" Minimum="0" Maximum="100" Value="{Binding RelativeSharePercentage}"
+                                                                 Foreground="#0284C7" Background="#E2E8F0" BorderThickness="0" VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding RelativeShareFormatted}"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="11" FontWeight="SemiBold"
+                                                               Foreground="#0F172A" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Grid>
@@ -506,16 +541,30 @@
                                     <DataTemplate DataType="{x:Type models:AdPrincipalItem}">
                                         <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="8,5" Margin="0,2" Cursor="Hand">
                                             <Grid>
-                                                <StackPanel Orientation="Horizontal">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0">
                                                     <TextBlock Text="{Binding IconGlyph}" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11" Foreground="#1E293B" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
-                                                <TextBlock Text="ドラッグ付与 ➔" FontSize="9" Foreground="#94A3B8" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="ドラッグ付与 ➔" FontSize="9" Foreground="#94A3B8" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
+
+                            <!-- Notice when not domain-joined or no AD accounts -->
+                            <Border x:Name="LiveAclEmptyNoticeBorder" Grid.Row="2" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1"
+                                    CornerRadius="6" Padding="16" Margin="0,4" VerticalAlignment="Center" Visibility="Collapsed">
+                                <StackPanel HorizontalAlignment="Center">
+                                    <TextBlock Text="⚠️ ローカルPC環境" FontWeight="Bold" FontSize="12" Foreground="#D97706" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                                    <TextBlock Text="※ローカルPC環境のためADプリンシパルは未接続です&#x0a;（上部の入力欄から直接アカウント名を入力して追加可能）"
+                                               FontSize="11" Foreground="#64748B" TextWrapping="Wrap" TextAlignment="Center" LineHeight="16"/>
+                                </StackPanel>
+                            </Border>
                         </Grid>
                     </Border>
                 </Grid>

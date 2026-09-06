@@ -68,6 +68,11 @@ namespace AstraSize.Models
             }
         }
 
+        public bool IsRoot => Parent == null;
+        public string PercentageDisplay => IsRoot ? "―" : $"{Percentage:F1}%";
+        public Visibility ProgressBarVisibility => IsRoot ? Visibility.Collapsed : Visibility.Visible;
+        public Visibility DashVisibility => IsRoot ? Visibility.Visible : Visibility.Collapsed;
+
         public double PercentageOfParent
         {
             get => Percentage;
@@ -82,13 +87,13 @@ namespace AstraSize.Models
 
         public string PercentageFormatted
         {
-            get => $"{Percentage:F1}%";
+            get => IsRoot ? "―" : $"{Percentage:F1}%";
             set { }
         }
 
         public string FormattedPercentage
         {
-            get => $"{Percentage:0.#}%";
+            get => IsRoot ? "―" : $"{Percentage:0.#}%";
             set { }
         }
 
@@ -191,5 +196,20 @@ namespace AstraSize.Models
 
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged(string prop) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(prop));
+    }
+
+    public class FolderChildShareItem
+    {
+        public FileItemNode OriginalNode { get; set; } = null!;
+        public string Name { get; set; } = string.Empty;
+        public string FullPath { get; set; } = string.Empty;
+        public long Size { get; set; }
+        public string FormattedSize => FileItemNode.FormatBytes(Size);
+        public bool IsDirectory { get; set; }
+        public string IconGlyph => IsDirectory ? "📁" : "📄";
+        public double RelativeSharePercentage { get; set; }
+        public string RelativeShareFormatted => $"{RelativeSharePercentage:F1}%";
+        public int FileCount { get; set; }
+        public int FolderCount { get; set; }
     }
 }
