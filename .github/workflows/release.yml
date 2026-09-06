@@ -1,0 +1,50 @@
+﻿name: "🚀 Release Builder"
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: "Build & Publish Single-File EXE"
+    runs-on: windows-latest
+
+    steps:
+      - name: "Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "Setup .NET SDK 8.0"
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: "Publish Self-Contained Single EXE"
+        run: |
+          dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./dist
+
+      - name: "Create GitHub Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./dist/FolderMorpher.exe
+          name: "FolderMorpher ${{ github.ref_name }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## 🎉 FolderMorpher ${{ github.ref_name }} Preview Release
+
+            ### 📦 Download & Run
+            Download **`FolderMorpher.exe`** from the Assets below and double-click to run on any 64-bit Windows machine (Windows 10/11/Server 2016+). No prerequisites or installations required!
+
+            ### ✨ Key Features
+            - **Storage Explorer**: Multi-tab live drive scanning, directory share tree, and capacity inspection.
+            - **Live ACL Control**: Inspect and edit NTFS access control lists with instant SDDL rollback snapshot protection.
+            - **Simulation Studio**: Virtual tree restructuring (N:1 mapping) and diff verification before physical file transfers.
+            - **LinkFixer**: Detect and batch repair severed shortcuts (`.lnk`) and Excel workbooks (`.xlsx`/`.xlsm`).
+            - **Audit & Hygiene**: Duplicate file detection (SHA-256), dormant data identification (3+ years), and deep path analyzer.
+            - **Media Optimizer**: Lossless image compression with sanctuary folder protection and overnight video batch scripts.
+            - **Bilingual UI**: Seamless real-time switching between English and Japanese (`🌐 EN` / `🌐 JA`).
