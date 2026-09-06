@@ -18,7 +18,7 @@ namespace AstraSize.Services
         public AclService()
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            _snapshotDir = Path.Combine(appData, "AstraSize", "AclSnapshots");
+            _snapshotDir = Path.Combine(appData, "FolderMorpher", "AclSnapshots");
             Directory.CreateDirectory(_snapshotDir);
         }
 
@@ -234,11 +234,14 @@ namespace AstraSize.Services
                 sec.RemoveAccessRuleSpecific(rule);
             }
 
-            var explicitEntries = entries.Where(e => !e.IsInherited).ToList();
+            // 継承OFF時（!inherit）は、これまで継承されていたACEも含めて全て明示的ルールへ変換して完全保持する
+            var targetEntries = inherit
+                ? entries.Where(e => !e.IsInherited).ToList()
+                : entries.ToList();
 
             // Canonical ACL Order: Explicit Deny ACEs MUST precede Explicit Allow ACEs
-            var denyEntries = explicitEntries.Where(e => e.AccessType == AccessControlType.Deny);
-            var allowEntries = explicitEntries.Where(e => e.AccessType == AccessControlType.Allow);
+            var denyEntries = targetEntries.Where(e => e.AccessType == AccessControlType.Deny);
+            var allowEntries = targetEntries.Where(e => e.AccessType == AccessControlType.Allow);
 
             foreach (var entry in denyEntries)
             {

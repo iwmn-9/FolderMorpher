@@ -70,7 +70,7 @@
                 <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="14,10">
                     <Grid>
                         <StackPanel x:Name="SidebarFooterPanel" VerticalAlignment="Center">
-                            <TextBlock Text="FolderMorpher v2.5" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
+                            <TextBlock Text="FolderMorpher v1.1.2" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
                             <TextBlock Text="Enterprise Suite" FontSize="9" Foreground="#94A3B8" Margin="0,1,0,0"/>
                         </StackPanel>
                         <Button x:Name="LanguageToggleButton" Content="🌐 EN" HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -1622,7 +1622,7 @@
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v2.5 - Enterprise Storage &amp; Migration Studio" FontSize="11" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.1.2 - Enterprise Storage &amp; Migration Studio" FontSize="11" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>

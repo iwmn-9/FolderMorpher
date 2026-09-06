@@ -66,7 +66,7 @@ Please submit your feedback or bug reports via [GitHub Issues](../../issues)!
 ![Tab 4: Audit & Hygiene](docs/screenshots/tab4_audit.png)
 - **Deduplication & Storage Cleanup**:
   - **Duplicate Detection**: Size pre-filtering followed by cryptographic SHA256 verification.
-  - **Dormant Files**: Identifies stale files unaccessed/unmodified for 3+ years.
+  - **Dormant Files**: Identifies stale files unmodified for 3+ years (LastWriteTime basis).
   - **Path Limits (260+ Chars) & Invalid Character Audit**: Catches paths and illegal characters (`* : < > ? \ / | " # % { } ~ &`) that break Windows Explorer or Cloud migrations (SharePoint/Box).
 - **Safety First**: Zero automated deletions. Generates audit inventory sheets (Excel/CSV) and safe staged archive scripts (`move /Y` to archive shares, with duplicate original protection guarantees).
 

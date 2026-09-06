@@ -15,9 +15,16 @@ namespace AstraSize.Services
         public StorageHistoryService()
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var dir = Path.Combine(appData, "AstraSize");
+            var dir = Path.Combine(appData, "FolderMorpher");
             Directory.CreateDirectory(dir);
             _historyFilePath = Path.Combine(dir, "history.json");
+
+            // 旧 AstraSize からのデータ移行（存在すればコピー）
+            var legacyPath = Path.Combine(appData, "AstraSize", "history.json");
+            if (!File.Exists(_historyFilePath) && File.Exists(legacyPath))
+            {
+                try { File.Copy(legacyPath, _historyFilePath); } catch { }
+            }
         }
 
         public async Task<List<ScanSnapshot>> LoadAllAsync()

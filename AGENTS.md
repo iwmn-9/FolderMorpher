@@ -82,6 +82,12 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
 Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe" -Destination ".\FolderMorpher.exe" -Force
 ```
 
+### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 4/4 ALL PASSED であることを確認すること。
+```powershell
+& "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
+```
+
 ### 自動統合テスト（ヘッドレス実行）
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --test-suite "C:\Path\To\TestDir"

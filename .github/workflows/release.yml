@@ -1,4 +1,4 @@
-﻿name: "🚀 Release Builder"
+name: "🚀 Release Builder"
 
 on:
   push:
@@ -21,6 +21,11 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
+      - name: "Build & Verify Automated Regression Tests"
+        run: |
+          dotnet build -c Release
+          dotnet run -c Release --no-build -- --test-regression
 
       - name: "Publish Self-Contained Single EXE"
         run: |

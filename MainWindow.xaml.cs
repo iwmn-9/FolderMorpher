@@ -1517,6 +1517,8 @@ namespace AstraSize
 
         private void SyncCheckboxesFromAcl(SimAclEntry acl)
         {
+            SecAccessTypeCombo.SelectedIndex = (acl.AccessType == AccessControlType.Deny) ? 1 : 0;
+
             SecChkFullControl.IsChecked = acl.IsFullControl;
             SecChkModify.IsChecked = acl.IsModify;
             SecChkReadExecute.IsChecked = acl.IsReadExecute;
@@ -1673,6 +1675,7 @@ namespace AstraSize
             if (_currentEditingAcl != null)
             {
                 _currentEditingAcl.DisplayName = SecPrincipalInput.Text.Trim();
+                _currentEditingAcl.AccessType = (SecAccessTypeCombo.SelectedIndex == 1) ? System.Security.AccessControl.AccessControlType.Deny : System.Security.AccessControl.AccessControlType.Allow;
                 _currentEditingAcl.AdvTraverse = SecAdvTraverse.IsChecked == true;
                 _currentEditingAcl.AdvListDirectory = SecAdvList.IsChecked == true;
                 _currentEditingAcl.AdvReadAttributes = SecAdvReadAttr.IsChecked == true;

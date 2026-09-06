@@ -8,7 +8,7 @@ namespace AstraSize
     {
         private static readonly string LogPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "AstraSize",
+            "FolderMorpher",
             "debug_startup.log");
 
         public App()
@@ -46,9 +46,14 @@ namespace AstraSize
             string? testSuiteDir = null;
             string? forceLang = null;
             string? testScanPath = null;
+            bool runRegression = false;
             for (int i = 0; i < e.Args.Length; i++)
             {
-                if (e.Args[i] == "--snapshot" && i + 1 < e.Args.Length)
+                if (e.Args[i] == "--test-regression")
+                {
+                    runRegression = true;
+                }
+                else if (e.Args[i] == "--snapshot" && i + 1 < e.Args.Length)
                 {
                     snapshotPath = e.Args[i + 1];
                 }
@@ -72,6 +77,24 @@ namespace AstraSize
                 {
                     testScanPath = e.Args[i + 1];
                 }
+            }
+
+            if (runRegression)
+            {
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        bool allPassed = await FolderMorpher.Services.Testing.RegressionTestSuite.RunAllTestsAsync();
+                        Environment.Exit(allPassed ? 0 : 1);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[TEST-REGRESSION-FATAL] {ex}");
+                        Environment.Exit(1);
+                    }
+                });
+                return;
             }
 
             if (!string.IsNullOrEmpty(testScanPath))

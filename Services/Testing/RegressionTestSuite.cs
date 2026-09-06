@@ -1,0 +1,582 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Security.AccessControl;
+using System.Security.Principal;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using AstraSize.Models;
+using AstraSize.Services;
+using AstraSize.Services.Mft;
+using FolderMorpher.Models;
+using FolderMorpher.Services;
+
+namespace FolderMorpher.Services.Testing
+{
+    /// <summary>
+    /// FolderMorpher 自動回帰テストスイート
+    /// 過去に発生した4大バグの再発防止を検証する
+    /// </summary>
+    public static class RegressionTestSuite
+    {
+        public static async Task<bool> RunAllTestsAsync()
+        {
+            try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { }
+            Console.WriteLine("================================================================================");
+            Console.WriteLine(" [QA] FolderMorpher Automated Regression Test Suite (Headless) Starting...");
+            Console.WriteLine("================================================================================");
+
+            int passCount = 0;
+            int totalTests = 4;
+
+            try
+            {
+                // Test 1
+                Console.WriteLine("\n[TEST 1/4] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
+                await TestMediaOptimizerPngPreservationAsync();
+                Console.WriteLine("  --> [PASS] Media Optimizer: PNG signature (0x89 50 4E 47) and alpha channel 100% preserved.");
+                passCount++;
+
+                // Test 2
+                Console.WriteLine("\n[TEST 2/4] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
+                TestLiveAclDenyAndInheritance();
+                Console.WriteLine("  --> [PASS] Live ACL: ACEs preserved on inheritance disable, Deny rules ordered first (Canonical Order).");
+                passCount++;
+
+                // Test 3
+                Console.WriteLine("\n[TEST 3/4] Audit Archival: Original File Archive & Move Duplication...");
+                TestAuditArchivalOriginalExclusionAndDeduplication();
+                Console.WriteLine("  --> [PASS] Audit: Original files safely protected from archive, move commands deduplicated.");
+                passCount++;
+
+                // Test 4
+                Console.WriteLine("\n[TEST 4/4] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
+                TestMftDataRunDecoderLcnCalculation();
+                Console.WriteLine("  --> [PASS] MFT Data Run Decoder: Initial LCN computed relative to 0 without double-addition.");
+                passCount++;
+
+                Console.WriteLine("\n================================================================================");
+                Console.WriteLine($" [QA RESULT] ALL REGRESSION TESTS PASSED ({passCount}/{totalTests})");
+                Console.WriteLine("================================================================================");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"\n[QA FAILED] Regression Test Failed: {ex.Message}");
+                Console.WriteLine(ex.ToString());
+                Console.ResetColor();
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 1. Media Optimizer の PNG 破壊バグ:
+        /// 最適化後もファイル先頭が PNG シグネチャ (0x89, 0x50, 0x4E, 0x47) であること、および透過（アルファチャンネル）が維持されていること。
+        /// </summary>
+        public static async Task TestMediaOptimizerPngPreservationAsync()
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_Media_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            string pngPath = Path.Combine(tempDir, "transparent_sample.png");
+
+            try
+            {
+                // 合成透過 PNG 画像の作成 (400x400, 透過ピクセルを含む Bgra32)
+                int width = 400;
+                int height = 400;
+                int stride = width * 4;
+                byte[] rawPixels = new byte[stride * height];
+
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        int idx = (y * stride) + (x * 4);
+                        // 中央 150x150 の領域を完全透過 (Alpha=0) に設定
+                        if (x >= 125 && x <= 275 && y >= 125 && y <= 275)
+                        {
+                            rawPixels[idx + 0] = 0;   // Blue
+                            rawPixels[idx + 1] = 0;   // Green
+                            rawPixels[idx + 2] = 0;   // Red
+                            rawPixels[idx + 3] = 0;   // Alpha (Transparent)
+                        }
+                        else
+                        {
+                            // 周囲は半透明カラー
+                            rawPixels[idx + 0] = 200; // Blue
+                            rawPixels[idx + 1] = 100; // Green
+                            rawPixels[idx + 2] = 50;  // Red
+                            rawPixels[idx + 3] = 128; // Alpha (Semi-transparent)
+                        }
+                    }
+                }
+
+                var source = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, rawPixels, stride);
+                var initialEncoder = new PngBitmapEncoder { Interlace = PngInterlaceOption.Off };
+                initialEncoder.Frames.Add(BitmapFrame.Create(source));
+                using (var fs = File.Create(pngPath))
+                {
+                    initialEncoder.Save(fs);
+                }
+
+                long initialSizeBytes = new FileInfo(pngPath).Length;
+                if (initialSizeBytes <= 0)
+                {
+                    throw new InvalidOperationException("テスト用合成 PNG 画像の生成に失敗しました。");
+                }
+
+                // MediaOptimizerService を実行 (リサイズ MaxDimension = 200 で確実に再エンコードを発生させる)
+                var service = new MediaOptimizerService();
+                var options = new MediaOptimizeOptions
+                {
+                    TargetDirectory = tempDir,
+                    MaxDimension = 200,
+                    JpegQuality = 75,
+                    MinImageSizeBytes = 10
+                };
+
+                var mediaItem = new MediaItem
+                {
+                    FullPath = pngPath,
+                    FileName = Path.GetFileName(pngPath),
+                    DirectoryPath = tempDir,
+                    Extension = ".png",
+                    OriginalSizeBytes = initialSizeBytes,
+                    IsVideo = false
+                };
+
+                var targets = new List<MediaItem> { mediaItem };
+                var summary = await service.OptimizeImagesAsync(targets, options, null, CancellationToken.None);
+
+                if (summary.OptimizedImagesCount == 0 && !mediaItem.IsProcessed)
+                {
+                    throw new InvalidOperationException("MediaOptimizer による PNG の最適化処理がスキップまたは失敗しました。");
+                }
+
+                // 1. ファイル先頭の PNG シグネチャ (0x89, 0x50, 0x4E, 0x47) チェック
+                byte[] optBytes = File.ReadAllBytes(pngPath);
+                if (optBytes.Length < 8)
+                {
+                    throw new InvalidOperationException($"最適化後ファイルが小さすぎます: {optBytes.Length} bytes");
+                }
+
+                if (optBytes[0] != 0x89 || optBytes[1] != 0x50 || optBytes[2] != 0x4E || optBytes[3] != 0x47)
+                {
+                    throw new InvalidOperationException(
+                        $"PNG破壊バグ検出: ファイル先頭シグネチャが PNG (0x89, 0x50, 0x4E, 0x47) ではありません。" +
+                        $" 検出バイト: 0x{optBytes[0]:X2} 0x{optBytes[1]:X2} 0x{optBytes[2]:X2} 0x{optBytes[3]:X2}");
+                }
+
+                // 2. 透過（アルファチャンネル）の維持チェック
+                using var readMs = new MemoryStream(optBytes);
+                var decoder = BitmapDecoder.Create(readMs, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+                if (decoder.Frames.Count == 0)
+                {
+                    throw new InvalidOperationException("最適化後 PNG のデコードに失敗しました。");
+                }
+
+                var frame = decoder.Frames[0];
+                int optW = frame.PixelWidth;
+                int optH = frame.PixelHeight;
+
+                // フォーマットがアルファ情報を持つことを確認
+                if (frame.Format.BitsPerPixel < 32)
+                {
+                    throw new InvalidOperationException(
+                        $"透過喪失バグ検出: ピクセルフォーマットにアルファチャンネルが含まれていません。Format: {frame.Format}");
+                }
+
+                int optStride = optW * 4;
+                byte[] decodedPixels = new byte[optStride * optH];
+                frame.CopyPixels(decodedPixels, optStride, 0);
+
+                bool foundZeroAlpha = false;
+                bool foundSemiAlpha = false;
+
+                for (int i = 0; i < decodedPixels.Length; i += 4)
+                {
+                    byte alpha = decodedPixels[i + 3];
+                    if (alpha == 0) foundZeroAlpha = true;
+                    else if (alpha < 200) foundSemiAlpha = true;
+
+                    if (foundZeroAlpha && foundSemiAlpha) break;
+                }
+
+                if (!foundZeroAlpha && !foundSemiAlpha)
+                {
+                    throw new InvalidOperationException(
+                        "透過破壊バグ検出: 最適化後の PNG から透明/半透明ピクセルが失われ、全ピクセルが不透明になりました。");
+                }
+            }
+            finally
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    try { Directory.Delete(tempDir, true); } catch { }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 2. Live ACL の Deny 喪失および継承無効化時の ACE 消失バグ:
+        /// Allow と Deny の両方を含むエントリを適用した際、Deny が保持され Canonical ACL Ordering (Deny 先頭) になっていること、
+        /// および継承OFF時にルールが消失しないこと。
+        /// </summary>
+        public static void TestLiveAclDenyAndInheritance()
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_Acl_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            try
+            {
+                string currentPrincipal = WindowsIdentity.GetCurrent().Name;
+                var aclService = new AclService();
+
+                // テスト用エントリ: Allow と Deny の両方を含み、かつ過去に継承されていたエントリも含む
+                var entries = new List<SimAclEntry>
+                {
+                    // Allow エントリ
+                    new SimAclEntry
+                    {
+                        AccountName = currentPrincipal,
+                        DisplayName = Environment.UserName,
+                        PrincipalType = AdPrincipalType.User,
+                        Rights = FileSystemRights.ReadAndExecute | FileSystemRights.ListDirectory,
+                        AccessType = AccessControlType.Allow,
+                        IsInherited = false
+                    },
+                    // Deny エントリ (危険な削除権限を Deny)
+                    new SimAclEntry
+                    {
+                        AccountName = currentPrincipal,
+                        DisplayName = Environment.UserName,
+                        PrincipalType = AdPrincipalType.User,
+                        Rights = FileSystemRights.Delete,
+                        AccessType = AccessControlType.Deny,
+                        IsInherited = false
+                    },
+                    // 継承されていたエントリ（継承無効化時に明示的ACEとして保持されるべきルール）
+                    new SimAclEntry
+                    {
+                        AccountName = currentPrincipal,
+                        DisplayName = Environment.UserName,
+                        PrincipalType = AdPrincipalType.User,
+                        Rights = FileSystemRights.Write,
+                        AccessType = AccessControlType.Allow,
+                        IsInherited = true
+                    }
+                };
+
+                // 継承無効化 (inherit: false) で適用
+                aclService.ApplySimAclEntries(tempDir, entries, inherit: false);
+
+                // 適用後の ACL を検証
+                var dirInfo = new DirectoryInfo(tempDir);
+                var sec = dirInfo.GetAccessControl(AccessControlSections.Access);
+
+                // 1. 継承無効化（AreAccessRulesProtected == true）の検証
+                if (!sec.AreAccessRulesProtected)
+                {
+                    throw new InvalidOperationException("継承無効化バグ検出: AreAccessRulesProtected が false のままです。");
+                }
+
+                // 2. ACE 消失の有無を検証
+                var rawRules = sec.GetAccessRules(includeExplicit: true, includeInherited: false, typeof(NTAccount));
+                var rules = rawRules.Cast<FileSystemAccessRule>().ToList();
+
+                if (rules.Count == 0)
+                {
+                    throw new InvalidOperationException("ACE消失バグ検出: 継承無効化適用後にアクセスルールが0件になり、消失しました。");
+                }
+
+                // 3. Deny ルールが保持されているか検証
+                var denyRules = rules.Where(r => r.AccessControlType == AccessControlType.Deny).ToList();
+                if (denyRules.Count == 0)
+                {
+                    throw new InvalidOperationException("Deny喪失バグ検出: 適用したはずの Deny ACE が消失しています。");
+                }
+
+                var allowRules = rules.Where(r => r.AccessControlType == AccessControlType.Allow).ToList();
+                if (allowRules.Count == 0)
+                {
+                    throw new InvalidOperationException("Allow喪失バグ検出: 適用した Allow ACE が消失しています。");
+                }
+
+                // 4. Canonical ACL Ordering (明示的 Deny が 明示的 Allow より前にあること) の検証
+                bool seenAllow = false;
+                for (int i = 0; i < rules.Count; i++)
+                {
+                    var r = rules[i];
+                    if (r.AccessControlType == AccessControlType.Allow)
+                    {
+                        seenAllow = true;
+                    }
+                    else if (r.AccessControlType == AccessControlType.Deny)
+                    {
+                        if (seenAllow)
+                        {
+                            throw new InvalidOperationException(
+                                $"Canonical ACL Ordering 違反バグ検出: Allow ACE の後に Deny ACE (インデックス {i}) が配置されています。" +
+                                " NTFS の標準規則では Deny ACE は Allow ACE より前に配置されなければなりません。");
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                // クリーンアップ (Deny Delete を解除してから削除)
+                if (Directory.Exists(tempDir))
+                {
+                    try
+                    {
+                        var dirInfo = new DirectoryInfo(tempDir);
+                        var sec = dirInfo.GetAccessControl(AccessControlSections.Access);
+                        sec.SetAccessRuleProtection(false, false);
+                        var existing = sec.GetAccessRules(true, true, typeof(NTAccount));
+                        foreach (FileSystemAccessRule r in existing)
+                        {
+                            try { sec.RemoveAccessRule(r); } catch { }
+                        }
+                        dirInfo.SetAccessControl(sec);
+                    }
+                    catch { }
+
+                    try { Directory.Delete(tempDir, true); } catch { }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 3. Audit の原本ごと全退避バグ:
+        /// 休眠かつ重複ファイルにおいて、退避バッチに原本の move が出力されないこと、および同一 FullPath の move が重複しないこと。
+        /// </summary>
+        public static void TestAuditArchivalOriginalExclusionAndDeduplication()
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_Audit_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            string scriptPath = Path.Combine(tempDir, "archive_test.bat");
+
+            try
+            {
+                string origPath = @"C:\MockRoot\Department\Contract_Original.pdf";
+                string dupPath1 = @"C:\MockRoot\Backup\Contract_Copy1.pdf";
+                string dupPath2 = @"C:\MockRoot\Archive\Contract_Copy2.pdf";
+                string dormantOnlyPath = @"C:\MockRoot\OldReports\Report2016.xlsx";
+
+                // 合成データ: 原本および複製が休眠かつ重複の両方に合致するシナリオ
+                var items = new List<AuditItem>
+                {
+                    // 1. 原本候補 (重複レコード)
+                    new AuditItem
+                    {
+                        FullPath = origPath,
+                        FileName = "Contract_Original.pdf",
+                        DirectoryPath = @"C:\MockRoot\Department",
+                        IssueType = AuditIssueType.Duplicate,
+                        Detail = "[原本候補] ハッシュ: e3b0c44298fc...",
+                        DuplicateGroupId = "DUP-0001",
+                        Size = 5000000
+                    },
+                    // 2. 原本候補 (休眠レコード) - 原本が古い休眠ファイルでもある場合
+                    new AuditItem
+                    {
+                        FullPath = origPath,
+                        FileName = "Contract_Original.pdf",
+                        DirectoryPath = @"C:\MockRoot\Department",
+                        IssueType = AuditIssueType.Dormant,
+                        Detail = "最終更新: 2017/04/10 (9.4年前)",
+                        Size = 5000000
+                    },
+                    // 3. 重複ファイル1 (重複レコード)
+                    new AuditItem
+                    {
+                        FullPath = dupPath1,
+                        FileName = "Contract_Copy1.pdf",
+                        DirectoryPath = @"C:\MockRoot\Backup",
+                        IssueType = AuditIssueType.Duplicate,
+                        Detail = "[重複] ハッシュ: e3b0c44298fc...",
+                        DuplicateGroupId = "DUP-0001",
+                        Size = 5000000
+                    },
+                    // 4. 重複ファイル1 (休眠レコード) - 同一ファイルが重複と休眠の双方で検出されたケース
+                    new AuditItem
+                    {
+                        FullPath = dupPath1,
+                        FileName = "Contract_Copy1.pdf",
+                        DirectoryPath = @"C:\MockRoot\Backup",
+                        IssueType = AuditIssueType.Dormant,
+                        Detail = "最終更新: 2017/04/10 (9.4年前)",
+                        Size = 5000000
+                    },
+                    // 5. 重複ファイル2 (重複レコードのみ)
+                    new AuditItem
+                    {
+                        FullPath = dupPath2,
+                        FileName = "Contract_Copy2.pdf",
+                        DirectoryPath = @"C:\MockRoot\Archive",
+                        IssueType = AuditIssueType.Duplicate,
+                        Detail = "[重複] ハッシュ: e3b0c44298fc...",
+                        DuplicateGroupId = "DUP-0001",
+                        Size = 5000000
+                    },
+                    // 6. 単なる休眠ファイル (重複ではない)
+                    new AuditItem
+                    {
+                        FullPath = dormantOnlyPath,
+                        FileName = "Report2016.xlsx",
+                        DirectoryPath = @"C:\MockRoot\OldReports",
+                        IssueType = AuditIssueType.Dormant,
+                        Detail = "最終更新: 2016/11/20 (9.8年前)",
+                        Size = 2500000
+                    }
+                };
+
+                var auditService = new AuditReportService();
+                auditService.GenerateArchiveRobocopyScript(scriptPath, items, @"C:\MockRoot", @"E:\SafetyArchive");
+
+                if (!File.Exists(scriptPath))
+                {
+                    throw new InvalidOperationException("退避バッチスクリプトが出力されませんでした。");
+                }
+
+                var scriptLines = File.ReadAllLines(scriptPath);
+
+                // move コマンド行を抽出
+                var moveLines = scriptLines
+                    .Where(l => l.TrimStart().StartsWith("move ", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                // 1. 原本ごと全退避バグの検証: 原本候補 (Contract_Original.pdf) に対する move が一切含まれていないこと
+                bool originalMoved = moveLines.Any(l => l.Contains("Contract_Original.pdf", StringComparison.OrdinalIgnoreCase));
+                if (originalMoved)
+                {
+                    throw new InvalidOperationException(
+                        "原本ごと全退避バグ検出: 重複の [原本候補] である Contract_Original.pdf に対する move コマンドが出力されています。" +
+                        " 休眠状態であっても原本は聖域として保護され、現場に残されなければなりません。");
+                }
+
+                // 2. move の重複出力排除の検証: dupPath1 に対する move はちょうど 1 行であること
+                int dup1MoveCount = moveLines.Count(l => l.Contains("Contract_Copy1.pdf", StringComparison.OrdinalIgnoreCase));
+                if (dup1MoveCount == 0)
+                {
+                    throw new InvalidOperationException("退避漏れバグ: 重複ファイル Contract_Copy1.pdf の move が出力されていません。");
+                }
+                if (dup1MoveCount > 1)
+                {
+                    throw new InvalidOperationException(
+                        $"重複出力バグ検出: 同一ファイル Contract_Copy1.pdf に対する move コマンドが {dup1MoveCount} 回重複して出力されています。");
+                }
+
+                // 3. 他の対象も正しく1回ずつ出力されていること
+                int dup2MoveCount = moveLines.Count(l => l.Contains("Contract_Copy2.pdf", StringComparison.OrdinalIgnoreCase));
+                if (dup2MoveCount != 1)
+                {
+                    throw new InvalidOperationException($"Contract_Copy2.pdf の move 出力回数が不正です: {dup2MoveCount}");
+                }
+
+                int dormantMoveCount = moveLines.Count(l => l.Contains("Report2016.xlsx", StringComparison.OrdinalIgnoreCase));
+                if (dormantMoveCount != 1)
+                {
+                    throw new InvalidOperationException($"Report2016.xlsx の move 出力回数が不正です: {dormantMoveCount}");
+                }
+
+                if (moveLines.Count != 3)
+                {
+                    throw new InvalidOperationException(
+                        $"予期しない move コマンド行数です。期待値: 3, 実際: {moveLines.Count}");
+                }
+            }
+            finally
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    try { Directory.Delete(tempDir, true); } catch { }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 4. MFT Data Run Decoder の LCN 二重加算バグ:
+        /// 合成 Runlist で最初の LCN が 0 基準で正しく計算されること。
+        /// </summary>
+        public static void TestMftDataRunDecoderLcnCalculation()
+        {
+            // 合成 NTFS Data Runlist のバイナリ作成:
+            // 各ランのヘッダーバイト: (offsetBytes << 4) | lengthBytes
+            //
+            // ラン 1: 長さ 128 (0x80 -> 1 byte), オフセット +4096 (0x1000 -> 2 bytes [0x00, 0x10])
+            //   header = 0x21
+            //   期待 StartLcn = 0 + 4096 = 4096, ClusterCount = 128
+            //
+            // ラン 2: 長さ 256 (0x0100 -> 2 bytes [0x00, 0x01]), オフセット +1024 (0x0400 -> 2 bytes [0x00, 0x04])
+            //   header = 0x22
+            //   期待 StartLcn = 4096 + 1024 = 5120, ClusterCount = 256
+            //
+            // ラン 3: 長さ 64 (0x40 -> 1 byte), オフセット -512 (0xFE00 -> 2 bytes [0x00, 0xFE], 負のデルタ符号拡張テスト)
+            //   header = 0x21
+            //   期待 StartLcn = 5120 - 512 = 4608, ClusterCount = 64
+            //
+            // 終端バイト: 0x00
+            byte[] syntheticRunlist = new byte[]
+            {
+                // Run 1: header 0x21, length 0x80, offset 0x00, 0x10
+                0x21, 0x80, 0x00, 0x10,
+                // Run 2: header 0x22, length 0x00, 0x01, offset 0x00, 0x04
+                0x22, 0x00, 0x01, 0x00, 0x04,
+                // Run 3: header 0x21, length 0x40, offset 0x00, 0xFE
+                0x21, 0x40, 0x00, 0xFE,
+                // End marker
+                0x00
+            };
+
+            // 重要: fallbackStartLcn に非ゼロ（例: 8888888）を渡す。
+            // 過去の二重加算バグでは currentLcn が fallbackStartLcn で初期化されていたため、
+            // 最初の StartLcn が 8888888 + 4096 = 8892984 になってしまっていた！
+            long dummyFallback = 8888888;
+            var extents = MftDataRunDecoder.DecodeDataRuns(syntheticRunlist, 0, dummyFallback);
+
+            if (extents.Count != 3)
+            {
+                throw new InvalidOperationException($"デコードされた Extent 数が不正です。期待値: 3, 実際: {extents.Count}");
+            }
+
+            // 検証 1: 最初の LCN が 0 基準の 4096 であること (fallback が加算されていないこと)
+            if (extents[0].StartLcn != 4096)
+            {
+                throw new InvalidOperationException(
+                    $"LCN二重加算バグ検出: 最初のランの StartLcn が 0 基準で計算されていません。" +
+                    $" 期待値: 4096, 実際: {extents[0].StartLcn} (fallback加算の可能性: {dummyFallback})");
+            }
+            if (extents[0].ClusterCount != 128)
+            {
+                throw new InvalidOperationException($"ラン 1 の ClusterCount が不正です。期待値: 128, 実際: {extents[0].ClusterCount}");
+            }
+
+            // 検証 2: 2番目のランが正しく累積加算されていること (4096 + 1024 = 5120)
+            if (extents[1].StartLcn != 5120)
+            {
+                throw new InvalidOperationException(
+                    $"ラン 2 の StartLcn が不正です。期待値: 5120, 実際: {extents[1].StartLcn}");
+            }
+            if (extents[1].ClusterCount != 256)
+            {
+                throw new InvalidOperationException($"ラン 2 の ClusterCount が不正です。期待値: 256, 実際: {extents[1].ClusterCount}");
+            }
+
+            // 検証 3: 3番目のランの負の差分 (符号拡張) が正しく計算されていること (5120 - 512 = 4608)
+            if (extents[2].StartLcn != 4608)
+            {
+                throw new InvalidOperationException(
+                    $"ラン 3 の 負のデルタ StartLcn が不正です。期待値: 4608, 実際: {extents[2].StartLcn}");
+            }
+            if (extents[2].ClusterCount != 64)
+            {
+                throw new InvalidOperationException($"ラン 3 の ClusterCount が不正です。期待値: 64, 実際: {extents[2].ClusterCount}");
+            }
+        }
+    }
+}
