@@ -149,7 +149,7 @@ namespace AstraSize
             }
             else
             {
-                SidebarBorder.Width = 210;
+                SidebarBorder.Width = 220;
                 SidebarBrandPanel.Visibility = Visibility.Visible;
                 SidebarFooterPanel.Visibility = Visibility.Visible;
                 SidebarToggleButton.ToolTip = "サイドバーを収縮";

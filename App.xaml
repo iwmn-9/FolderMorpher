@@ -141,30 +141,36 @@
                 <Setter Property="FontWeight" Value="Medium"/>
                 <Setter Property="Foreground" Value="#64748B"/>
                 <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="Height" Value="40"/>
-                <Setter Property="Margin" Value="0,3"/>
+                <Setter Property="Height" Value="42"/>
+                <Setter Property="Margin" Value="0,2"/>
                 <Setter Property="Padding" Value="8,0"/>
                 <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="GroupName" Value="SidebarNavGroup"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="RadioButton">
                             <Border x:Name="itemBorder" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
                                 <Grid VerticalAlignment="Center">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="28"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="{TemplateBinding Tag}" FontSize="15" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="{TemplateBinding Content}" Margin="8,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    <Border x:Name="activeBar" Grid.Column="0" Width="3" Height="18" Background="#0284C7" CornerRadius="1.5" Margin="0,0,4,0" Visibility="Collapsed"/>
+                                    <TextBlock Grid.Column="1" Text="{TemplateBinding Tag}" FontSize="15" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="{TemplateBinding Content}" Foreground="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=Foreground}"
+                                               FontWeight="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=FontWeight}"
+                                               Margin="8,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                 </Grid>
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="itemBorder" Property="Background" Value="#F8FAFC"/>
+                                    <Setter TargetName="itemBorder" Property="Background" Value="#F1F5F9"/>
                                     <Setter Property="Foreground" Value="#0F172A"/>
                                 </Trigger>
                                 <Trigger Property="IsChecked" Value="True">
                                     <Setter TargetName="itemBorder" Property="Background" Value="#E0F2FE"/>
+                                    <Setter TargetName="activeBar" Property="Visibility" Value="Visible"/>
                                     <Setter Property="Foreground" Value="#0284C7"/>
                                     <Setter Property="FontWeight" Value="SemiBold"/>
                                 </Trigger>
