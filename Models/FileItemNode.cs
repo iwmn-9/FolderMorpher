@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
@@ -11,12 +12,26 @@ namespace AstraSize.Models
         public string Name { get; set; } = string.Empty;
         public string FullPath { get; set; } = string.Empty;
         public long Size { get; set; }
+        public long SizeBytes => Size;
         public int FileCount { get; set; }
         public int FolderCount { get; set; }
         public bool IsDirectory { get; set; }
         public DateTime? LastModified { get; set; }
         public string? ErrorMessage { get; set; }
         public int Level { get; set; } = 0;
+
+        public FileItemNode()
+        {
+        }
+
+        public FileItemNode(string fullPath, string name, long size, bool isDirectory, DateTime? lastModified = null)
+        {
+            FullPath = fullPath;
+            Name = name;
+            Size = size;
+            IsDirectory = isDirectory;
+            LastModified = lastModified;
+        }
 
         public bool CanExpand
         {
@@ -126,6 +141,41 @@ namespace AstraSize.Models
 
         public ObservableCollection<FileItemNode> Children { get; set; } = new();
         public FileItemNode? Parent { get; set; }
+
+        public List<FileItemNode> GetVisibleFlatList()
+        {
+            var list = new List<FileItemNode>();
+            AppendVisible(this, list);
+            return list;
+        }
+
+        private void AppendVisible(FileItemNode node, List<FileItemNode> list)
+        {
+            list.Add(node);
+            if (node.IsExpanded)
+            {
+                foreach (var child in node.Children)
+                {
+                    AppendVisible(child, list);
+                }
+            }
+        }
+
+        public List<FileItemNode> GetSubtreeFlatList()
+        {
+            var list = new List<FileItemNode>();
+            AppendAll(this, list);
+            return list;
+        }
+
+        private void AppendAll(FileItemNode node, List<FileItemNode> list)
+        {
+            list.Add(node);
+            foreach (var child in node.Children)
+            {
+                AppendAll(child, list);
+            }
+        }
 
         public static string FormatBytes(long bytes)
         {
