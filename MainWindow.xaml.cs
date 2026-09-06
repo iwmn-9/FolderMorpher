@@ -24,6 +24,7 @@ namespace AstraSize
         // Core Services
         private readonly DiskScanService _scanService = new();
         private readonly StorageHistoryService _historyService = new();
+        private readonly AclService _aclService = new();
         private readonly LinkFixService _linkFixService = new();
         private readonly ActiveDirectoryService _adService = new();
         private readonly SimulationProjectService _simService = new();
@@ -42,6 +43,11 @@ namespace AstraSize
         private SimFolderNode? _selectedSimNode;
         private SimAclEntry? _currentEditingAcl;
 
+        // Live ACL Management State
+        private readonly ObservableCollection<SimAclEntry> _liveAclEntries = new();
+        private readonly ObservableCollection<AdPrincipalItem> _liveAclPrincipals = new();
+        private bool _isLiveAclEditing = false;
+
         // Toast notification timer
         private DispatcherTimer? _toastTimer;
 
@@ -58,6 +64,7 @@ namespace AstraSize
                 LoadDrives();
                 InitializeStorageTabs();
                 InitializeSimulationStudio();
+                InitializeLiveAcl();
                 await LoadAdPrincipalsAsync();
             }
             catch (Exception ex)
@@ -85,10 +92,11 @@ namespace AstraSize
         #region Navigation Tabs
         private void NavTab_Checked(object sender, RoutedEventArgs e)
         {
-            if (StorageTabPanel == null || SimulationTabPanel == null || LinkFixTabPanel == null)
+            if (StorageTabPanel == null || LiveAclTabPanel == null || SimulationTabPanel == null || LinkFixTabPanel == null)
                 return;
 
             StorageTabPanel.Visibility = Visibility.Collapsed;
+            LiveAclTabPanel.Visibility = Visibility.Collapsed;
             SimulationTabPanel.Visibility = Visibility.Collapsed;
             LinkFixTabPanel.Visibility = Visibility.Collapsed;
 
@@ -96,6 +104,16 @@ namespace AstraSize
             {
                 StorageTabPanel.Visibility = Visibility.Visible;
                 StatusTextBlock.Text = "モード: 容量分析 & 監視 (Storage Explorer)";
+            }
+            else if (NavTabLiveAcl.IsChecked == true)
+            {
+                LiveAclTabPanel.Visibility = Visibility.Visible;
+                StatusTextBlock.Text = "モード: 実環境 権限コントロール (Live ACL)";
+                if (string.IsNullOrWhiteSpace(LiveAclPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
+                {
+                    LiveAclPathTextBox.Text = PathTextBox.Text;
+                    LoadLiveAclForPath(PathTextBox.Text);
+                }
             }
             else if (NavTabSimulation.IsChecked == true)
             {
@@ -287,6 +305,7 @@ namespace AstraSize
 
                 FileTreeDataGrid.ItemsSource = _currentTab.VisibleFlatList;
                 ExtensionsDataGrid.ItemsSource = _currentTab.ExtensionList;
+                UpdateDynamicInsightsForNode(root);
 
                 UpdateMetricsCards(_currentTab);
                 StatusTextBlock.Text = $"スキャン完了: {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)})";
@@ -380,7 +399,30 @@ namespace AstraSize
 
         private void FileTreeDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            // Optional preview logic
+            if (FileTreeDataGrid.SelectedItem is FileItemNode node)
+            {
+                UpdateDynamicInsightsForNode(node);
+            }
+        }
+
+        private void UpdateDynamicInsightsForNode(FileItemNode node)
+        {
+            if (InsightsTargetScopeTextBlock == null || TopFilesDataGrid == null || ExtensionsDataGrid == null) return;
+            InsightsTargetScopeTextBlock.Text = $"スコープ: {node.Name}";
+            var (topFiles, extStats) = DiskScanService.GetInsightsForNode(node);
+            TopFilesDataGrid.ItemsSource = topFiles;
+            ExtensionsDataGrid.ItemsSource = extStats;
+        }
+
+        private void CtxOpenLiveAcl_Click(object sender, RoutedEventArgs e)
+        {
+            if (FileTreeDataGrid.SelectedItem is FileItemNode item && item.IsDirectory)
+            {
+                LiveAclPathTextBox.Text = item.FullPath;
+                NavTabLiveAcl.IsChecked = true;
+                LoadLiveAclForPath(item.FullPath);
+                ShowToast($"実環境 権限コントロールを開きました: {item.Name}");
+            }
         }
 
         private void FileTreeDataGrid_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -477,7 +519,293 @@ namespace AstraSize
         }
         #endregion
 
-        #region Tab 2: Migration Simulation Studio (FolderMorph Studio)
+        #region Tab 2: Live ACL Control (実環境 権限マネージャー)
+        private void InitializeLiveAcl()
+        {
+            LiveAclCardsItemsControl.ItemsSource = _liveAclEntries;
+            LiveAclPrincipalsListBox.ItemsSource = _liveAclPrincipals;
+
+            _adPrincipals.CollectionChanged += (s, e) =>
+            {
+                _liveAclPrincipals.Clear();
+                foreach (var p in _adPrincipals) _liveAclPrincipals.Add(p);
+            };
+        }
+
+        private void LiveAclBrowseButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFolderDialog
+            {
+                Title = "アクセス権を管理するフォルダを選択（UNC対応）",
+                InitialDirectory = string.IsNullOrWhiteSpace(LiveAclPathTextBox.Text) ? @"C:\" : LiveAclPathTextBox.Text
+            };
+
+            if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.FolderName))
+            {
+                LiveAclPathTextBox.Text = dialog.FolderName;
+                LoadLiveAclForPath(dialog.FolderName);
+            }
+        }
+
+        private void LiveAclReloadButton_Click(object sender, RoutedEventArgs e)
+        {
+            var path = LiveAclPathTextBox.Text.Trim();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                LoadLiveAclForPath(path);
+            }
+        }
+
+        private void LiveAclPathTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                var path = LiveAclPathTextBox.Text.Trim();
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    LoadLiveAclForPath(path);
+                }
+            }
+        }
+
+        private void LoadLiveAclForPath(string path)
+        {
+            if (!Directory.Exists(path))
+            {
+                MessageBox.Show($"指定フォルダが存在しません:\n{path}", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                var (entries, isInherited, owner) = _aclService.GetSimAclForFolder(path);
+                _liveAclEntries.Clear();
+                foreach (var entry in entries)
+                {
+                    _liveAclEntries.Add(entry);
+                }
+
+                var folderName = Path.GetFileName(path.TrimEnd('\\', '/'));
+                if (string.IsNullOrEmpty(folderName)) folderName = path;
+                LiveAclFolderNameText.Text = folderName;
+                LiveAclOwnerText.Text = $"所有者: {owner}";
+                LiveAclInheritCheckBox.IsChecked = isInherited;
+
+                ShowToast($"実環境の権限を読み込みました: {folderName} ({entries.Count} 件)");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"権限読み込みエラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void LiveAclInheritCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            // 継承変更
+        }
+
+        private async void LiveAclApplyButton_Click(object sender, RoutedEventArgs e)
+        {
+            var path = LiveAclPathTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            {
+                MessageBox.Show("有効なフォルダパスを指定してください。", "案内", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var confirm = MessageBox.Show(
+                $"【注意: 実環境のアクセス権変更】\n\n対象: {path}\n付与ルール数: {_liveAclEntries.Count} 件\n継承設定: {(LiveAclInheritCheckBox.IsChecked == true ? "親から継承" : "固有設定 (継承無効)")}\n\n※実行直前にSDDLバックアップが自動保存され、いつでも復元できます。\n\n実ファイルサーバーへ直ちに適用しますか？",
+                "実環境アクセス権の即時適用確認",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (confirm != MessageBoxResult.Yes) return;
+
+            try
+            {
+                await _aclService.CreateSnapshotAsync(path, "LiveACL 即時適用前の自動バックアップ");
+                _aclService.ApplySimAclEntries(path, _liveAclEntries, LiveAclInheritCheckBox.IsChecked == true);
+
+                ShowToast($"⚡ 実環境へNTFSアクセス権を即時適用しました: {Path.GetFileName(path)}");
+                MessageBox.Show("実サーバーへのアクセス権適用が完了しました！\n（必要に応じて直前のバックアップから復元可能です）", "適用完了", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"権限適用エラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void LiveAclRollbackButton_Click(object sender, RoutedEventArgs e)
+        {
+            var path = LiveAclPathTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                var snapshots = await _aclService.GetSnapshotsAsync(path);
+                if (snapshots.Count == 0)
+                {
+                    MessageBox.Show("このフォルダの保存済みバックアップはありません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                var latest = snapshots[0];
+                var confirm = MessageBox.Show(
+                    $"最新のバックアップ（{latest.Timestamp:yyyy/MM/dd HH:mm:ss} 保存）へ復元しますか？\n\n対象: {path}",
+                    "バックアップ復元確認",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (confirm == MessageBoxResult.Yes)
+                {
+                    _aclService.RollbackToSnapshot(path, latest);
+                    LoadLiveAclForPath(path);
+                    ShowToast("↩️ 直前のバックアップから権限を復元しました");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"復元エラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void LiveAclExportMatrixButton_Click(object sender, RoutedEventArgs e)
+        {
+            var path = LiveAclPathTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            {
+                MessageBox.Show("有効なフォルダパスを指定してください。", "案内", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "実環境アクセス権マトリクス台帳 (CSV) を保存",
+                Filter = "CSVファイル (*.csv)|*.csv",
+                FileName = $"LiveAcl_Matrix_{Path.GetFileName(path.TrimEnd('\\', '/'))}_{DateTime.Now:yyyyMMdd}.csv"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    var rootNode = _aclService.GetFolderAcl(path, maxDepth: 2);
+                    var csv = _aclService.GenerateMatrixCsv(rootNode);
+                    File.WriteAllText(dialog.FileName, csv, Encoding.UTF8);
+                    ShowToast("権限台帳CSVを出力しました");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"CSV出力エラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void LiveAclDropZone_Drop(object sender, DragEventArgs e)
+        {
+            if (e.Data.GetData(typeof(AdPrincipalItem)) is AdPrincipalItem p)
+            {
+                if (_liveAclEntries.Any(a => a.AccountName.Equals(p.AccountName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    ShowToast($"⚠️ すでに割り当て済みです: {p.DisplayName}");
+                    return;
+                }
+
+                var entry = new SimAclEntry
+                {
+                    AccountName = p.AccountName,
+                    DisplayName = p.DisplayName,
+                    PrincipalType = p.PrincipalType,
+                    Rights = FileSystemRights.ReadAndExecute
+                };
+                _liveAclEntries.Add(entry);
+                ShowToast($"🛡️ アクセス権カードを追加: {p.DisplayName}");
+            }
+        }
+
+        private void LiveAclTrashZone_Drop(object sender, DragEventArgs e)
+        {
+            if (e.Data.GetData(typeof(SimAclEntry)) is SimAclEntry acl)
+            {
+                _liveAclEntries.Remove(acl);
+                ShowToast("🗑️ アクセス権カードをポイ捨て削除しました");
+            }
+        }
+
+        private void LiveAclCard_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount == 2 && sender is FrameworkElement fe && fe.DataContext is SimAclEntry acl)
+            {
+                _isLiveAclEditing = true;
+                _currentEditingAcl = acl;
+                SecModalTargetNameText.Text = LiveAclFolderNameText.Text;
+                SecModalFullPathText.Text = LiveAclPathTextBox.Text;
+                SecPrincipalInput.Text = acl.DisplayName;
+                SyncCheckboxesFromAcl(acl);
+                SecModalOverlay.Visibility = Visibility.Visible;
+            }
+        }
+
+        private void LiveAclOpenSecModalButton_Click(object sender, RoutedEventArgs e)
+        {
+            var acl = _liveAclEntries.FirstOrDefault();
+            if (acl == null)
+            {
+                if (string.IsNullOrWhiteSpace(LiveAclPathTextBox.Text)) return;
+                acl = new SimAclEntry
+                {
+                    AccountName = "Authenticated Users",
+                    DisplayName = "Authenticated Users",
+                    PrincipalType = AdPrincipalType.Group,
+                    Rights = FileSystemRights.ReadAndExecute
+                };
+                _liveAclEntries.Add(acl);
+            }
+
+            _isLiveAclEditing = true;
+            _currentEditingAcl = acl;
+            SecModalTargetNameText.Text = LiveAclFolderNameText.Text;
+            SecModalFullPathText.Text = LiveAclPathTextBox.Text;
+            SecPrincipalInput.Text = acl.DisplayName;
+            SyncCheckboxesFromAcl(acl);
+            SecModalOverlay.Visibility = Visibility.Visible;
+        }
+
+        private void LiveAclDeleteEntryButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement fe && fe.Tag is SimAclEntry acl)
+            {
+                _liveAclEntries.Remove(acl);
+                ShowToast($"アクセス権カードを削除しました: {acl.DisplayName}");
+            }
+        }
+
+        private void LiveAclPrincipalSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            var q = LiveAclPrincipalSearchTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(q))
+            {
+                LiveAclPrincipalsListBox.ItemsSource = _liveAclPrincipals;
+            }
+            else
+            {
+                LiveAclPrincipalsListBox.ItemsSource = _liveAclPrincipals
+                    .Where(p => p.DisplayName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                                p.AccountName.Contains(q, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+        }
+
+        private void LiveAclPrincipalsListBox_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (e.LeftButton == MouseButtonState.Pressed && LiveAclPrincipalsListBox.SelectedItem is AdPrincipalItem item)
+            {
+                DragDrop.DoDragDrop(LiveAclPrincipalsListBox, item, DragDropEffects.Copy);
+            }
+        }
+        #endregion
+
+        #region Tab 3: Migration Simulation Studio (FolderMorph Studio)
         private void InitializeSimulationStudio()
         {
             SimMockTreeView.ItemsSource = _simRootFolders;
@@ -1168,6 +1496,11 @@ namespace AstraSize
                 _currentEditingAcl.AdvSynchronize = SecAdvSync.IsChecked == true;
 
                 _selectedSimNode?.NotifyAclChanged();
+                if (_isLiveAclEditing)
+                {
+                    LiveAclCardsItemsControl.Items.Refresh();
+                    _isLiveAclEditing = false;
+                }
                 ShowToast($"🛡️ 「{_currentEditingAcl.DisplayName}」のアクセス権設定を反映しました");
             }
             SecModalOverlay.Visibility = Visibility.Collapsed;

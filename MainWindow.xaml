@@ -48,6 +48,7 @@
                 <!-- Navigation Tabs -->
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <RadioButton x:Name="NavTabStorage" Style="{StaticResource NavTabButton}" Content="📊 容量分析 &amp; 監視 (Monitor)" IsChecked="True" Checked="NavTab_Checked"/>
+                    <RadioButton x:Name="NavTabLiveAcl" Style="{StaticResource NavTabButton}" Content="🛡️ 権限コントロール (Live ACL)" Checked="NavTab_Checked"/>
                     <RadioButton x:Name="NavTabSimulation" Style="{StaticResource NavTabButton}" Content="🚀 移行シミュレーション (Morph Studio)" Checked="NavTab_Checked"/>
                     <RadioButton x:Name="NavTabLinkFix" Style="{StaticResource NavTabButton}" Content="🔗 ショートカット修復 (LinkFixer)" Checked="NavTab_Checked"/>
                 </StackPanel>
@@ -247,6 +248,7 @@
                                     <MenuItem Header="📂 エクスプローラーで開く" Click="CtxOpenExplorer_Click"/>
                                     <MenuItem Header="📋 パスをコピー" Click="CtxCopyPath_Click"/>
                                     <Separator/>
+                                    <MenuItem Header="🛡️ 実環境 権限コントロールで開く" Click="CtxOpenLiveAcl_Click"/>
                                     <MenuItem Header="🚀 移行シミュレーションへ送る" Click="CtxSendToSimulation_Click"/>
                                 </ContextMenu>
                             </DataGrid.ContextMenu>
@@ -268,18 +270,23 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
                                 <DataGridTextColumn Header="容量" Binding="{Binding FormattedSize}" Width="90" ElementStyle="{StaticResource RightAlignedCell}"/>
-                                <DataGridTemplateColumn Header="使用率" Width="100">
+                                <DataGridTemplateColumn Header="親比占有率" Width="105">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:FileItemNode}">
-                                            <Grid Margin="6,4">
-                                                <ProgressBar Height="6" Minimum="0" Maximum="100" Value="{Binding Percentage}"
-                                                             Foreground="{Binding Percentage, Converter={StaticResource PercentageToBarBrush}}"
-                                                             Background="#F1F5F9" BorderThickness="0"/>
+                                            <Grid Margin="4,2">
+                                                <ProgressBar Height="18" Minimum="0" Maximum="100" Value="{Binding Percentage}"
+                                                             Foreground="#2563EB" Background="#E2E8F0" BorderThickness="0"/>
+                                                <TextBlock Text="{Binding FormattedPercentage}"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="10" FontWeight="Bold"
+                                                           Foreground="#FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <TextBlock.Effect>
+                                                        <DropShadowEffect BlurRadius="2" ShadowDepth="1" Direction="315" Color="#000000" Opacity="0.6"/>
+                                                    </TextBlock.Effect>
+                                                </TextBlock>
                                             </Grid>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="割合" Binding="{Binding FormattedPercentage}" Width="50" ElementStyle="{StaticResource RightAlignedCell}"/>
                                 <DataGridTextColumn Header="ファイル数" Binding="{Binding FileCount, StringFormat='{}{0:N0}'}" Width="80" ElementStyle="{StaticResource RightAlignedCell}"/>
                                 <DataGridTextColumn Header="最終更新" Binding="{Binding LastModified, StringFormat='yyyy/MM/dd HH:mm'}" Width="120" ElementStyle="{StaticResource LeftAlignedCell}"/>
                             </DataGrid.Columns>
@@ -294,12 +301,35 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Text="📊 拡張子別 容量ブレイクダウン" FontWeight="Bold" FontSize="12" Foreground="#1E293B" Margin="0,0,0,8"/>
-                            <DataGrid x:Name="ExtensionsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
+
+                            <!-- Top 10 Header -->
+                            <StackPanel Grid.Row="0" Margin="0,0,0,6">
+                                <Grid>
+                                    <TextBlock Text="💡 容量上位ファイル (Top 10)" FontWeight="Bold" FontSize="12" Foreground="#1E293B"/>
+                                    <TextBlock x:Name="InsightsTargetScopeTextBlock" Text="スコープ: 全体" FontSize="10" Foreground="#0284C7" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- Top 10 Largest Files DataGrid -->
+                            <DataGrid x:Name="TopFilesDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
+                                      BorderThickness="0" Background="Transparent" RowHeight="24" SelectionMode="Single" Margin="0,0,0,10">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="ファイル名" Binding="{Binding Name}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                    <DataGridTextColumn Header="サイズ" Binding="{Binding FormattedSize}" Width="75" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <!-- Extensions Header -->
+                            <TextBlock Grid.Row="2" Text="📊 拡張子別 容量ブレイクダウン" FontWeight="Bold" FontSize="12" Foreground="#1E293B" Margin="0,4,0,6"/>
+
+                            <!-- Extensions Breakdown DataGrid -->
+                            <DataGrid x:Name="ExtensionsDataGrid" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True"
                                       BorderThickness="0" Background="Transparent" RowHeight="24" SelectionMode="Single">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="拡張子" Binding="{Binding Extension}" Width="80" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                    <DataGridTextColumn Header="拡張子" Binding="{Binding Extension}" Width="75" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                     <DataGridTextColumn Header="容量" Binding="{Binding FormattedSize}" Width="75" ElementStyle="{StaticResource RightAlignedCell}"/>
                                     <DataGridTemplateColumn Header="割合" Width="*">
                                         <DataGridTemplateColumn.CellTemplate>
@@ -318,7 +348,181 @@
             </Grid>
 
             <!-- ======================================================== -->
-            <!-- TAB 2: MIGRATION SIMULATION STUDIO (FolderMorph Studio)   -->
+            <!-- TAB 2: LIVE ACL CONTROL (実環境 権限マネージャー)         -->
+            <!-- ======================================================== -->
+            <Grid x:Name="LiveAclTabPanel" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/> <!-- Action Toolbar & Path -->
+                    <RowDefinition Height="*"/>    <!-- 2-Pane Split View -->
+                </Grid.RowDefinitions>
+
+                <!-- Toolbar -->
+                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,10">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/> <!-- Label -->
+                            <ColumnDefinition Width="*"/>    <!-- Path Input -->
+                            <ColumnDefinition Width="Auto"/> <!-- Browse & Refresh -->
+                            <ColumnDefinition Width="Auto"/> <!-- Actions -->
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
+                            <TextBlock Text="🛡️ " FontSize="14" VerticalAlignment="Center"/>
+                            <TextBlock Text="対象フォルダ:" FontWeight="Bold" FontSize="12" Foreground="#1E293B" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Padding="8,4" Margin="0,0,8,0">
+                            <TextBox x:Name="LiveAclPathTextBox" BorderThickness="0" Background="Transparent"
+                                     VerticalAlignment="Center" FontSize="12" FontFamily="{StaticResource MonoFont}"
+                                     KeyDown="LiveAclPathTextBox_KeyDown"/>
+                        </Border>
+
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,16,0">
+                            <Button Content="参照..." Height="30" Margin="0,0,6,0" Style="{StaticResource FluentButtonSecondary}" Click="LiveAclBrowseButton_Click"/>
+                            <Button Content="🔄 権限読込" Height="30" Style="{StaticResource FluentButtonSecondary}" Click="LiveAclReloadButton_Click"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="3" Orientation="Horizontal">
+                            <Button x:Name="LiveAclApplyButton" Content="⚡ 実環境へ即時適用" Height="30" Margin="0,0,8,0"
+                                    Style="{StaticResource FluentButtonPrimary}" Click="LiveAclApplyButton_Click"/>
+                            <Button x:Name="LiveAclRollbackButton" Content="↩️ バックアップ復元" Height="30" Margin="0,0,8,0"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="LiveAclRollbackButton_Click" ToolTip="直前のSDDLスナップショットからロールバック"/>
+                            <Button x:Name="LiveAclExportMatrixButton" Content="📋 台帳CSV出力" Height="30"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="LiveAclExportMatrixButton_Click"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- 2-Pane View -->
+                <Grid Grid.Row="1" Margin="20,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="6.5*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="3.5*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: Current ACL Cards & Drop Zone -->
+                    <Border Grid.Column="0" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
+                            BorderThickness="1" CornerRadius="8" Padding="16">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/> <!-- Folder Info & Inherit Header -->
+                                <RowDefinition Height="Auto"/> <!-- Drop Zone / Help Banner -->
+                                <RowDefinition Height="*"/>    <!-- Cards Area -->
+                                <RowDefinition Height="Auto"/> <!-- Trash Zone -->
+                            </Grid.RowDefinitions>
+
+                            <!-- Folder Header -->
+                            <Grid Grid.Row="0" Margin="0,0,0,12">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="📁 設定中のフォルダ: " FontWeight="Bold" FontSize="13" Foreground="#334155"/>
+                                    <TextBlock x:Name="LiveAclFolderNameText" Text="(未読込)" FontWeight="Bold" FontSize="13" Foreground="#0284C7"/>
+                                    <TextBlock x:Name="LiveAclOwnerText" Text="" FontSize="11" Foreground="#64748B" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <CheckBox x:Name="LiveAclInheritCheckBox" Content="親フォルダからの権限継承を含める" HorizontalAlignment="Right"
+                                          FontSize="11" VerticalAlignment="Center" Checked="LiveAclInheritCheckBox_Changed" Unchecked="LiveAclInheritCheckBox_Changed"/>
+                            </Grid>
+
+                            <!-- Live AD Drop Target Zone -->
+                            <Border Grid.Row="1" Background="#F0F9FF" BorderBrush="#38BDF8" BorderThickness="1"
+                                    CornerRadius="6" Padding="12,8" Margin="0,0,0,12" AllowDrop="True"
+                                    Drop="LiveAclDropZone_Drop" DragOver="SimGenericDragOver">
+                                <Grid>
+                                    <TextBlock Text="📥 右のADプリンシパル（ユーザー・グループ）をここにドロップして権限を追加"
+                                               FontSize="11" Foreground="#0284C7" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Permissions Cards Flow -->
+                            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,8">
+                                        <TextBlock Text="🛡️ 付与されているNTFSアクセス権 (カードWクリックでWindows詳細設定を編集)"
+                                                   FontSize="11" FontWeight="Bold" Foreground="#0F172A"/>
+                                        <Button Content="⚙️ 詳細権限を直接編集" FontSize="10" Height="22" Padding="8,1"
+                                                Style="{StaticResource FluentButtonSecondary}" HorizontalAlignment="Right"
+                                                Click="LiveAclOpenSecModalButton_Click"/>
+                                    </Grid>
+
+                                    <ItemsControl x:Name="LiveAclCardsItemsControl">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type models:SimAclEntry}">
+                                                <Border Background="#FFFFFF" BorderBrush="#BAE6FD" BorderThickness="1" CornerRadius="6"
+                                                        Padding="10,6" Margin="0,0,8,8" Cursor="Hand" MouseDown="LiveAclCard_MouseDown">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding IconGlyph}" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="11" Foreground="#0F172A" VerticalAlignment="Center"/>
+                                                        <Border Background="#E0F2FE" CornerRadius="4" Padding="6,2" Margin="8,0,6,0" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding FormattedRights}" FontSize="10" Foreground="#0284C7"/>
+                                                        </Border>
+                                                        <Button Content="✕" FontSize="10" Width="16" Height="16" Margin="2,0,0,0"
+                                                                Background="Transparent" BorderThickness="0" Foreground="#94A3B8"
+                                                                Click="LiveAclDeleteEntryButton_Click" Tag="{Binding}" ToolTip="権限削除"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </ScrollViewer>
+
+                            <!-- Trash Drop Zone -->
+                            <Border Grid.Row="3" Background="#FFF1F2" BorderBrush="#F43F5E" BorderThickness="1"
+                                    CornerRadius="6" Height="36" Margin="0,8,0,0" AllowDrop="True"
+                                    Drop="LiveAclTrashZone_Drop" DragOver="SimGenericDragOver">
+                                <TextBlock Text="🗑️ ここにドロップして権限カードをポイ捨て削除" FontSize="11" FontWeight="Bold"
+                                           Foreground="#E11D48" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <GridSplitter Grid.Column="1" Width="12" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
+
+                    <!-- Right: AD Principals Browser -->
+                    <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
+                            BorderThickness="1" CornerRadius="8" Padding="14">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Text="👥 Active Directory / ローカルアカウント" FontWeight="Bold" FontSize="12" Foreground="#1E293B" Margin="0,0,0,8"/>
+
+                            <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="6,4" Margin="0,0,0,10">
+                                <TextBox x:Name="LiveAclPrincipalSearchTextBox" BorderThickness="0" Background="Transparent"
+                                         FontSize="11" TextChanged="LiveAclPrincipalSearchTextBox_TextChanged"/>
+                            </Border>
+
+                            <ListBox x:Name="LiveAclPrincipalsListBox" Grid.Row="2" BorderThickness="0" Background="Transparent"
+                                     PreviewMouseMove="LiveAclPrincipalsListBox_PreviewMouseMove">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type models:AdPrincipalItem}">
+                                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="8,5" Margin="0,2" Cursor="Hand">
+                                            <Grid>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding IconGlyph}" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                                <TextBlock Text="ドラッグ付与 ➔" FontSize="9" Foreground="#94A3B8" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <!-- ======================================================== -->
+            <!-- TAB 3: MIGRATION SIMULATION STUDIO (FolderMorph Studio)   -->
             <!-- ======================================================== -->
             <Grid x:Name="SimulationTabPanel" Visibility="Collapsed">
                 <Grid.RowDefinitions>

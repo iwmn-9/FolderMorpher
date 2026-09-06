@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -183,6 +183,67 @@ namespace AstraSize.Services
             }
 
             return list.OrderByDescending(s => s.Timestamp).ToList();
+        }
+
+        public (List<SimAclEntry> entries, bool isInherited, string owner) GetSimAclForFolder(string path)
+        {
+            var dir = new DirectoryInfo(path);
+            if (!dir.Exists) throw new DirectoryNotFoundException($"フォルダが見つかりません: {path}");
+
+            var sec = dir.GetAccessControl(AccessControlSections.Access | AccessControlSections.Owner);
+            var owner = sec.GetOwner(typeof(NTAccount))?.Value ?? "不明";
+            bool isInherited = !sec.AreAccessRulesProtected;
+
+            var list = new List<SimAclEntry>();
+            var rules = sec.GetAccessRules(true, true, typeof(NTAccount));
+            foreach (FileSystemAccessRule rule in rules)
+            {
+                if (rule.AccessControlType != AccessControlType.Allow) continue;
+
+                bool isGrp = rule.IdentityReference.Value.EndsWith("Groups", StringComparison.OrdinalIgnoreCase)
+                          || rule.IdentityReference.Value.Contains("Domain Users")
+                          || rule.IdentityReference.Value.Contains("Users")
+                          || rule.IdentityReference.Value.Contains("Administrators");
+
+                var entry = new SimAclEntry
+                {
+                    AccountName = rule.IdentityReference.Value,
+                    DisplayName = rule.IdentityReference.Value.Contains('\\')
+                        ? rule.IdentityReference.Value.Split('\\')[1]
+                        : rule.IdentityReference.Value,
+                    PrincipalType = isGrp ? AdPrincipalType.Group : AdPrincipalType.User
+                };
+                entry.Rights = rule.FileSystemRights;
+                list.Add(entry);
+            }
+
+            return (list, isInherited, owner);
+        }
+
+        public void ApplySimAclEntries(string path, IEnumerable<SimAclEntry> entries, bool inherit)
+        {
+            var dirInfo = new DirectoryInfo(path);
+            if (!dirInfo.Exists) throw new DirectoryNotFoundException($"指定フォルダが存在しません: {path}");
+
+            var sec = dirInfo.GetAccessControl(AccessControlSections.Access);
+            sec.SetAccessRuleProtection(!inherit, true);
+
+            var existingRules = sec.GetAccessRules(true, false, typeof(NTAccount));
+            foreach (FileSystemAccessRule rule in existingRules)
+            {
+                sec.RemoveAccessRuleSpecific(rule);
+            }
+
+            foreach (var entry in entries)
+            {
+                var identity = new NTAccount(entry.AccountName);
+                var inheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+                var propagation = PropagationFlags.None;
+                var rule = new FileSystemAccessRule(identity, entry.Rights, inheritance, propagation, AccessControlType.Allow);
+                sec.AddAccessRule(rule);
+            }
+
+            dirInfo.SetAccessControl(sec);
         }
 
         public void RollbackToSnapshot(string path, AclSnapshot snapshot)
