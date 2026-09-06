@@ -24,6 +24,35 @@ namespace AstraSize.Services
             IProgress<ScanProgress>? progress,
             CancellationToken ct)
         {
+            // ⚡ Hybrid Check: Try Ultra-Fast MFT Engine if supported (Local NTFS + Administrator)
+            if (Mft.MftScanService.CanUseMft(targetPath))
+            {
+                try
+                {
+                    progress?.Report(new ScanProgress
+                    {
+                        CurrentPath = "⚡ MFT高速スキャンエンジン起動中...",
+                        FilesScanned = 0,
+                        BytesScanned = 0
+                    });
+
+                    var mftScanner = new Mft.MftScanService();
+                    var mftResult = await mftScanner.ScanPathAsync(targetPath, progress, ct);
+                    if (mftResult.rootNode != null && mftResult.rootNode.Size > 0)
+                    {
+                        return mftResult;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // Fallback to standard recursive scan seamlessly
+                }
+            }
+
             return await Task.Run(() =>
             {
                 var stopwatch = Stopwatch.StartNew();
@@ -271,7 +300,7 @@ namespace AstraSize.Services
             }, ct);
         }
 
-        private void CalculatePercentages(FileItemNode node, long rootSize)
+        internal static void CalculatePercentages(FileItemNode node, long rootSize)
         {
             if (rootSize > 0)
             {
@@ -347,7 +376,7 @@ namespace AstraSize.Services
             return (top10Files, topExts);
         }
 
-        private static string GetCategoryForExtension(string ext)
+        internal static string GetCategoryForExtension(string ext)
         {
             return ext.ToLowerInvariant() switch
             {

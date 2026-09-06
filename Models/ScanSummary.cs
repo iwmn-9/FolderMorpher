@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace AstraSize.Models
@@ -40,6 +40,8 @@ namespace AstraSize.Models
         public int TotalFolders { get; set; }
         public double ElapsedSeconds { get; set; }
         public bool IsCancelled { get; set; }
+        public string ScanMode { get; set; } = "Standard";
+        public bool IsMftBoosted => ScanMode.Contains("MFT", StringComparison.OrdinalIgnoreCase);
 
         public List<LargestFileInfo> LargestFiles { get; set; } = new();
         public List<ExtensionStat> ExtensionStats { get; set; } = new();

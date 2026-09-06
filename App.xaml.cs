@@ -45,6 +45,7 @@ namespace AstraSize
             int selectTab = 0;
             string? testSuiteDir = null;
             string? forceLang = null;
+            string? testScanPath = null;
             for (int i = 0; i < e.Args.Length; i++)
             {
                 if (e.Args[i] == "--snapshot" && i + 1 < e.Args.Length)
@@ -67,6 +68,33 @@ namespace AstraSize
                 {
                     forceLang = e.Args[i + 1];
                 }
+                else if (e.Args[i] == "--test-scan" && i + 1 < e.Args.Length)
+                {
+                    testScanPath = e.Args[i + 1];
+                }
+            }
+
+            if (!string.IsNullOrEmpty(testScanPath))
+            {
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        Console.WriteLine($"[TEST-SCAN] Target: {testScanPath}");
+                        var scanService = new AstraSize.Services.DiskScanService();
+                        using var cts = new System.Threading.CancellationTokenSource();
+                        var (root, summary) = await scanService.ScanPathAsync(testScanPath, null, cts.Token);
+                        Console.WriteLine($"[TEST-SCAN] Mode: {summary.ScanMode}, TotalSize: {root.SizeBytes} bytes, Files: {summary.TotalFiles}, Folders: {summary.TotalFolders}, Time: {summary.ElapsedSeconds}s");
+                        Console.WriteLine("[TEST-SCAN] ALL PASSED");
+                        Environment.Exit(0);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[TEST-SCAN-ERROR] {ex}");
+                        Environment.Exit(1);
+                    }
+                });
+                return;
             }
 
             if (!string.IsNullOrEmpty(testSuiteDir))

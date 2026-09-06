@@ -29,6 +29,7 @@ Please submit your feedback or bug reports via [GitHub Issues](../../issues)!
 
 ### 1. 📊 Storage Explorer (Fast Disk Space Analyzer)
 ![Tab 0: Storage Explorer](docs/screenshots/tab0_storage.png)
+- **⚡ Ultra-Fast MFT Direct Scanning & Hybrid Fallback**: Direct binary parsing of NTFS Master File Table (`$MFT`) with non-exclusive read-only handles (`GENERIC_READ`). Indexes millions of files in seconds on local/server drives with automatic 3-tier fallback to parallel recursive scanning for network shares (UNC) and standard permissions.
 - **Root-Relative Occupancy Meter (Anti-Double Counting)**: Percentage reflects absolute share of the scanned root, separated cleanly from subfolder shares.
 - **Top 10 Largest Files & Explorer Highlight**: Instantly locate massive space-hogging files. Double-click to reveal and highlight directly in Windows Explorer.
 - **Multi-Tab Simultaneous Scanning**: Scan and monitor multiple local drives and UNC network shares (`\\server\share`) side-by-side.

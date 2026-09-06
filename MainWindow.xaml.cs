@@ -375,7 +375,9 @@ namespace AstraSize
                 UpdateDynamicInsightsForNode(root);
 
                 UpdateMetricsCards(_currentTab);
-                StatusTextBlock.Text = $"スキャン完了: {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)})";
+                StatusTextBlock.Text = summary.IsMftBoosted
+                    ? $"⚡ MFT高速スキャン完了 ({summary.ElapsedSeconds}秒): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)})"
+                    : $"スキャン完了 ({summary.ElapsedSeconds}秒): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)})";
             }
             catch (OperationCanceledException)
             {
@@ -410,6 +412,8 @@ namespace AstraSize
 
         private void UpdateMetricsCards(ScanTabModel tab)
         {
+            MftBoostBadge.Visibility = (tab.Summary?.IsMftBoosted == true) ? Visibility.Visible : Visibility.Collapsed;
+
             if (tab.RootNode != null)
             {
                 ScannedSizeTextBlock.Text = FileItemNode.FormatBytes(tab.RootNode.SizeBytes);
