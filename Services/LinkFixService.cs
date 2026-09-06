@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AstraSize.Services
+namespace FolderMorpher.Services
 {
     public class LinkFixItem
     {
@@ -78,47 +78,6 @@ namespace AstraSize.Services
                     catch { }
                 }
 
-                // Modern Excel (.xlsx)
-                foreach (var fi in dir.EnumerateFiles("*.xlsx", SearchOption.AllDirectories))
-                {
-                    if (ct.IsCancellationRequested) break;
-
-                    try
-                    {
-                        bool hasOldLink = false;
-                        using (var zip = ZipFile.Open(fi.FullName, ZipArchiveMode.Read))
-                        {
-                            foreach (var entry in zip.Entries)
-                            {
-                                if (entry.FullName.Contains("externalLinks", StringComparison.OrdinalIgnoreCase) && entry.FullName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    using var reader = new StreamReader(entry.Open(), Encoding.UTF8);
-                                    string content = reader.ReadToEnd();
-                                    if (!string.IsNullOrEmpty(oldPathPattern) && content.Contains(oldPathPattern, StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        hasOldLink = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
-                        if (hasOldLink)
-                        {
-                            results.Add(new LinkFixItem
-                            {
-                                FilePath = fi.FullName,
-                                FileName = fi.Name,
-                                FileType = "Excel ブック (.xlsx)",
-                                OldTarget = oldPathPattern,
-                                NewTarget = newPathPattern,
-                                Status = "外部リンク検出"
-                            });
-                        }
-                    }
-                    catch { }
-                }
-
                 return results;
             }, ct);
         }
@@ -148,7 +107,7 @@ namespace AstraSize.Services
                     {
                         if (item.FileType.Contains(".lnk") && wsh is not null)
                         {
-                            // Create backup
+                            // バックアップ作成
                             string bakPath = item.FilePath + ".bak";
                             if (!File.Exists(bakPath))
                             {
@@ -175,14 +134,66 @@ namespace AstraSize.Services
             }, ct);
         }
 
-        public async Task<List<LinkFixItem>> ScanAndFixLinksAsync(
-            string searchDirectory,
-            string oldPathPattern,
-            string newPathPattern,
-            bool dryRun,
-            CancellationToken ct)
+        /// <summary>
+        /// GPO（グループポリシー）ログオンスクリプトや社内配布用のPowerShellスクリプトを自動生成する
+        /// </summary>
+        public void GenerateGpoLogonScript(string outputPath, string oldPath, string newPath)
         {
-            return await ScanShortcutsAsync(searchDirectory, oldPathPattern, newPathPattern, null, ct);
+            var sb = new StringBuilder();
+            sb.AppendLine("# ==========================================================================");
+            sb.AppendLine("# FolderMorpher - 全社PC用 ショートカット一括修復 ログオンスクリプト");
+            sb.AppendLine($"# 旧パス: {oldPath}");
+            sb.AppendLine($"# 新パス: {newPath}");
+            sb.AppendLine($"# 生成日時: {DateTime.Now:yyyy/MM/dd HH:mm:ss}");
+            sb.AppendLine("# 適用対象: GPO ユーザーの構成 > ポリシー > Windowsの設定 > スクリプト (ログオン)");
+            sb.AppendLine("# ==========================================================================");
+            sb.AppendLine();
+            sb.AppendLine("$ErrorActionPreference = 'SilentlyContinue'");
+            sb.AppendLine("$logFile = \"$env:TEMP\\FolderMorpher_LinkFix.log\"");
+            sb.AppendLine("function Log($msg) { Add-Content -Path $logFile -Value \"[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $msg\" -Encoding UTF8 }");
+            sb.AppendLine();
+            sb.AppendLine($"$oldPath = \"{oldPath.Replace("\"", "`\"")}\"");
+            sb.AppendLine($"$newPath = \"{newPath.Replace("\"", "`\"")}\"");
+            sb.AppendLine();
+            sb.AppendLine("Log \"=== ショートカット修復スクリプト開始 ===\"");
+            sb.AppendLine();
+            sb.AppendLine("# 走査対象ディレクトリ（デスクトップ、ドキュメント、クイックアクセス、スタートメニュー等）");
+            sb.AppendLine("$targetDirs = @(");
+            sb.AppendLine("    [Environment]::GetFolderPath('Desktop'),");
+            sb.AppendLine("    [Environment]::GetFolderPath('MyDocuments'),");
+            sb.AppendLine("    \"$env:APPDATA\\Microsoft\\Windows\\Recent\",");
+            sb.AppendLine("    \"$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs\"");
+            sb.AppendLine(")");
+            sb.AppendLine();
+            sb.AppendLine("$wsh = New-Object -ComObject WScript.Shell");
+            sb.AppendLine("$fixCount = 0");
+            sb.AppendLine();
+            sb.AppendLine("foreach ($dir in $targetDirs) {");
+            sb.AppendLine("    if (-not (Test-Path $dir)) { continue }");
+            sb.AppendLine("    Get-ChildItem -Path $dir -Filter '*.lnk' -Recurse -File | ForEach-Object {");
+            sb.AppendLine("        try {");
+            sb.AppendLine("            $shortcut = $wsh.CreateShortcut($_.FullName)");
+            sb.AppendLine("            $target = $shortcut.TargetPath");
+            sb.AppendLine("            if ($target -and $target.IndexOf($oldPath, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {");
+            sb.AppendLine("                $newTarget = $target.Replace($oldPath, $newPath, [System.StringComparison]::OrdinalIgnoreCase)");
+            sb.AppendLine("                # バックアップ作成");
+            sb.AppendLine("                $bak = $_.FullName + '.bak'");
+            sb.AppendLine("                if (-not (Test-Path $bak)) { Copy-Item $_.FullName $bak -Force }");
+            sb.AppendLine("                $shortcut.TargetPath = $newTarget");
+            sb.AppendLine("                $shortcut.Save()");
+            sb.AppendLine("                $fixCount++");
+            sb.AppendLine("                Log \"[修復成功] $($_.FullName) -> $newTarget\"");
+            sb.AppendLine("            }");
+            sb.AppendLine("        } catch {");
+            sb.AppendLine("            Log \"[修復失敗] $($_.FullName): $_\"");
+            sb.AppendLine("        }");
+            sb.AppendLine("    }");
+            sb.AppendLine("}");
+            sb.AppendLine();
+            sb.AppendLine("Log \"=== 完了: $fixCount 件のショートカットを修復しました ===\"");
+            sb.AppendLine();
+
+            File.WriteAllText(outputPath, sb.ToString(), Encoding.UTF8);
         }
     }
 }

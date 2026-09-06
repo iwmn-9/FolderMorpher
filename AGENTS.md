@@ -23,13 +23,15 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
 
 | 機能領域 / タブ | XAML (MainWindow.xaml) | C# コードビハインド (MainWindow.xaml.cs) | 関連 Service / Model | 責務と概要 |
 | :--- | :--- | :--- | :--- | :--- |
-| **全体共通 / 左サイドバー** | `SidebarBorder`, `SidebarToggleButton` (L22-68) | `SidebarToggleButton_Click` (L140-157)<br>`NavTab_Checked` (L93-136) | `Converters/ValueConverters.cs` | 収縮対応ナビゲーション（幅220px ⇄ 58px）、グローバルステータスバー、通知トースト |
+| **全体共通 / 左サイドバー** | `SidebarBorder`, `SidebarToggleButton` (L22-75) | `SidebarToggleButton_Click`<br>`NavTab_Checked` | `Converters/ValueConverters.cs` | 収縮対応ナビゲーション（幅220px ⇄ 58px）、グローバルステータスバー、通知トースト |
 | **Tab 1: 容量分析 & 監視**<br>(Storage Explorer) | `StorageTabPanel` (L82-410) | `ScanButton_Click`<br>`StorageTreeView_SelectedItemChanged`<br>`SubfolderShareGrid_MouseDoubleClick` | `DiskScanService.cs`<br>`DriveInfoService.cs`<br>`StorageHistoryService.cs`<br>`ScanTabModel.cs`<br>`FileItemNode.cs` | 複数タブスキャン、ドライブ空き容量メーター、全体占有率メーター（案A）、容量上位Top10（Explorer起動連動）、直下シェア内訳（Wクリックツリー連動） |
 | **Tab 2: 権限コントロール**<br>(Live ACL) | `LiveAclTabPanel` (L413-605) | `LiveAclReloadButton_Click`<br>`LiveAclApplyButton_Click`<br>`LiveAclRollbackButton_Click`<br>`LiveAclDropZone_Drop` | `AclService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs` | 実環境NTFS ACLの可視化・直接編集、ADドラッグ＆ドロップ付与、ポイ捨て削除、SDDL直前スナップショット復元（ロールバック）、台帳CSV |
 | **Tab 3: 移行スタジオ**<br>(Simulation Studio) | `SimulationTabPanel` (L608-995) | `SimSourceLoadButton_Click`<br>`SimMockTreeView_Drop`<br>`SimDiffReviewButton_Click`<br>`SimDeploySkeletonButton_Click` | `SimulationProjectService.cs`<br>`MigrationService.cs`<br>`SimModels.cs` | 現行ファイルサーバーから新環境への仮想ツリー設計（N:1マッピング）、ACL引き継ぎ設計、Diffインスペクター、ガワ先行作成（空フォルダ+ACL一括展開）、Robocopy生成 |
-| **Tab 4: リンク一括修復**<br>(LinkFixer) | `LinkFixTabPanel` (L998-1065) | `LinkScanButton_Click`<br>`LinkFixExecuteButton_Click` | `LinkFixService.cs` | サーバー移行後の切断ショートカット（.lnk）一括検出、新UNCパスへの安全な一括書き換え（バックアップ付き） |
-| **詳細権限モーダル** | `SecModalOverlay` (L1063-1175) | `SecModalApply_Click`<br>`SecModalCancel_Click` | `AclModels.cs` | Windows標準セキュリティ詳細設定（14項目のNTFS詳細パーミッションビット）の完全再現・編集 |
-| **変化点差分モーダル** | `DiffModalOverlay` (L1180-1257) | `DiffModalClose_Click`<br>`DiffExportExcel_Click` | `SimModels.cs` | 移行前後（Before/After）の変化点（新規・移動・統合・ACL差分）の一覧レビューとExcel出力 |
+| **Tab 4: リンク一括修復**<br>(LinkFixer) | `LinkFixTabPanel` (L998-1094) | `LinkScanButton_Click`<br>`LinkFixExecuteButton_Click`<br>`LinkGenerateGpoButton_Click` | `LinkFixService.cs`<br>`OfficeLinkFixService.cs` | サーバー移行後の切断ショートカット（.lnk）およびOffice内部リンク（.xlsx/.xlsm）一括検出・修復、全社配布用GPOログオンスクリプト（.ps1）生成 |
+| **Tab 5: 断捨離・健全化**<br>(Audit & Hygiene) | `AuditTabPanel` (L1097-1240) | `AuditStartButton_Click`<br>`AuditExportExcelButton_Click`<br>`AuditExportCsvButton_Click`<br>`AuditGenArchiveScriptButton_Click` | `AuditReportService.cs`<br>`ExcelReportService.cs`<br>`AuditModels.cs` | GDMS完全代替。重複ファイル（SHA256）、休眠ファイル（3年超）、パス長260文字超・禁則文字検出。ハイパーリンク付きExcelレポート出力、安全退避バッチ生成 |
+| **Tab 6: メディア最適化**<br>(Media Optimizer) | `MediaTabPanel` (L1243-1380) | `MediaScanButton_Click`<br>`MediaOptimizeButton_Click`<br>`MediaGenVideoBatchButton_Click`<br>`MediaExportExcelButton_Click` | `MediaOptimizerService.cs`<br>`ExcelReportService.cs`<br>`MediaOptimizerModels.cs` | 聖域保護（_Master/RAW等）付き写真ロスレス軽量化（長辺2560px/85%品質/日時保持/直接上書きで90%削減）、巨大動画Topランキング抽出、夜間GPU圧縮（H.265）バッチ生成 |
+| **詳細権限モーダル** | `SecModalOverlay` | `SecModalApply_Click`<br>`SecModalCancel_Click` | `AclModels.cs` | Windows標準セキュリティ詳細設定（14項目のNTFS詳細パーミッションビット）の完全再現・編集 |
+| **変化点差分モーダル** | `DiffModalOverlay` | `DiffModalClose_Click`<br>`DiffExportExcel_Click` | `SimModels.cs` | 移行前後（Before/After）の変化点（新規・移動・統合・ACL差分）の一覧レビューとExcel出力 |
 
 ---
 
@@ -51,6 +53,13 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
    - カード背景: `#FFFFFF`、枠線: `#E2E8F0`、角丸: `CornerRadius="12"`、シャドウ: `BlurRadius="6" Opacity="0.04"`
    - 入力欄: 高さ `34px` / `32px`、角丸: `8px`
    - ボタン: 高さ `32px`、角丸: `6px`
+5. **断捨離・監査の安全原則（勝手に消さない）**:
+   - ツールによる自動削除は行わず、可視化・棚卸し台帳（Excel/CSV）および「安全退避（Archiveフォルダ移動）バッチ」の生成に留める。
+6. **写真軽量化の聖域保護 & 完全性維持**:
+   - `_Master`, `_Original`, `印刷用`, `RAW` 等のキーワードを含むフォルダやプロ用拡張子（`.psd`, `.ai`, `.raw` 等）は自動スキップ。
+   - 一般写真（JPEG/PNG）は長辺2560px・85%品質で上書きするが、**撮影日時・更新日時・作成日時・Exifメタデータ・回転情報は100%引き継ぐ**。
+7. **Excelレポートのハイパーリンク機能**:
+   - ClosedXMLベースで出力される課題一覧・メディア一覧の「完全パス」列には、クリックするとエクスプローラーで直接親フォルダが開く `file:///` ハイパーリンクが埋め込まれている。
 
 ---
 
@@ -69,21 +78,22 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
 Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe" -Destination ".\FolderMorpher.exe" -Force
 ```
 
-### ヘッドレス実機レンダリング（オフスクリーン撮影でUIを目視確認）
-AI自身がUIの描画崩れを確認するための内蔵スナップショット機能：
+### 自動統合テスト（ヘッドレス実行）
 ```powershell
-# Tab 0 (容量分析) を撮影
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --test-suite "C:\Path\To\TestDir"
+```
+
+### ヘッドレス実機レンダリング（オフスクリーン撮影でUIを目視確認）
+```powershell
+# Tab 0: 容量分析
 & "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab0.png" --tab 0
 
-# Tab 0 のサイドバー収縮状態を撮影
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab0_collapsed.png" --tab 0 --collapse
-
-# Tab 1 (権限コントロール) を撮影
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab1.png" --tab 1
-
-# Tab 2 (移行スタジオ) を撮影
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab2.png" --tab 2
-
-# Tab 3 (リンク一括修復) を撮影
+# Tab 3: リンク一括修復
 & "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab3.png" --tab 3
+
+# Tab 4: 断捨離・健全化
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab4.png" --tab 4
+
+# Tab 5: メディア最適化
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab5.png" --tab 5
 ```

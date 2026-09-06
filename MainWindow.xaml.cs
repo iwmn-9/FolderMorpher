@@ -15,6 +15,8 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using AstraSize.Models;
 using AstraSize.Services;
+using FolderMorpher.Models;
+using FolderMorpher.Services;
 using Microsoft.Win32;
 
 namespace AstraSize
@@ -28,10 +30,23 @@ namespace AstraSize
         private readonly LinkFixService _linkFixService = new();
         private readonly ActiveDirectoryService _adService = new();
         private readonly SimulationProjectService _simService = new();
+        private readonly AuditReportService _auditService = new();
+        private readonly OfficeLinkFixService _officeLinkService = new();
+        private readonly MediaOptimizerService _mediaService = new();
+        private readonly ExcelReportService _excelService = new();
 
         // Cancellation Tokens
         private CancellationTokenSource? _scanCts;
         private CancellationTokenSource? _linkFixCts;
+        private CancellationTokenSource? _auditCts;
+        private CancellationTokenSource? _mediaCts;
+
+        // State for Audit & Media
+        private AuditSummary? _lastAuditSummary;
+        private List<AuditItem> _lastAuditItems = new();
+        private MediaOptimizeSummary? _lastMediaSummary;
+        private List<MediaItem> _lastMediaImages = new();
+        private List<MediaItem> _lastMediaVideos = new();
 
         // Multi-Tab Storage Management
         public ObservableCollection<ScanTabModel> StorageTabs { get; set; } = new();
@@ -92,13 +107,16 @@ namespace AstraSize
         #region Navigation Tabs
         private void NavTab_Checked(object sender, RoutedEventArgs e)
         {
-            if (StorageTabPanel == null || LiveAclTabPanel == null || SimulationTabPanel == null || LinkFixTabPanel == null)
+            if (StorageTabPanel == null || LiveAclTabPanel == null || SimulationTabPanel == null || LinkFixTabPanel == null ||
+                AuditTabPanel == null || MediaTabPanel == null)
                 return;
 
             StorageTabPanel.Visibility = Visibility.Collapsed;
             LiveAclTabPanel.Visibility = Visibility.Collapsed;
             SimulationTabPanel.Visibility = Visibility.Collapsed;
             LinkFixTabPanel.Visibility = Visibility.Collapsed;
+            AuditTabPanel.Visibility = Visibility.Collapsed;
+            MediaTabPanel.Visibility = Visibility.Collapsed;
 
             if (NavTabStorage.IsChecked == true)
             {
@@ -127,10 +145,28 @@ namespace AstraSize
             else if (NavTabLinkFix.IsChecked == true)
             {
                 LinkFixTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = "モード: ショートカット修復 (LinkFixer)";
+                StatusTextBlock.Text = "モード: ショートカット ＆ Officeリンク修復 (LinkFixer)";
                 if (string.IsNullOrWhiteSpace(LinkSearchScopeTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     LinkSearchScopeTextBox.Text = PathTextBox.Text;
+                }
+            }
+            else if (NavTabAudit.IsChecked == true)
+            {
+                AuditTabPanel.Visibility = Visibility.Visible;
+                StatusTextBlock.Text = "モード: ファイルサーバー健全化 ＆ 断捨離 (GDMS代替・衛生監査)";
+                if (string.IsNullOrWhiteSpace(AuditPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
+                {
+                    AuditPathTextBox.Text = PathTextBox.Text;
+                }
+            }
+            else if (NavTabMedia.IsChecked == true)
+            {
+                MediaTabPanel.Visibility = Visibility.Visible;
+                StatusTextBlock.Text = "モード: メディア・オプティマイザ (写真軽量化 ＆ 巨大動画攻略)";
+                if (string.IsNullOrWhiteSpace(MediaPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
+                {
+                    MediaPathTextBox.Text = PathTextBox.Text;
                 }
             }
         }
@@ -1933,6 +1969,424 @@ namespace AstraSize
                 GlobalProgressBar.Visibility = Visibility.Collapsed;
             }
         }
+        private void LinkGenerateGpoButton_Click(object sender, RoutedEventArgs e)
+        {
+            var oldPattern = LinkOldPatternTextBox.Text.Trim();
+            var newPattern = LinkNewPatternTextBox.Text.Trim();
+
+            if (string.IsNullOrWhiteSpace(oldPattern) || string.IsNullOrWhiteSpace(newPattern))
+            {
+                MessageBox.Show("置換前（旧パス）と置換後（新パス）を入力してください。", "入力確認", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "GPOログオンスクリプトの保存先を選択",
+                Filter = "PowerShell スクリプト (*.ps1)|*.ps1|すべてのファイル (*.*)|*.*",
+                FileName = "Repair-Shortcuts.ps1"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    _linkFixService.GenerateGpoLogonScript(dialog.FileName, oldPattern, newPattern);
+                    ShowToast("GPOログオンスクリプトを生成しました");
+                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"スクリプト生成失敗: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+        #endregion
+
+        #region Audit & Hygiene Tab
+        private void AuditBrowseButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "監査対象ディレクトリを選択"
+            };
+            if (dialog.ShowDialog() == true)
+            {
+                AuditPathTextBox.Text = dialog.FolderName;
+            }
+        }
+
+        private async void AuditStartButton_Click(object sender, RoutedEventArgs e)
+        {
+            var target = AuditPathTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(target) || !Directory.Exists(target))
+            {
+                MessageBox.Show("有効な監査対象ディレクトリを入力してください。", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            _auditCts?.Cancel();
+            _auditCts = new CancellationTokenSource();
+
+            GlobalProgressBar.Visibility = Visibility.Visible;
+            GlobalProgressBar.IsIndeterminate = true;
+            AuditStatusText.Text = "監査スキャン中...";
+
+            var options = new AuditOptions
+            {
+                TargetDirectory = target,
+                CheckDuplicates = AuditCheckDuplicatesCheckBox.IsChecked == true,
+                CheckDormant = AuditCheckDormantCheckBox.IsChecked == true,
+                CheckPathLimits = AuditCheckPathLimitsCheckBox.IsChecked == true
+            };
+
+            var progress = new Progress<AuditProgress>(p =>
+            {
+                AuditStatusText.Text = $"{p.CurrentStatus} ({p.ScannedFilesCount:N0}件走査 / 課題: {p.IssueCount}件)";
+                StatusTextBlock.Text = AuditStatusText.Text;
+            });
+
+            try
+            {
+                var (summary, items) = await _auditService.RunAuditAsync(options, progress, _auditCts.Token);
+                _lastAuditSummary = summary;
+                _lastAuditItems = items;
+
+                AuditItemsDataGrid.ItemsSource = items;
+
+                // Update KPI Cards
+                AuditKpiTotalFiles.Text = $"{summary.TotalFilesScanned:N0} 件";
+                AuditKpiDupWasted.Text = summary.DuplicateWastedSizeFormatted;
+                AuditKpiDormantSize.Text = summary.DormantSizeFormatted;
+                AuditKpiPathLimits.Text = $"{summary.PathTooLongCount + summary.InvalidCharCount} 件";
+
+                AuditStatusText.Text = $"完了: 課題 {items.Count} 件検出";
+                ShowToast($"監査完了: 課題 {items.Count} 件");
+            }
+            catch (OperationCanceledException)
+            {
+                AuditStatusText.Text = "監査を中止しました。";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"監査エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                AuditStatusText.Text = "エラー発生";
+            }
+            finally
+            {
+                GlobalProgressBar.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void AuditExportExcelButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_lastAuditItems == null || _lastAuditItems.Count == 0)
+            {
+                MessageBox.Show("出力対象の監査結果がありません。先にスキャンを実行してください。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "Excelレポートの保存先",
+                Filter = "Excel ワークブック (*.xlsx)|*.xlsx",
+                FileName = $"FolderMorpher_AuditReport_{DateTime.Now:yyyyMMdd_HHmm}.xlsx"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    _excelService.GenerateComprehensiveReport(
+                        dialog.FileName,
+                        AuditPathTextBox.Text.Trim(),
+                        _lastAuditSummary,
+                        _lastAuditItems,
+                        _lastMediaSummary,
+                        _lastMediaImages.Concat(_lastMediaVideos).ToList());
+
+                    ShowToast("Excelレポートを出力しました");
+                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Excel出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void AuditExportCsvButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_lastAuditItems == null || _lastAuditItems.Count == 0)
+            {
+                MessageBox.Show("出力対象のデータがありません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "CSV棚卸し台帳の保存先",
+                Filter = "CSVファイル (*.csv)|*.csv",
+                FileName = $"FolderMorpher_AuditList_{DateTime.Now:yyyyMMdd}.csv"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    _auditService.ExportAuditCsv(dialog.FileName, _lastAuditItems);
+                    ShowToast("CSV台帳を出力しました");
+                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"CSV出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void AuditGenArchiveScriptButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_lastAuditItems == null || _lastAuditItems.Count == 0)
+            {
+                MessageBox.Show("対象となる休眠・重複ファイルがありません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "安全退避バッチの保存先",
+                Filter = "バッチファイル (*.bat)|*.bat",
+                FileName = "Archive-Dormant-Files.bat"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    string dest = Path.Combine(Path.GetDirectoryName(dialog.FileName) ?? @"C:\", "FolderMorpher_Archive");
+                    _auditService.GenerateArchiveRobocopyScript(dialog.FileName, _lastAuditItems, AuditPathTextBox.Text.Trim(), dest);
+                    ShowToast("安全退避バッチを生成しました");
+                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"バッチ生成エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+        #endregion
+
+        #region Media Optimizer Tab
+        private void MediaBrowseButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "メディア走査対象ディレクトリを選択"
+            };
+            if (dialog.ShowDialog() == true)
+            {
+                MediaPathTextBox.Text = dialog.FolderName;
+            }
+        }
+
+        private async void MediaScanButton_Click(object sender, RoutedEventArgs e)
+        {
+            var target = MediaPathTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(target) || !Directory.Exists(target))
+            {
+                MessageBox.Show("有効なディレクトリを入力してください。", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            _mediaCts?.Cancel();
+            _mediaCts = new CancellationTokenSource();
+
+            GlobalProgressBar.Visibility = Visibility.Visible;
+            GlobalProgressBar.IsIndeterminate = true;
+            MediaStatusText.Text = "メディア走査中...";
+
+            int maxDim = int.TryParse(MediaMaxDimTextBox.Text, out var md) ? md : 2560;
+            int quality = int.TryParse(MediaQualityTextBox.Text, out var q) ? q : 85;
+            long minSizeMb = long.TryParse(MediaMinSizeMbTextBox.Text, out var ms) ? ms : 2;
+
+            var options = new MediaOptimizeOptions
+            {
+                TargetDirectory = target,
+                MaxDimension = maxDim,
+                JpegQuality = quality,
+                MinImageSizeBytes = minSizeMb * 1024 * 1024
+            };
+
+            var progress = new Progress<string>(msg =>
+            {
+                MediaStatusText.Text = msg;
+                StatusTextBlock.Text = msg;
+            });
+
+            try
+            {
+                var (images, videos) = await _mediaService.ScanMediaAsync(options, progress, _mediaCts.Token);
+                _lastMediaImages = images;
+                _lastMediaVideos = videos;
+
+                var allItems = images.Concat(videos).ToList();
+                MediaItemsDataGrid.ItemsSource = allItems;
+
+                MediaKpiImagesCount.Text = $"{images.Count:N0} 枚";
+                MediaKpiVideosCount.Text = $"{videos.Count:N0} 本";
+                MediaKpiOptimizedCount.Text = "0 枚";
+                MediaKpiSavedSize.Text = "0 B";
+
+                MediaStatusText.Text = $"走査完了: 画像 {images.Count} 枚, 動画 {videos.Count} 本";
+                ShowToast($"メディア走査完了: {allItems.Count} 件検出");
+            }
+            catch (OperationCanceledException)
+            {
+                MediaStatusText.Text = "走査を中止しました。";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"メディア走査エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MediaStatusText.Text = "エラー発生";
+            }
+            finally
+            {
+                GlobalProgressBar.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private async void MediaOptimizeButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_lastMediaImages == null || _lastMediaImages.Count == 0)
+            {
+                MessageBox.Show("軽量化対象の画像がありません。先にメディア走査を実行してください。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var targets = _lastMediaImages.Where(i => !i.IsExcluded && !i.IsProcessed).ToList();
+            if (targets.Count == 0)
+            {
+                MessageBox.Show("軽量化が必要な画像はありません（すべて聖域保護または処理済みです）。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (MessageBox.Show($"{targets.Count} 枚の写真を視覚的ロスレス（長辺2560px/85%品質/日時保持）で上書き軽量化します。\n聖域保護されたフォルダやRAWデータは保護されます。\n\n実行しますか？",
+                                "写真の最適化確認", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            GlobalProgressBar.Visibility = Visibility.Visible;
+            GlobalProgressBar.IsIndeterminate = true;
+
+            int maxDim = int.TryParse(MediaMaxDimTextBox.Text, out var md) ? md : 2560;
+            int quality = int.TryParse(MediaQualityTextBox.Text, out var q) ? q : 85;
+
+            var options = new MediaOptimizeOptions
+            {
+                TargetDirectory = MediaPathTextBox.Text.Trim(),
+                MaxDimension = maxDim,
+                JpegQuality = quality
+            };
+
+            var progress = new Progress<(string File, bool Success, string Msg)>(p =>
+            {
+                MediaStatusText.Text = $"{Path.GetFileName(p.File)}: {p.Msg}";
+            });
+
+            try
+            {
+                using var cts = new CancellationTokenSource();
+                var summary = await _mediaService.OptimizeImagesAsync(targets, options, progress, cts.Token);
+                _lastMediaSummary = summary;
+
+                MediaItemsDataGrid.Items.Refresh();
+
+                MediaKpiOptimizedCount.Text = $"{summary.OptimizedImagesCount:N0} 枚";
+                MediaKpiSavedSize.Text = summary.TotalSavedSizeFormatted;
+
+                MediaStatusText.Text = $"最適化完了: {summary.TotalSavedSizeFormatted} の空き容量を解放しました";
+                ShowToast($"写真軽量化完了: {summary.TotalSavedSizeFormatted} 削減");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"最適化エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                GlobalProgressBar.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void MediaGenVideoBatchButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_lastMediaVideos == null || _lastMediaVideos.Count == 0)
+            {
+                MessageBox.Show("圧縮対象の動画がありません。先にメディア走査を実行してください。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "巨大動画 夜間圧縮バッチの保存先",
+                Filter = "バッチファイル (*.bat)|*.bat",
+                FileName = "Compress-Videos-Nightly.bat"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    _mediaService.GenerateVideoCompressBatch(dialog.FileName, _lastMediaVideos);
+                    ShowToast("夜間動画圧縮バッチを生成しました");
+                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"バッチ生成エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void MediaExportExcelButton_Click(object sender, RoutedEventArgs e)
+        {
+            var allItems = _lastMediaImages.Concat(_lastMediaVideos).ToList();
+            if (allItems.Count == 0)
+            {
+                MessageBox.Show("出力対象のメディアデータがありません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "メディア分析 Excelレポートの保存先",
+                Filter = "Excel ワークブック (*.xlsx)|*.xlsx",
+                FileName = $"FolderMorpher_MediaReport_{DateTime.Now:yyyyMMdd}.xlsx"
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                try
+                {
+                    _excelService.GenerateComprehensiveReport(
+                        dialog.FileName,
+                        MediaPathTextBox.Text.Trim(),
+                        _lastAuditSummary,
+                        _lastAuditItems,
+                        _lastMediaSummary,
+                        allItems);
+
+                    ShowToast("Excelレポートを出力しました");
+                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Excel出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
         #endregion
     }
 }
+

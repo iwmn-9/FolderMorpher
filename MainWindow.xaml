@@ -59,7 +59,11 @@
                     <RadioButton x:Name="NavTabSimulation" Style="{StaticResource SidebarNavButton}"
                                  Checked="NavTab_Checked" Tag="🚀" Content="移行スタジオ" ToolTip="🚀 移行シミュレーション"/>
                     <RadioButton x:Name="NavTabLinkFix" Style="{StaticResource SidebarNavButton}"
-                                 Checked="NavTab_Checked" Tag="🔗" Content="リンク一括修復" ToolTip="🔗 ショートカット修復"/>
+                                 Checked="NavTab_Checked" Tag="🔗" Content="リンク一括修復" ToolTip="🔗 ショートカット・Office修復"/>
+                    <RadioButton x:Name="NavTabAudit" Style="{StaticResource SidebarNavButton}"
+                                 Checked="NavTab_Checked" Tag="🧹" Content="断捨離・健全化" ToolTip="🧹 重複・休眠・パス長チェック"/>
+                    <RadioButton x:Name="NavTabMedia" Style="{StaticResource SidebarNavButton}"
+                                 Checked="NavTab_Checked" Tag="🖼️" Content="メディア最適化" ToolTip="🖼️ 写真軽量化 &amp; 巨大動画抽出"/>
                 </StackPanel>
 
                 <!-- Sidebar Footer -->
@@ -1049,12 +1053,19 @@
                             </StackPanel>
                         </Grid>
 
-                        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-                            <Button x:Name="LinkScanButton" Content="切断リンク検出スキャン" Height="32" Margin="0,0,8,0"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="LinkScanButton_Click"/>
-                            <Button x:Name="LinkFixExecuteButton" Content="⚡ 一括修復を実行 (バックアップ付)" Height="32"
-                                    Style="{StaticResource FluentButtonPrimary}" Click="LinkFixExecuteButton_Click"/>
-                        </StackPanel>
+                        <Grid Grid.Row="2" Margin="0,16,0,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <CheckBox x:Name="LinkIncludeOfficeCheckBox" Content="Officeファイル内部リンク (.xlsx/.xlsm) も対象に含める" IsChecked="True" VerticalAlignment="Center" FontSize="11" Foreground="#475569"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button x:Name="LinkGenerateGpoButton" Content="📜 GPOログオンスクリプト生成 (.ps1)" Height="32" Margin="0,0,8,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="LinkGenerateGpoButton_Click" ToolTip="全社PCのデスクトップ/マイドキュメント等のショートカットを自動修復するスクリプトを出力"/>
+                                <Button x:Name="LinkScanButton" Content="切断リンク検出スキャン" Height="32" Margin="0,0,8,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="LinkScanButton_Click"/>
+                                <Button x:Name="LinkFixExecuteButton" Content="⚡ 一括修復を実行 (バックアップ付)" Height="32"
+                                        Style="{StaticResource FluentButtonPrimary}" Click="LinkFixExecuteButton_Click"/>
+                            </StackPanel>
+                        </Grid>
                     </Grid>
                 </Border>
 
@@ -1076,6 +1087,300 @@
                                 <DataGridTextColumn Header="現在のターゲットパス" Binding="{Binding OldTarget}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                 <DataGridTextColumn Header="置換後ターゲットパス" Binding="{Binding NewTarget}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                 <DataGridTextColumn Header="状態" Binding="{Binding Status}" Width="130" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ======================================================== -->
+            <!-- TAB 5: AUDIT & HYGIENE (断捨離・ファイルサーバー健全化)       -->
+            <!-- ======================================================== -->
+            <Grid x:Name="AuditTabPanel" Visibility="Collapsed" Margin="20,16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/> <!-- Controls Card -->
+                    <RowDefinition Height="Auto"/> <!-- KPI Summary Cards -->
+                    <RowDefinition Height="*"/>    <!-- Results DataGrid -->
+                </Grid.RowDefinitions>
+
+                <!-- Controls Card -->
+                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="18" Margin="0,0,0,14">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
+                    </Border.Effect>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                            <TextBlock Text="🧹 ファイルサーバー健全化 ＆ 断捨離（GDMS代替・衛生監査）" FontSize="15" FontWeight="Bold" Foreground="#0F172A"/>
+                            <TextBlock Text="重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長260文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳や退避スクリプトを生成します。"
+                                       FontSize="11" Foreground="#64748B" Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                <TextBlock Text="監査対象ディレクトリ (UNC / ローカル)" FontSize="11" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="34" Padding="10,0">
+                                        <TextBox x:Name="AuditPathTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"/>
+                                    </Border>
+                                    <Button x:Name="AuditBrowseButton" Grid.Column="1" Content="📁 参照" Width="68" Height="34" Margin="8,0,0,0"
+                                            Style="{StaticResource FluentButtonSecondary}" Click="AuditBrowseButton_Click"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,4">
+                                <CheckBox x:Name="AuditCheckDuplicatesCheckBox" Content="重複ファイル (SHA256)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="11" Foreground="#334155"/>
+                                <CheckBox x:Name="AuditCheckDormantCheckBox" Content="休眠ファイル (3年以上)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="11" Foreground="#334155"/>
+                                <CheckBox x:Name="AuditCheckPathLimitsCheckBox" Content="パス長260字超/禁則文字" IsChecked="True" VerticalAlignment="Center" FontSize="11" Foreground="#334155"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Grid.Row="2" Margin="0,16,0,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock x:Name="AuditStatusText" Text="待機中" FontSize="11" Foreground="#64748B" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button x:Name="AuditExportExcelButton" Content="📊 Excelレポート出力 (.xlsx)" Height="32" Margin="0,0,8,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="AuditExportExcelButton_Click" ToolTip="上司・各部署提出用の美麗Excelレポートを生成"/>
+                                <Button x:Name="AuditExportCsvButton" Content="📄 CSV台帳出力" Height="32" Margin="0,0,8,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="AuditExportCsvButton_Click"/>
+                                <Button x:Name="AuditGenArchiveScriptButton" Content="📦 安全退避バッチ生成 (.bat)" Height="32" Margin="0,0,8,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="AuditGenArchiveScriptButton_Click" ToolTip="休眠・重複ファイルを安全に別フォルダへ退避するスクリプトを出力"/>
+                                <Button x:Name="AuditStartButton" Content="🔍 監査スキャン開始" Height="32"
+                                        Style="{StaticResource FluentButtonPrimary}" Click="AuditStartButton_Click"/>
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- KPI Cards -->
+                <Grid Grid.Row="1" Margin="0,0,0,14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
+                        <StackPanel>
+                            <TextBlock Text="総走査ファイル数" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="AuditKpiTotalFiles" Text="0 件" FontSize="18" FontWeight="Bold" Foreground="#0F172A" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
+                        <StackPanel>
+                            <TextBlock Text="重複ファイルによる無駄" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="AuditKpiDupWasted" Text="0 B" FontSize="18" FontWeight="Bold" Foreground="#DC2626" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
+                        <StackPanel>
+                            <TextBlock Text="休眠ファイル容量 (3年超)" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="AuditKpiDormantSize" Text="0 B" FontSize="18" FontWeight="Bold" Foreground="#D97706" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="3" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12">
+                        <StackPanel>
+                            <TextBlock Text="パス長超過 / 禁則文字" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="AuditKpiPathLimits" Text="0 件" FontSize="18" FontWeight="Bold" Foreground="#2563EB" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Results DataGrid -->
+                <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="18">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
+                    </Border.Effect>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="検出された課題・断捨離候補一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
+                        <DataGrid x:Name="AuditItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
+                                  BorderThickness="1" BorderBrush="#E2E8F0" GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                                  Background="#FFFFFF" RowHeaderWidth="0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="問題種別" Binding="{Binding IssueTypeDisplay}" Width="150" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn Header="ファイル名" Binding="{Binding FileName}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn Header="容量" Binding="{Binding SizeFormatted}" Width="90" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                <DataGridTextColumn Header="最終更新日時" Binding="{Binding LastWriteTime, StringFormat='yyyy/MM/dd HH:mm'}" Width="130" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn Header="詳細" Binding="{Binding Detail}" Width="200" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn Header="完全パス" Binding="{Binding FullPath}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ======================================================== -->
+            <!-- TAB 6: MEDIA OPTIMIZER (写真軽量化 ＆ 巨大動画抽出)        -->
+            <!-- ======================================================== -->
+            <Grid x:Name="MediaTabPanel" Visibility="Collapsed" Margin="20,16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/> <!-- Controls Card -->
+                    <RowDefinition Height="Auto"/> <!-- KPI Summary Cards -->
+                    <RowDefinition Height="*"/>    <!-- Results DataGrid -->
+                </Grid.RowDefinitions>
+
+                <!-- Controls Card -->
+                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="18" Margin="0,0,0,14">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
+                    </Border.Effect>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                            <TextBlock Text="🖼️ メディア・オプティマイザ（写真の視覚的ロスレス軽量化 ＆ 巨大動画攻略）" FontSize="15" FontWeight="Bold" Foreground="#0F172A"/>
+                            <TextBlock Text="聖域（_Master、印刷用、RAW等）を自動保護しながら、スマホ写真（2MB超）を視覚的ロスレス（長辺2560px/85%品質）で上書き軽量化し、巨大動画のTop抽出と夜間圧縮バッチを出力します。"
+                                       FontSize="11" Foreground="#64748B" Margin="0,4,0,0"/>
+                        </StackPanel>
+
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                <TextBlock Text="走査対象ディレクトリ (UNC / ローカル)" FontSize="11" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="34" Padding="10,0">
+                                        <TextBox x:Name="MediaPathTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"/>
+                                    </Border>
+                                    <Button x:Name="MediaBrowseButton" Grid.Column="1" Content="📁 参照" Width="68" Height="34" Margin="8,0,0,0"
+                                            Style="{StaticResource FluentButtonSecondary}" Click="MediaBrowseButton_Click"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,4">
+                                <StackPanel Margin="0,0,12,0">
+                                    <TextBlock Text="最大長辺 (px)" FontSize="10" Foreground="#64748B" Margin="0,0,0,2"/>
+                                    <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Width="80" Padding="6,0">
+                                        <TextBox x:Name="MediaMaxDimTextBox" Text="2560" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11"/>
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Margin="0,0,12,0">
+                                    <TextBlock Text="画質 (%)" FontSize="10" Foreground="#64748B" Margin="0,0,0,2"/>
+                                    <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Width="60" Padding="6,0">
+                                        <TextBox x:Name="MediaQualityTextBox" Text="85" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11"/>
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="最小サイズ (MB)" FontSize="10" Foreground="#64748B" Margin="0,0,0,2"/>
+                                    <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Width="70" Padding="6,0">
+                                        <TextBox x:Name="MediaMinSizeMbTextBox" Text="2" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11"/>
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Grid.Row="2" Margin="0,16,0,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock x:Name="MediaStatusText" Text="待機中" FontSize="11" Foreground="#64748B" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button x:Name="MediaExportExcelButton" Content="📊 Excelレポート出力 (.xlsx)" Height="32" Margin="0,0,8,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="MediaExportExcelButton_Click"/>
+                                <Button x:Name="MediaGenVideoBatchButton" Content="🎬 巨大動画 夜間圧縮バッチ出力 (.bat)" Height="32" Margin="0,0,8,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="MediaGenVideoBatchButton_Click" ToolTip="GPUハードウェアエンコード (H.265) で動画を一括軽量化するスクリプトを出力"/>
+                                <Button x:Name="MediaScanButton" Content="🔍 メディア走査" Height="32" Margin="0,0,8,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="MediaScanButton_Click"/>
+                                <Button x:Name="MediaOptimizeButton" Content="⚡ 写真を軽量化 (直接上書き/日時維持)" Height="32"
+                                        Style="{StaticResource FluentButtonPrimary}" Click="MediaOptimizeButton_Click"/>
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- KPI Cards -->
+                <Grid Grid.Row="1" Margin="0,0,0,14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
+                        <StackPanel>
+                            <TextBlock Text="走査対象 画像数" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="MediaKpiImagesCount" Text="0 枚" FontSize="18" FontWeight="Bold" Foreground="#0F172A" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
+                        <StackPanel>
+                            <TextBlock Text="巨大動画 ファイル数" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="MediaKpiVideosCount" Text="0 本" FontSize="18" FontWeight="Bold" Foreground="#2563EB" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
+                        <StackPanel>
+                            <TextBlock Text="軽量化 完了数" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="MediaKpiOptimizedCount" Text="0 枚" FontSize="18" FontWeight="Bold" Foreground="#059669" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="3" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12">
+                        <StackPanel>
+                            <TextBlock Text="総削減容量 (解放された空き)" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="MediaKpiSavedSize" Text="0 B" FontSize="18" FontWeight="Bold" Foreground="#059669" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Results DataGrid -->
+                <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="18">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
+                    </Border.Effect>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="メディア一覧（画像 ＆ 巨大動画）" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
+                        <DataGrid x:Name="MediaItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
+                                  BorderThickness="1" BorderBrush="#E2E8F0" GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                                  Background="#FFFFFF" RowHeaderWidth="0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="種別" Binding="{Binding Extension}" Width="80" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn Header="ファイル名" Binding="{Binding FileName}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn Header="元容量" Binding="{Binding OriginalSizeFormatted}" Width="100" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                <DataGridTextColumn Header="軽量化後" Binding="{Binding OptimizedSizeFormatted}" Width="100" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                <DataGridTextColumn Header="削減容量" Binding="{Binding SavedSizeFormatted}" Width="100" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                <DataGridTextColumn Header="状態 / 聖域保護" Binding="{Binding Status}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn Header="完全パス" Binding="{Binding FullPath}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Grid>
