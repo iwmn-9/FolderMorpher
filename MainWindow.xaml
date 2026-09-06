@@ -14,53 +14,68 @@
         FontFamily="{StaticResource MainFont}">
 
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/> <!-- Global Header & Nav Tabs -->
-            <RowDefinition Height="*"/>    <!-- Tab Views Container -->
-            <RowDefinition Height="Auto"/> <!-- Global Footer / Status Bar -->
-        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/> <!-- Collapsible Navigation Sidebar -->
+            <ColumnDefinition Width="*"/>    <!-- Main Content Work Area -->
+        </Grid.ColumnDefinitions>
 
-        <!-- 1. TOP GLOBAL HEADER & TAB NAVIGATION -->
-        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,12">
+        <!-- 1. LEFT COLLAPSIBLE NAVIGATION SIDEBAR -->
+        <Border Grid.Column="0" x:Name="SidebarBorder" Width="210" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,1,0">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/> <!-- Brand -->
-                    <ColumnDefinition Width="*"/>    <!-- Nav Tabs -->
-                    <ColumnDefinition Width="Auto"/> <!-- Global Controls -->
-                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="56"/>   <!-- Header (Brand & Toggle) -->
+                    <RowDefinition Height="*"/>    <!-- Nav List -->
+                    <RowDefinition Height="Auto"/> <!-- Footer / Version -->
+                </Grid.RowDefinitions>
 
-                <!-- Brand -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,28,0">
-                    <Border Width="34" Height="34" CornerRadius="8" Background="#0284C7" Margin="0,0,10,0">
-                        <TextBlock Text="📁" FontSize="18" Foreground="#FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
-                    <StackPanel VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="FolderMorpher" FontSize="17" FontWeight="Bold" Foreground="#0F172A"/>
-                            <Border Background="#E0F2FE" CornerRadius="4" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="v2.5 Pro" FontSize="10" FontWeight="Bold" Foreground="#0369A1"/>
-                            </Border>
+                <!-- Sidebar Header -->
+                <Border Grid.Row="0" BorderBrush="#F1F5F9" BorderThickness="0,0,0,1" Padding="12,0">
+                    <Grid VerticalAlignment="Center">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="SidebarToggleButton" Content="☰" Width="34" Height="34"
+                                Background="Transparent" BorderThickness="0" FontSize="16" Foreground="#475569"
+                                Cursor="Hand" Click="SidebarToggleButton_Click" ToolTip="サイドバーの開閉 (収縮 / 展開)"/>
+                        <StackPanel x:Name="SidebarBrandPanel" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
+                            <TextBlock Text="📁" FontSize="16" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="FolderMorpher" FontWeight="Bold" FontSize="14" Foreground="#0F172A" VerticalAlignment="Center"/>
                         </StackPanel>
-                        <TextBlock Text="Storage Monitor &amp; Migration Studio" FontSize="10" Foreground="#64748B" Margin="0,-2,0,0"/>
+                    </Grid>
+                </Border>
+
+                <!-- Nav Items -->
+                <StackPanel Grid.Row="1" Margin="8,12">
+                    <RadioButton x:Name="NavTabStorage" Style="{StaticResource SidebarNavButton}"
+                                 IsChecked="True" Checked="NavTab_Checked" Tag="📊" Content="容量分析 &amp; 監視" ToolTip="📊 容量分析 &amp; 監視"/>
+                    <RadioButton x:Name="NavTabLiveAcl" Style="{StaticResource SidebarNavButton}"
+                                 Checked="NavTab_Checked" Tag="🛡️" Content="権限コントロール" ToolTip="🛡️ 実環境 権限コントロール"/>
+                    <RadioButton x:Name="NavTabSimulation" Style="{StaticResource SidebarNavButton}"
+                                 Checked="NavTab_Checked" Tag="🚀" Content="移行スタジオ" ToolTip="🚀 移行シミュレーション"/>
+                    <RadioButton x:Name="NavTabLinkFix" Style="{StaticResource SidebarNavButton}"
+                                 Checked="NavTab_Checked" Tag="🔗" Content="リンク一括修復" ToolTip="🔗 ショートカット修復"/>
+                </StackPanel>
+
+                <!-- Sidebar Footer -->
+                <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="14,10">
+                    <StackPanel x:Name="SidebarFooterPanel">
+                        <TextBlock Text="FolderMorpher v2.5" FontSize="10" FontWeight="SemiBold" Foreground="#94A3B8"/>
+                        <TextBlock Text="Enterprise Ready" FontSize="9" Foreground="#CBD5E1" Margin="0,1,0,0"/>
                     </StackPanel>
-                </StackPanel>
-
-                <!-- Navigation Tabs -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <RadioButton x:Name="NavTabStorage" Style="{StaticResource NavTabButton}" Content="📊 容量分析 &amp; 監視 (Monitor)" IsChecked="True" Checked="NavTab_Checked"/>
-                    <RadioButton x:Name="NavTabLiveAcl" Style="{StaticResource NavTabButton}" Content="🛡️ 権限コントロール (Live ACL)" Checked="NavTab_Checked"/>
-                    <RadioButton x:Name="NavTabSimulation" Style="{StaticResource NavTabButton}" Content="🚀 移行シミュレーション (Morph Studio)" Checked="NavTab_Checked"/>
-                    <RadioButton x:Name="NavTabLinkFix" Style="{StaticResource NavTabButton}" Content="🔗 ショートカット修復 (LinkFixer)" Checked="NavTab_Checked"/>
-                </StackPanel>
-
-                <!-- Global Right Actions (Empty placeholder for clean design) -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                </StackPanel>
+                </Border>
             </Grid>
         </Border>
 
-        <!-- 2. TAB VIEWS CONTAINER -->
-        <Grid Grid.Row="1">
+        <!-- 2. RIGHT MAIN WORK AREA -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>    <!-- Tab Views Container -->
+                <RowDefinition Height="Auto"/> <!-- Global Footer / Status Bar -->
+            </Grid.RowDefinitions>
+
+            <!-- TAB VIEWS CONTAINER -->
+            <Grid Grid.Row="0">
             <!-- ======================================================== -->
             <!-- TAB 1: STORAGE EXPLORER (容量分析 & マルチタブ)           -->
             <!-- ======================================================== -->
@@ -217,16 +232,22 @@
                 </Border>
 
                 <!-- Storage Split View (Tree & Insights) -->
-                <Grid Grid.Row="3" Margin="20,0,20,10">
+                <Grid Grid.Row="3" Margin="20,0,20,12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="6.5*"/>
-                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="14"/>
                         <ColumnDefinition Width="3.5*"/>
                     </Grid.ColumnDefinitions>
 
-                    <Border Grid.Column="0" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8">
+                    <!-- Left: TreeGrid Card -->
+                    <Border Grid.Column="0" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
+                            BorderThickness="1" CornerRadius="12" Padding="14">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Direction="270" Color="#000000" Opacity="0.03"/>
+                        </Border.Effect>
                         <DataGrid x:Name="FileTreeDataGrid"
                                   AutoGenerateColumns="False"
+                                  HeadersVisibility="Column"
                                   CanUserAddRows="False"
                                   CanUserDeleteRows="False"
                                   IsReadOnly="True"
@@ -235,10 +256,10 @@
                                   VirtualizingPanel.VirtualizationMode="Recycling"
                                   ScrollViewer.CanContentScroll="True"
                                   GridLinesVisibility="Horizontal"
-                                  HorizontalGridLinesBrush="#F1F5F9"
+                                  HorizontalGridLinesBrush="#F8FAFC"
                                   BorderThickness="0"
                                   Background="Transparent"
-                                  RowHeight="28"
+                                  RowHeight="36"
                                   SelectionMode="Single"
                                   SelectionChanged="FileTreeDataGrid_SelectionChanged"
                                   MouseDoubleClick="FileTreeDataGrid_MouseDoubleClick"
@@ -303,7 +324,11 @@
                     <GridSplitter Grid.Column="1" Width="12" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
 
                     <!-- Right: Insights & Extensions -->
-                    <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14">
+                    <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
+                            BorderThickness="1" CornerRadius="12" Padding="16">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Direction="270" Color="#000000" Opacity="0.03"/>
+                        </Border.Effect>
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -1231,20 +1256,21 @@
             </Border>
         </Grid>
 
-        <!-- TOAST NOTIFICATION -->
-        <Border x:Name="ToastNotificationBorder" Grid.Row="1" Background="#0F172A" CornerRadius="6" Padding="14,10"
-                HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,24,24" Visibility="Collapsed">
-            <Border.Effect>
-                <DropShadowEffect BlurRadius="12" ShadowDepth="4" Direction="270" Color="#000000" Opacity="0.3"/>
-            </Border.Effect>
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="💡 " FontSize="12" VerticalAlignment="Center"/>
-                <TextBlock x:Name="ToastNotificationText" Text="通知メッセージ" FontSize="12" Foreground="#FFFFFF" VerticalAlignment="Center"/>
-            </StackPanel>
-        </Border>
+            <!-- TOAST NOTIFICATION -->
+            <Border x:Name="ToastNotificationBorder" Background="#0F172A" CornerRadius="6" Padding="14,10"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,24,24" Visibility="Collapsed">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="12" ShadowDepth="4" Direction="270" Color="#000000" Opacity="0.3"/>
+                </Border.Effect>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="💡 " FontSize="12" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="ToastNotificationText" Text="通知メッセージ" FontSize="12" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+        </Grid>
 
-        <!-- 3. GLOBAL FOOTER / STATUS BAR -->
-        <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Padding="20,8">
+        <!-- GLOBAL FOOTER / STATUS BAR -->
+        <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Padding="20,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>

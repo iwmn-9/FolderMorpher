@@ -134,6 +134,27 @@ namespace AstraSize
                 }
             }
         }
+
+        private bool _isSidebarCollapsed = false;
+
+        private void SidebarToggleButton_Click(object sender, RoutedEventArgs e)
+        {
+            _isSidebarCollapsed = !_isSidebarCollapsed;
+            if (_isSidebarCollapsed)
+            {
+                SidebarBorder.Width = 58;
+                SidebarBrandPanel.Visibility = Visibility.Collapsed;
+                SidebarFooterPanel.Visibility = Visibility.Collapsed;
+                SidebarToggleButton.ToolTip = "サイドバーを展開";
+            }
+            else
+            {
+                SidebarBorder.Width = 210;
+                SidebarBrandPanel.Visibility = Visibility.Visible;
+                SidebarFooterPanel.Visibility = Visibility.Visible;
+                SidebarToggleButton.ToolTip = "サイドバーを収縮";
+            }
+        }
         #endregion
 
         #region Tab 1: Storage Explorer & Multi-Tab Management
