@@ -198,8 +198,6 @@ namespace AstraSize.Services
             var rules = sec.GetAccessRules(true, true, typeof(NTAccount));
             foreach (FileSystemAccessRule rule in rules)
             {
-                if (rule.AccessControlType != AccessControlType.Allow) continue;
-
                 bool isGrp = rule.IdentityReference.Value.EndsWith("Groups", StringComparison.OrdinalIgnoreCase)
                           || rule.IdentityReference.Value.Contains("Domain Users")
                           || rule.IdentityReference.Value.Contains("Users")
@@ -211,9 +209,11 @@ namespace AstraSize.Services
                     DisplayName = rule.IdentityReference.Value.Contains('\\')
                         ? rule.IdentityReference.Value.Split('\\')[1]
                         : rule.IdentityReference.Value,
-                    PrincipalType = isGrp ? AdPrincipalType.Group : AdPrincipalType.User
+                    PrincipalType = isGrp ? AdPrincipalType.Group : AdPrincipalType.User,
+                    Rights = rule.FileSystemRights,
+                    AccessType = rule.AccessControlType,
+                    IsInherited = rule.IsInherited
                 };
-                entry.Rights = rule.FileSystemRights;
                 list.Add(entry);
             }
 
@@ -234,7 +234,22 @@ namespace AstraSize.Services
                 sec.RemoveAccessRuleSpecific(rule);
             }
 
-            foreach (var entry in entries)
+            var explicitEntries = entries.Where(e => !e.IsInherited).ToList();
+
+            // Canonical ACL Order: Explicit Deny ACEs MUST precede Explicit Allow ACEs
+            var denyEntries = explicitEntries.Where(e => e.AccessType == AccessControlType.Deny);
+            var allowEntries = explicitEntries.Where(e => e.AccessType == AccessControlType.Allow);
+
+            foreach (var entry in denyEntries)
+            {
+                var identity = new NTAccount(entry.AccountName);
+                var inheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+                var propagation = PropagationFlags.None;
+                var rule = new FileSystemAccessRule(identity, entry.Rights, inheritance, propagation, AccessControlType.Deny);
+                sec.AddAccessRule(rule);
+            }
+
+            foreach (var entry in allowEntries)
             {
                 var identity = new NTAccount(entry.AccountName);
                 var inheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;

@@ -197,11 +197,24 @@ namespace FolderMorpher.Services
                 source = transformed;
             }
 
-            // JPEGエンコーダー
-            var encoder = new JpegBitmapEncoder
+            string ext = Path.GetExtension(filePath).ToLowerInvariant();
+            BitmapEncoder encoder;
+            if (ext == ".png")
             {
-                QualityLevel = Math.Clamp(quality, 10, 100)
-            };
+                // PNG: 完全可逆・アルファ透過チャンネル100%保持
+                encoder = new PngBitmapEncoder
+                {
+                    Interlace = PngInterlaceOption.Off
+                };
+            }
+            else
+            {
+                // JPEG: 視覚的ロスレス（Visually Lossless）圧縮
+                encoder = new JpegBitmapEncoder
+                {
+                    QualityLevel = Math.Clamp(quality, 10, 100)
+                };
+            }
 
             // Exifメタデータの引き継ぎ
             BitmapMetadata? metadata = null;
@@ -214,7 +227,15 @@ namespace FolderMorpher.Services
                 catch { }
             }
 
-            encoder.Frames.Add(BitmapFrame.Create(source, null, metadata, null));
+            try
+            {
+                encoder.Frames.Add(BitmapFrame.Create(source, null, metadata, null));
+            }
+            catch
+            {
+                // メタデータの互換性エラー時は安全にメタデータなしでフレーム追加
+                encoder.Frames.Add(BitmapFrame.Create(source));
+            }
 
             using var outMs = new MemoryStream();
             encoder.Save(outMs);

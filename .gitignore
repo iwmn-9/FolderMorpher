@@ -19,3 +19,6 @@ dist/
 *.log
 *.tmp
 *.ps1
+
+## AI Agent Workspace & Memory
+.agents/

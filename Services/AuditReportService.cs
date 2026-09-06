@@ -268,12 +268,24 @@ namespace FolderMorpher.Services
             sb.AppendLine("echo [1/2] 退避ディレクトリ構造の準備中...");
             sb.AppendLine();
 
-            // 退避対象アイテム（休眠または重複で原本以外）
+            // 1. 重複グループの「原本候補」のパスを聖域として抽出（絶対に退避させない）
+            var originalFilePaths = new HashSet<string>(
+                items.Where(i => i.IssueType == AuditIssueType.Duplicate && i.Detail.Contains("[原本候補]"))
+                     .Select(i => i.FullPath),
+                StringComparer.OrdinalIgnoreCase);
+
+            // 2. 退避対象アイテムの抽出：
+            //    - 原本候補は休眠判定されていても絶対に除外
+            //    - 同一ファイルが休眠と重複の両方に該当しても FullPath で確実に1件に重複排除
             var archiveItems = items
-                .Where(i => i.IssueType == AuditIssueType.Dormant || (i.IssueType == AuditIssueType.Duplicate && !i.Detail.Contains("[原本候補]")))
+                .Where(i => (i.IssueType == AuditIssueType.Dormant || i.IssueType == AuditIssueType.Duplicate)
+                            && !originalFilePaths.Contains(i.FullPath)
+                            && !i.Detail.Contains("[原本候補]"))
+                .GroupBy(i => i.FullPath, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
                 .ToList();
 
-            sb.AppendLine($"echo 対象ファイル数: {archiveItems.Count} 件");
+            sb.AppendLine($"echo 対象ファイル数: {archiveItems.Count} 件 (※重複原本は安全保護のため現場に残されます)");
             sb.AppendLine("pause");
             sb.AppendLine();
 

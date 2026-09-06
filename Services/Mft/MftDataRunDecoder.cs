@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace AstraSize.Services.Mft
@@ -11,10 +11,11 @@ namespace AstraSize.Services.Mft
 
     public static class MftDataRunDecoder
     {
-        public static List<MftExtent> DecodeDataRuns(byte[] buffer, int offset, long startLcn)
+        public static List<MftExtent> DecodeDataRuns(byte[] buffer, int offset, long fallbackStartLcn)
         {
             var extents = new List<MftExtent>();
-            long currentLcn = startLcn;
+            // NTFS Runlist: The first LCN delta is relative to LCN 0 (start of volume)
+            long currentLcn = 0;
 
             while (offset < buffer.Length)
             {
