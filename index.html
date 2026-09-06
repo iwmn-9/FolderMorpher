@@ -1,0 +1,231 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>AstraSize - Intelligent Disk Space Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="fluent-canvas text-slate-800 antialiased h-screen flex flex-col select-none">
+
+  <!-- Top App Navigation / Toolbar -->
+  <header class="bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-6 py-3 flex items-center justify-between shrink-0">
+    <!-- Brand & Drive Selector / Breadcrumb -->
+    <div class="flex items-center space-x-4">
+      <div class="flex items-center space-x-2.5">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-600 to-blue-500 flex items-center justify-center shadow-sm shadow-blue-500/20">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+          </svg>
+        </div>
+        <span class="font-bold text-base tracking-tight text-slate-900">AstraSize</span>
+      </div>
+
+      <div class="h-4 w-px bg-slate-200"></div>
+
+      <!-- Drive & Folder Selection -->
+      <div class="flex items-center space-x-2">
+        <select id="driveSelect" class="text-xs font-semibold bg-slate-100 hover:bg-slate-200/80 border border-slate-200 rounded px-2.5 py-1 text-slate-800 cursor-pointer focus:outline-none transition">
+          <option value="">ドライブを検出中...</option>
+        </select>
+
+        <button id="btnBrowseFolder" class="flex items-center space-x-1 text-xs font-medium bg-slate-100 hover:bg-slate-200/80 border border-slate-200 px-2.5 py-1 rounded text-slate-700 cursor-pointer transition" title="特定のフォルダを選択してスキャン">
+          <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+          <span>フォルダ指定...</span>
+        </button>
+      </div>
+
+      <div class="h-4 w-px bg-slate-200"></div>
+
+      <!-- Interactive Breadcrumb -->
+      <nav id="breadcrumbNav" class="flex items-center space-x-1.5 text-xs text-slate-500 font-medium overflow-x-auto max-w-md">
+        <span class="hover:text-blue-600 cursor-pointer" onclick="handleBreadcrumbClick(-1)">このPC</span>
+      </nav>
+    </div>
+
+    <!-- Quick Actions & Filter -->
+    <div class="flex items-center space-x-3">
+      <!-- Search Box in Path -->
+      <div class="relative w-52">
+        <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input id="searchInput" type="text" placeholder="名前を絞り込み..." class="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition">
+      </div>
+
+      <div class="h-4 w-px bg-slate-200"></div>
+
+      <!-- Action Buttons -->
+      <button id="btnScan" class="flex items-center space-x-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium px-3.5 py-1.5 rounded-lg shadow-sm transition active:scale-95">
+        <svg id="scanIcon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <span id="scanBtnText">スキャン開始</span>
+      </button>
+
+      <button id="btnCancelScan" class="hidden flex items-center space-x-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg shadow-sm transition">
+        <span>中止</span>
+      </button>
+
+      <button id="btnExport" class="flex items-center space-x-1.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium px-3 py-1.5 rounded-lg shadow-sm transition active:scale-95">
+        <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        <span>Excel / CSV 出力</span>
+      </button>
+
+      <!-- Theme Toggle -->
+      <button id="btnToggleTheme" class="p-1.5 text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition" title="テーマ切り替え (ライト/ダーク)">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Key Metrics Banner (Visual Overview) -->
+  <section class="px-6 py-3 grid grid-cols-12 gap-4 shrink-0">
+    <!-- Storage Gauge Card (Col 5) -->
+    <div class="col-span-5 fluent-card rounded-xl p-3.5 flex flex-col justify-between">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <span id="storageCardTitle" class="text-xs font-semibold text-slate-500 uppercase tracking-wider">ドライブ容量</span>
+          <span id="storageFsType" class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium">NTFS</span>
+        </div>
+        <span id="storageFreeText" class="text-xs font-semibold text-slate-900">空き容量を計算中...</span>
+      </div>
+
+      <div class="my-2.5">
+        <!-- Modern Segmented Progress Bar -->
+        <div class="h-3 w-full bg-slate-100 rounded-full overflow-hidden flex p-0.5 space-x-0.5">
+          <div id="gaugeUsed" class="h-full bg-sky-500 rounded-full transition-all duration-500" style="width: 0%"></div>
+          <div id="gaugeFree" class="h-full bg-transparent flex-1"></div>
+        </div>
+        <div class="flex items-center justify-between text-[11px] text-slate-500 mt-1.5 font-medium">
+          <span id="storageSubLabel">使用中: 0 GB</span>
+          <span id="storageTotalText" class="font-semibold font-mono text-slate-700">0 / 0 GB</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Smart Suggestion Banner (Col 7) -->
+    <div class="col-span-7 fluent-card rounded-xl p-3.5 flex items-center justify-between bg-gradient-to-r from-sky-50/50 via-white to-white">
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h3 id="suggestionTitle" class="text-xs font-bold text-slate-900">スキャンを実行すると解放可能な容量を分析します</h3>
+            <span id="suggestionBadge" class="text-[10px] bg-emerald-100 text-emerald-700 font-semibold px-1.5 py-0.2 rounded hidden">検出</span>
+          </div>
+          <p id="suggestionDesc" class="text-[11px] text-slate-500 mt-0.5">ドライブまたはフォルダを選択して「スキャン開始」を押してください。</p>
+        </div>
+      </div>
+
+      <button id="btnQuickClean" class="hidden bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm transition active:scale-95 shrink-0 whitespace-nowrap">
+        候補を確認
+      </button>
+    </div>
+  </section>
+
+  <!-- Main Content Split (Tree Table & Detail Panel) -->
+  <main class="flex-1 px-6 pb-4 flex space-x-4 overflow-hidden">
+    
+    <!-- LEFT: Tree Hierarchy Explorer (70%) -->
+    <div class="w-2/3 fluent-card rounded-xl flex flex-col overflow-hidden">
+      <!-- Table Header -->
+      <div class="bg-slate-50/90 border-b border-slate-200/80 text-[11px] font-semibold text-slate-500 grid grid-cols-12 px-5 py-2 select-none">
+        <div class="col-span-5 flex items-center space-x-1 cursor-pointer hover:text-slate-800" onclick="sortTable('name')">
+          <span>名前</span>
+          <span id="sort-name" class="text-[10px] text-slate-400">↕</span>
+        </div>
+        <div class="col-span-2 text-right pr-4 cursor-pointer hover:text-slate-800" onclick="sortTable('size')">
+          <span>合計サイズ</span>
+          <span id="sort-size" class="text-[10px] text-slate-400">▼</span>
+        </div>
+        <div class="col-span-3">占有率</div>
+        <div class="col-span-2 text-right pr-2 cursor-pointer hover:text-slate-800" onclick="sortTable('count')">
+          <span>ファイル数</span>
+          <span id="sort-count" class="text-[10px] text-slate-400">↕</span>
+        </div>
+      </div>
+
+      <!-- Tree Rows Container -->
+      <div id="treeContainer" class="flex-1 overflow-y-auto divide-y divide-slate-100 text-xs">
+        <!-- Initial empty placeholder -->
+        <div id="emptyPlaceholder" class="h-full flex flex-col items-center justify-center text-slate-400 p-8">
+          <svg class="w-12 h-12 text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+          </svg>
+          <p class="font-medium text-slate-600 text-sm">フォルダまたはドライブをスキャンしてください</p>
+          <p class="text-xs text-slate-400 mt-1">上部の「スキャン開始」または「フォルダ指定」をクリックします</p>
+        </div>
+      </div>
+
+      <!-- Table Footer / Selection Status -->
+      <div class="bg-slate-50/80 border-t border-slate-200/80 px-5 py-1.5 text-[11px] text-slate-500 flex justify-between items-center">
+        <span id="scanStatusText">待機中</span>
+        <span id="selectionInfoText" class="font-medium text-slate-700">選択: なし</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: Context & Deep Insights (30%) -->
+    <div class="w-1/3 flex flex-col space-y-4 overflow-y-auto">
+      
+      <!-- Card 1: Top Space Eaters (Largest Files) -->
+      <div class="fluent-card rounded-xl p-4">
+        <h4 class="text-xs font-bold text-slate-900 uppercase tracking-wider mb-2.5 flex items-center justify-between">
+          <span class="flex items-center space-x-1.5">
+            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>単一ファイル 肥大化ワースト</span>
+          </span>
+          <span class="text-[10px] text-slate-400 font-normal">Top 10</span>
+        </h4>
+
+        <div id="largestFilesContainer" class="space-y-2 text-xs divide-y divide-slate-100">
+          <p class="text-slate-400 text-center py-4 text-[11px]">スキャン完了後に上位ファイルが表示されます</p>
+        </div>
+      </div>
+
+      <!-- Card 2: File Extension Proportions -->
+      <div class="fluent-card rounded-xl p-4">
+        <h4 class="text-xs font-bold text-slate-900 uppercase tracking-wider mb-2.5 flex items-center space-x-1.5">
+          <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+          </svg>
+          <span>ファイル種別 内訳</span>
+        </h4>
+
+        <div id="extensionStatsContainer" class="space-y-2 text-xs">
+          <p class="text-slate-400 text-center py-4 text-[11px]">スキャン完了後に拡張子別の内訳が表示されます</p>
+        </div>
+      </div>
+
+      <!-- Card 3: SysAdmin Audit Note -->
+      <div class="bg-slate-100/70 border border-slate-200/80 rounded-xl p-3.5 text-[11px] text-slate-600 space-y-1">
+        <div class="flex items-center space-x-1.5 font-semibold text-slate-800">
+          <svg class="w-3.5 h-3.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <span>情シス・管理運用ヒント</span>
+        </div>
+        <p>アイテムの右端にあるフォルダアイコンをクリックすると、Windowsエクスプローラーでその場所を直接開くことができます。定期監査レポートは「Excel / CSV 出力」から保存可能です。</p>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl transition-all duration-300 transform translate-y-16 opacity-0 flex items-center space-x-3 pointer-events-none z-50">
+    <svg id="toastIcon" class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+    <div class="text-xs">
+      <p id="toastTitle" class="font-semibold text-white">通知</p>
+      <p id="toastMsg" class="text-slate-300">メッセージ</p>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

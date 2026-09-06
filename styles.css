@@ -1,0 +1,121 @@
+﻿/* AstraSize Fluent Design System */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg-canvas: #F8FAFC;
+  --bg-card: #FFFFFF;
+  --bg-card-subtle: #F1F5F9;
+  --border-color: rgba(226, 232, 240, 0.85);
+  --border-hover: rgba(203, 213, 225, 1);
+  --text-main: #0F172A;
+  --text-muted: #64748B;
+  --text-subtle: #94A3B8;
+  --accent-blue: #0284C7;
+  --accent-sky: #38BDF8;
+  --accent-indigo: #6366F1;
+  --accent-violet: #A78BFA;
+  --accent-rose: #F43F5E;
+  --accent-emerald: #10B981;
+}
+
+body.dark {
+  --bg-canvas: #0F172A;
+  --bg-card: #1E293B;
+  --bg-card-subtle: #334155;
+  --border-color: rgba(51, 65, 85, 0.8);
+  --border-hover: rgba(71, 85, 105, 1);
+  --text-main: #F8FAFC;
+  --text-muted: #94A3B8;
+  --text-subtle: #64748B;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--bg-canvas);
+  color: var(--text-main);
+  user-select: none;
+  overflow: hidden;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}
+
+.fluent-canvas {
+  background: var(--bg-canvas);
+}
+
+.fluent-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fluent-card-hover:hover {
+  border-color: var(--border-hover);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+}
+
+/* Tree View Styles */
+.tree-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 5fr) 110px 140px 80px 40px;
+  align-items: center;
+  padding: 7px 16px;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+  border-bottom: 1px solid rgba(241, 245, 249, 0.8);
+}
+
+.tree-row:hover {
+  background-color: rgba(241, 245, 249, 0.7);
+}
+
+body.dark .tree-row:hover {
+  background-color: rgba(51, 65, 85, 0.5);
+}
+
+body.dark .tree-row {
+  border-bottom-color: rgba(51, 65, 85, 0.4);
+}
+
+.tree-row.active {
+  background-color: #E0F2FE !important;
+}
+
+body.dark .tree-row.active {
+  background-color: #0369A1 !important;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+body.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+body.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748B;
+}
+
+/* Animations */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin {
+  animation: spin 1s linear infinite;
+}

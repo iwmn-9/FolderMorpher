@@ -1,0 +1,21 @@
+## Visual Studio & .NET build artifacts
+bin/
+obj/
+dist/
+
+## Executables & Binaries (Avoid GitHub 100MB file limit)
+*.exe
+*.dll
+*.pdb
+*.iso
+
+## IDE & Editor
+.vs/
+.vscode/
+*.user
+*.suo
+
+## Temporary & Log files
+*.log
+*.tmp
+*.ps1
