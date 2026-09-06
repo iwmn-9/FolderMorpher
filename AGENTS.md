@@ -63,7 +63,9 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
 8. **ハイブリッドMFTスキャンの安全原則（3段自動フォールバック）**:
    - `MftScanService` はボリュームハンドルを `GENERIC_READ`（読み取り専用）かつ `FILE_SHARE_READ | FILE_SHARE_WRITE`（排他ロックなし）で開き、NTFSの内部MFTレコードを直接パースして超高速スキャンを行う。
    - UNCパス（`\\server\share`）、非管理者権限環境、またはMFT解析中の例外発生時は、一切エラー停止せず **自動で従来の安全な通常並行スキャン（`DiskScanService`）へフォールバック** させるのが確定仕様である。
-
+9. **NTFS ACE適用範囲（InheritanceFlags / PropagationFlags）の完全保持**:
+   - `SimAclEntry` はアクセス権の適用先（このフォルダーのみ、サブフォルダーおよびファイルのみ等）を決定する `InheritanceFlags` と `PropagationFlags` を完全保持する。
+   - 適用時（`ApplySimAclEntries`）に一律 `ContainerInherit | ObjectInherit` かつ `None` に上書きしてはならず、ACE本来の適用範囲を忠実に維持・適用しなければならない。またUI（`SecAppliesToCombo`）との双方向マッピングは `AclInheritanceHelper` / `AclUiBindingHelper` で厳密に連動させる。
 
 ---
 
@@ -83,7 +85,7 @@ Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe"
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 4/4 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 6/6 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

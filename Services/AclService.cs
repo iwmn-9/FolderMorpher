@@ -20,6 +20,24 @@ namespace AstraSize.Services
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             _snapshotDir = Path.Combine(appData, "FolderMorpher", "AclSnapshots");
             Directory.CreateDirectory(_snapshotDir);
+
+            // 旧 AstraSize のスナップショットが存在する場合、FolderMorpher へ自動移行・マージ
+            try
+            {
+                var oldSnapshotDir = Path.Combine(appData, "AstraSize", "AclSnapshots");
+                if (Directory.Exists(oldSnapshotDir))
+                {
+                    foreach (var file in Directory.GetFiles(oldSnapshotDir, "*.json"))
+                    {
+                        var destFile = Path.Combine(_snapshotDir, Path.GetFileName(file));
+                        if (!File.Exists(destFile))
+                        {
+                            File.Copy(file, destFile);
+                        }
+                    }
+                }
+            }
+            catch { }
         }
 
         public FolderAclNode GetFolderAcl(string path, int maxDepth = 2)
@@ -212,7 +230,9 @@ namespace AstraSize.Services
                     PrincipalType = isGrp ? AdPrincipalType.Group : AdPrincipalType.User,
                     Rights = rule.FileSystemRights,
                     AccessType = rule.AccessControlType,
-                    IsInherited = rule.IsInherited
+                    IsInherited = rule.IsInherited,
+                    InheritanceFlags = rule.InheritanceFlags,
+                    PropagationFlags = rule.PropagationFlags
                 };
                 list.Add(entry);
             }
@@ -246,18 +266,14 @@ namespace AstraSize.Services
             foreach (var entry in denyEntries)
             {
                 var identity = new NTAccount(entry.AccountName);
-                var inheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
-                var propagation = PropagationFlags.None;
-                var rule = new FileSystemAccessRule(identity, entry.Rights, inheritance, propagation, AccessControlType.Deny);
+                var rule = new FileSystemAccessRule(identity, entry.Rights, entry.InheritanceFlags, entry.PropagationFlags, AccessControlType.Deny);
                 sec.AddAccessRule(rule);
             }
 
             foreach (var entry in allowEntries)
             {
                 var identity = new NTAccount(entry.AccountName);
-                var inheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
-                var propagation = PropagationFlags.None;
-                var rule = new FileSystemAccessRule(identity, entry.Rights, inheritance, propagation, AccessControlType.Allow);
+                var rule = new FileSystemAccessRule(identity, entry.Rights, entry.InheritanceFlags, entry.PropagationFlags, AccessControlType.Allow);
                 sec.AddAccessRule(rule);
             }
 

@@ -48,6 +48,8 @@ namespace AstraSize.Models
         private FileSystemRights _rights = FileSystemRights.ReadAndExecute;
         private AccessControlType _accessType = AccessControlType.Allow;
         private bool _isInherited = false;
+        private InheritanceFlags _inheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+        private PropagationFlags _propagationFlags = PropagationFlags.None;
         private string _appliesTo = "このフォルダー、サブフォルダーおよびファイル";
 
         public string AccountName
@@ -91,10 +93,43 @@ namespace AstraSize.Models
             set { _isInherited = value; OnPropertyChanged(); }
         }
 
+        public InheritanceFlags InheritanceFlags
+        {
+            get => _inheritanceFlags;
+            set
+            {
+                _inheritanceFlags = value;
+                _appliesTo = AclInheritanceHelper.ToAppliesToString(_inheritanceFlags, _propagationFlags);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(AppliesTo));
+            }
+        }
+
+        public PropagationFlags PropagationFlags
+        {
+            get => _propagationFlags;
+            set
+            {
+                _propagationFlags = value;
+                _appliesTo = AclInheritanceHelper.ToAppliesToString(_inheritanceFlags, _propagationFlags);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(AppliesTo));
+            }
+        }
+
         public string AppliesTo
         {
             get => _appliesTo;
-            set { _appliesTo = value; OnPropertyChanged(); }
+            set
+            {
+                _appliesTo = value;
+                var (inh, prop) = AclInheritanceHelper.FromAppliesToString(value);
+                _inheritanceFlags = inh;
+                _propagationFlags = prop;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(InheritanceFlags));
+                OnPropertyChanged(nameof(PropagationFlags));
+            }
         }
 
         [JsonIgnore]
@@ -564,5 +599,77 @@ namespace AstraSize.Models
         public string TargetRootPath { get; set; } = string.Empty;
         public string Notes { get; set; } = string.Empty;
         public List<SimFolderNode> RootFolders { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Helper for converting between NTFS InheritanceFlags/PropagationFlags and UI friendly strings
+    /// </summary>
+    public static class AclInheritanceHelper
+    {
+        public const string AppliesTo_All = "このフォルダー、サブフォルダーおよびファイル";
+        public const string AppliesTo_ThisFolderOnly = "このフォルダーのみ";
+        public const string AppliesTo_ThisFolderAndSubfolders = "このフォルダーおよびサブフォルダー";
+        public const string AppliesTo_ThisFolderAndFiles = "このフォルダーおよびファイル";
+        public const string AppliesTo_SubfoldersAndFilesOnly = "サブフォルダーおよびファイルのみ";
+        public const string AppliesTo_SubfoldersOnly = "サブフォルダーのみ";
+        public const string AppliesTo_FilesOnly = "ファイルのみ";
+
+        public static string ToAppliesToString(InheritanceFlags inheritance, PropagationFlags propagation)
+        {
+            if (inheritance == (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit) && propagation == PropagationFlags.None)
+                return AppliesTo_All;
+            if (inheritance == InheritanceFlags.None && propagation == PropagationFlags.None)
+                return AppliesTo_ThisFolderOnly;
+            if (inheritance == InheritanceFlags.ContainerInherit && propagation == PropagationFlags.None)
+                return AppliesTo_ThisFolderAndSubfolders;
+            if (inheritance == InheritanceFlags.ObjectInherit && propagation == PropagationFlags.None)
+                return AppliesTo_ThisFolderAndFiles;
+            if (inheritance == (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit) && (propagation & PropagationFlags.InheritOnly) == PropagationFlags.InheritOnly)
+                return AppliesTo_SubfoldersAndFilesOnly;
+            if (inheritance == InheritanceFlags.ContainerInherit && (propagation & PropagationFlags.InheritOnly) == PropagationFlags.InheritOnly)
+                return AppliesTo_SubfoldersOnly;
+            if (inheritance == InheritanceFlags.ObjectInherit && (propagation & PropagationFlags.InheritOnly) == PropagationFlags.InheritOnly)
+                return AppliesTo_FilesOnly;
+
+            // フォールバック
+            if (inheritance == InheritanceFlags.None) return AppliesTo_ThisFolderOnly;
+            return AppliesTo_All;
+        }
+
+        public static (InheritanceFlags inheritance, PropagationFlags propagation) FromAppliesToString(string? text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None);
+
+            return text.Trim() switch
+            {
+                AppliesTo_ThisFolderOnly => (InheritanceFlags.None, PropagationFlags.None),
+                AppliesTo_ThisFolderAndSubfolders => (InheritanceFlags.ContainerInherit, PropagationFlags.None),
+                AppliesTo_ThisFolderAndFiles => (InheritanceFlags.ObjectInherit, PropagationFlags.None),
+                AppliesTo_SubfoldersAndFilesOnly => (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.InheritOnly),
+                AppliesTo_SubfoldersOnly => (InheritanceFlags.ContainerInherit, PropagationFlags.InheritOnly),
+                AppliesTo_FilesOnly => (InheritanceFlags.ObjectInherit, PropagationFlags.InheritOnly),
+                _ => (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None)
+            };
+        }
+    }
+
+    /// <summary>
+    /// Helper for bidirectional binding and mapping between UI controls and ACL entries
+    /// </summary>
+    public static class AclUiBindingHelper
+    {
+        public static AccessControlType IndexToAccessType(int selectedIndex)
+            => selectedIndex == 1 ? AccessControlType.Deny : AccessControlType.Allow;
+
+        public static int AccessTypeToIndex(AccessControlType accessType)
+            => accessType == AccessControlType.Deny ? 1 : 0;
+
+        public static void ApplyModalToEntry(SimAclEntry target, string displayName, int accessTypeIndex, string appliesToText)
+        {
+            target.DisplayName = displayName;
+            target.AccessType = IndexToAccessType(accessTypeIndex);
+            target.AppliesTo = appliesToText;
+        }
     }
 }

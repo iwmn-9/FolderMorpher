@@ -1517,7 +1517,20 @@ namespace AstraSize
 
         private void SyncCheckboxesFromAcl(SimAclEntry acl)
         {
-            SecAccessTypeCombo.SelectedIndex = (acl.AccessType == AccessControlType.Deny) ? 1 : 0;
+            SecAccessTypeCombo.SelectedIndex = AclUiBindingHelper.AccessTypeToIndex(acl.AccessType);
+
+            string targetApplies = acl.AppliesTo;
+            int appliesIdx = 0;
+            for (int i = 0; i < SecAppliesToCombo.Items.Count; i++)
+            {
+                if (SecAppliesToCombo.Items[i] is ComboBoxItem item &&
+                    string.Equals(item.Content?.ToString(), targetApplies, StringComparison.OrdinalIgnoreCase))
+                {
+                    appliesIdx = i;
+                    break;
+                }
+            }
+            SecAppliesToCombo.SelectedIndex = appliesIdx;
 
             SecChkFullControl.IsChecked = acl.IsFullControl;
             SecChkModify.IsChecked = acl.IsModify;
@@ -1674,8 +1687,17 @@ namespace AstraSize
         {
             if (_currentEditingAcl != null)
             {
-                _currentEditingAcl.DisplayName = SecPrincipalInput.Text.Trim();
-                _currentEditingAcl.AccessType = (SecAccessTypeCombo.SelectedIndex == 1) ? System.Security.AccessControl.AccessControlType.Deny : System.Security.AccessControl.AccessControlType.Allow;
+                string selectedAppliesText = (SecAppliesToCombo.SelectedItem is ComboBoxItem cbi)
+                    ? (cbi.Content?.ToString() ?? AclInheritanceHelper.AppliesTo_All)
+                    : AclInheritanceHelper.AppliesTo_All;
+
+                AclUiBindingHelper.ApplyModalToEntry(
+                    _currentEditingAcl,
+                    SecPrincipalInput.Text.Trim(),
+                    SecAccessTypeCombo.SelectedIndex,
+                    selectedAppliesText
+                );
+
                 _currentEditingAcl.AdvTraverse = SecAdvTraverse.IsChecked == true;
                 _currentEditingAcl.AdvListDirectory = SecAdvList.IsChecked == true;
                 _currentEditingAcl.AdvReadAttributes = SecAdvReadAttr.IsChecked == true;

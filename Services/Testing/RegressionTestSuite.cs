@@ -30,32 +30,44 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 4;
+            int totalTests = 6;
 
             try
             {
                 // Test 1
-                Console.WriteLine("\n[TEST 1/4] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
+                Console.WriteLine("\n[TEST 1/6] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
                 await TestMediaOptimizerPngPreservationAsync();
                 Console.WriteLine("  --> [PASS] Media Optimizer: PNG signature (0x89 50 4E 47) and alpha channel 100% preserved.");
                 passCount++;
 
                 // Test 2
-                Console.WriteLine("\n[TEST 2/4] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
+                Console.WriteLine("\n[TEST 2/6] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
                 TestLiveAclDenyAndInheritance();
                 Console.WriteLine("  --> [PASS] Live ACL: ACEs preserved on inheritance disable, Deny rules ordered first (Canonical Order).");
                 passCount++;
 
                 // Test 3
-                Console.WriteLine("\n[TEST 3/4] Audit Archival: Original File Archive & Move Duplication...");
+                Console.WriteLine("\n[TEST 3/6] Audit Archival: Original File Archive & Move Duplication...");
                 TestAuditArchivalOriginalExclusionAndDeduplication();
                 Console.WriteLine("  --> [PASS] Audit: Original files safely protected from archive, move commands deduplicated.");
                 passCount++;
 
                 // Test 4
-                Console.WriteLine("\n[TEST 4/4] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
+                Console.WriteLine("\n[TEST 4/6] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
                 TestMftDataRunDecoderLcnCalculation();
                 Console.WriteLine("  --> [PASS] MFT Data Run Decoder: Initial LCN computed relative to 0 without double-addition.");
+                passCount++;
+
+                // Test 5
+                Console.WriteLine("\n[TEST 5/6] Live ACL: Special Inheritance & Propagation Flags Preservation...");
+                TestLiveAclSpecialInheritanceFlags();
+                Console.WriteLine("  --> [PASS] Live ACL: Special InheritanceFlags and PropagationFlags preserved across read/write.");
+                passCount++;
+
+                // Test 6
+                Console.WriteLine("\n[TEST 6/6] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
+                TestAclUiBindingAndHelper();
+                Console.WriteLine("  --> [PASS] ACL UI Binding: AppliesTo, AccessType, and Modal state perfectly synchronized.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -577,6 +589,151 @@ namespace FolderMorpher.Services.Testing
             {
                 throw new InvalidOperationException($"ラン 3 の ClusterCount が不正です。期待値: 64, 実際: {extents[2].ClusterCount}");
             }
+        }
+
+        /// <summary>
+        /// 5. Live ACL: 特殊適用先フラグ（InheritanceFlags &amp; PropagationFlags）の保持・適用テスト
+        /// 「このフォルダーのみ (None, None)」や「サブフォルダーおよびファイルのみ (Container|Object, InheritOnly)」などの
+        /// 特殊ACEが、一律 ContainerInherit|ObjectInherit, None に変質しないことを検証。
+        /// </summary>
+        public static void TestLiveAclSpecialInheritanceFlags()
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_AclFlags_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            try
+            {
+                var currentUser = Environment.UserDomainName + "\\" + Environment.UserName;
+                var aclService = new AclService();
+
+                var entries = new List<SimAclEntry>
+                {
+                    // 1. 特殊ACE: このフォルダーのみ
+                    new SimAclEntry
+                    {
+                        AccountName = currentUser,
+                        AccessType = AccessControlType.Allow,
+                        Rights = FileSystemRights.ReadAndExecute,
+                        IsInherited = false,
+                        InheritanceFlags = InheritanceFlags.None,
+                        PropagationFlags = PropagationFlags.None,
+                        AppliesTo = AclInheritanceHelper.AppliesTo_ThisFolderOnly
+                    },
+                    // 2. 特殊ACE: サブフォルダーおよびファイルのみ (InheritOnly)
+                    new SimAclEntry
+                    {
+                        AccountName = "Everyone",
+                        AccessType = AccessControlType.Allow,
+                        Rights = FileSystemRights.ReadData,
+                        IsInherited = false,
+                        InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                        PropagationFlags = PropagationFlags.InheritOnly,
+                        AppliesTo = AclInheritanceHelper.AppliesTo_SubfoldersAndFilesOnly
+                    }
+                };
+
+                // 適用実行
+                aclService.ApplySimAclEntries(tempDir, entries, inherit: false);
+
+                // 再読込
+                var (readEntries, isInherited, _) = aclService.GetSimAclForFolder(tempDir);
+
+                // currentUser のエントリ検証: InheritanceFlags.None, PropagationFlags.None
+                var userEntry = readEntries.FirstOrDefault(e => e.AccountName.Equals(currentUser, StringComparison.OrdinalIgnoreCase));
+                if (userEntry == null)
+                {
+                    throw new InvalidOperationException($"適用したユーザーエントリ '{currentUser}' が再読込結果に見つかりません。");
+                }
+                if (userEntry.InheritanceFlags != InheritanceFlags.None || userEntry.PropagationFlags != PropagationFlags.None)
+                {
+                    throw new InvalidOperationException(
+                        $"特殊ACE適用先変質バグ検出: 'このフォルダーのみ' のフラグが保持されていません。" +
+                        $" 期待値: InheritanceFlags.None, PropagationFlags.None / 実際: {userEntry.InheritanceFlags}, {userEntry.PropagationFlags}");
+                }
+                if (userEntry.AppliesTo != AclInheritanceHelper.AppliesTo_ThisFolderOnly)
+                {
+                    throw new InvalidOperationException(
+                        $"AppliesTo 文字列が不正です。期待値: '{AclInheritanceHelper.AppliesTo_ThisFolderOnly}', 実際: '{userEntry.AppliesTo}'");
+                }
+
+                // Everyone のエントリ検証: ContainerInherit | ObjectInherit, InheritOnly
+                var everyoneEntry = readEntries.FirstOrDefault(e => e.AccountName.Equals("Everyone", StringComparison.OrdinalIgnoreCase));
+                if (everyoneEntry == null)
+                {
+                    throw new InvalidOperationException("適用した 'Everyone' エントリが見つかりません。");
+                }
+                if (!everyoneEntry.PropagationFlags.HasFlag(PropagationFlags.InheritOnly))
+                {
+                    throw new InvalidOperationException(
+                        $"特殊ACE適用先変質バグ検出: 'サブフォルダーおよびファイルのみ' の InheritOnly フラグが保持されていません。" +
+                        $" 実際: {everyoneEntry.PropagationFlags}");
+                }
+                if (everyoneEntry.AppliesTo != AclInheritanceHelper.AppliesTo_SubfoldersAndFilesOnly)
+                {
+                    throw new InvalidOperationException(
+                        $"AppliesTo 文字列が不正です。期待値: '{AclInheritanceHelper.AppliesTo_SubfoldersAndFilesOnly}', 実際: '{everyoneEntry.AppliesTo}'");
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 6. ACL UI Binding &amp; Helper: 双方向マッピングとモーダル状態同期テスト
+        /// ComboBox ⇄ AccessType, AppliesTo ⇄ InheritanceFlags/PropagationFlags の相互変換を検証。
+        /// </summary>
+        public static void TestAclUiBindingAndHelper()
+        {
+            // 検証 1: AccessType ⇄ Index 双方向
+            if (AclUiBindingHelper.IndexToAccessType(0) != AccessControlType.Allow)
+                throw new InvalidOperationException("Index 0 は AccessControlType.Allow でなければなりません。");
+            if (AclUiBindingHelper.IndexToAccessType(1) != AccessControlType.Deny)
+                throw new InvalidOperationException("Index 1 は AccessControlType.Deny でなければなりません。");
+            if (AclUiBindingHelper.AccessTypeToIndex(AccessControlType.Allow) != 0)
+                throw new InvalidOperationException("Allow は Index 0 でなければなりません。");
+            if (AclUiBindingHelper.AccessTypeToIndex(AccessControlType.Deny) != 1)
+                throw new InvalidOperationException("Deny は Index 1 でなければなりません。");
+
+            // 検証 2: AclInheritanceHelper 7大パターンの相互可逆性
+            var patterns = new[]
+            {
+                (AclInheritanceHelper.AppliesTo_All, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None),
+                (AclInheritanceHelper.AppliesTo_ThisFolderOnly, InheritanceFlags.None, PropagationFlags.None),
+                (AclInheritanceHelper.AppliesTo_ThisFolderAndSubfolders, InheritanceFlags.ContainerInherit, PropagationFlags.None),
+                (AclInheritanceHelper.AppliesTo_ThisFolderAndFiles, InheritanceFlags.ObjectInherit, PropagationFlags.None),
+                (AclInheritanceHelper.AppliesTo_SubfoldersAndFilesOnly, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.InheritOnly),
+                (AclInheritanceHelper.AppliesTo_SubfoldersOnly, InheritanceFlags.ContainerInherit, PropagationFlags.InheritOnly),
+                (AclInheritanceHelper.AppliesTo_FilesOnly, InheritanceFlags.ObjectInherit, PropagationFlags.InheritOnly),
+            };
+
+            foreach (var (text, inh, prop) in patterns)
+            {
+                var toText = AclInheritanceHelper.ToAppliesToString(inh, prop);
+                if (toText != text)
+                {
+                    throw new InvalidOperationException($"ToAppliesToString 不正: 期待値 '{text}', 実際 '{toText}' (inh={inh}, prop={prop})");
+                }
+                var (parsedInh, parsedProp) = AclInheritanceHelper.FromAppliesToString(text);
+                if (parsedInh != inh || parsedProp != prop)
+                {
+                    throw new InvalidOperationException($"FromAppliesToString 不正: 入力 '{text}', パース結果 (inh={parsedInh}, prop={parsedProp}) != 期待値 (inh={inh}, prop={prop})");
+                }
+            }
+
+            // 検証 3: ApplyModalToEntry による SimAclEntry の連動
+            var testEntry = new SimAclEntry();
+            AclUiBindingHelper.ApplyModalToEntry(testEntry, "経理部グループ", 1, AclInheritanceHelper.AppliesTo_SubfoldersOnly);
+
+            if (testEntry.DisplayName != "経理部グループ")
+                throw new InvalidOperationException($"DisplayName 反映失敗: 実際={testEntry.DisplayName}");
+            if (testEntry.AccessType != AccessControlType.Deny)
+                throw new InvalidOperationException($"AccessType 反映失敗: 期待値=Deny, 実際={testEntry.AccessType}");
+            if (testEntry.InheritanceFlags != InheritanceFlags.ContainerInherit)
+                throw new InvalidOperationException($"InheritanceFlags 連動失敗: 実際={testEntry.InheritanceFlags}");
+            if ((testEntry.PropagationFlags & PropagationFlags.InheritOnly) != PropagationFlags.InheritOnly)
+                throw new InvalidOperationException($"PropagationFlags 連動失敗: 実際={testEntry.PropagationFlags}");
         }
     }
 }

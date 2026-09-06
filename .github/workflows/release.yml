@@ -51,5 +51,5 @@ jobs:
             - **Simulation Studio**: Virtual tree restructuring (N:1 mapping) and diff verification before physical file transfers.
             - **LinkFixer**: Detect and batch repair severed shortcuts (`.lnk`) and Excel workbooks (`.xlsx`/`.xlsm`).
             - **Audit & Hygiene**: Duplicate file detection (SHA-256), dormant data identification (3+ years), and deep path analyzer.
-            - **Media Optimizer**: Lossless image compression with sanctuary folder protection and overnight video batch scripts.
+            - **Media Optimizer**: Visually lossless image compression with sanctuary folder protection and overnight video batch scripts.
             - **Bilingual UI**: Seamless real-time switching between English and Japanese (`🌐 EN` / `🌐 JA`).
