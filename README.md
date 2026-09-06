@@ -110,6 +110,32 @@ Please submit your feedback or bug reports via [GitHub Issues](../../issues)!
 
 ---
 
+## 🤖 AI-Assisted Maintenance & Issues Policy
+
+This project is maintained through an engineering workflow combining human design governance and autonomous AI agents (Google DeepMind Antigravity / Gemini).
+
+- **Issue Resolution**: Bug reports, edge cases, and feature requests submitted to [Issues](../../issues) are actively investigated, reproduced, and patched with AI agent assistance.
+- **Reporting Tips**: To facilitate fast reproduction and accurate fixes by the agent, please include:
+  1. Detailed reproduction steps or error logs.
+  2. UI screenshots or error dialog details.
+  3. Environment context (OS version, domain-joined vs. workgroup, target storage: local NTFS / SMB share / NAS etc.).
+- **Pull Requests**: Community contributions and PRs are welcome and will be validated against our automated headless test suite.
+
+---
+
+## 📜 License & Attribution
+
+This project is open-source software licensed under the **[MIT License](LICENSE)**.
+
+- **Freedom of Use**: You are free to use, modify, merge, publish, distribute, and sell copies of the software for both personal and commercial purposes.
+- **Attribution Required**: In accordance with the MIT License, any redistributed, modified, or derived work must preserve the original copyright notice and permission notice:
+  ```text
+  Copyright (c) 2026 iwmn-9
+  ```
+
+---
+
 ## 📄 Disclaimer
 
-FolderMorpher is an administrative utility designed for IT professionals. While all file-touching features include automatic backups (`.bak`, SDDL snapshots, staged archive moves), always ensure verified file server backups exist before executing batch operations on production volumes.
+FolderMorpher is an administrative utility designed for IT and storage professionals. While all operations modifying the file system include safety mechanisms (such as SDDL rollback snapshots, `.bak` file generation, and staged archive isolation), the software is provided "AS IS", without warranty of any kind. Always ensure verified backups exist before executing batch operations on production file servers.
+
