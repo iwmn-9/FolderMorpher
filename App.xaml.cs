@@ -44,6 +44,7 @@ namespace AstraSize
             bool collapseSidebar = false;
             int selectTab = 0;
             string? testSuiteDir = null;
+            string? forceLang = null;
             for (int i = 0; i < e.Args.Length; i++)
             {
                 if (e.Args[i] == "--snapshot" && i + 1 < e.Args.Length)
@@ -61,6 +62,10 @@ namespace AstraSize
                 else if (e.Args[i] == "--test-suite" && i + 1 < e.Args.Length)
                 {
                     testSuiteDir = e.Args[i + 1];
+                }
+                else if (e.Args[i] == "--lang" && i + 1 < e.Args.Length)
+                {
+                    forceLang = e.Args[i + 1];
                 }
             }
 
@@ -143,6 +148,9 @@ namespace AstraSize
                     {
                         try
                         {
+                            if (forceLang == "en") FolderMorpher.Services.LocalizationService.Instance.SetLanguage(FolderMorpher.Services.AppLanguage.English);
+                            else if (forceLang == "ja") FolderMorpher.Services.LocalizationService.Instance.SetLanguage(FolderMorpher.Services.AppLanguage.Japanese);
+
                             if (selectTab == 1) mw.NavTabLiveAcl.IsChecked = true;
                             else if (selectTab == 2) mw.NavTabSimulation.IsChecked = true;
                             else if (selectTab == 3) mw.NavTabLinkFix.IsChecked = true;

@@ -76,6 +76,9 @@ namespace AstraSize
         {
             try
             {
+                LocalizationService.Instance.LanguageChanged += ApplyLocalization;
+                ApplyLocalization();
+
                 LoadDrives();
                 InitializeStorageTabs();
                 InitializeSimulationStudio();
@@ -2385,6 +2388,54 @@ namespace AstraSize
                     MessageBox.Show($"Excel出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
+        }
+        #endregion
+
+        #region Localization (i18n)
+        private void LanguageToggleButton_Click(object sender, RoutedEventArgs e)
+        {
+            LocalizationService.Instance.ToggleLanguage();
+        }
+
+        private void ApplyLocalization()
+        {
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+
+            // 言語切り替えボタン自体の表示（次に切り替わる言語を提示）
+            LanguageToggleButton.Content = isJa ? "🌐 EN" : "🌐 JA";
+            LanguageToggleButton.ToolTip = isJa ? "英語に切り替え / Switch to English" : "日本語に切り替え / Switch to Japanese";
+
+            // サイドバー タブ名
+            NavTabStorage.Content = isJa ? "容量分析 & 監視" : "Storage Explorer";
+            NavTabLiveAcl.Content = isJa ? "権限コントロール" : "Live ACL";
+            NavTabSimulation.Content = isJa ? "移行スタジオ" : "Simulation Studio";
+            NavTabLinkFix.Content = isJa ? "リンク一括修復" : "LinkFixer";
+            NavTabAudit.Content = isJa ? "断捨離・健全化" : "Audit & Hygiene";
+            NavTabMedia.Content = isJa ? "メディア最適化" : "Media Optimizer";
+
+            // Tab 4 (LinkFixer)
+            LinkGenerateGpoButton.Content = isJa ? "📜 GPOログオンスクリプト生成 (.ps1)" : "📜 Generate GPO Script (.ps1)";
+            LinkScanButton.Content = isJa ? "切断リンク検出スキャン" : "Scan Broken Links";
+            LinkFixExecuteButton.Content = isJa ? "⚡ 一括修復を実行 (バックアップ付)" : "⚡ Execute Fix (with Backup)";
+            LinkIncludeOfficeCheckBox.Content = isJa ? "Officeファイル内部リンク (.xlsx/.xlsm) も対象に含める" : "Include Office internal links (.xlsx/.xlsm)";
+
+            // Tab 5 (Audit & Hygiene)
+            AuditStartButton.Content = isJa ? "🔍 監査スキャン開始" : "🔍 Start Audit Scan";
+            AuditExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
+            AuditExportCsvButton.Content = isJa ? "📄 CSV台帳出力" : "📄 Export CSV";
+            AuditGenArchiveScriptButton.Content = isJa ? "📦 安全退避バッチ生成 (.bat)" : "📦 Generate Archive Batch (.bat)";
+            AuditCheckDuplicatesCheckBox.Content = isJa ? "重複ファイル (SHA256)" : "Duplicates (SHA256)";
+            AuditCheckDormantCheckBox.Content = isJa ? "休眠ファイル (3年以上)" : "Dormant (3+ Years)";
+            AuditCheckPathLimitsCheckBox.Content = isJa ? "パス長260字超/禁則文字" : "Path Limits / Invalid Chars";
+
+            // Tab 6 (Media Optimizer)
+            MediaScanButton.Content = isJa ? "🔍 メディア走査" : "🔍 Scan Media";
+            MediaOptimizeButton.Content = isJa ? "⚡ 写真を軽量化 (直接上書き/日時維持)" : "⚡ Slim Photos (Lossless/In-Place)";
+            MediaGenVideoBatchButton.Content = isJa ? "🎬 巨大動画 夜間圧縮バッチ出力 (.bat)" : "🎬 Export Nightly Video Batch (.bat)";
+            MediaExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
+
+            // 現在のアクティブタブのステータス再反映
+            NavTab_Checked(this, new RoutedEventArgs());
         }
         #endregion
     }

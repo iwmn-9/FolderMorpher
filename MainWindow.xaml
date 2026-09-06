@@ -67,11 +67,16 @@
                 </StackPanel>
 
                 <!-- Sidebar Footer -->
-                <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="16,12">
-                    <StackPanel x:Name="SidebarFooterPanel">
-                        <TextBlock Text="FolderMorpher v2.5" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                        <TextBlock Text="Enterprise Ready Suite" FontSize="9" Foreground="#94A3B8" Margin="0,2,0,0"/>
-                    </StackPanel>
+                <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="14,10">
+                    <Grid>
+                        <StackPanel x:Name="SidebarFooterPanel" VerticalAlignment="Center">
+                            <TextBlock Text="FolderMorpher v2.5" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
+                            <TextBlock Text="Enterprise Suite" FontSize="9" Foreground="#94A3B8" Margin="0,1,0,0"/>
+                        </StackPanel>
+                        <Button x:Name="LanguageToggleButton" Content="🌐 EN" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Padding="6,2" Height="24" FontSize="10" FontWeight="Bold" Foreground="#2563EB"
+                                Style="{StaticResource FluentButtonSecondary}" Click="LanguageToggleButton_Click" ToolTip="言語切り替え / Switch Language (JA / EN)"/>
+                    </Grid>
                 </Border>
             </Grid>
         </Border>
