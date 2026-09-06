@@ -1,113 +1,115 @@
-# 🚀 FolderMorpher — 情シス運用統合スイート
-### (IT Admin Storage, Audit & Migration Studio)
+# 🚀 FolderMorpher — Enterprise IT Storage, Audit & Migration Studio
 
-> **「脱・数千万円のGDMS」「もうファイルサーバー移行で血反吐を吐かない」**  
-> 大容量ファイルサーバーの日常監視から、組織改編・部署名リネーム、新環境への仮想ツリー設計、実環境NTFSアクセス権管理、切断ショートカット・Officeマクロ一括修復、写真の視覚的ロスレス90%軽量化までを**1本の単一EXE（インストール不要）**で完結させるプロフェッショナル向けGUIスタジオです。
+> **"Replace multi-thousand-dollar enterprise suites." "Never dread file server migrations or departmental restructures again."**  
+> An all-in-one, zero-dependency, portable Windows GUI studio built for SysAdmins and IT teams. Handles disk space monitoring, virtual tree redesign (N:1 mapping), live NTFS permissions with SDDL rollback, broken shortcut/Office macro path fixes, 90% image lossless slimming, and executive Excel audit reporting.
 
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20%2F%20Server-blue.svg)
 ![Framework](https://img.shields.io/badge/.NET-8.0%20(Self--Contained)-purple.svg)
 ![UI](https://img.shields.io/badge/UI-Fluent%20Light%20Design-0ea5e9.svg)
 ![Architecture](https://img.shields.io/badge/License-Free%20Preview-emerald.svg)
 
----
-
-## 📢 先行プレビュー公開 ＆ 動作フィードバック大募集中！
-
-本ツールは、全国の社内SE・情シスが直面する泥臭いファイルサーバーの課題を解決するために本気で開発されています。
-
-- 「自社のストレージ（NetApp, Windows Server, Synology, QNAP等）で動かしたらこんな結果が出た」
-- 「この形式のExcel数式やマクロでうまく置換できなかった」
-- 「移行現場でこういう機能が追加であったら神ツールになる」
-
-といった現場のリアルな動作報告やご要望を大歓迎しています。お気軽に [GitHub Issues](../../issues) へお寄せください！
+🌐 **Language**: **[🇺🇸 English]** | [🇯🇵 日本語 (README_JA.md)](README_JA.md)
 
 ---
 
-## 🌟 6大コア機能
+## 📢 Public Preview & Community Feedback Wanted!
 
-### 1. 📊 容量分析 & 監視 (Storage Explorer)
-![Tab 0: 容量分析](docs/screenshots/tab0_storage.png)
-- **全体占有率メーター（二重加算防止）**: スキャンルート全体（100%）に対する絶対シェアと、右ペインでの選択フォルダ直下シェアを完全分離。
-- **Top 10 ランキング ＆ エクスプローラー直行**: 肥大化の元凶ファイルを特定し、ダブルクリックで対象ファイルを青く選択した状態でエクスプローラーを即時起動。
-- **マルチタブ同時スキャン**: 複数ドライブや別サーバー（UNC共有 `\\server\share`）を並行監視。
+FolderMorpher is built from the trenches of real-world enterprise IT operations.
+
+We actively welcome real-world test reports and edge cases from IT admins:
+- *"Tested on our NetApp / Windows Server 2022 / Synology / QNAP NAS and here are the results"*
+- *"Encountered a specific legacy Excel formula or VBA macro pattern that failed to parse"*
+- *"Feature request that would make this an even bigger lifesaver during migrations"*
+
+Please submit your feedback or bug reports via [GitHub Issues](../../issues)!
 
 ---
 
-### 2. 🛡️ 権限コントロール & SDDLロールバック (Live ACL)
+## 🌟 6 Core Pillars
+
+### 1. 📊 Storage Explorer (Fast Disk Space Analyzer)
+![Tab 0: Storage Explorer](docs/screenshots/tab0_storage.png)
+- **Root-Relative Occupancy Meter (Anti-Double Counting)**: Percentage reflects absolute share of the scanned root, separated cleanly from subfolder shares.
+- **Top 10 Largest Files & Explorer Highlight**: Instantly locate massive space-hogging files. Double-click to reveal and highlight directly in Windows Explorer.
+- **Multi-Tab Simultaneous Scanning**: Scan and monitor multiple local drives and UNC network shares (`\\server\share`) side-by-side.
+
+---
+
+### 2. 🛡️ Live ACL Manager & SDDL Instant Rollback
 ![Tab 1: Live ACL](docs/screenshots/tab1_liveacl.png)
-- **実環境NTFS権限の直接編集**: Active Directoryのアカウント・グループをドラッグ＆ドロップで追加、ゴミ箱ゾーンへポイ捨て削除。
-- **Windows詳細セキュリティ完全準拠**: 基本6項目 ＋ 高度なアクセス許可14項目（走査/属性/所有権など）を完全双方向連動で編集。
-- **SDDL直前自動スナップショット（即座に復元）**: 適用直前の権限状態を自動退避。「↩️ バックアップ復元」でいつでも直前の状態へ原子的ロールバック可能。
-- **アクセス権マトリクス台帳CSV出力**: 監査用の権限台帳を1クリック出力。
+- **Direct NTFS Permission Control**: Drag-and-drop Active Directory accounts/groups, trash zone to delete, without opening sluggish RSAT/ADUC.
+- **Full Windows Security Modal Fidelity**: Real-time two-way sync between standard basic permissions (6 items) and advanced NTFS permission bits (14 granular items: Traversal, Extended Attributes, Ownership, etc.).
+- **Atomic Pre-Apply SDDL Snapshot & 1-Click Rollback**: Automatically backs up full SDDL string prior to commit. Instant one-click rollback if accidental lockouts occur.
+- **Access Permission Matrix CSV Export**: Generate compliance-ready audit tables in one click.
 
 ---
 
-### 3. 🚀 移行スタジオ & ガワ先行展開 (Simulation Studio)
-![Tab 2: 移行スタジオ](docs/screenshots/tab2_simulation.png)
-- **仮想ツリー設計 ＆ N:1統合マッピング**: 「旧営業A」「旧営業B」を新環境の「営業第一部」へまとめる統合ツリーを視覚的に設計。
-- **ガワ先行作成（スケルトン一括展開）**: 大容量データ転送の前に、空フォルダ構造と設計済みNTFS ACLだけを新サーバーに先行作成。
-- **Diffインスペクター**: 移行前後（Before/After）の変化点（新規・移動・統合・ACL差分）をカラーバッジでレビュー。
-- **Robocopy自動生成**: 最適化されたマルチスレッド移行バッチ（`/MT:16 /COPYALL`）を1クリック生成。
+### 3. 🚀 Migration Simulation Studio (Skeleton Deployment)
+![Tab 2: Simulation Studio](docs/screenshots/tab2_simulation.png)
+- **Virtual Tree Design & N:1 Folder Consolidation**: Map legacy departmental structures (e.g. `Sales_East` + `Sales_West` ➔ `Sales_Dept`) visually via drag-and-drop.
+- **Skeleton Deploy (Gawa Pre-Creation)**: Pre-deploy the target folder hierarchy with designed NTFS ACLs *before* kicking off massive data copy jobs.
+- **Visual Diff Inspector**: Color-coded badges for New, Moved, Merged, and Permission Deltas with Excel export.
+- **Optimized Robocopy Batch Generation**: Automatically outputs high-throughput multi-threaded scripts (`/MT:16 /COPYALL`).
 
 ---
 
-### 4. 🔗 リンク一括修復 ＆ GPOスクリプト生成 (LinkFixer)
-![Tab 3: リンク一括修復](docs/screenshots/tab3_linkfix.png)
-- **切断ショートカット（`.lnk`）の一括救済**: サーバー移行や部署名変更で切断されたショートカットを新パスへ自動書き換え（`.bak` 自動バックアップ）。
-- **Office内部リンク・マクロ修復**: Office COMを起動せず、OpenXML（.xlsx/.xlsm）ZIP内部XMLおよび旧バイナリ（.xls）を直接高速走査。外部ブック参照数式やVBAパスを安全置換（`~$` ロック検知付き）。
-- **GPOログオンスクリプト生成（`.ps1`）**: 全社PCのデスクトップ・マイドキュメント等のショートカットをサイレント一括修復する管理者用スクリプトをワンクリック生成。
+### 4. 🔗 LinkFixer (Broken Shortcuts & Office Macro Repair)
+![Tab 3: LinkFixer](docs/screenshots/tab3_linkfix.png)
+- **Mass Broken Shortcut (`.lnk`) Healing**: Repaths disconnected UNC targets to the new server across desktops, recent items, and start menus with `.bak` safety backups.
+- **Headless Office Deep Inspection (`.xlsx`, `.xlsm`)**: Scans OpenXML packages and legacy BIFF streams without launching Office COM. Fixes broken external formula workbook links and hardcoded VBA UNC paths with `~$` lock detection.
+- **Domain-Wide GPO Logon Script Generator (`.ps1`)**: Outputs ready-to-deploy PowerShell logon scripts to fix client PCs automatically at next login.
 
 ---
 
-### 5. 🧹 断捨離・健全化 (Audit & Hygiene - GDMS完全代替)
-![Tab 4: 断捨離・健全化](docs/screenshots/tab4_audit.png)
-- **高額パッケージ（GDMS等）の完全代替**:
-  - **重複ファイル検出**: ファイルサイズ絞り込み ➔ SHA256ハッシュ判定による完全一致判定。無駄容量を算出。
-  - **休眠ファイル抽出**: 3年以上アクセスのない放置データを抽出。
-  - **パス長（260字超）＆ 移行禁則文字チェック**: クラウド（SharePoint/Box）やWindows移行でエラーになる記号や長大パスを事前洗い出し。
-- **安全第一の運用ポリシー**: ツールによる自動削除は行わず、各部署提出用の**「棚卸し台帳（Excel/CSV）」**および**「安全退避（Archive移動）バッチ」**の生成に留めます。
+### 5. 🧹 Audit & Hygiene (Complete GDMS Alternative)
+![Tab 4: Audit & Hygiene](docs/screenshots/tab4_audit.png)
+- **Deduplication & Storage Cleanup**:
+  - **Duplicate Detection**: Size pre-filtering followed by cryptographic SHA256 verification.
+  - **Dormant Files**: Identifies stale files unaccessed/unmodified for 3+ years.
+  - **Path Limits (260+ Chars) & Invalid Character Audit**: Catches paths and illegal characters (`* : < > ? \ / | " # % { } ~ &`) that break Windows Explorer or Cloud migrations (SharePoint/Box).
+- **Safety First**: Zero automated deletions. Generates audit inventory sheets (Excel/CSV) and safe staged archive scripts (`move /Y` to archive shares).
 
 ---
 
-### 6. 🖼️ メディア・オプティマイザ (Storage Slimmer)
-![Tab 5: メディア最適化](docs/screenshots/tab5_media.png)
-- **聖域保護（自動スキップ）**: `_Master`, `印刷用`, `RAW`, `.psd`, `.ai` などのフォルダ名・プロ用拡張子は自動スキップ。
-- **写真の視覚的ロスレス軽量化**: 日常のスマホ写真（2MB超）を長辺2560px・85%品質で直接上書き軽量化（**約90%の容量削減**）。撮影日時・更新日時・作成日時・Exif・回転情報は100%維持。
-- **巨大モンスター動画Topランキング**: ギガ単位を消費する動画ファイルを容量順に抽出し、**夜間GPUエンコード（H.265 / NVENC / QSV）バッチ**を出力。
+### 6. 🖼️ Media Optimizer (Lossless Image Slimmer & Video Top)
+![Tab 5: Media Optimizer](docs/screenshots/tab5_media.png)
+- **Sanctuary Protection (Auto-Skip)**: Automatically protects designated master folders (`_Master`, `_Original`, `RAW`) and creative professional extensions (`.psd`, `.ai`, `.raw`).
+- **Visual Lossless Recompression**: Resizes 10MB+ smartphone camera snapshots to 2560px max dimension at 85% JPEG quality directly in-place. **Reduces photo weight by ~90%** while preserving 100% of EXIF, timestamps, and orientation.
+- **Giant Video Ranker & Nightly GPU Batch**: Extracts multi-gigabyte video files and generates GPU-accelerated (NVENC/QSV H.265) overnight encoding batch scripts.
 
 ---
 
-### 7. 📊 エグゼクティブExcelレポート出力
-- PCにOffice/Excelがインストールされていない環境でも動作（ClosedXMLベース）。
-- エグゼクティブサマリー、KPIカード、課題別集計、オートフィルター付き。
-- **完全パスのセルをクリックすると、エクスプローラーでそのフォルダが直接開く `file:///` ハイパーリンクを自動埋め込み**。
+### 7. 📊 Executive Excel Reporting
+- Zero dependency on Microsoft Office installation (powered by ClosedXML).
+- Formatted executive summary cards, KPI highlights, auto-filters, and clean typography.
+- **Embedded `file:///` hyperlinked paths**: Clicking any path in Excel immediately opens the target parent folder in Windows Explorer.
 
 ---
 
-## 🚀 ダウンロード & 起動方法
+## 🚀 Download & Quick Start
 
-### 動作要件
-- OS: Windows 10 / Windows 11 / Windows Server 2016 以降 (64-bit)
-- 追加ランタイムやインストーラーは**一切不要**（単一EXEに全て同梱）。
+### Requirements
+- OS: Windows 10 / Windows 11 / Windows Server 2016+ (64-bit)
+- **Zero prerequisites**: No .NET runtime installation required (100% self-contained single executable).
 
-### 起動手順
-1. 本リポジトリのルートにある [**`FolderMorpher.exe`**](FolderMorpher.exe)（または [Releases](../../releases)）をダウンロードします。
-2. そのままダブルクリックして起動してください。
-
----
-
-## 🛠️ 技術スタック & アーキテクチャ
-
-- **言語 / ランタイム**: C# 12 / .NET 8.0 Windows Desktop SDK (Self-Contained)
-- **UIフレームワーク**: WPF (Windows Presentation Foundation) / Fluent Design
-- **ディレクトリサービス**: `System.DirectoryServices` (LDAP / ADSI)
-- **セキュリティ**: `System.Security.AccessControl` (NTFS ACL / SDDL)
-- **Excel生成**: `ClosedXML` (OpenXML直接バイナリ生成)
-- **画像エンジン**: WIC (Windows Imaging Component / ハードウェアアクセラレーション)
-- **アーキテクチャ規約**: [`AGENTS.md`](AGENTS.md) にてサービス層とUI層を疎結合に保つADR（設計判断）を厳格に管理。
+### Instructions
+1. Download the single executable [**`FolderMorpher.exe`**](FolderMorpher.exe) from the repository root (or [Releases](../../releases)).
+2. Double-click `FolderMorpher.exe` to launch. No installer, no registry pollution.
 
 ---
 
-## 📄 免責事項 (Disclaimer)
+## 🛠️ Tech Stack & Architectural Guarantees
 
-本ツールはファイルサーバーの調査・移行・管理を支援するユーティリティです。重要なファイルサーバーや実環境で書き換え・移動を実行する際は、必ず事前にバックアップを取得した上でご活用ください。
+- **Language & Runtime**: C# 12 / .NET 8.0 Windows Desktop SDK (Self-Contained single file)
+- **UI Framework**: WPF (Windows Presentation Foundation) / Fluent Design Architecture
+- **Directory Services**: `System.DirectoryServices` (LDAP / Direct ADSI queries)
+- **Security Interop**: `System.Security.AccessControl` (Native NTFS ACL / SDDL)
+- **Office Engine**: `ClosedXML` (Direct OpenXML packaging) & Headless ZipArchive
+- **Imaging Engine**: WIC (Windows Imaging Component / Hardware Accelerated)
+- **Engineering Guidelines**: Strictly documented in [`AGENTS.md`](AGENTS.md) preserving decoupled service layers and ADR principles.
+
+---
+
+## 📄 Disclaimer
+
+FolderMorpher is an administrative utility designed for IT professionals. While all file-touching features include automatic backups (`.bak`, SDDL snapshots, staged archive moves), always ensure verified file server backups exist before executing batch operations on production volumes.
