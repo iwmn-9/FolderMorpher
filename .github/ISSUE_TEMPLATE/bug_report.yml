@@ -1,0 +1,72 @@
+﻿name: "🐛 Bug Report"
+description: Report a bug, crash, or unexpected behavior in FolderMorpher.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! Please provide the details below so we can accurately reproduce and fix it.
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - "Windows 11 (64-bit)"
+        - "Windows 10 (64-bit)"
+        - "Windows Server 2022"
+        - "Windows Server 2019"
+        - "Windows Server 2016"
+        - "Other"
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment Type
+      options:
+        - "Active Directory Domain-Joined"
+        - "Local Workgroup PC"
+        - "Azure AD / Entra ID"
+    validations:
+      required: true
+  - type: dropdown
+    id: target_storage
+    attributes:
+      label: Target Storage
+      options:
+        - "Local NTFS Volume (C:, D:, etc.)"
+        - "Windows Server SMB Share"
+        - "NAS (Synology / QNAP / etc.)"
+        - "Enterprise Storage (NetApp / EMC / etc.)"
+        - "Other"
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Describe the Bug
+      description: What happened? What did you expect to happen instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Step-by-step instructions to reproduce the issue.
+      placeholder: |
+        1. Open FolderMorpher
+        2. Go to Tab 'Storage Explorer'
+        3. Click 'Scan' on drive D:\
+    validations:
+      required: true
+  - type: textarea
+    id: error_logs
+    attributes:
+      label: Error Message or Stack Trace
+      description: Copy and paste any error dialog text or log output if available.
+      render: shell
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag and drop screenshots showing the problem.
