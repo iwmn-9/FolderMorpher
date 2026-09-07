@@ -3022,6 +3022,33 @@ namespace AstraSize
             DiffModalCloseButton.Content = isJa ? "閉じる" : "Close";
             DiffExportExcelButton.Content = isJa ? "📊 差分レポートをExcel出力" : "📊 Export Diffs (Excel)";
 
+            // Settings Modal
+            SettingsButton.ToolTip = isJa ? "環境設定 / Settings" : "Settings";
+            SettingsTitleText.Text = isJa ? "⚙️ 環境設定 (Settings)" : "⚙️ Settings";
+            SettingsDescText.Text = isJa
+                ? "キャッシュ、スナップショット履歴、監査レポートの参照先および保存先を構成します。"
+                : "Configure read and write locations for tree caches, snapshot histories, and audit reports.";
+            SettingsReadTitleText.Text = isJa ? "📂 キャッシュ・スナップショット 参照先 (読み込み)" : "📂 Cache & Snapshot Read Source";
+            SettingsReadDescText.Text = isJa
+                ? "共有ファイルサーバー上のマスターキャッシュ（UNCパス等）を指定すると、チーム共通の0秒ツリーや推移履歴を参照できます。"
+                : "Specify a master cache folder on a shared file server (e.g. UNC path) to access team-wide 0-second trees and histories.";
+            SettingsBrowseReadButton.Content = isJa ? "参照..." : "Browse...";
+            SettingsFallbackCheckBox.Content = isJa
+                ? "共有参照先にアクセスできない場合は自動でローカルキャッシュを参照する"
+                : "Automatically fall back to local cache if shared source is unreachable";
+            SettingsWriteTitleText.Text = isJa ? "💾 キャッシュ・スナップショット 保存先 (書き込み)" : "💾 Cache & Snapshot Write Destination";
+            SettingsWriteDescText.Text = isJa
+                ? "自身がスキャンした結果のツリーキャッシュおよび履歴データの保存場所を選択します。"
+                : "Select where your local scans save tree cache and historical data.";
+            SettingsWriteLocalText.Text = isJa ? "ローカルに保存" : "Save to Local";
+            SettingsWriteLocalSubText.Text = isJa ? " (推奨: マスターキャッシュを上書きしない安全設定)" : " (Recommended: Safe, won't overwrite master cache)";
+            SettingsWriteSameText.Text = isJa ? "参照先と同じフォルダーに保存" : "Save to same folder as read source";
+            SettingsWriteSameSubText.Text = isJa ? " (管理者・マスター更新者用)" : " (For administrators / master publishers)";
+            SettingsWriteCustomText.Text = isJa ? "任意のカスタムフォルダーを指定" : "Specify custom folder";
+            SettingsBrowseCustomButton.Content = isJa ? "参照..." : "Browse...";
+            SettingsCancelButton.Content = isJa ? "キャンセル" : "Cancel";
+            SettingsSaveButton.Content = isJa ? "設定を保存" : "Save Settings";
+
             // ステータスバー
             if (StatusTextBlock.Text == "準備完了" || StatusTextBlock.Text == "Ready")
             {
@@ -3031,6 +3058,111 @@ namespace AstraSize
             // 現在のアクティブタブのステータス再反映
             NavTab_Checked(this, new RoutedEventArgs());
         }
+        #endregion
+
+        #region Settings Modal (環境設定: キャッシュ共有・保存先)
+
+        private void SettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var settings = AppSettingsService.Instance.Current;
+            SettingsReadPathTextBox.Text = settings.CacheReadPath;
+            SettingsFallbackCheckBox.IsChecked = settings.FallbackToLocalOnReadError;
+
+            switch (settings.WriteMode)
+            {
+                case CacheWriteMode.SameAsRead:
+                    SettingsWriteModeSameRadio.IsChecked = true;
+                    break;
+                case CacheWriteMode.Custom:
+                    SettingsWriteModeCustomRadio.IsChecked = true;
+                    break;
+                case CacheWriteMode.Local:
+                default:
+                    SettingsWriteModeLocalRadio.IsChecked = true;
+                    break;
+            }
+
+            SettingsCustomPathTextBox.Text = settings.CacheWriteCustomPath;
+            UpdateSettingsCustomPathEnabled();
+
+            SettingsModalOverlay.Visibility = Visibility.Visible;
+        }
+
+        private void SettingsWriteModeRadio_Checked(object sender, RoutedEventArgs e)
+        {
+            UpdateSettingsCustomPathEnabled();
+        }
+
+        private void UpdateSettingsCustomPathEnabled()
+        {
+            if (SettingsCustomPathGrid != null && SettingsWriteModeCustomRadio != null)
+            {
+                SettingsCustomPathGrid.IsEnabled = SettingsWriteModeCustomRadio.IsChecked == true;
+            }
+        }
+
+        private void SettingsBrowseReadButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFolderDialog
+            {
+                Title = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                    ? "キャッシュ・スナップショットの参照先フォルダーを選択 (共有UNCパス可)"
+                    : "Select Cache & Snapshot Read Source Folder (UNC supported)",
+                InitialDirectory = SettingsReadPathTextBox.Text.Trim()
+            };
+            if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.FolderName))
+            {
+                SettingsReadPathTextBox.Text = dialog.FolderName;
+            }
+        }
+
+        private void SettingsBrowseCustomButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFolderDialog
+            {
+                Title = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                    ? "キャッシュ・スナップショットの保存先フォルダーを選択"
+                    : "Select Cache & Snapshot Write Destination Folder",
+                InitialDirectory = SettingsCustomPathTextBox.Text.Trim()
+            };
+            if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.FolderName))
+            {
+                SettingsCustomPathTextBox.Text = dialog.FolderName;
+            }
+        }
+
+        private void SettingsCancelButton_Click(object sender, RoutedEventArgs e)
+        {
+            SettingsModalOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private void SettingsSaveButton_Click(object sender, RoutedEventArgs e)
+        {
+            var settings = AppSettingsService.Instance.Current;
+            settings.CacheReadPath = SettingsReadPathTextBox.Text.Trim();
+            settings.FallbackToLocalOnReadError = SettingsFallbackCheckBox.IsChecked == true;
+
+            if (SettingsWriteModeSameRadio.IsChecked == true)
+            {
+                settings.WriteMode = CacheWriteMode.SameAsRead;
+            }
+            else if (SettingsWriteModeCustomRadio.IsChecked == true)
+            {
+                settings.WriteMode = CacheWriteMode.Custom;
+                settings.CacheWriteCustomPath = SettingsCustomPathTextBox.Text.Trim();
+            }
+            else
+            {
+                settings.WriteMode = CacheWriteMode.Local;
+            }
+
+            AppSettingsService.Instance.Save();
+            SettingsModalOverlay.Visibility = Visibility.Collapsed;
+            ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                ? "環境設定を保存しました"
+                : "Settings saved successfully");
+        }
+
         #endregion
     }
 }

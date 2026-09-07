@@ -30,7 +30,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 10;
+            int totalTests = 11;
 
             try
             {
@@ -89,9 +89,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 10
-                Console.WriteLine("\n[TEST 10/10] Storage History: 0s Tree Cache Persistence & Automatic Background Diff Detection...");
+                Console.WriteLine("\n[TEST 10/11] Storage History: 0s Tree Cache Persistence & Automatic Background Diff Detection...");
                 await TestStorageHistoryTreeCacheAndDiffAsync();
                 Console.WriteLine("  --> [PASS] Storage History: Tree cache restored in 0s, size diffs & badges automatically calculated.");
+                passCount++;
+
+                // Test 11
+                Console.WriteLine("\n[TEST 11/11] App Settings: Shared Cache Read Source Cascade & Write Destination Resolution...");
+                TestAppSettingsSharedCacheResolution();
+                Console.WriteLine("  --> [PASS] App Settings: Shared cache cascade fallback and write destination modes 100% verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -1240,6 +1246,59 @@ namespace FolderMorpher.Services.Testing
             if (newSubB.DiffBytes != 0 || newSubB.HasDiff)
             {
                 throw new InvalidOperationException("TreeDiff 差分誤爆エラー: 変化のない Dev に差分が検出されています。");
+            }
+        }
+
+        private static void TestAppSettingsSharedCacheResolution()
+        {
+            var service = new AppSettingsService();
+            var settings = service.Current;
+            var localDefault = service.GetDefaultLocalBaseDirectory();
+
+            // 1. 空の参照先 -> ローカル既定値
+            settings.CacheReadPath = "";
+            var readBase = service.GetEffectiveReadBaseDirectory();
+            if (readBase != localDefault)
+            {
+                throw new InvalidOperationException($"AppSettings エラー: 空の参照先でローカル既定値が返っていません ({readBase})");
+            }
+
+            // 2. 存在しない共有UNCパス + Fallback有効 -> ローカル既定値にフォールバック
+            settings.CacheReadPath = @"\\NonExistentFakeServer\FakeShare\Cache";
+            settings.FallbackToLocalOnReadError = true;
+            readBase = service.GetEffectiveReadBaseDirectory();
+            if (readBase != localDefault)
+            {
+                throw new InvalidOperationException($"AppSettings エラー: 存在しない共有パスでローカルフォールバックが機能していません ({readBase})");
+            }
+
+            // 3. 書き込みモード: Local -> ローカル既定値
+            settings.WriteMode = CacheWriteMode.Local;
+            var writeBase = service.GetEffectiveWriteBaseDirectory();
+            if (writeBase != localDefault)
+            {
+                throw new InvalidOperationException($"AppSettings エラー: Local書き込みモードでローカル既定値が返っていません ({writeBase})");
+            }
+
+            // 4. 書き込みモード: Custom -> 指定パス
+            string tempDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_SettingsTest_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                settings.WriteMode = CacheWriteMode.Custom;
+                settings.CacheWriteCustomPath = tempDir;
+                writeBase = service.GetEffectiveWriteBaseDirectory();
+                if (writeBase != tempDir)
+                {
+                    throw new InvalidOperationException($"AppSettings エラー: Custom書き込みモードで指定パスが返っていません ({writeBase})");
+                }
+            }
+            finally
+            {
+                try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
+                // 元に戻す
+                settings.CacheReadPath = "";
+                settings.WriteMode = CacheWriteMode.Local;
+                settings.CacheWriteCustomPath = "";
             }
         }
     }

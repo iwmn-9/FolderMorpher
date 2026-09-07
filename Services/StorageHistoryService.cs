@@ -5,34 +5,52 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using AstraSize.Models;
+using FolderMorpher.Services;
 
 namespace AstraSize.Services
 {
     public class StorageHistoryService
     {
-        private readonly string _historyFilePath;
+        private readonly string _defaultLocalHistoryFilePath;
 
         public StorageHistoryService()
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             var dir = Path.Combine(appData, "FolderMorpher");
             Directory.CreateDirectory(dir);
-            _historyFilePath = Path.Combine(dir, "history.json");
+            _defaultLocalHistoryFilePath = Path.Combine(dir, "history.json");
 
             // 旧 AstraSize からのデータ移行（存在すればコピー）
             var legacyPath = Path.Combine(appData, "AstraSize", "history.json");
-            if (!File.Exists(_historyFilePath) && File.Exists(legacyPath))
+            if (!File.Exists(_defaultLocalHistoryFilePath) && File.Exists(legacyPath))
             {
-                try { File.Copy(legacyPath, _historyFilePath); } catch { }
+                try { File.Copy(legacyPath, _defaultLocalHistoryFilePath); } catch { }
             }
+        }
+
+        private string GetSnapshotReadFilePath()
+        {
+            var readDir = AppSettingsService.Instance.GetReadDirectory("Snapshots");
+            var path = Path.Combine(readDir, "history.json");
+            if (File.Exists(path)) return path;
+
+            // 共有参照先に無い場合はローカル既定パスをフォールバック
+            return _defaultLocalHistoryFilePath;
+        }
+
+        private string GetSnapshotWriteFilePath()
+        {
+            var writeDir = AppSettingsService.Instance.GetWriteDirectory("Snapshots");
+            return Path.Combine(writeDir, "history.json");
         }
 
         public async Task<List<ScanSnapshot>> LoadAllAsync()
         {
-            if (!File.Exists(_historyFilePath)) return new List<ScanSnapshot>();
+            var readPath = GetSnapshotReadFilePath();
+            if (!File.Exists(readPath)) return new List<ScanSnapshot>();
             try
             {
-                var json = await File.ReadAllTextAsync(_historyFilePath);
+                var json = await File.ReadAllTextAsync(readPath);
                 var list = JsonSerializer.Deserialize<List<ScanSnapshot>>(json);
                 return list ?? new List<ScanSnapshot>();
             }
@@ -46,9 +64,17 @@ namespace AstraSize.Services
         {
             try
             {
+                var writePath = GetSnapshotWriteFilePath();
+                var dir = Path.GetDirectoryName(writePath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
                 var options = new JsonSerializerOptions { WriteIndented = true };
                 var json = JsonSerializer.Serialize(list, options);
-                await File.WriteAllTextAsync(_historyFilePath, json);
+
+                // アトミック書き込み（一時ファイル -> 置換）で共有破損を防止
+                var tempFile = writePath + $".tmp_{Guid.NewGuid():N}";
+                await File.WriteAllTextAsync(tempFile, json);
+                File.Move(tempFile, writePath, overwrite: true);
             }
             catch
             {
@@ -132,22 +158,35 @@ namespace AstraSize.Services
 
         #region Tree Cache & Diff Engine (ファイルサーバー高速0秒キャッシュ ＆ 自動差分検出)
 
-        private string GetTreeCacheDirectory()
-        {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var dir = Path.Combine(appData, "FolderMorpher", "TreeCaches");
-            Directory.CreateDirectory(dir);
-            return dir;
-        }
-
-        private string GetCacheFilePathForPath(string targetPath)
+        private static string GetCacheFileName(string targetPath)
         {
             var normalized = targetPath.TrimEnd('\\', '/').ToLowerInvariant();
             using var sha = System.Security.Cryptography.SHA256.Create();
             var bytes = System.Text.Encoding.UTF8.GetBytes(normalized);
             var hash = sha.ComputeHash(bytes);
-            var hashStr = Convert.ToHexString(hash);
-            return Path.Combine(GetTreeCacheDirectory(), $"{hashStr}.json");
+            return $"{Convert.ToHexString(hash)}.json";
+        }
+
+        private string? GetTreeCacheReadFilePath(string targetPath)
+        {
+            var fileName = GetCacheFileName(targetPath);
+            var readDir = AppSettingsService.Instance.GetReadDirectory("TreeCaches");
+            var primaryPath = Path.Combine(readDir, fileName);
+            if (File.Exists(primaryPath)) return primaryPath;
+
+            // 共有参照先に無い場合はローカル既定キャッシュをフォールバック
+            var localBase = AppSettingsService.Instance.GetDefaultLocalBaseDirectory();
+            var localPath = Path.Combine(localBase, "TreeCaches", fileName);
+            if (File.Exists(localPath)) return localPath;
+
+            return null;
+        }
+
+        private string GetTreeCacheWriteFilePath(string targetPath)
+        {
+            var fileName = GetCacheFileName(targetPath);
+            var writeDir = AppSettingsService.Instance.GetWriteDirectory("TreeCaches");
+            return Path.Combine(writeDir, fileName);
         }
 
         public async Task SaveTreeCacheAsync(FileItemNode rootNode)
@@ -156,7 +195,10 @@ namespace AstraSize.Services
 
             try
             {
-                var filePath = GetCacheFilePathForPath(rootNode.FullPath);
+                var filePath = GetTreeCacheWriteFilePath(rootNode.FullPath);
+                var dir = Path.GetDirectoryName(filePath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
                 var cacheRoot = new TreeCacheRoot
                 {
                     TargetPath = rootNode.FullPath,
@@ -166,7 +208,11 @@ namespace AstraSize.Services
 
                 var options = new JsonSerializerOptions { WriteIndented = false };
                 var json = JsonSerializer.Serialize(cacheRoot, options);
-                await File.WriteAllTextAsync(filePath, json);
+
+                // アトミック書き込みで共有破損を防止
+                var tempFile = filePath + $".tmp_{Guid.NewGuid():N}";
+                await File.WriteAllTextAsync(tempFile, json);
+                File.Move(tempFile, filePath, overwrite: true);
             }
             catch
             {
@@ -180,8 +226,8 @@ namespace AstraSize.Services
 
             try
             {
-                var filePath = GetCacheFilePathForPath(targetPath);
-                if (!File.Exists(filePath)) return null;
+                var filePath = GetTreeCacheReadFilePath(targetPath);
+                if (filePath == null || !File.Exists(filePath)) return null;
 
                 var json = await File.ReadAllTextAsync(filePath);
                 var cacheRoot = JsonSerializer.Deserialize<TreeCacheRoot>(json);

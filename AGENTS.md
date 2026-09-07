@@ -102,10 +102,14 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
    - 全画面の DataGrid / リストから Excel のようなダサい格子罫線（`GridLinesVisibility="Horizontal|Vertical"`）や二重の枠線（`BorderThickness="1"`）を完全禁止・撤廃。
    - `GridLinesVisibility="None"`, `BorderThickness="0"`, `Background="Transparent"` を基調とし、十分な行間（`RowHeight=28〜36px`）と淡いホバー背景（`#F8FAFC`）による余白主導のモダン・エレガントなレイアウトに統一。
 18. **ファイルサーバー0秒ツリーキャッシュ ＆ バックグラウンド自動差分スキャン（案3）**:
-   - スキャン開始時、キャッシュ（`%LocalAppData%\FolderMorpher\TreeCaches\<hash>.json`）が存在すれば「0秒」で前回のツリー構造を即時全展開。
+   - スキャン開始時、キャッシュが存在すれば「0秒」で前回のツリー構造を即時全展開。
    - UIを一切ブロックせず、バックグラウンドで最新ネットワーク走査を実行。
    - スキャン完了時に新旧ツリーの差分を自動検出し、サイズが変化したフォルダやファイルに増減バッジ（`▲ +2.4GB` / `▼ -500MB`）を自動付与して最新化。
    - スキャン完了後は最新ツリーを自動でキャッシュ上書き保存。
+19. **共有キャッシュ・スナップショット 参照先/保存先分離アーキテクチャ (AppSettingsService)**:
+   - 社内ファイルサーバー上などの「公式共有マスターキャッシュ（UNCパス）」をチーム全体で参照しつつ、個人のスキャン結果でマスターを意図せず上書きしないよう「参照先（Read）」と「保存先（Write）」を分離構成可能。
+   - 指定フォルダー配下に `TreeCaches\` (ツリー構造), `Snapshots\` (容量推移), `Reports\` (監査台帳) が体系的に集約され、推移グラフもチーム共通で共有可能。
+   - 共有フォルダーアクセス不能時は自動でローカル（AppData）へフォールバックし、書き込みはアトミック置換（一時ファイル -> 置換）により同時アクセス破損を完全防止。
 
 ---
 
@@ -125,7 +129,7 @@ Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe"
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 10/10 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 11/11 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

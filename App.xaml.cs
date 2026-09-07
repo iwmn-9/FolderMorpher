@@ -207,6 +207,11 @@ namespace AstraSize
                             else if (selectTab == 3) mw.NavTabLinkFix.IsChecked = true;
                             else if (selectTab == 4) mw.NavTabAudit.IsChecked = true;
                             else if (selectTab == 5) mw.NavTabMedia.IsChecked = true;
+                            else if (selectTab == 99)
+                            {
+                                mw.NavTabStorage.IsChecked = true;
+                                mw.SettingsButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                            }
                             else mw.NavTabStorage.IsChecked = true;
 
                             if (collapseSidebar)

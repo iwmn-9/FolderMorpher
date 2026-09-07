@@ -79,9 +79,14 @@
                             <TextBlock Text="FolderMorpher v1.3.0" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                             <TextBlock Text="Storage &amp; Migration Studio" FontSize="10.5" Foreground="#94A3B8" Margin="0,1,0,0"/>
                         </StackPanel>
-                        <Button x:Name="LanguageToggleButton" Content="🌐 EN" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                Padding="6,2" Height="24" FontSize="11" FontWeight="Bold" Foreground="#2563EB"
-                                Style="{StaticResource FluentButtonSecondary}" Click="LanguageToggleButton_Click" ToolTip="言語切り替え / Switch Language (JA / EN)"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button x:Name="SettingsButton" Content="⚙️" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Padding="5,2" Height="24" FontSize="11" Margin="0,0,4,0"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="SettingsButton_Click" ToolTip="環境設定 / Settings"/>
+                            <Button x:Name="LanguageToggleButton" Content="🌐 EN" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Padding="6,2" Height="24" FontSize="11" FontWeight="Bold" Foreground="#2563EB"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="LanguageToggleButton_Click" ToolTip="言語切り替え / Switch Language (JA / EN)"/>
+                        </StackPanel>
                     </Grid>
                 </Border>
             </Grid>
@@ -1863,6 +1868,104 @@
                     <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
                         <Button x:Name="DiffModalCloseButton" Content="閉じる" Height="32" Width="80" Margin="0,0,8,0" Style="{StaticResource FluentButtonSecondary}" Click="DiffModalClose_Click"/>
                         <Button x:Name="DiffExportExcelButton" Content="📊 差分レポートをExcel出力" Height="32" Style="{StaticResource FluentButtonPrimary}" Click="DiffExportExcel_Click"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ======================================================== -->
+        <!-- MODAL 3: SETTINGS MODAL (環境設定: キャッシュ共有・保存先)   -->
+        <!-- ======================================================== -->
+        <Grid x:Name="SettingsModalOverlay" Grid.RowSpan="3" Background="#80000000" Visibility="Collapsed">
+            <Border Background="#FFFFFF" Width="640" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    CornerRadius="12" BorderBrush="#CBD5E1" BorderThickness="1" Padding="24">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="24" ShadowDepth="6" Direction="270" Color="#000000" Opacity="0.25"/>
+                </Border.Effect>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/> <!-- Title -->
+                        <RowDefinition Height="Auto"/> <!-- Description -->
+                        <RowDefinition Height="*"/>    <!-- Settings Body -->
+                        <RowDefinition Height="Auto"/> <!-- Actions -->
+                    </Grid.RowDefinitions>
+
+                    <!-- Title -->
+                    <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                        <TextBlock x:Name="SettingsTitleText" Text="⚙️ 環境設定 (Settings)" FontSize="16" FontWeight="Bold" Foreground="#0F172A"/>
+                        <TextBlock x:Name="SettingsDescText" Text="キャッシュ、スナップショット履歴、監査レポートの参照先および保存先を構成します。" FontSize="11.5" Foreground="#64748B" Margin="0,4,0,0"/>
+                    </StackPanel>
+
+                    <!-- Settings Body -->
+                    <StackPanel Grid.Row="2" Margin="0,4,0,16">
+                        <!-- Read Cache Card -->
+                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock x:Name="SettingsReadTitleText" Text="📂 キャッシュ・スナップショット 参照先 (読み込み)" FontWeight="Bold" FontSize="12.5" Foreground="#1E293B"/>
+                                <TextBlock x:Name="SettingsReadDescText" Text="共有ファイルサーバー上のマスターキャッシュ（UNCパス等）を指定すると、チーム共通の0秒ツリーや推移履歴を参照できます。" FontSize="11" Foreground="#64748B" Margin="0,2,0,8" TextWrapping="Wrap"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="SettingsReadPathTextBox" Height="32" VerticalContentAlignment="Center" Padding="8,0" FontSize="12"
+                                             Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1"
+                                             ToolTip="空の場合はローカル既定値 (%LocalAppData%\FolderMorpher) を参照します"/>
+                                    <Button x:Name="SettingsBrowseReadButton" Grid.Column="1" Content="参照..." Margin="8,0,0,0" Width="70" Height="32"
+                                            Style="{StaticResource FluentButtonSecondary}" Click="SettingsBrowseReadButton_Click"/>
+                                </Grid>
+                                <CheckBox x:Name="SettingsFallbackCheckBox" Content="共有参照先にアクセスできない場合は自動でローカルキャッシュを参照する"
+                                          IsChecked="True" FontSize="11.5" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Write Cache Card -->
+                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="14">
+                            <StackPanel>
+                                <TextBlock x:Name="SettingsWriteTitleText" Text="💾 キャッシュ・スナップショット 保存先 (書き込み)" FontWeight="Bold" FontSize="12.5" Foreground="#1E293B"/>
+                                <TextBlock x:Name="SettingsWriteDescText" Text="自身がスキャンした結果のツリーキャッシュおよび履歴データの保存場所を選択します。" FontSize="11" Foreground="#64748B" Margin="0,2,0,8" TextWrapping="Wrap"/>
+
+                                <RadioButton x:Name="SettingsWriteModeLocalRadio" GroupName="WriteMode" IsChecked="True" Margin="0,2,0,4"
+                                             Checked="SettingsWriteModeRadio_Checked">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock x:Name="SettingsWriteLocalText" Text="ローカルに保存" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B"/>
+                                        <TextBlock x:Name="SettingsWriteLocalSubText" Text=" (推奨: マスターキャッシュを上書きしない安全設定)" FontSize="11" Foreground="#64748B"/>
+                                    </StackPanel>
+                                </RadioButton>
+
+                                <RadioButton x:Name="SettingsWriteModeSameRadio" GroupName="WriteMode" Margin="0,2,0,4"
+                                             Checked="SettingsWriteModeRadio_Checked">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock x:Name="SettingsWriteSameText" Text="参照先と同じフォルダーに保存" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B"/>
+                                        <TextBlock x:Name="SettingsWriteSameSubText" Text=" (管理者・マスター更新者用)" FontSize="11" Foreground="#64748B"/>
+                                    </StackPanel>
+                                </RadioButton>
+
+                                <RadioButton x:Name="SettingsWriteModeCustomRadio" GroupName="WriteMode" Margin="0,2,0,4"
+                                             Checked="SettingsWriteModeRadio_Checked">
+                                    <TextBlock x:Name="SettingsWriteCustomText" Text="任意のカスタムフォルダーを指定" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B"/>
+                                </RadioButton>
+
+                                <Grid x:Name="SettingsCustomPathGrid" Margin="22,6,0,0" IsEnabled="False">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="SettingsCustomPathTextBox" Height="30" VerticalContentAlignment="Center" Padding="8,0" FontSize="11.5"
+                                             Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1"/>
+                                    <Button x:Name="SettingsBrowseCustomButton" Grid.Column="1" Content="参照..." Margin="8,0,0,0" Width="70" Height="30"
+                                            Style="{StaticResource FluentButtonSecondary}" Click="SettingsBrowseCustomButton_Click"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Actions -->
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button x:Name="SettingsCancelButton" Content="キャンセル" Width="90" Height="32" Margin="0,0,8,0"
+                                Style="{StaticResource FluentButtonSecondary}" Click="SettingsCancelButton_Click"/>
+                        <Button x:Name="SettingsSaveButton" Content="設定を保存" Width="100" Height="32"
+                                Style="{StaticResource FluentButtonPrimary}" Click="SettingsSaveButton_Click"/>
                     </StackPanel>
                 </Grid>
             </Border>
