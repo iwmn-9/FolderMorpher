@@ -76,7 +76,7 @@
                 <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="14,10">
                     <Grid>
                         <StackPanel x:Name="SidebarFooterPanel" VerticalAlignment="Center">
-                            <TextBlock Text="FolderMorpher v1.2.4" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                            <TextBlock Text="FolderMorpher v1.3.0" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                             <TextBlock Text="Storage &amp; Migration Studio" FontSize="10.5" Foreground="#94A3B8" Margin="0,1,0,0"/>
                         </StackPanel>
                         <Button x:Name="LanguageToggleButton" Content="🌐 EN" HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -179,7 +179,7 @@
                             </Grid>
                         </Border>
 
-                        <Button Grid.Column="2" Content="参照..." Margin="8,0,0,0" Height="32"
+                        <Button x:Name="StorageBrowseButton" Grid.Column="2" Content="参照..." Margin="8,0,0,0" Height="32"
                                 Style="{StaticResource FluentButtonSecondary}" Click="BrowseButton_Click"/>
 
                         <Border Grid.Column="3" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="32" Width="140" Margin="10,0,10,0" Padding="8,0">
@@ -490,8 +490,8 @@
                         </Border>
 
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,16,0">
-                            <Button Content="参照..." Height="32" Margin="0,0,6,0" Style="{StaticResource FluentButtonSecondary}" Click="LiveAclBrowseButton_Click"/>
-                            <Button Content="🔄 権限読込" Height="32" Style="{StaticResource FluentButtonSecondary}" Click="LiveAclReloadButton_Click"/>
+                            <Button x:Name="LiveAclBrowseButton" Content="参照..." Height="32" Margin="0,0,6,0" Style="{StaticResource FluentButtonSecondary}" Click="LiveAclBrowseButton_Click"/>
+                            <Button x:Name="LiveAclReloadButton" Content="🔄 権限読込" Height="32" Style="{StaticResource FluentButtonSecondary}" Click="LiveAclReloadButton_Click"/>
                         </StackPanel>
 
                         <StackPanel Grid.Column="3" Orientation="Horizontal">
@@ -524,7 +524,6 @@
                                 <RowDefinition Height="Auto"/> <!-- Folder Info & Inherit Header -->
                                 <RowDefinition Height="Auto"/> <!-- Drop Zone / Help Banner -->
                                 <RowDefinition Height="*"/>    <!-- Cards Area -->
-                                <RowDefinition Height="Auto"/> <!-- Trash Zone -->
                             </Grid.RowDefinitions>
 
                             <!-- Folder Header -->
@@ -534,29 +533,30 @@
                                     <TextBlock x:Name="LiveAclFolderNameText" Text="(未読込)" FontWeight="Bold" FontSize="13" Foreground="#0284C7"/>
                                     <TextBlock x:Name="LiveAclOwnerText" Text="" FontSize="11" Foreground="#64748B" Margin="14,0,0,0" VerticalAlignment="Center"/>
                                 </StackPanel>
-                                <CheckBox x:Name="LiveAclInheritCheckBox" Content="親フォルダからの権限継承を含める" HorizontalAlignment="Right"
-                                          FontSize="11" VerticalAlignment="Center" Checked="LiveAclInheritCheckBox_Changed" Unchecked="LiveAclInheritCheckBox_Changed"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <CheckBox x:Name="LiveAclInheritCheckBox" Content="親フォルダからの権限継承を含める"
+                                              FontSize="11" FontWeight="Medium" Foreground="#334155" VerticalAlignment="Center"
+                                              Checked="LiveAclInheritCheckBox_Changed" Unchecked="LiveAclInheritCheckBox_Changed"/>
+                                </StackPanel>
                             </Grid>
 
-                            <!-- Live AD Drop Target Zone -->
-                            <Border Grid.Row="1" Background="#F0F9FF" BorderBrush="#BAE6FD" BorderThickness="1.5"
-                                    CornerRadius="8" Padding="14,10" Margin="0,0,0,14" AllowDrop="True"
-                                    Drop="LiveAclDropZone_Drop" DragOver="SimGenericDragOver">
-                                <Grid>
-                                    <TextBlock Text="📥 右のADプリンシパル（ユーザー・グループ）をここにドロップして権限を追加"
-                                               FontSize="11" Foreground="#0284C7" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                                </Grid>
+                            <!-- Drop Zone Banner (カード追加の受け皿) -->
+                            <Border Grid.Row="1" Background="#F0F9FF" BorderBrush="#BAE6FD" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,12"
+                                    AllowDrop="True" Drop="LiveAclDropZone_Drop" DragOver="SimGenericDragOver">
+                                <TextBlock Text="📥 右のADプリンシパル（ユーザー・グループ）をここにドロップして権限を追加"
+                                           FontSize="11" FontWeight="SemiBold" Foreground="#0284C7" HorizontalAlignment="Center"/>
                             </Border>
 
-                            <!-- Permissions Cards Flow -->
-                            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                            <!-- ACL Cards Area -->
+                            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
+                                          AllowDrop="True" Drop="LiveAclCardsContainer_Drop" DragOver="SimGenericDragOver">
                                 <StackPanel>
                                     <Grid Margin="0,0,0,10">
-                                        <TextBlock Text="🛡️ 付与されているNTFSアクセス権 (カードWクリックでWindows詳細設定を編集)"
-                                                   FontSize="12" FontWeight="Bold" Foreground="#0F172A"/>
-                                        <Button Content="⚙️ 詳細権限を直接編集" FontSize="10" Height="24" Padding="10,2"
-                                                Style="{StaticResource FluentButtonSecondary}" HorizontalAlignment="Right"
-                                                Click="LiveAclOpenSecModalButton_Click"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="◐ 付与されているNTFSアクセス権 (カードWクリックでWindows詳細設定を編集)" FontWeight="SemiBold" FontSize="12" Foreground="#334155" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <Button x:Name="LiveAclOpenSecModalButton" Content="⚙️ 詳細権限を直接編集" FontSize="10" Height="24" Padding="10,2"
+                                                Style="{StaticResource FluentButtonSecondary}" HorizontalAlignment="Right" Click="LiveAclOpenSecModalButton_Click"/>
                                     </Grid>
 
                                     <ItemsControl x:Name="LiveAclCardsItemsControl">
@@ -568,7 +568,9 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate DataType="{x:Type models:SimAclEntry}">
                                                 <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8"
-                                                        Padding="12,8" Margin="0,0,8,8" Cursor="Hand" MouseDown="LiveAclCard_MouseDown">
+                                                        Padding="12,8" Margin="0,0,8,8" Cursor="Hand"
+                                                        MouseDown="LiveAclCard_MouseDown"
+                                                        PreviewMouseMove="LiveAclCard_PreviewMouseMove">
                                                     <Border.Effect>
                                                         <DropShadowEffect BlurRadius="4" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.03"/>
                                                     </Border.Effect>
@@ -580,7 +582,7 @@
                                                         </Border>
                                                         <Button Content="✕" FontSize="10" Width="18" Height="18" Margin="4,0,0,0"
                                                                 Background="Transparent" BorderThickness="0" Foreground="#94A3B8"
-                                                                Click="LiveAclDeleteEntryButton_Click" Tag="{Binding}" ToolTip="権限削除"/>
+                                                                Click="LiveAclDeleteEntryButton_Click" Tag="{Binding}" ToolTip="権限解除"/>
                                                     </StackPanel>
                                                 </Border>
                                             </DataTemplate>
@@ -588,14 +590,6 @@
                                     </ItemsControl>
                                 </StackPanel>
                             </ScrollViewer>
-
-                            <!-- Trash Drop Zone -->
-                            <Border Grid.Row="3" Background="#FFF1F2" BorderBrush="#FECDD3" BorderThickness="1"
-                                    CornerRadius="8" Height="40" Margin="0,10,0,0" AllowDrop="True"
-                                    Drop="LiveAclTrashZone_Drop" DragOver="SimGenericDragOver">
-                                <TextBlock Text="🗑️ ここにドロップして権限カードをポイ捨て削除" FontSize="11" FontWeight="Bold"
-                                           Foreground="#E11D48" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
                         </Grid>
                     </Border>
 
@@ -694,7 +688,7 @@
                                          TextChanged="RevRootPathTextBox_TextChanged"/>
                             </Border>
 
-                            <Button Grid.Column="4" Content="参照..." Height="32" Margin="0,0,12,0" Style="{StaticResource FluentButtonSecondary}" Click="RevBrowseRoot_Click"/>
+                            <Button x:Name="RevBrowseRootButton" Grid.Column="4" Content="参照..." Height="32" Margin="0,0,12,0" Style="{StaticResource FluentButtonSecondary}" Click="RevBrowseRoot_Click"/>
 
                             <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0">
                                 <TextBlock Text="階層:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
@@ -930,7 +924,7 @@
                                 <TextBlock Text="📁 移行先ルート: " Foreground="#64748B" VerticalAlignment="Center" FontSize="11"/>
                                 <TextBox x:Name="SimTargetRootTextBox" Grid.Column="1" BorderThickness="0" Background="Transparent"
                                          VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}" Text="\\NewServer01\Share"/>
-                                <Button Grid.Column="2" Content="参照..." Background="Transparent" BorderThickness="0" Foreground="#0284C7" FontSize="11" Click="SimTargetBrowse_Click"/>
+                                <Button x:Name="SimTargetBrowseButton" Grid.Column="2" Content="参照..." Background="Transparent" BorderThickness="0" Foreground="#0284C7" FontSize="11" Click="SimTargetBrowse_Click"/>
                             </Grid>
                         </Border>
 
@@ -993,7 +987,7 @@
                                     <TextBox x:Name="SimSourcePathTextBox" BorderThickness="0" Background="Transparent"
                                              VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"/>
                                 </Border>
-                                <Button Grid.Column="1" Content="読込" Height="28" Margin="6,0,0,0"
+                                <Button x:Name="SimSourceLoadButton" Grid.Column="1" Content="読込" Height="28" Margin="6,0,0,0"
                                         Style="{StaticResource FluentButtonSecondary}" Padding="10,2" Click="SimSourceLoadButton_Click"/>
                             </Grid>
 
@@ -1035,7 +1029,6 @@
                                 <RowDefinition Height="1.2*"/> <!-- Mock TreeView (Draggable, Indented) -->
                                 <RowDefinition Height="Auto"/> <!-- Divider -->
                                 <RowDefinition Height="1.1*"/> <!-- Selected Folder Accordion Panel -->
-                                <RowDefinition Height="Auto"/> <!-- Trash Zone -->
                             </Grid.RowDefinitions>
 
                             <Grid Grid.Row="0" Margin="0,0,0,10">
@@ -1044,7 +1037,7 @@
                                     <TextBlock Text="💡 閉じたフォルダ行に直ドロップでサブ化 / クイックボタンや左ずらしで一気にルートへ昇格" FontSize="10" Foreground="#0284C7"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button Content="＋ ルートフォルダ新設" Height="26" Style="{StaticResource FluentButtonSecondary}"
+                                    <Button x:Name="SimAddRootFolderButton" Content="＋ ルートフォルダ新設" Height="26" Style="{StaticResource FluentButtonSecondary}"
                                             FontSize="11" Padding="8,2" Click="SimAddRootFolderButton_Click"/>
                                 </StackPanel>
                             </Grid>
@@ -1113,8 +1106,9 @@
 
                             <Separator Grid.Row="2" Margin="0,8,0,8" Background="#E2E8F0"/>
 
-                            <!-- Accordion Panel for Selected Folder -->
-                            <Border Grid.Row="3" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Padding="12">
+                            <!-- Accordion Panel for Selected Folder (広域ドロップ受容) -->
+                            <Border Grid.Row="3" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Padding="12"
+                                    AllowDrop="True" Drop="SimAccordion_Drop" DragOver="SimGenericDragOver">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <StackPanel>
                                         <!-- Selected Node Info -->
@@ -1148,7 +1142,8 @@
                                                 <ItemsControl x:Name="SimMappedSourcesItemsControl">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
-                                                            <Border Background="#FFFFFF" BorderBrush="#E9D5FF" BorderThickness="1" CornerRadius="4" Padding="6,3" Margin="0,2">
+                                                            <Border Background="#FFFFFF" BorderBrush="#E9D5FF" BorderThickness="1" CornerRadius="4" Padding="6,3" Margin="0,2"
+                                                                    Cursor="Hand" MouseDown="SimMappedSource_MouseDown" PreviewMouseMove="SimMappedSource_PreviewMouseMove">
                                                                 <Grid>
                                                                     <TextBlock Text="{Binding StringFormat='🔗 {0}'}" FontSize="11" FontFamily="{StaticResource MonoFont}" Foreground="#4C1D95" VerticalAlignment="Center"/>
                                                                     <Button Content="✕ 解除" HorizontalAlignment="Right" FontSize="10.5" Foreground="#E11D48"
@@ -1169,7 +1164,7 @@
                                             <StackPanel>
                                                 <Grid Margin="0,0,0,4">
                                                     <TextBlock Text="🛡️ 割り当てられたADアクセス権 (カードWクリックで詳細編集)" FontSize="11.5" FontWeight="Bold" Foreground="#0369A1"/>
-                                                    <Button Content="⚙️ セキュリティ詳細設定" FontSize="10.5" Height="22" Padding="6,1"
+                                                    <Button x:Name="SimOpenSecModalButton" Content="⚙️ セキュリティ詳細設定" FontSize="10.5" Height="22" Padding="6,1"
                                                             Style="{StaticResource FluentButtonSecondary}" HorizontalAlignment="Right"
                                                             Click="SimOpenSecModalButton_Click"/>
                                                 </Grid>
@@ -1183,7 +1178,9 @@
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate DataType="{x:Type models:SimAclEntry}">
                                                             <Border Background="#FFFFFF" BorderBrush="#BAE6FD" BorderThickness="1" CornerRadius="4"
-                                                                    Padding="8,4" Margin="0,0,6,6" Cursor="Hand" MouseDown="SimAclCard_MouseDown">
+                                                                    Padding="8,4" Margin="0,0,6,6" Cursor="Hand"
+                                                                    MouseDown="SimAclCard_MouseDown"
+                                                                    PreviewMouseMove="SimAclCard_PreviewMouseMove">
                                                                 <StackPanel Orientation="Horizontal">
                                                                     <TextBlock Text="{Binding IconGlyph}" FontSize="12" Margin="0,0,4,0" VerticalAlignment="Center"/>
                                                                     <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
@@ -1202,14 +1199,6 @@
                                         </Border>
                                     </StackPanel>
                                 </ScrollViewer>
-                            </Border>
-
-                            <!-- Trash Drop Zone -->
-                            <Border Grid.Row="4" x:Name="SimTrashZone" Background="#FFF1F2" BorderBrush="#F43F5E" BorderThickness="1"
-                                    CornerRadius="6" Height="30" Margin="0,6,0,0" AllowDrop="True"
-                                    Drop="SimTrashZone_Drop" DragOver="SimGenericDragOver">
-                                <TextBlock Text="🗑️ ここにドロップして権限・紐づけをポイ捨て解除" FontSize="10" FontWeight="Bold"
-                                           Foreground="#E11D48" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                         </Grid>
                     </Border>
@@ -1783,8 +1772,8 @@
                     </ScrollViewer>
 
                     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-                        <Button Content="キャンセル" Height="32" Width="90" Margin="0,0,8,0" Style="{StaticResource FluentButtonSecondary}" Click="SecModalCancel_Click"/>
-                        <Button Content="変更を保存" Height="32" Width="100" Style="{StaticResource FluentButtonPrimary}" Click="SecModalApply_Click"/>
+                        <Button x:Name="SecModalCancelButton" Content="キャンセル" Height="32" Width="90" Margin="0,0,8,0" Style="{StaticResource FluentButtonSecondary}" Click="SecModalCancel_Click"/>
+                        <Button x:Name="SecModalApplyButton" Content="変更を保存" Height="32" Width="100" Style="{StaticResource FluentButtonPrimary}" Click="SecModalApply_Click"/>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -1807,16 +1796,21 @@
                         <RowDefinition Height="Auto"/> <!-- Footer -->
                     </Grid.RowDefinitions>
 
-                    <Grid Grid.Row="0" Margin="0,0,0,4">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="⚖️ 移行前後 変化点差分インスペクター (人間向けレビュー)" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⚖️ 移行前後 変化点差分レビュー (Diff)" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
+                            <TextBlock Text=" - Before ➔ After 全体整合性インスペクター" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="6,0,0,0"/>
                         </StackPanel>
                         <Button Content="✕" Width="24" Height="24" Background="Transparent" BorderThickness="0"
                                 FontSize="12" Foreground="#64748B" HorizontalAlignment="Right" Click="DiffModalClose_Click"/>
                     </Grid>
 
-                    <TextBlock Grid.Row="1" Text="現行サーバーから新環境への「統合・階層移動・新規作成・権限差分」を網羅したレビュー表です。"
-                               FontSize="11" Foreground="#64748B" Margin="0,0,0,12"/>
+                    <!-- Summary Stats Strip -->
+                    <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="DiffSummaryStatsText" Text="📊 差分項目: 0件" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
 
                     <!-- Diff DataGrid -->
                     <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6">
@@ -1865,8 +1859,8 @@
                     </Border>
 
                     <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-                        <Button Content="閉じる" Height="32" Width="80" Margin="0,0,8,0" Style="{StaticResource FluentButtonSecondary}" Click="DiffModalClose_Click"/>
-                        <Button Content="📊 差分レポートをExcel出力" Height="32" Style="{StaticResource FluentButtonPrimary}" Click="DiffExportExcel_Click"/>
+                        <Button x:Name="DiffModalCloseButton" Content="閉じる" Height="32" Width="80" Margin="0,0,8,0" Style="{StaticResource FluentButtonSecondary}" Click="DiffModalClose_Click"/>
+                        <Button x:Name="DiffExportExcelButton" Content="📊 差分レポートをExcel出力" Height="32" Style="{StaticResource FluentButtonPrimary}" Click="DiffExportExcel_Click"/>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -1898,7 +1892,7 @@
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v1.2.4 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.3.0 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>

@@ -89,6 +89,15 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
    - WPF デフォルトの `Ideal` モード（サブピクセル浮動小数配置）による文字の輪郭にじみを防止するため、`MainWindow.xaml` に `TextOptions.TextFormattingMode="Display"`、`TextRenderingMode="ClearType"`、`UseLayoutRounding="True"`、`SnapsToDevicePixels="True"` を常時適用する。
    - フォントファミリーは `Segoe UI Variable Text` を優先し、日本語フォールバックに `Yu Gothic UI` を配置。
    - ボタン・入力欄の標準文字サイズは `12.5px〜13px`、補足バッジや小ラベルは `11px〜11.5px` を下限とし、9px等の極小指定で掠れ・視認性低下を起こさせない。
+14. **枠外ドロップ解除 & 広域受容 D&D アーキテクチャ**:
+   - 従来の狭小な固定ゴミ箱バー（`LiveAclTrashZone`, `SimTrashZone`）を完全撤去。
+   - 登録済みカード（NTFS権限カード）やバッジ（移行元マッピング）を「自枠外（他パネル・余白・ウィンドウ外）」へドラッグ＆ドロップすることで直感的にポイ捨て解除される仕様に統一。
+   - 自枠内コンテナ（カード一覧エリアや各受容ゾーン）へのドロップ時は解除フラグ（`_droppedInSelfContainer`）により誤解除を完全防止。
+   - ドロップ受付面は、従来の狭い境界線内に限定せず、アコーディオン全体（`SimAccordion_Drop`）やカード一覧エリア全体（`LiveAclCardsContainer_Drop`）を広域受容面として開放。
+15. **ADプリンシパル検索結果のグループ優先ソート**:
+   - 権限割り当てのベストプラクティス（AGDLP / 原則グループ付与）に基づき、AD検索結果一覧は個別ユーザーよりも先にセキュリティグループ（`AdPrincipalType.Group`）を先頭に昇格表示する（`OrderBy(p => p.PrincipalType == Group ? 0 : 1).ThenBy(p => p.DisplayName)`）。
+16. **包括的バイリンガル（日英）多言語対応 (i18n)**:
+   - サイドバーメニューだけでなく、全タブ（Tab 0: 容量分析、Tab 1: 権限 & 逆引き、Tab 2: 移行スタジオ、Tab 3: リンク修復、Tab 4: 健全化、Tab 5: メディア最適化）の全操作ボタン、チェックボックス、詳細モーダル（SecModal, DiffModal）、ステータスバーを完全網羅して日英動的切り替え（`ApplyLocalization`）を実装。
 
 ---
 

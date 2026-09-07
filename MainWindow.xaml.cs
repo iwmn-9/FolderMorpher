@@ -74,6 +74,10 @@ namespace AstraSize
         // Toast notification timer
         private DispatcherTimer? _toastTimer;
 
+        // Drag & Drop State (枠外ドロップ解除 & 広域受容)
+        private bool _droppedInSelfContainer = false;
+        private Point _cardDragStartPoint;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -924,39 +928,65 @@ namespace AstraSize
             }
         }
 
+        private void LiveAclAddPrincipal(AdPrincipalItem p)
+        {
+            if (_liveAclEntries.Any(a => a.AccountName.Equals(p.AccountName, StringComparison.OrdinalIgnoreCase)))
+            {
+                ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                    ? $"⚠️ すでに割り当て済みです: {p.DisplayName}"
+                    : $"⚠️ Already assigned: {p.DisplayName}");
+                return;
+            }
+
+            var entry = new SimAclEntry
+            {
+                AccountName = p.AccountName,
+                DisplayName = p.DisplayName,
+                PrincipalType = p.PrincipalType,
+                Rights = FileSystemRights.ReadAndExecute
+            };
+            _liveAclEntries.Add(entry);
+            ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                ? $"🛡️ アクセス権カードを追加: {p.DisplayName}"
+                : $"🛡️ Added ACL card: {p.DisplayName}");
+        }
+
         private void LiveAclDropZone_Drop(object sender, DragEventArgs e)
         {
+            if (e.Data.GetData(typeof(SimAclEntry)) is SimAclEntry)
+            {
+                _droppedInSelfContainer = true;
+                return;
+            }
+
             if (e.Data.GetData(typeof(AdPrincipalItem)) is AdPrincipalItem p)
             {
-                if (_liveAclEntries.Any(a => a.AccountName.Equals(p.AccountName, StringComparison.OrdinalIgnoreCase)))
-                {
-                    ShowToast($"⚠️ すでに割り当て済みです: {p.DisplayName}");
-                    return;
-                }
-
-                var entry = new SimAclEntry
-                {
-                    AccountName = p.AccountName,
-                    DisplayName = p.DisplayName,
-                    PrincipalType = p.PrincipalType,
-                    Rights = FileSystemRights.ReadAndExecute
-                };
-                _liveAclEntries.Add(entry);
-                ShowToast($"🛡️ アクセス権カードを追加: {p.DisplayName}");
+                LiveAclAddPrincipal(p);
             }
         }
 
-        private void LiveAclTrashZone_Drop(object sender, DragEventArgs e)
+        private void LiveAclCardsContainer_Drop(object sender, DragEventArgs e)
         {
-            if (e.Data.GetData(typeof(SimAclEntry)) is SimAclEntry acl)
+            if (e.Data.GetData(typeof(SimAclEntry)) is SimAclEntry)
             {
-                _liveAclEntries.Remove(acl);
-                ShowToast("🗑️ アクセス権カードをポイ捨て削除しました");
+                _droppedInSelfContainer = true;
+                return;
+            }
+
+            // 広域ドロップ受容: カード一覧エリア全体でADプリンシパルのドロップを受け付け
+            if (e.Data.GetData(typeof(AdPrincipalItem)) is AdPrincipalItem p)
+            {
+                LiveAclAddPrincipal(p);
             }
         }
 
         private void LiveAclCard_MouseDown(object sender, MouseButtonEventArgs e)
         {
+            if (e.ChangedButton == MouseButton.Left)
+            {
+                _cardDragStartPoint = e.GetPosition(null);
+            }
+
             if (e.ClickCount == 2 && sender is FrameworkElement fe && fe.DataContext is SimAclEntry acl)
             {
                 _isLiveAclEditing = true;
@@ -966,6 +996,38 @@ namespace AstraSize
                 SecPrincipalInput.Text = acl.DisplayName;
                 SyncCheckboxesFromAcl(acl);
                 SecModalOverlay.Visibility = Visibility.Visible;
+            }
+        }
+
+        private void LiveAclCard_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (e.LeftButton != MouseButtonState.Pressed) return;
+
+            Point currentPoint = e.GetPosition(null);
+            Vector diff = _cardDragStartPoint - currentPoint;
+
+            if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
+            {
+                if (sender is FrameworkElement fe && fe.DataContext is SimAclEntry acl)
+                {
+                    _droppedInSelfContainer = false;
+                    try
+                    {
+                        DragDrop.DoDragDrop(fe, acl, DragDropEffects.Move | DragDropEffects.Copy);
+                    }
+                    finally
+                    {
+                        // 自枠外（コンテナ外・他パネル・画面外など）にドロップされた場合はポイ捨て解除
+                        if (!_droppedInSelfContainer)
+                        {
+                            _liveAclEntries.Remove(acl);
+                            ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                                ? $"🗑️ アクセス権カードを枠外ドロップで解除しました: {acl.DisplayName}"
+                                : $"🗑️ Removed ACL card by dropping outside: {acl.DisplayName}");
+                        }
+                    }
+                }
             }
         }
 
@@ -1469,9 +1531,75 @@ namespace AstraSize
             }
         }
 
+        private void SimAccordion_Drop(object sender, DragEventArgs e)
+        {
+            if (_selectedSimNode == null)
+            {
+                ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                    ? "⚠️ 先に設計ツリーでフォルダを選択してください"
+                    : "⚠️ Please select a folder in the simulation tree first");
+                return;
+            }
+
+            // 自枠内ドロップ判定（枠外解除防止）
+            if (e.Data.GetData(typeof(SimAclEntry)) is SimAclEntry ||
+                (e.Data.GetData(typeof(string)) is string s && _selectedSimNode.MappedSourcePaths.Contains(s)))
+            {
+                _droppedInSelfContainer = true;
+                return;
+            }
+
+            // 広域ドロップ受容 1: ADプリンシパル ➔ 権限付与
+            if (e.Data.GetData(typeof(AdPrincipalItem)) is AdPrincipalItem principal)
+            {
+                AssignAdPrincipal(_selectedSimNode, principal);
+                return;
+            }
+
+            // 広域ドロップ受容 2: 現行フォルダノード（FileItemNode） ➔ 統合マッピング追加
+            if (e.Data.GetData("FolderMorpherSourceNode") is FileItemNode src)
+            {
+                if (!_selectedSimNode.MappedSourcePaths.Contains(src.FullPath))
+                {
+                    _selectedSimNode.MappedSourcePaths.Add(src.FullPath);
+                    _selectedSimNode.NotifyMappingChanged();
+                    ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                        ? $"🔗 「{src.Name}」を統合マッピングに追加しました"
+                        : $"🔗 Added mapping: {src.Name}");
+                }
+                return;
+            }
+
+            // 広域ドロップ受容 3: エクスプローラー等からのファイル/フォルダドロップ
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                if (e.Data.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
+                {
+                    foreach (var f in files)
+                    {
+                        if (!_selectedSimNode.MappedSourcePaths.Contains(f))
+                        {
+                            _selectedSimNode.MappedSourcePaths.Add(f);
+                            _selectedSimNode.NotifyMappingChanged();
+                            ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                                ? $"🔗 「{System.IO.Path.GetFileName(f)}」を統合マッピングに追加しました"
+                                : $"🔗 Added mapping: {System.IO.Path.GetFileName(f)}");
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+
         private void SimMappingDropZone_Drop(object sender, DragEventArgs e)
         {
             if (_selectedSimNode == null) return;
+
+            if (e.Data.GetData(typeof(string)) is string s && _selectedSimNode.MappedSourcePaths.Contains(s))
+            {
+                _droppedInSelfContainer = true;
+                return;
+            }
 
             if (e.Data.GetData("FolderMorpherSourceNode") is FileItemNode src)
             {
@@ -1480,6 +1608,48 @@ namespace AstraSize
                     _selectedSimNode.MappedSourcePaths.Add(src.FullPath);
                     _selectedSimNode.NotifyMappingChanged();
                     ShowToast($"🔗 「{src.Name}」を統合マッピングに追加しました");
+                }
+            }
+        }
+
+        private void SimMappedSource_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == MouseButton.Left)
+            {
+                _cardDragStartPoint = e.GetPosition(null);
+            }
+        }
+
+        private void SimMappedSource_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (e.LeftButton != MouseButtonState.Pressed) return;
+            if (_selectedSimNode == null) return;
+
+            Point currentPoint = e.GetPosition(null);
+            Vector diff = _cardDragStartPoint - currentPoint;
+
+            if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
+            {
+                if (sender is FrameworkElement fe && fe.DataContext is string sourcePath)
+                {
+                    _droppedInSelfContainer = false;
+                    try
+                    {
+                        DragDrop.DoDragDrop(fe, sourcePath, DragDropEffects.Move | DragDropEffects.Copy);
+                    }
+                    finally
+                    {
+                        // 自枠外（アコーディオン枠外・他パネル・画面外など）にドロップされた場合は解除
+                        if (!_droppedInSelfContainer && _selectedSimNode != null)
+                        {
+                            _selectedSimNode.MappedSourcePaths.Remove(sourcePath);
+                            _selectedSimNode.NotifyMappingChanged();
+                            ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                                ? $"🗑️ 移行元マッピングを枠外ドロップで解除しました: {System.IO.Path.GetFileName(sourcePath)}"
+                                : $"🗑️ Removed mapping by dropping outside: {System.IO.Path.GetFileName(sourcePath)}");
+                        }
+                    }
                 }
             }
         }
@@ -1497,6 +1667,13 @@ namespace AstraSize
         private void SimAclDropZone_Drop(object sender, DragEventArgs e)
         {
             if (_selectedSimNode == null) return;
+
+            if (e.Data.GetData(typeof(SimAclEntry)) is SimAclEntry)
+            {
+                _droppedInSelfContainer = true;
+                return;
+            }
+
             if (e.Data.GetData(typeof(AdPrincipalItem)) is AdPrincipalItem principal)
             {
                 AssignAdPrincipal(_selectedSimNode, principal);
@@ -1507,7 +1684,9 @@ namespace AstraSize
         {
             if (node.AclEntries.Any(a => a.AccountName.Equals(principal.AccountName, StringComparison.OrdinalIgnoreCase)))
             {
-                ShowToast($"「{principal.DisplayName}」は既に割り当てられています");
+                ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                    ? $"「{principal.DisplayName}」は既に割り当てられています"
+                    : $"\"{principal.DisplayName}\" is already assigned");
                 return;
             }
 
@@ -1520,17 +1699,9 @@ namespace AstraSize
             };
             node.AclEntries.Add(entry);
             node.NotifyAclChanged();
-            ShowToast($"🛡️ 「{principal.DisplayName}」に 変更 (Modify) 権限を付与しました");
-        }
-
-        private void SimTrashZone_Drop(object sender, DragEventArgs e)
-        {
-            if (e.Data.GetData(typeof(SimAclEntry)) is SimAclEntry acl && _selectedSimNode != null)
-            {
-                _selectedSimNode.AclEntries.Remove(acl);
-                _selectedSimNode.NotifyAclChanged();
-                ShowToast("🗑️ アクセス権カードをポイ捨て解除しました");
-            }
+            ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                ? $"🛡️ 「{principal.DisplayName}」に 変更 (Modify) 権限を付与しました"
+                : $"🛡️ Granted Modify permission to \"{principal.DisplayName}\"");
         }
         #endregion
 
@@ -1707,9 +1878,48 @@ namespace AstraSize
         #region Security Detailed Permissions Modal (相互リアルタイム連動)
         private void SimAclCard_MouseDown(object sender, MouseButtonEventArgs e)
         {
+            if (e.ChangedButton == MouseButton.Left)
+            {
+                _cardDragStartPoint = e.GetPosition(null);
+            }
+
             if (e.ClickCount == 2 && sender is FrameworkElement fe && fe.DataContext is SimAclEntry acl && _selectedSimNode != null)
             {
                 OpenSecurityModal(acl);
+            }
+        }
+
+        private void SimAclCard_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (e.LeftButton != MouseButtonState.Pressed) return;
+            if (_selectedSimNode == null) return;
+
+            Point currentPoint = e.GetPosition(null);
+            Vector diff = _cardDragStartPoint - currentPoint;
+
+            if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
+            {
+                if (sender is FrameworkElement fe && fe.DataContext is SimAclEntry acl)
+                {
+                    _droppedInSelfContainer = false;
+                    try
+                    {
+                        DragDrop.DoDragDrop(fe, acl, DragDropEffects.Move | DragDropEffects.Copy);
+                    }
+                    finally
+                    {
+                        // 自枠外（アコーディオン枠外・他パネル・画面外など）にドロップされた場合は解除
+                        if (!_droppedInSelfContainer && _selectedSimNode != null)
+                        {
+                            _selectedSimNode.AclEntries.Remove(acl);
+                            _selectedSimNode.NotifyAclChanged();
+                            ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                                ? $"🗑️ アクセス権カードを枠外ドロップで解除しました: {acl.DisplayName}"
+                                : $"🗑️ Removed ACL card by dropping outside: {acl.DisplayName}");
+                        }
+                    }
+                }
             }
         }
 
@@ -2682,13 +2892,52 @@ namespace AstraSize
             NavTabAudit.Content = isJa ? "断捨離・健全化" : "Audit & Hygiene";
             NavTabMedia.Content = isJa ? "メディア最適化" : "Media Optimizer";
 
-            // Tab 4 (LinkFixer)
+            // Tab 0 (Storage Explorer)
+            AddStorageTabButton.Content = isJa ? "＋ 新しいタブ" : "＋ New Tab";
+            StorageBrowseButton.Content = isJa ? "参照..." : "Browse...";
+            ScanButton.Content = isJa ? "スキャン開始" : "Start Scan";
+            CancelButton.Content = isJa ? "中止" : "Cancel";
+            ExportButton.Content = isJa ? "Excel / CSV 出力" : "Export Excel/CSV";
+            TabHistoryButton.Content = isJa ? "📈 容量推移グラフ" : "📈 History Graph";
+
+            // Tab 1 (Live ACL & Effective Access)
+            LiveAclModeFolderRadio.Content = isJa ? "📁 フォルダ別 権限エディタ" : "📁 Folder ACL Editor";
+            LiveAclModeReverseRadio.Content = isJa ? "🔍 ユーザー/グループ 逆引き監査 (Effective Access)" : "🔍 Effective Access (Reverse Lookup)";
+            LiveAclBrowseButton.Content = isJa ? "参照..." : "Browse...";
+            LiveAclReloadButton.Content = isJa ? "🔄 権限読込" : "🔄 Reload ACL";
+            LiveAclApplyButton.Content = isJa ? "⚡ 実環境へ即時適用" : "⚡ Apply to NTFS";
+            LiveAclRollbackButton.Content = isJa ? "↩️ バックアップ復元" : "↩️ Rollback Backup";
+            LiveAclExportMatrixButton.Content = isJa ? "📋 台帳CSV出力" : "📋 Export Matrix CSV";
+            LiveAclInheritCheckBox.Content = isJa ? "親フォルダからの権限継承を含める" : "Include inherited permissions";
+            LiveAclOpenSecModalButton.Content = isJa ? "⚙️ 詳細権限を直接編集" : "⚙️ Advanced Permissions";
+
+            // Tab 1 - Reverse Lookup (Effective Access)
+            RevBrowseRootButton.Content = isJa ? "参照..." : "Browse...";
+            RevStartScanButton.Content = isJa ? "🔍 逆引き調査開始" : "🔍 Start Audit";
+            RevCancelScanButton.Content = isJa ? "⏹️ 中止" : "⏹️ Cancel";
+            RevExportExcelButton.Content = isJa ? "📋 監査台帳 Excel" : "📋 Export Audit Excel";
+
+            // Tab 2 (Simulation Studio)
+            SimTargetBrowseButton.Content = isJa ? "参照..." : "Browse...";
+            SimSourceLoadButton.Content = isJa ? "読込" : "Load";
+            SimCloneSelectedButton.Content = isJa ? "➡️ 選択フォルダを中央へ新設配置" : "➡️ Clone Selected to Center";
+            SimAddRootFolderButton.Content = isJa ? "＋ ルートフォルダ新設" : "＋ Add Root Folder";
+            SimSaveProjectButton.Content = isJa ? "💾 保存" : "💾 Save";
+            SimLoadProjectButton.Content = isJa ? "📂 読込" : "📂 Load";
+            SimDiffReviewButton.Content = isJa ? "⚖️ 差分 (Diff)" : "⚖️ Review Diffs";
+            SimDeploySkeletonButton.Content = isJa ? "🚀 ガワ先行作成" : "🚀 Deploy Skeleton";
+            SimExportScriptsButton.Content = isJa ? "⚙️ 移行スクリプト" : "⚙️ Export Scripts";
+            SimExportExcelButton.Content = isJa ? "📊 Excel設計書" : "📊 Export Excel";
+            SimInheritCheckBox.Content = isJa ? "親からの権限継承を含める" : "Inherit from parent";
+            SimOpenSecModalButton.Content = isJa ? "⚙️ セキュリティ詳細設定" : "⚙️ Advanced Security";
+
+            // Tab 3 (LinkFixer)
             LinkGenerateGpoButton.Content = isJa ? "📜 GPOログオンスクリプト生成 (.ps1)" : "📜 Generate GPO Script (.ps1)";
             LinkScanButton.Content = isJa ? "切断リンク検出スキャン" : "Scan Broken Links";
             LinkFixExecuteButton.Content = isJa ? "⚡ 一括修復を実行 (バックアップ付)" : "⚡ Execute Fix (with Backup)";
             LinkIncludeOfficeCheckBox.Content = isJa ? "Officeファイル内部リンク (.xlsx/.xlsm) も対象に含める" : "Include Office internal links (.xlsx/.xlsm)";
 
-            // Tab 5 (Audit & Hygiene)
+            // Tab 4 (Audit & Hygiene)
             AuditStartButton.Content = isJa ? "🔍 監査スキャン開始" : "🔍 Start Audit Scan";
             AuditExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
             AuditExportCsvButton.Content = isJa ? "📄 CSV台帳出力" : "📄 Export CSV";
@@ -2697,11 +2946,23 @@ namespace AstraSize
             AuditCheckDormantCheckBox.Content = isJa ? "休眠ファイル (3年以上)" : "Dormant (3+ Years)";
             AuditCheckPathLimitsCheckBox.Content = isJa ? "パス長260字超/禁則文字" : "Path Limits / Invalid Chars";
 
-            // Tab 6 (Media Optimizer)
+            // Tab 5 (Media Optimizer)
             MediaScanButton.Content = isJa ? "🔍 メディア走査" : "🔍 Scan Media";
             MediaOptimizeButton.Content = isJa ? "⚡ 写真を軽量化 (直接上書き/日時維持)" : "⚡ Slim Photos (Lossless/In-Place)";
             MediaGenVideoBatchButton.Content = isJa ? "🎬 巨大動画 夜間圧縮バッチ出力 (.bat)" : "🎬 Export Nightly Video Batch (.bat)";
             MediaExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
+
+            // Modals
+            SecModalCancelButton.Content = isJa ? "キャンセル" : "Cancel";
+            SecModalApplyButton.Content = isJa ? "変更を保存" : "Save Changes";
+            DiffModalCloseButton.Content = isJa ? "閉じる" : "Close";
+            DiffExportExcelButton.Content = isJa ? "📊 差分レポートをExcel出力" : "📊 Export Diffs (Excel)";
+
+            // ステータスバー
+            if (StatusTextBlock.Text == "準備完了" || StatusTextBlock.Text == "Ready")
+            {
+                StatusTextBlock.Text = isJa ? "準備完了" : "Ready";
+            }
 
             // 現在のアクティブタブのステータス再反映
             NavTab_Checked(this, new RoutedEventArgs());

@@ -110,7 +110,10 @@ namespace AstraSize.Services
 
                 // If no results from AD or not in domain, do NOT supply dummy enterprise roles
                 // Return empty list so UI displays proper guidance for local PC environment
-                return results;
+                return results
+                    .OrderBy(p => p.PrincipalType == AdPrincipalType.Group ? 0 : 1)
+                    .ThenBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
             });
         }
 
