@@ -377,6 +377,26 @@ namespace AstraSize
             _currentTab.TabTitle = Path.GetFileName(path.TrimEnd('\\', '/'));
             if (string.IsNullOrEmpty(_currentTab.TabTitle)) _currentTab.TabTitle = path;
 
+            // --- ⚡ 0秒キャッシュ即時全展開 ---
+            FileItemNode? cachedRoot = null;
+            try
+            {
+                cachedRoot = await _historyService.LoadTreeCacheAsync(path);
+                if (cachedRoot != null)
+                {
+                    _currentTab.RootNode = cachedRoot;
+                    _currentTab.FlattenTree();
+                    FileTreeDataGrid.ItemsSource = _currentTab.VisibleFlatList;
+                    UpdateDynamicInsightsForNode(cachedRoot);
+                    UpdateMetricsCards(_currentTab);
+                    StatusTextBlock.Text = $"⚡ 前回のキャッシュを表示中 (バックグラウンドで最新データを走査・差分検出中...)";
+                }
+            }
+            catch
+            {
+                // キャッシュロード失敗は通常走査にフォールバック
+            }
+
             var progress = new Progress<ScanProgress>(p =>
             {
                 ScannedSizeTextBlock.Text = FileItemNode.FormatBytes(p.BytesScanned);
@@ -386,7 +406,17 @@ namespace AstraSize
 
             try
             {
+                // --- バックグラウンド最新スキャン実行 ---
                 var (root, summary) = await _scanService.ScanPathAsync(path, progress, ct);
+
+                // --- 差分自動計算＆反映 ---
+                bool hadDiff = false;
+                if (cachedRoot != null)
+                {
+                    _historyService.ApplyTreeDiff(root, cachedRoot);
+                    hadDiff = root.DiffBytes.HasValue && root.DiffBytes.Value != 0;
+                }
+
                 _currentTab.RootNode = root;
                 _currentTab.Summary = summary;
                 _currentTab.FlattenTree();
@@ -394,11 +424,16 @@ namespace AstraSize
 
                 FileTreeDataGrid.ItemsSource = _currentTab.VisibleFlatList;
                 UpdateDynamicInsightsForNode(root);
-
                 UpdateMetricsCards(_currentTab);
+
+                // キャッシュ＆スナップショットをバックグラウンド自動保存
+                _ = _historyService.SaveTreeCacheAsync(root);
+                _ = _historyService.SaveSnapshotAsync(root);
+
+                string diffInfo = hadDiff && !string.IsNullOrEmpty(root.DiffFormatted) ? $" [差分: {root.DiffFormatted}]" : "";
                 StatusTextBlock.Text = summary.IsMftBoosted
-                    ? $"⚡ MFT高速スキャン完了 ({summary.ElapsedSeconds}秒): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)})"
-                    : $"スキャン完了 ({summary.ElapsedSeconds}秒): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)})";
+                    ? $"⚡ MFT高速スキャン完了 ({summary.ElapsedSeconds}秒): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)}){diffInfo}"
+                    : $"スキャン完了 ({summary.ElapsedSeconds}秒): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)}){diffInfo}";
             }
             catch (OperationCanceledException)
             {
@@ -676,6 +711,17 @@ namespace AstraSize
                 ShowToast($"モックツリーに配置しました: {item.Name}");
             }
         }
+
+        private async void CtxScanSubtree_Click(object sender, RoutedEventArgs e)
+        {
+            if (FileTreeDataGrid.SelectedItem is FileItemNode item && item.IsDirectory)
+            {
+                PathTextBox.Text = item.FullPath;
+                await StartStorageScanAsync(item.FullPath);
+            }
+        }
+
+        private void CtxEditAcl_Click(object sender, RoutedEventArgs e) => CtxOpenLiveAcl_Click(sender, e);
 
         private void ExportButton_Click(object sender, RoutedEventArgs e)
         {

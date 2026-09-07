@@ -30,62 +30,68 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 9;
+            int totalTests = 10;
 
             try
             {
                 // Test 1
-                Console.WriteLine("\n[TEST 1/9] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
+                Console.WriteLine("\n[TEST 1/10] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
                 await TestMediaOptimizerPngPreservationAsync();
                 Console.WriteLine("  --> [PASS] Media Optimizer: PNG signature (0x89 50 4E 47) and alpha channel 100% preserved.");
                 passCount++;
 
                 // Test 2
-                Console.WriteLine("\n[TEST 2/9] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
+                Console.WriteLine("\n[TEST 2/10] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
                 TestLiveAclDenyAndInheritance();
                 Console.WriteLine("  --> [PASS] Live ACL: ACEs preserved on inheritance disable, Deny rules ordered first (Canonical Order).");
                 passCount++;
 
                 // Test 3
-                Console.WriteLine("\n[TEST 3/9] Audit Archival: Original File Archive & Move Duplication...");
+                Console.WriteLine("\n[TEST 3/10] Audit Archival: Original File Archive & Move Duplication...");
                 TestAuditArchivalOriginalExclusionAndDeduplication();
                 Console.WriteLine("  --> [PASS] Audit: Original files safely protected from archive, move commands deduplicated.");
                 passCount++;
 
                 // Test 4
-                Console.WriteLine("\n[TEST 4/9] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
+                Console.WriteLine("\n[TEST 4/10] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
                 TestMftDataRunDecoderLcnCalculation();
                 Console.WriteLine("  --> [PASS] MFT Data Run Decoder: Initial LCN computed relative to 0 without double-addition.");
                 passCount++;
 
                 // Test 5
-                Console.WriteLine("\n[TEST 5/9] Live ACL: Special Inheritance & Propagation Flags Preservation...");
+                Console.WriteLine("\n[TEST 5/10] Live ACL: Special Inheritance & Propagation Flags Preservation...");
                 TestLiveAclSpecialInheritanceFlags();
                 Console.WriteLine("  --> [PASS] Live ACL: Special InheritanceFlags and PropagationFlags preserved across read/write.");
                 passCount++;
 
                 // Test 6
-                Console.WriteLine("\n[TEST 6/9] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
+                Console.WriteLine("\n[TEST 6/10] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
                 TestAclUiBindingAndHelper();
                 Console.WriteLine("  --> [PASS] ACL UI Binding: AppliesTo, AccessType, and Modal state perfectly synchronized.");
                 passCount++;
 
                 // Test 7
-                Console.WriteLine("\n[TEST 7/9] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
+                Console.WriteLine("\n[TEST 7/10] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
                 await TestEffectiveAccessCanonicalDaclAndNestingAsync();
                 Console.WriteLine("  --> [PASS] Effective Access: Canonical DACL ordering (Explicit Allow > Inherited Deny), multi-level tracing & user isolation verified.");
                 passCount++;
 
                 // Test 8
-                Console.WriteLine("\n[TEST 8/9] Simulation & Script Generation: .NET PS Script, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly...");
+                Console.WriteLine("\n[TEST 8/10] Simulation & Script Generation: .NET PS Script, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly...");
                 TestSimulationAclRobocopyAndEffectiveAccessInheritOnly();
                 Console.WriteLine("  --> [PASS] Simulation & Effective Access: .NET PS script fidelity, Robocopy /XD exclusion, and InheritOnly exclusion verified.");
                 passCount++;
 
                 // Test 9
-                Console.WriteLine("\n[TEST 9/9] Live ACL Rollback DACL SDDL Fidelity & Skeleton Empty-ACL Inheritance Disable...");
+                Console.WriteLine("\n[TEST 9/10] Live ACL Rollback DACL SDDL Fidelity & Skeleton Empty-ACL Inheritance Disable...");
                 await TestLiveAclRollbackAndSkeletonEmptyAclInheritanceAsync();
                 Console.WriteLine("  --> [PASS] Live ACL Rollback & Skeleton Deploy: DACL SDDL 100% restored after mutation, empty ACL inheritance disabled.");
+                passCount++;
+
+                // Test 10
+                Console.WriteLine("\n[TEST 10/10] Storage History: 0s Tree Cache Persistence & Automatic Background Diff Detection...");
+                await TestStorageHistoryTreeCacheAndDiffAsync();
+                Console.WriteLine("  --> [PASS] Storage History: Tree cache restored in 0s, size diffs & badges automatically calculated.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -1183,6 +1189,57 @@ namespace FolderMorpher.Services.Testing
             finally
             {
                 try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        private static async Task TestStorageHistoryTreeCacheAndDiffAsync()
+        {
+            var historyService = new StorageHistoryService();
+            string testRootPath = @"C:\TestFakeShare\DepartmentShare";
+
+            // 1. 模擬ツリーを構築
+            var root = new FileItemNode(testRootPath, "DepartmentShare", 1024 * 1024 * 300, true);
+            var subA = new FileItemNode(Path.Combine(testRootPath, "Sales"), "Sales", 1024 * 1024 * 100, true) { Parent = root };
+            var subB = new FileItemNode(Path.Combine(testRootPath, "Dev"), "Dev", 1024 * 1024 * 200, true) { Parent = root };
+            root.Children.Add(subA);
+            root.Children.Add(subB);
+
+            // 2. キャッシュ保存
+            await historyService.SaveTreeCacheAsync(root);
+
+            // 3. キャッシュ復元（0秒ロード模擬）
+            var cached = await historyService.LoadTreeCacheAsync(testRootPath);
+            if (cached == null)
+            {
+                throw new InvalidOperationException("TreeCache 復元失敗: キャッシュがロードできませんでした。");
+            }
+            if (cached.Children.Count != 2 || cached.Size != root.Size)
+            {
+                throw new InvalidOperationException($"TreeCache 整合性エラー: 復元ノードサイズが一致しません (期待: {root.Size}, 実際: {cached.Size})");
+            }
+
+            // 4. 最新ツリー（サイズ変化＋新規フォルダ発生）
+            var newRoot = new FileItemNode(testRootPath, "DepartmentShare", 1024 * 1024 * 350, true);
+            var newSubA = new FileItemNode(Path.Combine(testRootPath, "Sales"), "Sales", 1024 * 1024 * 150, true) { Parent = newRoot }; // +50MB 増分
+            var newSubB = new FileItemNode(Path.Combine(testRootPath, "Dev"), "Dev", 1024 * 1024 * 200, true) { Parent = newRoot };   // 変化なし
+            newRoot.Children.Add(newSubA);
+            newRoot.Children.Add(newSubB);
+
+            // 5. 差分検出エンジン実行
+            historyService.ApplyTreeDiff(newRoot, cached);
+
+            // 6. 検証
+            if (newSubA.DiffBytes != 1024 * 1024 * 50)
+            {
+                throw new InvalidOperationException($"TreeDiff 差分計算エラー: Sales の増分が不正です ({newSubA.DiffBytes})");
+            }
+            if (!newSubA.HasDiff || string.IsNullOrEmpty(newSubA.DiffFormatted) || !newSubA.DiffFormatted.Contains("+50 MB ▲"))
+            {
+                throw new InvalidOperationException($"TreeDiff バッジエラー: Sales の増分バッジ表示が不正です ({newSubA.DiffFormatted})");
+            }
+            if (newSubB.DiffBytes != 0 || newSubB.HasDiff)
+            {
+                throw new InvalidOperationException("TreeDiff 差分誤爆エラー: 変化のない Dev に差分が検出されています。");
             }
         }
     }

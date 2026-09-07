@@ -280,22 +280,20 @@
                                   VirtualizingPanel.IsVirtualizing="True"
                                   VirtualizingPanel.VirtualizationMode="Recycling"
                                   ScrollViewer.CanContentScroll="True"
-                                  GridLinesVisibility="Horizontal"
-                                  HorizontalGridLinesBrush="#F8FAFC"
+                                  GridLinesVisibility="None"
                                   BorderThickness="0"
                                   Background="Transparent"
                                   RowHeight="36"
                                   SelectionMode="Single"
                                   SelectionChanged="FileTreeDataGrid_SelectionChanged"
-                                  MouseDoubleClick="FileTreeDataGrid_MouseDoubleClick"
-                                  PreviewMouseMove="FileTreeDataGrid_PreviewMouseMove">
+                                  MouseDoubleClick="FileTreeDataGrid_MouseDoubleClick">
                             <DataGrid.ContextMenu>
                                 <ContextMenu>
                                     <MenuItem Header="📂 エクスプローラーで開く" Click="CtxOpenExplorer_Click"/>
                                     <MenuItem Header="📋 パスをコピー" Click="CtxCopyPath_Click"/>
+                                    <MenuItem Header="🔍 このフォルダーをルートにしてスキャン" Click="CtxScanSubtree_Click"/>
                                     <Separator/>
-                                    <MenuItem Header="🛡️ 実環境 権限コントロールで開く" Click="CtxOpenLiveAcl_Click"/>
-                                    <MenuItem Header="🚀 移行シミュレーションへ送る" Click="CtxSendToSimulation_Click"/>
+                                    <MenuItem Header="🛡️ このフォルダーのNTFS権限を確認・編集" Click="CtxEditAcl_Click"/>
                                 </ContextMenu>
                             </DataGrid.ContextMenu>
                             <DataGrid.Columns>
@@ -303,39 +301,45 @@
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:FileItemNode}">
                                             <StackPanel Orientation="Horizontal" Margin="{Binding IndentMargin}">
-                                                <Button Width="16" Height="16" Padding="0" Margin="0,0,4,0"
+                                                <Button Width="16" Height="16" Margin="0,0,4,0"
                                                         Background="Transparent" BorderThickness="0"
-                                                        Visibility="{Binding HasChildren, Converter={StaticResource BoolToVis}}"
-                                                        Click="ExpandCollapseButton_Click" Tag="{Binding}">
-                                                    <TextBlock Text="{Binding IsExpanded, Converter={StaticResource ItemIconConv}}" FontSize="10" Foreground="#64748B"/>
+                                                        Click="ExpandCollapseButton_Click" Tag="{Binding}"
+                                                        Visibility="{Binding HasChildren, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock Text="{Binding ExpandIcon}" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextSecondary}"/>
                                                 </Button>
-                                                <TextBlock Text="{Binding IconGlyph}" FontSize="13" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                                <TextBlock Text="{Binding Name}" FontWeight="Medium" FontSize="12.5" Foreground="#0F172A" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding IconGlyph}" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Name}" FontWeight="{Binding FontWeight}" FontSize="12.5" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="容量" Binding="{Binding FormattedSize}" Width="90" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                <DataGridTemplateColumn Header="容量" Width="120">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="{x:Type models:FileItemNode}">
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0">
+                                                <TextBlock Text="{Binding FormattedSize}" FontFamily="{StaticResource MonoFont}" FontSize="12.5" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"/>
+                                                <Border Visibility="{Binding HasDiff, Converter={StaticResource BoolToVis}}" Background="{Binding DiffBadgeBackground}" CornerRadius="3" Padding="4,1" Margin="6,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding DiffFormatted}" FontSize="10" FontWeight="Bold" Foreground="{Binding DiffBadgeForeground}"/>
+                                                </Border>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                                 <DataGridTemplateColumn Header="全体占有率" Width="115">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:FileItemNode}">
                                             <Grid Margin="4,2">
-                                                <!-- Root: dash display -->
-                                                <TextBlock Text="―" FontSize="12" Foreground="#94A3B8"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                           Visibility="{Binding DashVisibility}"/>
-                                                <!-- Non-root: Option A (mini bar on left, bold dark text on right) -->
-                                                <Grid Visibility="{Binding ProgressBarVisibility}">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="45"/>
-                                                        <ColumnDefinition Width="*"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <ProgressBar Grid.Column="0" Height="8" Minimum="0" Maximum="100" Value="{Binding Percentage}"
-                                                                 Foreground="#0284C7" Background="#E2E8F0" BorderThickness="0" VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="1" Text="{Binding PercentageFormatted}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" FontWeight="SemiBold"
-                                                               Foreground="#0F172A" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="4,0,2,0"/>
-                                                </Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="45"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ProgressBar Grid.Column="0" Height="8" Minimum="0" Maximum="100" Value="{Binding SharePercentage}"
+                                                             Foreground="{Binding SharePercentage, Converter={StaticResource PercentageToBarBrush}}"
+                                                             Background="#E2E8F0" BorderThickness="0" VerticalAlignment="Center"
+                                                             Visibility="{Binding IsDriveRoot, Converter={StaticResource InverseBoolToVis}}"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding ShareFormatted}"
+                                                           FontFamily="{StaticResource MonoFont}" FontSize="12" FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextPrimary}" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="4,0,0,0"/>
                                             </Grid>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
@@ -346,7 +350,7 @@
                         </DataGrid>
                     </Border>
 
-                    <GridSplitter Grid.Column="1" Width="12" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
+                    <GridSplitter Grid.Column="1" Width="10" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
 
                     <!-- Right: Insights & Extensions -->
                     <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
@@ -372,7 +376,7 @@
 
                             <!-- Top 10 Largest Files DataGrid -->
                             <DataGrid x:Name="TopFilesDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
-                                      BorderThickness="0" Background="Transparent" RowHeight="24" SelectionMode="Single" Margin="0,0,0,10"
+                                      BorderThickness="0" Background="Transparent" RowHeight="28" GridLinesVisibility="None" SelectionMode="Single" Margin="0,0,0,10"
                                       MouseDoubleClick="TopFilesDataGrid_MouseDoubleClick" ToolTip="ダブルクリックでエクスプローラーを開く">
                                 <DataGrid.ContextMenu>
                                     <ContextMenu>
@@ -394,7 +398,7 @@
 
                             <!-- Folder Direct Children Shares DataGrid -->
                             <DataGrid x:Name="FolderChildSharesDataGrid" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True"
-                                      BorderThickness="0" Background="Transparent" RowHeight="26" SelectionMode="Single"
+                                      BorderThickness="0" Background="Transparent" RowHeight="28" GridLinesVisibility="None" SelectionMode="Single"
                                       MouseDoubleClick="FolderChildSharesDataGrid_MouseDoubleClick" ToolTip="ダブルクリックで該当フォルダへドリルダウン">
                                 <DataGrid.Columns>
                                     <DataGridTemplateColumn Header="項目名" Width="*">
@@ -857,8 +861,8 @@
 
                             <!-- DataGrid -->
                             <DataGrid x:Name="RevFoldersDataGrid" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True"
-                                      Background="Transparent" BorderThickness="0" GridLinesVisibility="Horizontal"
-                                      HorizontalGridLinesBrush="#F1F5F9" HeadersVisibility="Column"
+                                      Background="Transparent" BorderThickness="0" GridLinesVisibility="None" RowHeight="28"
+                                      HeadersVisibility="Column"
                                       MouseDoubleClick="RevFoldersDataGrid_MouseDoubleClick" SelectionMode="Single">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="フォルダー名" Binding="{Binding FolderName}" Width="160" FontWeight="Bold"/>
@@ -1353,7 +1357,7 @@
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="検出されたショートカット一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
                         <DataGrid x:Name="LinkItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
-                                  BorderThickness="0" Background="Transparent" RowHeight="30" SelectionMode="Single">
+                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="30" SelectionMode="Single">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="ファイル名" Binding="{Binding FileName}" Width="160" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                 <DataGridTextColumn Header="種別" Binding="{Binding FileType}" Width="120" ElementStyle="{StaticResource LeftAlignedCell}"/>
@@ -1490,8 +1494,7 @@
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="検出された課題・断捨離候補一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
                         <DataGrid x:Name="AuditItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
-                                  BorderThickness="1" BorderBrush="#E2E8F0" GridLinesVisibility="Horizontal" HeadersVisibility="Column"
-                                  Background="#FFFFFF" RowHeaderWidth="0">
+                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="28" HeadersVisibility="Column" RowHeaderWidth="0">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="問題種別" Binding="{Binding IssueTypeDisplay}" Width="150" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                 <DataGridTextColumn Header="ファイル名" Binding="{Binding FileName}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
@@ -1644,8 +1647,7 @@
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="メディア一覧（画像 ＆ 巨大動画）" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
                         <DataGrid x:Name="MediaItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
-                                  BorderThickness="1" BorderBrush="#E2E8F0" GridLinesVisibility="Horizontal" HeadersVisibility="Column"
-                                  Background="#FFFFFF" RowHeaderWidth="0">
+                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="28" HeadersVisibility="Column" RowHeaderWidth="0">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="種別" Binding="{Binding Extension}" Width="80" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                 <DataGridTextColumn Header="ファイル名" Binding="{Binding FileName}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
@@ -1813,10 +1815,10 @@
                     </Border>
 
                     <!-- Diff DataGrid -->
-                    <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6">
+                    <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="2">
                         <DataGrid x:Name="DiffReviewDataGrid" AutoGenerateColumns="False" IsReadOnly="True"
-                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="Horizontal"
-                                  HorizontalGridLinesBrush="#F1F5F9" SelectionMode="Single">
+                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="32"
+                                  SelectionMode="Single">
                             <DataGrid.Columns>
                                 <DataGridTemplateColumn Header="変化の種別" Width="110">
                                     <DataGridTemplateColumn.CellTemplate>

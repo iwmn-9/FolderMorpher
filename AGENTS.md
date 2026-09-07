@@ -98,6 +98,14 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
    - 権限割り当てのベストプラクティス（AGDLP / 原則グループ付与）に基づき、AD検索結果一覧は個別ユーザーよりも先にセキュリティグループ（`AdPrincipalType.Group`）を先頭に昇格表示する（`OrderBy(p => p.PrincipalType == Group ? 0 : 1).ThenBy(p => p.DisplayName)`）。
 16. **包括的バイリンガル（日英）多言語対応 (i18n)**:
    - サイドバーメニューだけでなく、全タブ（Tab 0: 容量分析、Tab 1: 権限 & 逆引き、Tab 2: 移行スタジオ、Tab 3: リンク修復、Tab 4: 健全化、Tab 5: メディア最適化）の全操作ボタン、チェックボックス、詳細モーダル（SecModal, DiffModal）、ステータスバーを完全網羅して日英動的切り替え（`ApplyLocalization`）を実装。
+17. **モダンボーダレスUI規約（Excel格子線・縦線の完全撤廃、余白主導・ClearType）**:
+   - 全画面の DataGrid / リストから Excel のようなダサい格子罫線（`GridLinesVisibility="Horizontal|Vertical"`）や二重の枠線（`BorderThickness="1"`）を完全禁止・撤廃。
+   - `GridLinesVisibility="None"`, `BorderThickness="0"`, `Background="Transparent"` を基調とし、十分な行間（`RowHeight=28〜36px`）と淡いホバー背景（`#F8FAFC`）による余白主導のモダン・エレガントなレイアウトに統一。
+18. **ファイルサーバー0秒ツリーキャッシュ ＆ バックグラウンド自動差分スキャン（案3）**:
+   - スキャン開始時、キャッシュ（`%LocalAppData%\FolderMorpher\TreeCaches\<hash>.json`）が存在すれば「0秒」で前回のツリー構造を即時全展開。
+   - UIを一切ブロックせず、バックグラウンドで最新ネットワーク走査を実行。
+   - スキャン完了時に新旧ツリーの差分を自動検出し、サイズが変化したフォルダやファイルに増減バッジ（`▲ +2.4GB` / `▼ -500MB`）を自動付与して最新化。
+   - スキャン完了後は最新ツリーを自動でキャッシュ上書き保存。
 
 ---
 
@@ -117,7 +125,7 @@ Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe"
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 9/9 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 10/10 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

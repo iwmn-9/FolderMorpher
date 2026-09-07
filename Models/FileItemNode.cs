@@ -20,6 +20,40 @@ namespace AstraSize.Models
         public string? ErrorMessage { get; set; }
         public int Level { get; set; } = 0;
 
+        private long? _diffBytes;
+        public long? DiffBytes
+        {
+            get => _diffBytes;
+            set
+            {
+                if (_diffBytes != value)
+                {
+                    _diffBytes = value;
+                    OnPropertyChanged(nameof(DiffBytes));
+                    OnPropertyChanged(nameof(DiffFormatted));
+                    OnPropertyChanged(nameof(HasDiff));
+                    OnPropertyChanged(nameof(DiffBadgeBackground));
+                    OnPropertyChanged(nameof(DiffBadgeForeground));
+                }
+            }
+        }
+
+        public bool HasDiff => DiffBytes.HasValue && DiffBytes.Value != 0;
+
+        public string? DiffFormatted
+        {
+            get
+            {
+                if (!DiffBytes.HasValue || DiffBytes.Value == 0) return null;
+                if (DiffBytes.Value > 0)
+                    return $"+{FormatBytes(DiffBytes.Value)} ▲";
+                return $"-{FormatBytes(Math.Abs(DiffBytes.Value))} ▼";
+            }
+        }
+
+        public string DiffBadgeBackground => (DiffBytes.HasValue && DiffBytes.Value > 0) ? "#FEE2E2" : "#E0F2FE";
+        public string DiffBadgeForeground => (DiffBytes.HasValue && DiffBytes.Value > 0) ? "#DC2626" : "#0284C7";
+
         public FileItemNode()
         {
         }
