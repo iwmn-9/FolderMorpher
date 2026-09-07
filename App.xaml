@@ -23,7 +23,7 @@
             <SolidColorBrush x:Key="AccentHover" Color="#F1F5F9"/>
 
             <!-- Global Font -->
-            <FontFamily x:Key="MainFont">Segoe UI Variable Display, Segoe UI, Meiryo UI, sans-serif</FontFamily>
+            <FontFamily x:Key="MainFont">Segoe UI Variable Text, Segoe UI, "Yu Gothic UI", "Meiryo UI", sans-serif</FontFamily>
             <FontFamily x:Key="MonoFont">Consolas, JetBrains Mono, monospace</FontFamily>
 
             <!-- DataGrid Text Cell Alignments -->
@@ -41,7 +41,7 @@
             <!-- Fluent Button Primary -->
             <Style x:Key="FluentButtonPrimary" TargetType="Button">
                 <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
-                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="FontSize" Value="13"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
                 <Setter Property="Foreground" Value="#FFFFFF"/>
                 <Setter Property="Background" Value="#0F172A"/>
@@ -73,7 +73,7 @@
             <!-- Fluent Button Secondary -->
             <Style x:Key="FluentButtonSecondary" TargetType="Button">
                 <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
-                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="FontSize" Value="13"/>
                 <Setter Property="FontWeight" Value="Medium"/>
                 <Setter Property="Foreground" Value="#334155"/>
                 <Setter Property="Background" Value="#FFFFFF"/>
@@ -107,7 +107,7 @@
             <!-- Navigation Tab Button -->
             <Style x:Key="NavTabButton" TargetType="RadioButton">
                 <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
-                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="FontSize" Value="13"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
                 <Setter Property="Foreground" Value="#64748B"/>
                 <Setter Property="Background" Value="Transparent"/>
@@ -137,7 +137,7 @@
             <!-- Sidebar Navigation Item Button -->
             <Style x:Key="SidebarNavButton" TargetType="RadioButton">
                 <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
-                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="FontSize" Value="13.5"/>
                 <Setter Property="FontWeight" Value="Medium"/>
                 <Setter Property="Foreground" Value="#64748B"/>
                 <Setter Property="Background" Value="Transparent"/>
@@ -196,7 +196,7 @@
             <!-- Segment Radio Button for View Switching -->
             <Style x:Key="SegmentRadioButton" TargetType="RadioButton">
                 <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
-                <Setter Property="FontSize" Value="11"/>
+                <Setter Property="FontSize" Value="12.5"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
                 <Setter Property="Foreground" Value="#64748B"/>
                 <Setter Property="Background" Value="Transparent"/>

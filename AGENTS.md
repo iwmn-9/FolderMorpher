@@ -85,6 +85,10 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
    - ルール0件かつ継承OFF（`InheritAcl = false`）のフォルダでも確実に親の継承が遮断される。
    - Robocopy は「新設計ACL維持モード（`/COPY:DAT`）」と「旧環境ACL完全維持モード（`/COPYALL`）」を明示分離し、新設計ACLの上書き破壊を防止。
    - Live ACL の Snapshot および Rollback は `AccessControlSections.Access`（DACL）に限定し、SACL（監査権限）による `PrivilegeNotHeldException` を完全根絶。
+13. **WPF テキストレンダリングのクッキリ化 & タイポグラフィ規約（Displayモード & ClearType）**:
+   - WPF デフォルトの `Ideal` モード（サブピクセル浮動小数配置）による文字の輪郭にじみを防止するため、`MainWindow.xaml` に `TextOptions.TextFormattingMode="Display"`、`TextRenderingMode="ClearType"`、`UseLayoutRounding="True"`、`SnapsToDevicePixels="True"` を常時適用する。
+   - フォントファミリーは `Segoe UI Variable Text` を優先し、日本語フォールバックに `Yu Gothic UI` を配置。
+   - ボタン・入力欄の標準文字サイズは `12.5px〜13px`、補足バッジや小ラベルは `11px〜11.5px` を下限とし、9px等の極小指定で掠れ・視認性低下を起こさせない。
 
 ---
 

@@ -12,7 +12,12 @@
         MinHeight="720" MinWidth="1180"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource CanvasBackground}"
-        FontFamily="{StaticResource MainFont}">
+        FontFamily="{StaticResource MainFont}"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        RenderOptions.ClearTypeHint="Enabled"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
 
     <Grid>
         <Grid.ColumnDefinitions>
@@ -44,8 +49,8 @@
                                 <TextBlock Text="📁" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="FolderMorpher" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
-                                <TextBlock Text="Storage &amp; Migration" FontSize="9" Foreground="#94A3B8"/>
+                                <TextBlock Text="FolderMorpher" FontWeight="Bold" FontSize="14" Foreground="#0F172A"/>
+                                <TextBlock Text="Storage &amp; Migration" FontSize="11" Foreground="#94A3B8"/>
                             </StackPanel>
                         </StackPanel>
                     </Grid>
@@ -71,11 +76,11 @@
                 <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="14,10">
                     <Grid>
                         <StackPanel x:Name="SidebarFooterPanel" VerticalAlignment="Center">
-                            <TextBlock Text="FolderMorpher v1.2.1" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                            <TextBlock Text="Storage &amp; Migration Studio" FontSize="9" Foreground="#94A3B8" Margin="0,1,0,0"/>
+                            <TextBlock Text="FolderMorpher v1.2.4" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                            <TextBlock Text="Storage &amp; Migration Studio" FontSize="10.5" Foreground="#94A3B8" Margin="0,1,0,0"/>
                         </StackPanel>
                         <Button x:Name="LanguageToggleButton" Content="🌐 EN" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                Padding="6,2" Height="24" FontSize="10" FontWeight="Bold" Foreground="#2563EB"
+                                Padding="6,2" Height="24" FontSize="11" FontWeight="Bold" Foreground="#2563EB"
                                 Style="{StaticResource FluentButtonSecondary}" Click="LanguageToggleButton_Click" ToolTip="言語切り替え / Switch Language (JA / EN)"/>
                     </Grid>
                 </Border>
@@ -129,9 +134,9 @@
                                                 </Style>
                                             </Border.Style>
                                             <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="📁 " FontSize="11" VerticalAlignment="Center"/>
-                                                <TextBlock Text="{Binding TabTitle}" FontWeight="SemiBold" FontSize="11" Foreground="#1E293B" VerticalAlignment="Center"/>
-                                                <Button Content="✕" Margin="8,0,0,0" Width="16" Height="16" FontSize="9"
+                                                <TextBlock Text="📁 " FontSize="12" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding TabTitle}" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                                <Button Content="✕" Margin="8,0,0,0" Width="16" Height="16" FontSize="10"
                                                         Background="Transparent" BorderThickness="0" Foreground="#94A3B8"
                                                         Click="CloseStorageTabButton_Click" Tag="{Binding}" Cursor="Hand" ToolTip="タブを閉じる"/>
                                             </StackPanel>
@@ -141,7 +146,7 @@
                             </ItemsControl>
 
                             <Button x:Name="AddStorageTabButton" Content="＋ 新しいタブ" Height="26" Margin="4,0,0,0"
-                                    Style="{StaticResource FluentButtonSecondary}" Padding="8,2" FontSize="11"
+                                    Style="{StaticResource FluentButtonSecondary}" Padding="8,2" FontSize="12"
                                     Click="AddStorageTabButton_Click"/>
                         </StackPanel>
                     </ScrollViewer>
@@ -159,7 +164,7 @@
                         </Grid.ColumnDefinitions>
 
                         <ComboBox x:Name="DriveComboBox" Grid.Column="0" Width="160" Height="32" Margin="0,0,8,0"
-                                  VerticalContentAlignment="Center" FontSize="12" SelectionChanged="DriveComboBox_SelectionChanged"/>
+                                  VerticalContentAlignment="Center" FontSize="12.5" SelectionChanged="DriveComboBox_SelectionChanged"/>
 
                         <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="32" Padding="8,0">
                             <Grid>
@@ -169,7 +174,7 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="🔍 " Foreground="#94A3B8" VerticalAlignment="Center"/>
                                 <TextBox x:Name="PathTextBox" Grid.Column="1" BorderThickness="0" Background="Transparent"
-                                         VerticalAlignment="Center" FontSize="12" FontFamily="{StaticResource MonoFont}"
+                                         VerticalAlignment="Center" FontSize="12.5" FontFamily="{StaticResource MonoFont}"
                                          Foreground="#0F172A" KeyDown="PathTextBox_KeyDown"/>
                             </Grid>
                         </Border>
@@ -179,7 +184,7 @@
 
                         <Border Grid.Column="3" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="32" Width="140" Margin="10,0,10,0" Padding="8,0">
                             <TextBox x:Name="FilterTextBox" BorderThickness="0" Background="Transparent"
-                                     VerticalAlignment="Center" FontSize="12" Foreground="#0F172A"
+                                     VerticalAlignment="Center" FontSize="12.5" Foreground="#0F172A"
                                      TextChanged="FilterTextBox_TextChanged"/>
                         </Border>
 
@@ -212,40 +217,40 @@
                         <Border Grid.Column="0" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
                             <StackPanel>
                                 <Grid>
-                                    <TextBlock Text="スキャン対象容量" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
+                                    <TextBlock Text="スキャン対象容量" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
                                     <Border x:Name="MftBoostBadge" Visibility="Collapsed" Background="#EFF6FF" BorderBrush="#3B82F6" BorderThickness="1" CornerRadius="4" Padding="6,1" HorizontalAlignment="Right">
-                                        <TextBlock Text="⚡ MFT Boost" FontSize="10" FontWeight="Bold" Foreground="#1D4ED8"/>
+                                        <TextBlock Text="⚡ MFT Boost" FontSize="11" FontWeight="Bold" Foreground="#1D4ED8"/>
                                     </Border>
                                 </Grid>
-                                <TextBlock x:Name="ScannedSizeTextBlock" Text="0.00 GB" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0"/>
-                                <TextBlock x:Name="TotalFilesTextBlock" Text="0 ファイル / 0 フォルダ" FontSize="10" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0"/>
+                                <TextBlock x:Name="ScannedSizeTextBlock" Text="0.00 GB" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0"/>
+                                <TextBlock x:Name="TotalFilesTextBlock" Text="0 ファイル / 0 フォルダ" FontSize="11.5" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0"/>
                             </StackPanel>
                         </Border>
 
                         <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
                             <StackPanel>
                                 <Grid>
-                                    <TextBlock Text="ドライブ / ボリューム空き容量" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
-                                    <TextBlock x:Name="FreePercentTextBlock" Text="--%" FontSize="11" FontWeight="Bold" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Right"/>
+                                    <TextBlock Text="ドライブ / ボリューム空き容量" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
+                                    <TextBlock x:Name="FreePercentTextBlock" Text="--%" FontSize="12" FontWeight="Bold" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Right"/>
                                 </Grid>
-                                <TextBlock x:Name="FreeSpaceTextBlock" Text="-- GB 空き" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0"/>
+                                <TextBlock x:Name="FreeSpaceTextBlock" Text="-- GB 空き" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0"/>
                                 <ProgressBar x:Name="DriveUsageProgressBar" Height="4" Margin="0,6,0,0" Minimum="0" Maximum="100" Value="0" Foreground="{StaticResource AccentSky}" Background="#E2E8F0" BorderThickness="0"/>
                             </StackPanel>
                         </Border>
 
                         <Border Grid.Column="4" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
                             <StackPanel>
-                                <TextBlock Text="最大ファイル (Top 1)" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
-                                <TextBlock x:Name="LargestFileSizeTextBlock" Text="--" FontSize="20" FontWeight="Bold" Foreground="#E11D48" Margin="0,2,0,0"/>
-                                <TextBlock x:Name="LargestFileNameTextBlock" Text="--" FontSize="10" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="最大ファイル (Top 1)" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
+                                <TextBlock x:Name="LargestFileSizeTextBlock" Text="--" FontSize="22" FontWeight="Bold" Foreground="#E11D48" Margin="0,2,0,0"/>
+                                <TextBlock x:Name="LargestFileNameTextBlock" Text="--" FontSize="11.5" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
 
                         <Border Grid.Column="6" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
                             <StackPanel>
-                                <TextBlock Text="前回スキャンとの差分推移" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
-                                <TextBlock x:Name="TrendDiffTextBlock" Text="比較データなし" FontSize="20" FontWeight="Bold" Foreground="{StaticResource AccentSky}" Margin="0,2,0,0"/>
-                                <TextBlock x:Name="LastScanDateTextBlock" Text="初回スキャン" FontSize="10" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0"/>
+                                <TextBlock Text="前回スキャンとの差分推移" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
+                                <TextBlock x:Name="TrendDiffTextBlock" Text="比較データなし" FontSize="22" FontWeight="Bold" Foreground="{StaticResource AccentSky}" Margin="0,2,0,0"/>
+                                <TextBlock x:Name="LastScanDateTextBlock" Text="初回スキャン" FontSize="11.5" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0"/>
                             </StackPanel>
                         </Border>
                     </Grid>
@@ -302,10 +307,10 @@
                                                         Background="Transparent" BorderThickness="0"
                                                         Visibility="{Binding HasChildren, Converter={StaticResource BoolToVis}}"
                                                         Click="ExpandCollapseButton_Click" Tag="{Binding}">
-                                                    <TextBlock Text="{Binding IsExpanded, Converter={StaticResource ItemIconConv}}" FontSize="9" Foreground="#64748B"/>
+                                                    <TextBlock Text="{Binding IsExpanded, Converter={StaticResource ItemIconConv}}" FontSize="10" Foreground="#64748B"/>
                                                 </Button>
                                                 <TextBlock Text="{Binding IconGlyph}" FontSize="13" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                                <TextBlock Text="{Binding Name}" FontWeight="Medium" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Name}" FontWeight="Medium" FontSize="12.5" Foreground="#0F172A" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
@@ -316,7 +321,7 @@
                                         <DataTemplate DataType="{x:Type models:FileItemNode}">
                                             <Grid Margin="4,2">
                                                 <!-- Root: dash display -->
-                                                <TextBlock Text="―" FontSize="11" Foreground="#94A3B8"
+                                                <TextBlock Text="―" FontSize="12" Foreground="#94A3B8"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"
                                                            Visibility="{Binding DashVisibility}"/>
                                                 <!-- Non-root: Option A (mini bar on left, bold dark text on right) -->
@@ -328,7 +333,7 @@
                                                     <ProgressBar Grid.Column="0" Height="8" Minimum="0" Maximum="100" Value="{Binding Percentage}"
                                                                  Foreground="#0284C7" Background="#E2E8F0" BorderThickness="0" VerticalAlignment="Center"/>
                                                     <TextBlock Grid.Column="1" Text="{Binding PercentageFormatted}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="11" FontWeight="SemiBold"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" FontWeight="SemiBold"
                                                                Foreground="#0F172A" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="4,0,2,0"/>
                                                 </Grid>
                                             </Grid>
@@ -360,8 +365,8 @@
                             <!-- Top 10 Header -->
                             <StackPanel Grid.Row="0" Margin="0,0,0,6">
                                 <Grid>
-                                    <TextBlock Text="💡 容量上位ファイル (Top 10)" FontWeight="Bold" FontSize="12" Foreground="#1E293B"/>
-                                    <TextBlock x:Name="InsightsTargetScopeTextBlock" Text="スコープ: 全体" FontSize="10" Foreground="#0284C7" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="💡 容量上位ファイル (Top 10)" FontWeight="Bold" FontSize="13" Foreground="#1E293B"/>
+                                    <TextBlock x:Name="InsightsTargetScopeTextBlock" Text="スコープ: 全体" FontSize="11" Foreground="#0284C7" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"/>
                                 </Grid>
                             </StackPanel>
 
@@ -383,8 +388,8 @@
 
                             <!-- Folder Direct Children Shares Header -->
                             <Grid Grid.Row="2" Margin="0,6,0,6">
-                                <TextBlock Text="📁 選択フォルダの内訳 (直下シェア)" FontWeight="Bold" FontSize="12" Foreground="#1E293B"/>
-                                <TextBlock Text="Wクリックでツリー連動 ➔" FontSize="10" Foreground="#0284C7" HorizontalAlignment="Right"/>
+                                <TextBlock Text="📁 選択フォルダの内訳 (直下シェア)" FontWeight="Bold" FontSize="13" Foreground="#1E293B"/>
+                                <TextBlock Text="Wクリックでツリー連動 ➔" FontSize="11" Foreground="#0284C7" HorizontalAlignment="Right"/>
                             </Grid>
 
                             <!-- Folder Direct Children Shares DataGrid -->
@@ -397,7 +402,7 @@
                                             <DataTemplate DataType="{x:Type models:FolderChildShareItem}">
                                                 <StackPanel Orientation="Horizontal" Margin="4,0">
                                                     <TextBlock Text="{Binding IconGlyph}" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="{Binding Name}" FontWeight="Medium" FontSize="11" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Name}" FontWeight="Medium" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
@@ -414,7 +419,7 @@
                                                     <ProgressBar Grid.Column="0" Height="8" Minimum="0" Maximum="100" Value="{Binding RelativeSharePercentage}"
                                                                  Foreground="#0284C7" Background="#E2E8F0" BorderThickness="0" VerticalAlignment="Center"/>
                                                     <TextBlock Grid.Column="1" Text="{Binding RelativeShareFormatted}"
-                                                               FontFamily="{StaticResource MonoFont}" FontSize="11" FontWeight="SemiBold"
+                                                               FontFamily="{StaticResource MonoFont}" FontSize="12" FontWeight="SemiBold"
                                                                Foreground="#0F172A" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="4,0,0,0"/>
                                                 </Grid>
                                             </DataTemplate>
@@ -625,9 +630,9 @@
                                                 </Grid.ColumnDefinitions>
                                                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0">
                                                     <TextBlock Text="{Binding IconGlyph}" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11" Foreground="#1E293B" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
-                                                <TextBlock Grid.Column="1" Text="ドラッグ付与 ➔" FontSize="9" Foreground="#94A3B8" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="ドラッグ付与 ➔" FontSize="11" Foreground="#94A3B8" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
@@ -757,7 +762,7 @@
 
                             <Grid Grid.Row="1" Margin="0,0,0,8">
                                 <TextBlock Text="👥 所属グループ (多重入れ子・再帰解決)" FontWeight="Bold" FontSize="11" Foreground="#1E293B"/>
-                                <TextBlock x:Name="RevGroupCountText" Text="0 件" FontSize="10" Foreground="#64748B" HorizontalAlignment="Right"/>
+                                <TextBlock x:Name="RevGroupCountText" Text="0 件" FontSize="11.5" Foreground="#64748B" HorizontalAlignment="Right"/>
                             </Grid>
 
                             <!-- Groups ListBox -->
@@ -771,11 +776,11 @@
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
                                                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock Text="{Binding Sid}" FontFamily="{StaticResource MonoFont}" FontSize="9" Foreground="#94A3B8"/>
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="12" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Sid}" FontFamily="{StaticResource MonoFont}" FontSize="10.5" Foreground="#94A3B8"/>
                                                 </StackPanel>
                                                 <Border Grid.Column="1" Background="{Binding DirectBadgeColor}" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding DirectStatusText}" FontSize="9" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                                    <TextBlock Text="{Binding DirectStatusText}" FontSize="10.5" FontWeight="Bold" Foreground="#FFFFFF"/>
                                                 </Border>
                                             </Grid>
                                         </Border>
@@ -1076,27 +1081,27 @@
                                                     </Grid.ColumnDefinitions>
 
                                                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                                        <TextBlock Text="📁 " FontSize="12" VerticalAlignment="Center"/>
-                                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="📁 " FontSize="12.5" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A" VerticalAlignment="Center"/>
                                                     </StackPanel>
 
                                                     <Border Grid.Column="1" Margin="8,0,0,0" CornerRadius="3" Padding="5,1"
                                                             Background="{Binding LevelPillBackground}" VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding LevelPillText}" FontSize="9" FontWeight="SemiBold"
+                                                        <TextBlock Text="{Binding LevelPillText}" FontSize="10.5" FontWeight="SemiBold"
                                                                    Foreground="{Binding LevelPillForeground}"/>
                                                     </Border>
 
                                                     <Border Grid.Column="2" Margin="6,0,0,0" CornerRadius="3" Padding="5,1" Background="#FEF3C7" BorderBrush="#FDE68A" BorderThickness="1"
                                                             VerticalAlignment="Center" Visibility="{Binding HasMapping, Converter={StaticResource BoolToVis}}">
-                                                        <TextBlock Text="{Binding MappingBadgeText}" FontSize="9" Foreground="#B45309"/>
+                                                        <TextBlock Text="{Binding MappingBadgeText}" FontSize="10.5" Foreground="#B45309"/>
                                                     </Border>
 
                                                     <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                        <Button Content="⏮" Width="20" Height="20" Padding="0" FontSize="9" ToolTip="第1階層(ルート)へ一気ジャンプ"
+                                                        <Button Content="⏮" Width="20" Height="20" Padding="0" FontSize="10" ToolTip="第1階層(ルート)へ一気ジャンプ"
                                                                 Style="{StaticResource FluentButtonSecondary}" Margin="2,0" Click="SimQuickJumpRoot_Click" Tag="{Binding}"/>
-                                                        <Button Content="◀" Width="20" Height="20" Padding="0" FontSize="9" ToolTip="1階層昇格"
+                                                        <Button Content="◀" Width="20" Height="20" Padding="0" FontSize="10" ToolTip="1階層昇格"
                                                                 Style="{StaticResource FluentButtonSecondary}" Margin="2,0" Click="SimQuickPromote_Click" Tag="{Binding}"/>
-                                                        <Button Content="▶" Width="20" Height="20" Padding="0" FontSize="9" ToolTip="1階層降格"
+                                                        <Button Content="▶" Width="20" Height="20" Padding="0" FontSize="10" ToolTip="1階層降格"
                                                                 Style="{StaticResource FluentButtonSecondary}" Margin="2,0" Click="SimQuickDemote_Click" Tag="{Binding}"/>
                                                     </StackPanel>
                                                 </Grid>
@@ -1115,11 +1120,11 @@
                                         <!-- Selected Node Info -->
                                         <Grid Margin="0,0,0,8">
                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                <TextBlock Text="📁 選択中のフォルダ: " FontWeight="Bold" FontSize="12" Foreground="#334155"/>
-                                                <TextBlock x:Name="SimSelectedFolderNameText" Text="(未選択 - 上のフォルダをクリック)" FontWeight="Bold" FontSize="12" Foreground="#0284C7"/>
+                                                <TextBlock Text="📁 選択中のフォルダ: " FontWeight="Bold" FontSize="12.5" Foreground="#334155"/>
+                                                <TextBlock x:Name="SimSelectedFolderNameText" Text="(未選択 - 上のフォルダをクリック)" FontWeight="Bold" FontSize="12.5" Foreground="#0284C7"/>
                                             </StackPanel>
                                             <CheckBox x:Name="SimInheritCheckBox" Content="親からの権限継承を含める" HorizontalAlignment="Right"
-                                                      FontSize="11" Checked="SimInheritCheckBox_Changed" Unchecked="SimInheritCheckBox_Changed"/>
+                                                      FontSize="12" Checked="SimInheritCheckBox_Changed" Unchecked="SimInheritCheckBox_Changed"/>
                                         </Grid>
 
                                         <!-- Drop Zone 1: Subfolder Maker -->
@@ -1127,7 +1132,7 @@
                                                 CornerRadius="4" Padding="10,6" Margin="0,0,0,8" AllowDrop="True"
                                                 Drop="SimSubfolderDropZone_Drop" DragOver="SimGenericDragOver">
                                             <TextBlock Text="📥 左の現行フォルダをここにドロップすると、この直下にサブフォルダ化"
-                                                       FontSize="10" Foreground="#64748B" HorizontalAlignment="Center"/>
+                                                       FontSize="11.5" Foreground="#64748B" HorizontalAlignment="Center"/>
                                         </Border>
 
                                         <!-- Drop Zone 2: N:1 Source Mapping Area -->
@@ -1136,8 +1141,8 @@
                                                 Drop="SimMappingDropZone_Drop" DragOver="SimGenericDragOver">
                                             <StackPanel>
                                                 <Grid Margin="0,0,0,4">
-                                                    <TextBlock Text="🔗 現行サーバーとの紐づけ (データ移行元 / N対1統合)" FontSize="10" FontWeight="Bold" Foreground="#7E22CE"/>
-                                                    <TextBlock Text="ここに現行フォルダをドロップして追加統合" FontSize="9" Foreground="#A855F7" HorizontalAlignment="Right"/>
+                                                    <TextBlock Text="🔗 現行サーバーとの紐づけ (データ移行元 / N対1統合)" FontSize="11.5" FontWeight="Bold" Foreground="#7E22CE"/>
+                                                    <TextBlock Text="ここに現行フォルダをドロップして追加統合" FontSize="11" Foreground="#A855F7" HorizontalAlignment="Right"/>
                                                 </Grid>
                                                 <!-- List of mapped sources -->
                                                 <ItemsControl x:Name="SimMappedSourcesItemsControl">
@@ -1145,8 +1150,8 @@
                                                         <DataTemplate>
                                                             <Border Background="#FFFFFF" BorderBrush="#E9D5FF" BorderThickness="1" CornerRadius="4" Padding="6,3" Margin="0,2">
                                                                 <Grid>
-                                                                    <TextBlock Text="{Binding StringFormat='🔗 {0}'}" FontSize="10" FontFamily="{StaticResource MonoFont}" Foreground="#4C1D95" VerticalAlignment="Center"/>
-                                                                    <Button Content="✕ 解除" HorizontalAlignment="Right" FontSize="9" Foreground="#E11D48"
+                                                                    <TextBlock Text="{Binding StringFormat='🔗 {0}'}" FontSize="11" FontFamily="{StaticResource MonoFont}" Foreground="#4C1D95" VerticalAlignment="Center"/>
+                                                                    <Button Content="✕ 解除" HorizontalAlignment="Right" FontSize="10.5" Foreground="#E11D48"
                                                                             Background="Transparent" BorderThickness="0" Cursor="Hand"
                                                                             Click="SimRemoveMapping_Click" Tag="{Binding}"/>
                                                                 </Grid>
@@ -1163,8 +1168,8 @@
                                                 Drop="SimAclDropZone_Drop" DragOver="SimGenericDragOver">
                                             <StackPanel>
                                                 <Grid Margin="0,0,0,4">
-                                                    <TextBlock Text="🛡️ 割り当てられたADアクセス権 (カードWクリックで詳細編集)" FontSize="10" FontWeight="Bold" Foreground="#0369A1"/>
-                                                    <Button Content="⚙️ セキュリティ詳細設定" FontSize="9" Height="20" Padding="6,1"
+                                                    <TextBlock Text="🛡️ 割り当てられたADアクセス権 (カードWクリックで詳細編集)" FontSize="11.5" FontWeight="Bold" Foreground="#0369A1"/>
+                                                    <Button Content="⚙️ セキュリティ詳細設定" FontSize="10.5" Height="22" Padding="6,1"
                                                             Style="{StaticResource FluentButtonSecondary}" HorizontalAlignment="Right"
                                                             Click="SimOpenSecModalButton_Click"/>
                                                 </Grid>
@@ -1181,11 +1186,11 @@
                                                                     Padding="8,4" Margin="0,0,6,6" Cursor="Hand" MouseDown="SimAclCard_MouseDown">
                                                                 <StackPanel Orientation="Horizontal">
                                                                     <TextBlock Text="{Binding IconGlyph}" FontSize="12" Margin="0,0,4,0" VerticalAlignment="Center"/>
-                                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="11" Foreground="#0F172A" VerticalAlignment="Center"/>
+                                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
                                                                     <Border Background="#E0F2FE" CornerRadius="3" Padding="4,1" Margin="6,0,4,0" VerticalAlignment="Center">
-                                                                        <TextBlock Text="{Binding FormattedRights}" FontSize="9" Foreground="#0284C7"/>
+                                                                        <TextBlock Text="{Binding FormattedRights}" FontSize="10.5" Foreground="#0284C7"/>
                                                                     </Border>
-                                                                    <Button Content="✕" FontSize="9" Width="14" Height="14" Margin="2,0,0,0"
+                                                                    <Button Content="✕" FontSize="10" Width="14" Height="14" Margin="2,0,0,0"
                                                                             Background="Transparent" BorderThickness="0" Foreground="#94A3B8"
                                                                             Click="SimDeleteAclEntryButton_Click" Tag="{Binding}" ToolTip="権限解除"/>
                                                                 </StackPanel>
@@ -1227,12 +1232,12 @@
 
                             <StackPanel Grid.Row="0" Margin="0,0,0,10">
                                 <Grid>
-                                    <TextBlock Text="AD ユーザー &amp; グループ" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
+                                    <TextBlock Text="AD ユーザー &amp; グループ" FontWeight="Bold" FontSize="13.5" Foreground="#0F172A"/>
                                     <Border x:Name="DomainStatusBadge" Background="#DCFCE7" CornerRadius="4" Padding="6,1" HorizontalAlignment="Right">
-                                        <TextBlock x:Name="DomainStatusText" Text="🟢 CORP.LOCAL" FontSize="9" FontWeight="SemiBold" Foreground="#15803D"/>
+                                        <TextBlock x:Name="DomainStatusText" Text="🟢 CORP.LOCAL" FontSize="10.5" FontWeight="SemiBold" Foreground="#15803D"/>
                                     </Border>
                                 </Grid>
-                                <TextBlock Text="カードを中央のフォルダへドラッグして権限付与" FontSize="10" Foreground="#64748B" Margin="0,2,0,0"/>
+                                <TextBlock Text="カードを中央のフォルダへドラッグして権限付与" FontSize="11.5" Foreground="#64748B" Margin="0,2,0,0"/>
                             </StackPanel>
 
                             <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,0,10">
@@ -1241,9 +1246,9 @@
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="🔍 " FontSize="11" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                                    <TextBlock Text="🔍 " FontSize="12" Foreground="#94A3B8" VerticalAlignment="Center"/>
                                     <TextBox x:Name="AdSearchTextBox" Grid.Column="1" BorderThickness="0" Background="Transparent"
-                                             VerticalAlignment="Center" FontSize="11" TextChanged="AdSearchTextBox_TextChanged"/>
+                                             VerticalAlignment="Center" FontSize="12" TextChanged="AdSearchTextBox_TextChanged"/>
                                 </Grid>
                             </Border>
 
@@ -1262,8 +1267,8 @@
                                                         </Grid.ColumnDefinitions>
                                                         <TextBlock Text="{Binding IconGlyph}" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
-                                                            <TextBlock Text="{Binding Description}" FontSize="9" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="12" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding Description}" FontSize="10.5" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
                                                         </StackPanel>
                                                     </Grid>
                                                 </Border>
@@ -1407,24 +1412,24 @@
                             </Grid.ColumnDefinitions>
 
                             <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                <TextBlock Text="監査対象ディレクトリ (UNC / ローカル)" FontSize="11" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
+                                <TextBlock Text="監査対象ディレクトリ (UNC / ローカル)" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="34" Padding="10,0">
-                                        <TextBox x:Name="AuditPathTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"/>
+                                        <TextBox x:Name="AuditPathTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="12" FontFamily="{StaticResource MonoFont}"/>
                                     </Border>
-                                    <Button x:Name="AuditBrowseButton" Grid.Column="1" Content="📁 参照" Width="68" Height="34" Margin="8,0,0,0"
+                                    <Button x:Name="AuditBrowseButton" Grid.Column="1" Content="📁 参照" Width="80" Height="34" Margin="8,0,0,0"
                                             Style="{StaticResource FluentButtonSecondary}" Click="AuditBrowseButton_Click"/>
                                 </Grid>
                             </StackPanel>
 
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,4">
-                                <CheckBox x:Name="AuditCheckDuplicatesCheckBox" Content="重複ファイル (SHA256)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="11" Foreground="#334155"/>
-                                <CheckBox x:Name="AuditCheckDormantCheckBox" Content="休眠ファイル (3年以上)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="11" Foreground="#334155"/>
-                                <CheckBox x:Name="AuditCheckPathLimitsCheckBox" Content="パス長260字超/禁則文字" IsChecked="True" VerticalAlignment="Center" FontSize="11" Foreground="#334155"/>
+                                <CheckBox x:Name="AuditCheckDuplicatesCheckBox" Content="重複ファイル (SHA256)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12" Foreground="#334155"/>
+                                <CheckBox x:Name="AuditCheckDormantCheckBox" Content="休眠ファイル (3年以上)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12" Foreground="#334155"/>
+                                <CheckBox x:Name="AuditCheckPathLimitsCheckBox" Content="パス長260字超/禁則文字" IsChecked="True" VerticalAlignment="Center" FontSize="12" Foreground="#334155"/>
                             </StackPanel>
                         </Grid>
 
@@ -1546,31 +1551,31 @@
                             </Grid.ColumnDefinitions>
 
                             <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                <TextBlock Text="走査対象ディレクトリ (UNC / ローカル)" FontSize="11" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
+                                <TextBlock Text="走査対象ディレクトリ (UNC / ローカル)" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="34" Padding="10,0">
-                                        <TextBox x:Name="MediaPathTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"/>
+                                        <TextBox x:Name="MediaPathTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="12" FontFamily="{StaticResource MonoFont}"/>
                                     </Border>
-                                    <Button x:Name="MediaBrowseButton" Grid.Column="1" Content="📁 参照" Width="68" Height="34" Margin="8,0,0,0"
+                                    <Button x:Name="MediaBrowseButton" Grid.Column="1" Content="📁 参照" Width="80" Height="34" Margin="8,0,0,0"
                                             Style="{StaticResource FluentButtonSecondary}" Click="MediaBrowseButton_Click"/>
                                 </Grid>
                             </StackPanel>
 
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,4">
                                 <StackPanel Margin="0,0,12,0">
-                                    <TextBlock Text="最大長辺 (px)" FontSize="10" Foreground="#64748B" Margin="0,0,0,2"/>
+                                    <TextBlock Text="最大長辺 (px)" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
                                     <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Width="80" Padding="6,0">
-                                        <TextBox x:Name="MediaMaxDimTextBox" Text="2560" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11"/>
+                                        <TextBox x:Name="MediaMaxDimTextBox" Text="2560" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="12"/>
                                     </Border>
                                 </StackPanel>
                                 <StackPanel Margin="0,0,12,0">
-                                    <TextBlock Text="画質 (%)" FontSize="10" Foreground="#64748B" Margin="0,0,0,2"/>
+                                    <TextBlock Text="画質 (%)" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
                                     <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Width="60" Padding="6,0">
-                                        <TextBox x:Name="MediaQualityTextBox" Text="85" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11"/>
+                                        <TextBox x:Name="MediaQualityTextBox" Text="85" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="12"/>
                                     </Border>
                                 </StackPanel>
                                 <StackPanel>
@@ -1735,8 +1740,8 @@
                             <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,10">
                                 <StackPanel>
                                     <Grid Margin="0,0,0,8">
-                                        <TextBlock Text="基本アクセス許可:" FontWeight="Bold" FontSize="11" Foreground="#334155"/>
-                                        <TextBlock Text="※高度な権限と完全リアルタイム連動" FontSize="10" Foreground="#0284C7" HorizontalAlignment="Right"/>
+                                        <TextBlock Text="基本アクセス許可:" FontWeight="Bold" FontSize="12.5" Foreground="#334155"/>
+                                        <TextBlock Text="※高度な権限と完全リアルタイム連動" FontSize="11.5" Foreground="#0284C7" HorizontalAlignment="Right"/>
                                     </Grid>
                                     <UniformGrid Columns="2">
                                         <CheckBox x:Name="SecChkFullControl" Content="フル コントロール" Margin="0,3" FontWeight="Bold" Click="SecBasicPerm_Click"/>
@@ -1753,24 +1758,24 @@
                             <Border Background="#F1F5F9" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Padding="12">
                                 <StackPanel>
                                     <Grid Margin="0,0,0,8">
-                                        <TextBlock Text="⚙️ 高度なアクセス許可 (Windows ACL 14項目完全網羅):" FontWeight="Bold" FontSize="11" Foreground="#0284C7"/>
-                                        <TextBlock Text="Windows セキュリティ詳細設定準拠" FontSize="9" Foreground="#64748B" HorizontalAlignment="Right"/>
+                                        <TextBlock Text="⚙️ 高度なアクセス許可 (Windows ACL 14項目完全網羅):" FontWeight="Bold" FontSize="12" Foreground="#0284C7"/>
+                                        <TextBlock Text="Windows セキュリティ詳細設定準拠" FontSize="11" Foreground="#64748B" HorizontalAlignment="Right"/>
                                     </Grid>
                                     <UniformGrid Columns="2">
-                                        <CheckBox x:Name="SecAdvTraverse" Content="フォルダーのスキャン / ファイルの実行" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
-                                        <CheckBox x:Name="SecAdvList" Content="フォルダーの一覧 / データの読み取り" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
-                                        <CheckBox x:Name="SecAdvReadAttr" Content="属性の読み取り" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
-                                        <CheckBox x:Name="SecAdvReadExtAttr" Content="拡張属性の読み取り" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
-                                        <CheckBox x:Name="SecAdvCreateFile" Content="ファイルの作成 / データの書き込み" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
-                                        <CheckBox x:Name="SecAdvCreateFolder" Content="フォルダーの作成 / データの追加" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
-                                        <CheckBox x:Name="SecAdvWriteAttr" Content="属性の書き込み" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
-                                        <CheckBox x:Name="SecAdvWriteExtAttr" Content="拡張属性の書き込み" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
-                                        <CheckBox x:Name="SecAdvDelete" Content="削除" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
-                                        <CheckBox x:Name="SecAdvDeleteSub" Content="サブフォルダーとファイルの削除" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
-                                        <CheckBox x:Name="SecAdvReadPerm" Content="アクセス許可の読み取り" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
-                                        <CheckBox x:Name="SecAdvChangePerm" Content="アクセス許可の変更" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
-                                        <CheckBox x:Name="SecAdvTakeOwnership" Content="所有権の取得" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
-                                        <CheckBox x:Name="SecAdvSync" Content="同期 (Synchronize)" Margin="0,3" FontSize="10" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvTraverse" Content="フォルダーのスキャン / ファイルの実行" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvList" Content="フォルダーの一覧 / データの読み取り" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvReadAttr" Content="属性の読み取り" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvReadExtAttr" Content="拡張属性の読み取り" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvCreateFile" Content="ファイルの作成 / データの書き込み" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvCreateFolder" Content="フォルダーの作成 / データの追加" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvWriteAttr" Content="属性の書き込み" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvWriteExtAttr" Content="拡張属性の書き込み" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvDelete" Content="削除" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvDeleteSub" Content="サブフォルダーとファイルの削除" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvReadPerm" Content="アクセス許可の読み取り" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvChangePerm" Content="アクセス許可の変更" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvTakeOwnership" Content="所有権の取得" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
+                                        <CheckBox x:Name="SecAdvSync" Content="同期 (Synchronize)" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
                                     </UniformGrid>
                                 </StackPanel>
                             </Border>
@@ -1888,12 +1893,12 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock x:Name="StatusTextBlock" Text="準備完了" FontSize="11" Foreground="{StaticResource TextSecondary}"/>
+                    <TextBlock x:Name="StatusTextBlock" Text="準備完了" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
                     <ProgressBar x:Name="GlobalProgressBar" Height="4" Width="140" Margin="12,0,0,0" Minimum="0" Maximum="100" Value="0"
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v1.2.1 - Storage &amp; Migration Studio" FontSize="11" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.2.4 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>
