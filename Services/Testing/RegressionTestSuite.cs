@@ -30,50 +30,56 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 7;
+            int totalTests = 8;
 
             try
             {
                 // Test 1
-                Console.WriteLine("\n[TEST 1/7] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
+                Console.WriteLine("\n[TEST 1/8] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
                 await TestMediaOptimizerPngPreservationAsync();
                 Console.WriteLine("  --> [PASS] Media Optimizer: PNG signature (0x89 50 4E 47) and alpha channel 100% preserved.");
                 passCount++;
 
                 // Test 2
-                Console.WriteLine("\n[TEST 2/7] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
+                Console.WriteLine("\n[TEST 2/8] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
                 TestLiveAclDenyAndInheritance();
                 Console.WriteLine("  --> [PASS] Live ACL: ACEs preserved on inheritance disable, Deny rules ordered first (Canonical Order).");
                 passCount++;
 
                 // Test 3
-                Console.WriteLine("\n[TEST 3/7] Audit Archival: Original File Archive & Move Duplication...");
+                Console.WriteLine("\n[TEST 3/8] Audit Archival: Original File Archive & Move Duplication...");
                 TestAuditArchivalOriginalExclusionAndDeduplication();
                 Console.WriteLine("  --> [PASS] Audit: Original files safely protected from archive, move commands deduplicated.");
                 passCount++;
 
                 // Test 4
-                Console.WriteLine("\n[TEST 4/7] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
+                Console.WriteLine("\n[TEST 4/8] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
                 TestMftDataRunDecoderLcnCalculation();
                 Console.WriteLine("  --> [PASS] MFT Data Run Decoder: Initial LCN computed relative to 0 without double-addition.");
                 passCount++;
 
                 // Test 5
-                Console.WriteLine("\n[TEST 5/7] Live ACL: Special Inheritance & Propagation Flags Preservation...");
+                Console.WriteLine("\n[TEST 5/8] Live ACL: Special Inheritance & Propagation Flags Preservation...");
                 TestLiveAclSpecialInheritanceFlags();
                 Console.WriteLine("  --> [PASS] Live ACL: Special InheritanceFlags and PropagationFlags preserved across read/write.");
                 passCount++;
 
                 // Test 6
-                Console.WriteLine("\n[TEST 6/7] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
+                Console.WriteLine("\n[TEST 6/8] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
                 TestAclUiBindingAndHelper();
                 Console.WriteLine("  --> [PASS] ACL UI Binding: AppliesTo, AccessType, and Modal state perfectly synchronized.");
                 passCount++;
 
                 // Test 7
-                Console.WriteLine("\n[TEST 7/7] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
+                Console.WriteLine("\n[TEST 7/8] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
                 await TestEffectiveAccessCanonicalDaclAndNestingAsync();
                 Console.WriteLine("  --> [PASS] Effective Access: Canonical DACL ordering (Explicit Allow > Inherited Deny), multi-level tracing & user isolation verified.");
+                passCount++;
+
+                // Test 8
+                Console.WriteLine("\n[TEST 8/8] Simulation & Script Generation: Icacls Deny/Flags, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly Exclusion...");
+                TestSimulationAclRobocopyAndEffectiveAccessInheritOnly();
+                Console.WriteLine("  --> [PASS] Simulation & Effective Access: Icacls Deny (/deny) with exact flags, Robocopy /XD descendant exclusion, and InheritOnly exclusion verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -934,6 +940,139 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException(
                         $"Canonical DACL 順序バグ検出: 子の明示Allowが親の継承Denyに打ち消されました。(AllowedRights={evalItem.AllowedRights})");
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 8. Simulation & Script Generation:
+        /// - PowerShell ACL スクリプト生成で Deny ルールが /deny で出力され、継承フラグ ((OI)(CI)(IO)等) が正確であること。
+        /// - Robocopy スクリプト生成で、子孫ノードがマッピングされているソースパスが親の /XD に除外されること。
+        /// - Effective Access 評価で、InheritOnly フラグ付き ACE が現在のフォルダ自身の権限から除外されること。
+        /// </summary>
+        public static void TestSimulationAclRobocopyAndEffectiveAccessInheritOnly()
+        {
+            var simService = new SimulationProjectService();
+            var effService = new EffectiveAccessService();
+
+            // Part 1: Icacls スクリプト生成検証 (Deny, /deny, フラグ)
+            var testNode = new SimFolderNode
+            {
+                Name = "FinanceFolder",
+                InheritAcl = false
+            };
+            testNode.AclEntries.Add(new SimAclEntry
+            {
+                AccountName = "DOMAIN\\Contractors",
+                AccessType = AccessControlType.Deny,
+                Rights = FileSystemRights.Write,
+                InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags = PropagationFlags.InheritOnly
+            });
+            testNode.AclEntries.Add(new SimAclEntry
+            {
+                AccountName = "DOMAIN\\FinanceTeam",
+                AccessType = AccessControlType.Allow,
+                Rights = FileSystemRights.Modify,
+                InheritanceFlags = InheritanceFlags.ContainerInherit,
+                PropagationFlags = PropagationFlags.None
+            });
+
+            var psScript = simService.GeneratePowerShellAclScript(new[] { testNode }, @"D:\TargetRoot");
+
+            if (!psScript.Contains("/deny \"DOMAIN\\Contractors:(OI)(CI)(IO)(W)\""))
+            {
+                throw new InvalidOperationException(
+                    $"Icacls スクリプト生成バグ: Deny ACE が正しく /deny かつ (OI)(CI)(IO)(W) で出力されていません。\n生成内容:\n{psScript}");
+            }
+            if (!psScript.Contains("/grant \"DOMAIN\\FinanceTeam:(CI)(M)\""))
+            {
+                throw new InvalidOperationException(
+                    $"Icacls スクリプト生成バグ: Allow ACE が正しく /grant かつ (CI)(M) で出力されていません。\n生成内容:\n{psScript}");
+            }
+
+            // Part 2: Robocopy スクリプトの子孫除外 (/XD) 検証
+            var parentNode = new SimFolderNode
+            {
+                Name = "ParentShare"
+            };
+            parentNode.MappedSourcePaths.Add(@"C:\OldFileServer\SalesData");
+
+            var childNode = new SimFolderNode
+            {
+                Name = "SubProject"
+            };
+            childNode.MappedSourcePaths.Add(@"C:\OldFileServer\SalesData\2023_Confidential");
+            parentNode.Children.Add(childNode);
+
+            var roboScript = simService.GenerateRobocopyScript(new[] { parentNode }, @"D:\NewFileServer");
+
+            if (!roboScript.Contains("/XD \"C:\\OldFileServer\\SalesData\\2023_Confidential\""))
+            {
+                throw new InvalidOperationException(
+                    $"Robocopy スクリプト生成バグ: 子孫ノードのソースパスが親の /XD に除外されていません。\n生成内容:\n{roboScript}");
+            }
+
+            // Part 3: Effective Access の InheritOnly 除外検証
+            string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_InheritOnly_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+                var dirInfo = new DirectoryInfo(tempDir);
+                var sec = dirInfo.GetAccessControl(AccessControlSections.Access);
+
+                // 親からの継承を遮断し、既存ルールをすべてクリアしてクリーンなACLを作成
+                sec.SetAccessRuleProtection(true, false);
+                foreach (FileSystemAccessRule r in sec.GetAccessRules(true, true, typeof(NTAccount)))
+                {
+                    sec.RemoveAccessRule(r);
+                }
+
+                // InheritOnly なルールを追加（フォルダ自身には効かないはず）
+                sec.AddAccessRule(new FileSystemAccessRule(
+                    new NTAccount(Environment.UserDomainName, Environment.UserName),
+                    FileSystemRights.Modify,
+                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    PropagationFlags.InheritOnly,
+                    AccessControlType.Allow));
+
+                var targetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Environment.UserName };
+                var groupMap = new Dictionary<string, PrincipalGroupMembership>(StringComparer.OrdinalIgnoreCase);
+
+                var eval = effService.EvaluateEffectiveAccessOnAcl(sec, Environment.UserName, targetNames, groupMap, tempDir, "InheritOnlyTest");
+                if (eval != null)
+                {
+                    throw new InvalidOperationException(
+                        $"Effective Access InheritOnly 除外バグ検出: InheritOnly のルールしかないのに、フォルダ自身の権限として評価されました。(AllowedRights={eval.AllowedRights})");
+                }
+
+                // 自身に適用される Read ルールを追加した場合は正しく評価され、Modify は含まれないこと
+                sec.AddAccessRule(new FileSystemAccessRule(
+                    new NTAccount(Environment.UserDomainName, Environment.UserName),
+                    FileSystemRights.ReadAndExecute,
+                    InheritanceFlags.None,
+                    PropagationFlags.None,
+                    AccessControlType.Allow));
+
+                var eval2 = effService.EvaluateEffectiveAccessOnAcl(sec, Environment.UserName, targetNames, groupMap, tempDir, "InheritOnlyTest");
+                if (eval2 == null)
+                {
+                    throw new InvalidOperationException("Effective Access 評価失敗: 明示的Readルールが存在するのにnullが返されました。");
+                }
+                // eval2 の AllowedRights に Modify (特に Write 権限) が含まれていないことを確認
+                // 注意: FileSystemRights.Modify は複合ビット (ReadAndExecute | Write | Delete) のため、
+                // 単純な & != 0 だと ReadAndExecute のビットで真になってしまう。
+                if ((eval2.AllowedRights & FileSystemRights.Write) != 0 || eval2.AllowedRights.HasFlag(FileSystemRights.Modify))
+                {
+                    throw new InvalidOperationException($"Effective Access InheritOnly 混入バグ検出: InheritOnly の Modify がフォルダ自身の権限に混入しました。AllowedRights={eval2.AllowedRights}");
+                }
+                if ((eval2.AllowedRights & FileSystemRights.ReadAndExecute) == 0)
+                {
+                    throw new InvalidOperationException("Effective Access 評価失敗: 有効な ReadAndExecute が認識されませんでした。");
                 }
             }
             finally

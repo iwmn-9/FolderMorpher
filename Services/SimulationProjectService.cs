@@ -241,10 +241,15 @@ namespace AstraSize.Services
 
                         if (!node.InheritAcl)
                         {
-                            ds.SetAccessRuleProtection(true, true);
+                            // ADR 10: 継承無効化時は SetAccessRuleProtection(true, false) で親由来の不要ルールを複製保持させない
+                            ds.SetAccessRuleProtection(true, false);
                         }
 
-                        foreach (var acl in node.AclEntries)
+                        // Windows Canonical DACL Ordering: Deny rules FIRST, then Allow rules
+                        var orderedEntries = node.AclEntries
+                            .OrderBy(a => a.AccessType == AccessControlType.Deny ? 0 : 1);
+
+                        foreach (var acl in orderedEntries)
                         {
                             try
                             {
@@ -252,11 +257,11 @@ namespace AstraSize.Services
                                 var rule = new FileSystemAccessRule(
                                     sid,
                                     acl.Rights,
-                                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
-                                    PropagationFlags.None,
+                                    acl.InheritanceFlags,
+                                    acl.PropagationFlags,
                                     acl.AccessType);
                                 ds.AddAccessRule(rule);
-                                logs.Add($"  [権限付与] {acl.AccountName} -> {acl.FormattedRights}");
+                                logs.Add($"  [権限付与] {acl.AccountName} ({acl.AccessType}) -> {acl.FormattedRights}");
                             }
                             catch (Exception aex)
                             {
@@ -284,7 +289,7 @@ namespace AstraSize.Services
         }
 
         /// <summary>
-        /// Generate Robocopy script with multi-source mapping support
+        /// Generate Robocopy script with multi-source mapping and descendant /XD exclusion support
         /// </summary>
         public string GenerateRobocopyScript(IEnumerable<SimFolderNode> rootNodes, string targetRoot, bool copyAcl = true, int threads = 16)
         {
@@ -299,15 +304,58 @@ namespace AstraSize.Services
             sb.AppendLine("echo ==================================================================");
             sb.AppendLine();
 
+            void CollectDescendantSources(SimFolderNode parent, List<string> accumulator)
+            {
+                foreach (var child in parent.Children)
+                {
+                    foreach (var s in child.MappedSourcePaths)
+                    {
+                        if (!string.IsNullOrWhiteSpace(s))
+                        {
+                            accumulator.Add(s);
+                        }
+                    }
+                    CollectDescendantSources(child, accumulator);
+                }
+            }
+
+            bool IsSubPath(string parentPath, string childPath)
+            {
+                try
+                {
+                    var p = Path.GetFullPath(parentPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    var c = Path.GetFullPath(childPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    return c.StartsWith(p + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                        || c.StartsWith(p + Path.AltDirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
             void AppendRoboNode(SimFolderNode node, string currentTarget)
             {
                 var targetFolder = Path.Combine(currentTarget, node.Name);
 
+                var descendantSources = new List<string>();
+                CollectDescendantSources(node, descendantSources);
+
                 foreach (var src in node.MappedSourcePaths)
                 {
                     if (string.IsNullOrWhiteSpace(src)) continue;
+
+                    var excludedDirs = descendantSources
+                        .Where(ds => IsSubPath(src, ds))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    var xdParam = excludedDirs.Count > 0
+                        ? " /XD " + string.Join(" ", excludedDirs.Select(d => $"\"{d}\""))
+                        : "";
+
                     sb.AppendLine($"echo [移行実行] \"{src}\" ➔ \"{targetFolder}\"");
-                    sb.AppendLine($"robocopy \"{src}\" \"{targetFolder}\" /E {copyFlags} /DCOPY:DAT /R:2 /W:3 /MT:{threads} /NP /TEE /LOG+:\"%TEMP%\\FolderMorpher_Robocopy_{DateTime.Now:yyyyMMdd}.log\"");
+                    sb.AppendLine($"robocopy \"{src}\" \"{targetFolder}\" /E {copyFlags} /DCOPY:DAT /R:2 /W:3 /MT:{threads} /NP /TEE{xdParam} /LOG+:\"%TEMP%\\FolderMorpher_Robocopy_{DateTime.Now:yyyyMMdd}.log\"");
                     sb.AppendLine();
                 }
 
@@ -347,6 +395,16 @@ namespace AstraSize.Services
             return sb.ToString();
         }
 
+        private static string GetIcaclsInheritanceString(InheritanceFlags inh, PropagationFlags prop)
+        {
+            var sb = new StringBuilder();
+            if (inh.HasFlag(InheritanceFlags.ObjectInherit)) sb.Append("(OI)");
+            if (inh.HasFlag(InheritanceFlags.ContainerInherit)) sb.Append("(CI)");
+            if (prop.HasFlag(PropagationFlags.InheritOnly)) sb.Append("(IO)");
+            if (prop.HasFlag(PropagationFlags.NoPropagateInherit)) sb.Append("(NP)");
+            return sb.ToString();
+        }
+
         private static void AppendAclPsScript(SimFolderNode node, string parentVar, StringBuilder sb)
         {
             var pathVar = $"$p_{Math.Abs(node.Id.GetHashCode())}";
@@ -359,14 +417,21 @@ namespace AstraSize.Services
                 sb.AppendLine($"icacls {pathVar} /inheritance:d | Out-Null");
             }
 
-            foreach (var acl in node.AclEntries)
+            var orderedEntries = node.AclEntries
+                .OrderBy(a => a.AccessType == AccessControlType.Deny ? 0 : 1);
+
+            foreach (var acl in orderedEntries)
             {
                 string rightCode = acl.IsFullControl ? "(F)" :
                                    acl.IsModify ? "(M)" :
                                    acl.IsReadExecute ? "(RX)" :
                                    acl.IsRead ? "(R)" :
                                    acl.IsWrite ? "(W)" : "(M)";
-                sb.AppendLine($"icacls {pathVar} /grant \"{acl.AccountName}:(OI)(CI){rightCode}\" | Out-Null");
+
+                var flagStr = GetIcaclsInheritanceString(acl.InheritanceFlags, acl.PropagationFlags);
+                var switchType = acl.AccessType == AccessControlType.Deny ? "/deny" : "/grant";
+
+                sb.AppendLine($"icacls {pathVar} {switchType} \"{acl.AccountName}:{flagStr}{rightCode}\" | Out-Null");
             }
 
             foreach (var child in node.Children)

@@ -373,6 +373,12 @@ namespace FolderMorpher.Services
                     continue;
                 }
 
+                // CRITICAL: If an ACE has InheritOnly propagation flag, it applies ONLY to child items, NOT to this container itself!
+                if (rule.PropagationFlags.HasFlag(PropagationFlags.InheritOnly))
+                {
+                    continue;
+                }
+
                 if (!rule.IsInherited)
                 {
                     if (rule.AccessControlType == AccessControlType.Deny) explicitDenyRules.Add(rule);

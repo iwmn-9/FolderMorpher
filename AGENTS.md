@@ -77,6 +77,10 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
    - **NTFS実効権限スコープとUNC共有注意**:
      - スコープを「NTFS実効権限」と厳密定義し、UNC共有フォルダ経由アクセス時はファイルサーバーの「SMB共有権限（Share Permissions）」の上限も併せて適用される旨を明記・注釈する。
    - 継承無効化（`ApplySimAclEntries` の `inherit: false`）時は `SetAccessRuleProtection(true, false)` を用い、親由来の不要なWell-Knownルール（`Users`等）を意図せず複製保持させない。
+11. **移行スクリプト（icacls / Robocopy）と実効権限の整合性**:
+   - `icacls` 生成時は Deny ルールを必ず `/deny`、フラグを `(OI)(CI)(IO)` 等の icacls 構文にマッピングする。
+   - Robocopy 生成時は、親フォルダの移行元に含まれる子孫ノードのソースパスを `/XD` に自動連動し、新旧ツリーの多重コピーを防止する。
+   - Effective Access 評価時は `InheritOnly` ACE を現在のフォルダ自身の権限から除外し、直下の誤認を防ぐ。
 
 ---
 
@@ -96,7 +100,7 @@ Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe"
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 7/7 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 8/8 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```
