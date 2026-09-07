@@ -20,6 +20,9 @@ namespace AstraSize.Models
         public string? ErrorMessage { get; set; }
         public int Level { get; set; } = 0;
 
+        public List<LargestFileInfo>? CachedTopFiles { get; set; }
+        public List<ExtensionStat>? CachedExtensionStats { get; set; }
+
         private long? _diffBytes;
         public long? DiffBytes
         {

@@ -56,38 +56,45 @@ namespace AstraSize.Services
             return await Task.Run(async () =>
             {
                 var list = new List<ScanSnapshot>();
-                var readDir = AppSettingsService.Instance.GetReadDirectory("Snapshots");
-                if (string.IsNullOrEmpty(readDir) || !Directory.Exists(readDir))
+                var readDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                var configuredReadDir = AppSettingsService.Instance.GetReadDirectory("Snapshots");
+                if (!string.IsNullOrEmpty(configuredReadDir) && Directory.Exists(configuredReadDir))
                 {
-                    if (AppSettingsService.Instance.Current.FallbackToLocalOnReadError)
-                    {
-                        var localBase = AppSettingsService.Instance.GetDefaultLocalBaseDirectory();
-                        readDir = Path.Combine(localBase, "Snapshots");
-                    }
-                    else
-                    {
-                        return list;
-                    }
+                    readDirs.Add(configuredReadDir);
                 }
 
-                var historyPath = Path.Combine(readDir, "history.json");
-                if (File.Exists(historyPath))
+                // ローカル側の Snapshots ディレクトリも常にマージ対象に含めてチーム共有とローカル最新履歴を合流
+                var localBase = AppSettingsService.Instance.GetDefaultLocalBaseDirectory();
+                var localDir = Path.Combine(localBase, "Snapshots");
+                if (Directory.Exists(localDir))
                 {
+                    readDirs.Add(localDir);
+                }
+
+                if (readDirs.Count == 0)
+                {
+                    return list;
+                }
+
+                foreach (var dir in readDirs)
+                {
+                    var historyPath = Path.Combine(dir, "history.json");
+                    if (File.Exists(historyPath))
+                    {
+                        try
+                        {
+                            var json = await File.ReadAllTextAsync(historyPath);
+                            var baseList = JsonSerializer.Deserialize<List<ScanSnapshot>>(json);
+                            if (baseList != null) list.AddRange(baseList);
+                        }
+                        catch { }
+                    }
+
+                    // 個別スナップショットファイル (snapshot_*.json) も読み込んで合算（マルチクライアント対応）
                     try
                     {
-                        var json = await File.ReadAllTextAsync(historyPath);
-                        var baseList = JsonSerializer.Deserialize<List<ScanSnapshot>>(json);
-                        if (baseList != null) list.AddRange(baseList);
-                    }
-                    catch { }
-                }
-
-                // 個別スナップショットファイル (snapshot_*.json) も読み込んで合算（マルチクライアント対応）
-                try
-                {
-                    if (Directory.Exists(readDir))
-                    {
-                        foreach (var file in Directory.GetFiles(readDir, "snapshot_*.json"))
+                        foreach (var file in Directory.GetFiles(dir, "snapshot_*.json"))
                         {
                             try
                             {
@@ -98,12 +105,12 @@ namespace AstraSize.Services
                             catch { }
                         }
                     }
+                    catch { }
                 }
-                catch { }
 
                 // 重複排除 (TargetPath + Timestamp) して日時順ソート
                 return list
-                    .GroupBy(s => $"{s.TargetPath}_{s.Timestamp:yyyyMMddHHmmss}")
+                    .GroupBy(s => $"{s.TargetPath.TrimEnd('\\', '/').ToLowerInvariant()}_{s.Timestamp:yyyyMMddHHmmss}")
                     .Select(g => g.First())
                     .OrderBy(s => s.Timestamp)
                     .ToList();
@@ -289,11 +296,15 @@ namespace AstraSize.Services
                     var dir = Path.GetDirectoryName(filePath);
                     if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
+                    var (topFiles, extStats) = DiskScanService.GetInsightsForNode(rootNode);
+
                     var cacheRoot = new TreeCacheRoot
                     {
                         TargetPath = rootNode.FullPath,
                         Timestamp = DateTime.Now,
-                        Root = ToCacheNode(rootNode)
+                        Root = ToCacheNode(rootNode),
+                        TopFiles = topFiles,
+                        ExtensionStats = extStats
                     };
 
                     var options = new JsonSerializerOptions { WriteIndented = false };
@@ -327,6 +338,8 @@ namespace AstraSize.Services
                     if (cacheRoot?.Root == null) return null;
 
                     var node = FromCacheNode(cacheRoot.Root, null, 0);
+                    node.CachedTopFiles = cacheRoot.TopFiles;
+                    node.CachedExtensionStats = cacheRoot.ExtensionStats;
                     DiskScanService.CalculatePercentages(node, node.Size > 0 ? node.Size : 1);
                     return node;
                 }
@@ -446,5 +459,7 @@ namespace AstraSize.Services
         public string TargetPath { get; set; } = string.Empty;
         public DateTime Timestamp { get; set; }
         public TreeCacheNode Root { get; set; } = new();
+        public List<LargestFileInfo> TopFiles { get; set; } = new();
+        public List<ExtensionStat> ExtensionStats { get; set; } = new();
     }
 }

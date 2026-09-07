@@ -1232,6 +1232,10 @@ namespace FolderMorpher.Services.Testing
             {
                 throw new InvalidOperationException($"TreeCache 整合性エラー: 復元ノードサイズが一致しません (期待: {root.Size}, 実際: {cached.Size})");
             }
+            if (cached.CachedTopFiles == null || cached.CachedExtensionStats == null)
+            {
+                throw new InvalidOperationException("TreeCache 0秒Insightsエラー: TopFiles または ExtensionStats がキャッシュから復元されていません。");
+            }
 
             // 4. 最新ツリー（サイズ変化＋新規フォルダ発生）
             var newRoot = new FileItemNode(testRootPath, "DepartmentShare", 1024 * 1024 * 350, true);
@@ -1255,6 +1259,29 @@ namespace FolderMorpher.Services.Testing
             if (newSubB.DiffBytes != 0 || newSubB.HasDiff)
             {
                 throw new InvalidOperationException("TreeDiff 差分誤爆エラー: 変化のない Dev に差分が検出されています。");
+            }
+
+            // 7. GetInsightsForNode の Top10 インプレース保持＆省メモリ検証
+            var mockParent = new FileItemNode(@"C:\Mock", "Mock", 1000, true);
+            for (int i = 1; i <= 25; i++)
+            {
+                mockParent.Children.Add(new FileItemNode($@"C:\Mock\file{i}.dat", $"file{i}.dat", i * 100, false));
+            }
+            var (topFiles, extStats) = DiskScanService.GetInsightsForNode(mockParent);
+            if (topFiles.Count != 10)
+            {
+                throw new InvalidOperationException($"GetInsightsForNode エラー: Top10 の件数が 10 件ではありません ({topFiles.Count})");
+            }
+            if (topFiles[0].Size != 2500 || topFiles[9].Size != 1600)
+            {
+                throw new InvalidOperationException($"GetInsightsForNode エラー: Top10 が正しく降順ソートされていません (Top1: {topFiles[0].Size}, Top10: {topFiles[9].Size})");
+            }
+
+            // 8. Shared + Local スナップショット履歴のマージ検証
+            var allSnapshots = await historyService.LoadAllAsync();
+            if (allSnapshots == null)
+            {
+                throw new InvalidOperationException("StorageHistory LoadAllAsync エラー: スナップショット一覧が null です。");
             }
         }
 

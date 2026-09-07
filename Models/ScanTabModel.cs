@@ -173,9 +173,14 @@ namespace AstraSize.Models
             {
                 ExtensionSummaries = Summary.ExtensionStats;
             }
+            else if (RootNode?.CachedExtensionStats != null && RootNode.CachedExtensionStats.Count > 0)
+            {
+                ExtensionSummaries = RootNode.CachedExtensionStats;
+            }
             else if (RootNode != null)
             {
                 var (_, extStats) = Services.DiskScanService.GetInsightsForNode(RootNode);
+                RootNode.CachedExtensionStats = extStats;
                 ExtensionSummaries = extStats;
             }
             OnPropertyChanged(nameof(ExtensionList));

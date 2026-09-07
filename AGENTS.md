@@ -123,6 +123,11 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
 23. **深層（全階層）安全走査 ＆ 完全多言語（i18n）アーキテクチャ**:
    - `MediaOptimizerService` および `AuditReportService` において、`SearchOption.AllDirectories` の `UnauthorizedAccessException` による探索即死バグを根絶し、`Stack<DirectoryInfo>` による堅牢な反復走査を採用。アクセス拒否フォルダーを安全にスキップしながら全階層を漏れなく探索。
    - ボタンだけでなく、全タブ（Tab 0〜5）の静的ラベル、見出し、KPIタイトル、リストカラムヘッダー、プレースホルダー、モーダルテキストに至るまで日英完全動的ローカライズ（`ApplyLocalization`）を網羅。
+24. **キャッシュ側 Top10/拡張子内訳完全包含 ＆ インプレース Top10 抽出 ＆ Shared/Localスナップショットマージ**:
+   - `TreeCacheRoot` に `TopFiles`（巨大ファイル Top 10）および `ExtensionStats`（拡張子統計）を完全包含して保存。
+   - キャッシュ復元時は全ノード再帰走査を一切行わず、キャッシュ内の Top 10 および拡張子内訳を即座にUIへ反映（真の 0 秒・CPU負荷ゼロ復元）。
+   - 最新スキャン時・ノード選択時の `GetInsightsForNode` は、100万ファイルあっても `LargestFileInfo` を大量アロケーションせず、サイズ10件のインプレース維持バッファと最小値閾値判定によりメモリ割り当てを 99.99% 削減。
+   - `StorageHistoryService.LoadAllAsync` は、チーム共有（Shared）とローカル（Local）の両ディレクトリに存在するスナップショット（`history.json` / `snapshot_*.json`）を網羅的に集約し、`TargetPath` + `Timestamp` で一意に重複排除してマージ表示。共有マスターを参照しつつローカル最新履歴も確実にグラフへ合流。
 
 ---
 

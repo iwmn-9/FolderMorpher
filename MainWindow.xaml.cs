@@ -363,6 +363,7 @@ namespace AstraSize
                     cachedRoot.IsExpanded = true;
                     _currentTab.RootNode = cachedRoot;
                     _currentTab.FlattenTree();
+                    _currentTab.AggregateExtensions();
                     FileTreeDataGrid.ItemsSource = _currentTab.VisibleFlatList;
                     UpdateDynamicInsightsForNode(cachedRoot);
                     UpdateMetricsCards(_currentTab);
@@ -455,8 +456,18 @@ namespace AstraSize
                 TotalFilesTextBlock.Text = $"{tab.RootNode.FileCount:N0} ファイル / {tab.RootNode.FolderCount:N0} フォルダ";
 
                 // 最大ファイル (Top 1)
-                var (topFiles, _) = DiskScanService.GetInsightsForNode(tab.RootNode);
-                var largest = topFiles.FirstOrDefault();
+                LargestFileInfo? largest = null;
+                if (tab.RootNode.CachedTopFiles != null && tab.RootNode.CachedTopFiles.Count > 0)
+                {
+                    largest = tab.RootNode.CachedTopFiles.FirstOrDefault();
+                }
+                else
+                {
+                    var (topFiles, _) = DiskScanService.GetInsightsForNode(tab.RootNode);
+                    tab.RootNode.CachedTopFiles = topFiles;
+                    largest = topFiles.FirstOrDefault();
+                }
+
                 if (largest != null)
                 {
                     LargestFileSizeTextBlock.Text = largest.FormattedSize;
@@ -537,7 +548,17 @@ namespace AstraSize
             InsightsTargetScopeTextBlock.Text = $"スコープ: {node.Name}";
 
             // 1. Top 10 largest files in this subtree
-            var (topFiles, _) = DiskScanService.GetInsightsForNode(node);
+            List<LargestFileInfo> topFiles;
+            if (node.CachedTopFiles != null && node.CachedTopFiles.Count > 0)
+            {
+                topFiles = node.CachedTopFiles;
+            }
+            else
+            {
+                var (computedTop, _) = DiskScanService.GetInsightsForNode(node);
+                node.CachedTopFiles = computedTop;
+                topFiles = computedTop;
+            }
             TopFilesDataGrid.ItemsSource = topFiles;
 
             // 2. Direct children breakdown (relative shares in this folder)

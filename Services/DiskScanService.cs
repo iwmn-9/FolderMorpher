@@ -320,31 +320,60 @@ namespace AstraSize.Services
 
         public static (List<LargestFileInfo> largestFiles, List<ExtensionStat> extensionStats) GetInsightsForNode(FileItemNode node)
         {
-            var largest = new List<LargestFileInfo>(16);
+            const int MaxTop = 10;
+            var topList = new List<LargestFileInfo>(MaxTop + 1);
+            long minSizeInTop = -1;
             var extDict = new Dictionary<string, (long size, int count)>(StringComparer.OrdinalIgnoreCase);
 
             void Traverse(FileItemNode current)
             {
                 if (!current.IsDirectory)
                 {
-                    string ext = Path.GetExtension(current.Name);
-                    largest.Add(new LargestFileInfo
-                    {
-                        Name = current.Name,
-                        FullPath = current.FullPath,
-                        Size = current.Size,
-                        Extension = ext,
-                        Category = GetCategoryForExtension(ext)
-                    });
+                    long size = current.Size;
 
-                    string extKey = string.IsNullOrEmpty(ext) ? "(なし)" : ext.ToLowerInvariant();
+                    // Top 10の保持：上位10件に満たないか、現在の10位よりも大きい場合のみオブジェクト生成＆挿入
+                    if (topList.Count < MaxTop || size > minSizeInTop)
+                    {
+                        string ext = Path.GetExtension(current.Name);
+                        var fileInfo = new LargestFileInfo
+                        {
+                            Name = current.Name,
+                            FullPath = current.FullPath,
+                            Size = size,
+                            Extension = ext,
+                            Category = GetCategoryForExtension(ext)
+                        };
+
+                        int idx = topList.FindIndex(f => f.Size < size);
+                        if (idx < 0)
+                        {
+                            topList.Add(fileInfo);
+                        }
+                        else
+                        {
+                            topList.Insert(idx, fileInfo);
+                        }
+
+                        if (topList.Count > MaxTop)
+                        {
+                            topList.RemoveAt(MaxTop);
+                        }
+
+                        if (topList.Count == MaxTop)
+                        {
+                            minSizeInTop = topList[MaxTop - 1].Size;
+                        }
+                    }
+
+                    string rawExt = Path.GetExtension(current.Name);
+                    string extKey = string.IsNullOrEmpty(rawExt) ? "(なし)" : rawExt.ToLowerInvariant();
                     if (extDict.TryGetValue(extKey, out var val))
                     {
-                        extDict[extKey] = (val.size + current.Size, val.count + 1);
+                        extDict[extKey] = (val.size + size, val.count + 1);
                     }
                     else
                     {
-                        extDict[extKey] = (current.Size, 1);
+                        extDict[extKey] = (size, 1);
                     }
                 }
                 else
@@ -358,7 +387,6 @@ namespace AstraSize.Services
 
             Traverse(node);
 
-            var top10Files = largest.OrderByDescending(f => f.Size).Take(10).ToList();
             long totalScopeSize = node.Size > 0 ? node.Size : 1;
 
             var topExts = extDict
@@ -373,7 +401,7 @@ namespace AstraSize.Services
                 .Take(10)
                 .ToList();
 
-            return (top10Files, topExts);
+            return (topList, topExts);
         }
 
         internal static string GetCategoryForExtension(string ext)
