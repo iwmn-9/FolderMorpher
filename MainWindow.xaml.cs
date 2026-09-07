@@ -1028,6 +1028,13 @@ namespace AstraSize
         }
 
         #region Effective Access (ユーザー/グループ 逆引き監査) Handlers
+        private void RevRootPathTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (RevUncNoticeBanner == null) return;
+            var text = RevRootPathTextBox.Text.Trim();
+            RevUncNoticeBanner.Visibility = text.StartsWith(@"\\") ? Visibility.Visible : Visibility.Collapsed;
+        }
+
         private void RevBrowseRoot_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new OpenFolderDialog
@@ -1061,6 +1068,13 @@ namespace AstraSize
                 return;
             }
 
+            // Parse selected search depth
+            int maxDepth = int.MaxValue;
+            if (RevDepthComboBox.SelectedItem is ComboBoxItem item && item.Tag is string tagStr)
+            {
+                if (int.TryParse(tagStr, out int parsed)) maxDepth = parsed;
+            }
+
             RevStartScanButton.Visibility = Visibility.Collapsed;
             RevCancelScanButton.Visibility = Visibility.Visible;
             RevProgressBar.Visibility = Visibility.Visible;
@@ -1084,10 +1098,10 @@ namespace AstraSize
             try
             {
                 // 1. グループ解決（直接所属＋多重入れ子AD Chain）
-                var groups = await _effectiveAccessService.GetGroupMembershipsAsync(targetAccount);
+                var (groups, resMode, resStatus) = await _effectiveAccessService.ResolveMembershipsAsync(targetAccount);
                 foreach (var g in groups) _revGroups.Add(g);
                 RevGroupCountText.Text = $"{_revGroups.Count} 件";
-                RevTargetAccountSub.Text = $"所属グループ {_revGroups.Count} 件 (直接: {_revGroups.Count(g => g.IsDirect)}, 入れ子: {_revGroups.Count(g => !g.IsDirect)})";
+                RevTargetAccountSub.Text = resStatus;
 
                 // 2. フォルダツリーの実効アクセス権スキャン
                 RevStatusText.Text = "フォルダーツリーの実効アクセス権（Effective Access）を監査中...";
@@ -1101,9 +1115,12 @@ namespace AstraSize
                     rootPath,
                     targetAccount,
                     groups,
-                    maxDepth: 6,
+                    maxDepth: maxDepth,
                     progress: progress,
                     ct: ct);
+
+                report.ResolutionMode = resMode;
+                report.ResolutionStatusText = resStatus;
 
                 _currentEffectiveReport = report;
                 _revAllFoldersCache.AddRange(report.AccessibleFolders);

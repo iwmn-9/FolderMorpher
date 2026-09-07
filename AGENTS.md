@@ -68,7 +68,14 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
    - 適用時（`ApplySimAclEntries`）に一律 `ContainerInherit | ObjectInherit` かつ `None` に上書きしてはならず、ACE本来の適用範囲を忠実に維持・適用しなければならない。またUI（`SecAppliesToCombo`）との双方向マッピングは `AclInheritanceHelper` / `AclUiBindingHelper` で厳密に連動させる。
 10. **AD多重入れ子逆引き権限（Effective Access）の評価規則**:
    - ユーザーの実効権限は、本人直接付与だけでなく、所属する全階層のADセキュリティグループ（`LDAP_MATCHING_RULE_IN_CHAIN` / `tokenGroups` による多重ネスト解決）を網羅して算出する。
-   - NTFSの標準アクセス制御原則に基づき、同一または包含される権限ビットについて **Deny（拒否）はAllow（許可）より常に優先** して相殺（`allowed & (~denied)`）する。
+   - **Windows Canonical DACL Ordering（評価順序）の厳密順守**:
+     - DACL は「明示Deny ➔ 明示Allow ➔ 継承Deny ➔ 継承Allow」の順で順次評価する。
+     - 単純な `allowed & ~denied` ではなく、**子の明示的Allowは親の継承Denyより優先される** Windows AccessCheck 正規アルゴリズムを実装。
+   - **他人アカウント指定時の実行者グループ誤爆防止**:
+     - 調査対象が実行中のログオンユーザー自身と一致する場合のみローカルIDをフォールバック使用する。
+     - 別の他人アカウントやグループでAD解決に失敗した場合、実行者のグループを勝手に流用せず「直接付与ACEのみ判定」として明示する。
+   - **NTFS実効権限スコープとUNC共有注意**:
+     - スコープを「NTFS実効権限」と厳密定義し、UNC共有フォルダ経由アクセス時はファイルサーバーの「SMB共有権限（Share Permissions）」の上限も併せて適用される旨を明記・注釈する。
    - 継承無効化（`ApplySimAclEntries` の `inherit: false`）時は `SetAccessRuleProtection(true, false)` を用い、親由来の不要なWell-Knownルール（`Users`等）を意図せず複製保持させない。
 
 ---

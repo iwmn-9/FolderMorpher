@@ -247,14 +247,22 @@ namespace FolderMorpher.Services
             ws.ShowGridLines = true;
 
             // Title
-            ws.Cell("B2").Value = "FolderMorpher — AD実効アクセス権（逆引き監査）台帳";
+            ws.Cell("B2").Value = "FolderMorpher — NTFS実効アクセス権（逆引き監査）台帳";
             ws.Cell("B2").Style.Font.Bold = true;
             ws.Cell("B2").Style.Font.FontSize = 16;
             ws.Cell("B2").Style.Font.FontColor = XLColor.FromHtml("#0F172A");
 
-            ws.Cell("B3").Value = $"調査対象: {report.TargetDisplayName} ({report.TargetAccountName})  |  スキャンルート: {report.RootFolderPath}  |  出力日時: {report.ScanTimestamp:yyyy/MM/dd HH:mm:ss}";
+            ws.Cell("B3").Value = $"調査対象: {report.TargetDisplayName} ({report.TargetAccountName})  |  解決状況: {report.ResolutionStatusText}  |  スキャンルート: {report.RootFolderPath}  |  出力日時: {report.ScanTimestamp:yyyy/MM/dd HH:mm:ss}";
             ws.Cell("B3").Style.Font.FontSize = 10;
             ws.Cell("B3").Style.Font.FontColor = XLColor.DimGray;
+
+            if (report.IsUncPath)
+            {
+                ws.Cell("B4").Value = "⚠️ " + report.UncShareNotice;
+                ws.Cell("B4").Style.Font.FontSize = 9;
+                ws.Cell("B4").Style.Font.Bold = true;
+                ws.Cell("B4").Style.Font.FontColor = XLColor.FromHtml("#B45309");
+            }
 
             // KPI Cards
             DrawKpiCard(ws, "B5", "C6", "アクセス可能フォルダ数", $"{report.AccessibleFolders.Count:N0} 箇所", "#2563EB");

@@ -28,47 +28,101 @@ namespace FolderMorpher.Services
 
         /// <summary>
         /// Resolves all direct and deeply nested group memberships for the specified account.
+        /// When query fails or in local mode, strictly avoids falling back to the current running user
+        /// if the target account is a different person.
         /// </summary>
-        public async Task<List<PrincipalGroupMembership>> GetGroupMembershipsAsync(string accountName)
+        public async Task<(List<PrincipalGroupMembership> Memberships, EffectiveAccessResolutionMode Mode, string StatusText)> 
+            ResolveMembershipsAsync(string accountName)
         {
             return await Task.Run(() =>
             {
                 var memberships = new List<PrincipalGroupMembership>();
                 var cleanAccount = accountName.Contains('\\') ? accountName.Split('\\')[1] : accountName;
 
+                bool isCurrentLogonUser =
+                    string.Equals(accountName, Environment.UserName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(accountName, $"{Environment.UserDomainName}\\{Environment.UserName}", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(accountName, WindowsIdentity.GetCurrent().Name, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(cleanAccount, Environment.UserName, StringComparison.OrdinalIgnoreCase);
+
                 if (_adService.IsDomainJoined && !string.IsNullOrWhiteSpace(_adService.CurrentDomainName))
                 {
                     try
                     {
                         using var entry = new DirectoryEntry($"LDAP://{_adService.CurrentDomainName}");
+                        
+                        // Search for both user (person) or group
                         using var searcher = new DirectorySearcher(entry)
                         {
                             PageSize = 500,
-                            Filter = $"(&(objectCategory=person)(sAMAccountName={cleanAccount}))"
+                            Filter = $"(|(&(objectCategory=person)(sAMAccountName={cleanAccount}))(&(objectCategory=group)(sAMAccountName={cleanAccount})))"
                         };
-                        searcher.PropertiesToLoad.AddRange(new[] { "distinguishedName", "memberOf", "objectSid" });
+                        searcher.PropertiesToLoad.AddRange(new[] { "distinguishedName", "memberOf", "objectSid", "sAMAccountName", "displayName", "objectClass" });
 
-                        var userResult = searcher.FindOne();
-                        if (userResult != null)
+                        var targetResult = searcher.FindOne();
+                        if (targetResult != null)
                         {
-                            var userDn = userResult.Properties["distinguishedName"][0]?.ToString();
+                            var targetDn = targetResult.Properties["distinguishedName"][0]?.ToString();
                             var directDns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                            if (userResult.Properties.Contains("memberOf"))
+                            if (targetResult.Properties.Contains("memberOf"))
                             {
-                                foreach (var mo in userResult.Properties["memberOf"])
+                                foreach (var mo in targetResult.Properties["memberOf"])
                                 {
                                     if (mo != null) directDns.Add(mo.ToString()!);
                                 }
                             }
 
-                            if (!string.IsNullOrEmpty(userDn))
+                            bool isGroupTarget = false;
+                            if (targetResult.Properties.Contains("objectClass"))
+                            {
+                                foreach (var oc in targetResult.Properties["objectClass"])
+                                {
+                                    if (string.Equals(oc?.ToString(), "group", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        isGroupTarget = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // If target itself is a group, add it as the primary direct group
+                            if (isGroupTarget)
+                            {
+                                var gSam = targetResult.Properties["sAMAccountName"][0]?.ToString() ?? cleanAccount;
+                                var gDisp = targetResult.Properties.Contains("displayName") && targetResult.Properties["displayName"].Count > 0
+                                    ? targetResult.Properties["displayName"][0]?.ToString() ?? gSam
+                                    : gSam;
+
+                                string sidStr = "";
+                                if (targetResult.Properties.Contains("objectSid") && targetResult.Properties["objectSid"].Count > 0)
+                                {
+                                    try
+                                    {
+                                        var sidBytes = (byte[])targetResult.Properties["objectSid"][0];
+                                        sidStr = new SecurityIdentifier(sidBytes, 0).Value;
+                                    }
+                                    catch { }
+                                }
+
+                                memberships.Add(new PrincipalGroupMembership
+                                {
+                                    GroupName = gSam,
+                                    DisplayName = gDisp,
+                                    Sid = sidStr,
+                                    IsDirect = true,
+                                    NestingDepth = 0,
+                                    MembershipPath = "対象グループ自身"
+                                });
+                            }
+
+                            if (!string.IsNullOrEmpty(targetDn))
                             {
                                 // LDAP_MATCHING_RULE_IN_CHAIN (1.2.840.113556.1.4.1941)
-                                // Recursively retrieves ALL groups the user belongs to across arbitrary nesting depth
+                                // Recursively retrieves ALL groups the principal belongs to across arbitrary nesting depth
                                 using var groupSearcher = new DirectorySearcher(entry)
                                 {
                                     PageSize = 500,
-                                    Filter = $"(member:1.2.840.113556.1.4.1941:={userDn})"
+                                    Filter = $"(member:1.2.840.113556.1.4.1941:={targetDn})"
                                 };
                                 groupSearcher.PropertiesToLoad.AddRange(new[] { "sAMAccountName", "displayName", "distinguishedName", "objectSid" });
 
@@ -105,16 +159,25 @@ namespace FolderMorpher.Services
                                     });
                                 }
                             }
+
+                            if (memberships.Count > 0)
+                            {
+                                return (
+                                    memberships.OrderByDescending(m => m.IsDirect).ThenBy(m => m.GroupName).ToList(),
+                                    EffectiveAccessResolutionMode.ActiveDirectory,
+                                    $"AD多重ネスト解決完了 ({memberships.Count} グループ)"
+                                );
+                            }
                         }
                     }
                     catch
                     {
-                        // Fallback on AD query failure
+                        // Fallback handling below
                     }
                 }
 
-                // If no domain groups resolved (or local/offline mode), inspect local Windows identity or provide presets
-                if (memberships.Count == 0)
+                // If AD search didn't yield groups, ONLY use WindowsIdentity if the target IS the currently logged-on user!
+                if (isCurrentLogonUser)
                 {
                     try
                     {
@@ -134,28 +197,51 @@ namespace FolderMorpher.Services
                                         Sid = groupRef.Value,
                                         IsDirect = true,
                                         NestingDepth = 1,
-                                        MembershipPath = "ローカル所属"
+                                        MembershipPath = "ローカル所属 (実行ユーザー)"
                                     });
                                 }
                                 catch { }
                             }
                         }
+
+                        if (memberships.Count > 0)
+                        {
+                            return (
+                                memberships.OrderByDescending(m => m.IsDirect).ThenBy(m => m.GroupName).ToList(),
+                                EffectiveAccessResolutionMode.CurrentLogonUserLocal,
+                                $"実行中ユーザー ({Environment.UserName}) の所属グループを使用 ({memberships.Count} グループ)"
+                            );
+                        }
                     }
                     catch { }
                 }
 
-                return memberships.OrderByDescending(m => m.IsDirect).ThenBy(m => m.GroupName).ToList();
+                // When investigating a DIFFERENT account and AD resolution failed:
+                // DO NOT impersonate or contaminate with current user's groups!
+                // Strictly evaluate direct ACL entries granted to targetAccount itself.
+                return (
+                    memberships,
+                    EffectiveAccessResolutionMode.DirectAclOnly,
+                    $"ADグループ未解決 (対象 '{accountName}' の直接付与ACEのみ判定)"
+                );
             });
+        }
+
+        public async Task<List<PrincipalGroupMembership>> GetGroupMembershipsAsync(string accountName)
+        {
+            var res = await ResolveMembershipsAsync(accountName);
+            return res.Memberships;
         }
 
         /// <summary>
         /// Recursively audits the target root folder and finds all folders accessible by targetAccount and its resolved groups.
+        /// Defaults to unlimited search depth (int.MaxValue) with cooperative cancellation.
         /// </summary>
         public async Task<EffectiveAccessAuditReport> ScanEffectiveAccessAsync(
             string rootPath,
             string targetAccount,
             List<PrincipalGroupMembership>? preResolvedGroups = null,
-            int maxDepth = 6,
+            int maxDepth = int.MaxValue,
             IProgress<(int scanned, int found)>? progress = null,
             CancellationToken ct = default)
         {
@@ -164,7 +250,9 @@ namespace FolderMorpher.Services
                 var dir = new DirectoryInfo(rootPath);
                 if (!dir.Exists) throw new DirectoryNotFoundException($"指定フォルダが存在しません: {rootPath}");
 
-                var memberships = preResolvedGroups ?? await GetGroupMembershipsAsync(targetAccount);
+                var (memberships, resMode, resStatus) = preResolvedGroups != null
+                    ? (preResolvedGroups, EffectiveAccessResolutionMode.ActiveDirectory, "事前解決済みグループセットを使用")
+                    : await ResolveMembershipsAsync(targetAccount);
 
                 var report = new EffectiveAccessAuditReport
                 {
@@ -172,7 +260,9 @@ namespace FolderMorpher.Services
                     TargetDisplayName = targetAccount,
                     RootFolderPath = dir.FullName,
                     ScanTimestamp = DateTime.Now,
-                    GroupMemberships = memberships
+                    GroupMemberships = memberships,
+                    ResolutionMode = resMode,
+                    ResolutionStatusText = resStatus
                 };
 
                 // Build lookup maps for fast matching
@@ -244,8 +334,15 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// Core evaluation logic that matches an ACL against the target account and its group set,
-        /// resolving Deny precedence and identifying exact grant sources.
+        /// Core evaluation logic adhering to Windows Canonical DACL Ordering:
+        /// 1. Explicit Deny ACEs
+        /// 2. Explicit Allow ACEs
+        /// 3. Inherited Deny ACEs
+        /// 4. Inherited Allow ACEs
+        /// 
+        /// Under Windows AccessCheck rules:
+        /// - Explicit Allow rules precede Inherited Deny rules (explicit child permissions take precedence over inherited parent denies).
+        /// - Explicit Deny rules override all Allow rules for matching rights bits.
         /// </summary>
         public EffectiveFolderAccessItem? EvaluateEffectiveAccessOnAcl(
             FileSystemSecurity sec,
@@ -255,23 +352,20 @@ namespace FolderMorpher.Services
             string folderPath,
             string folderName)
         {
-            var rules = sec.GetAccessRules(true, true, typeof(NTAccount));
+            var rawRules = sec.GetAccessRules(true, true, typeof(NTAccount));
 
-            FileSystemRights allowed = 0;
-            FileSystemRights denied = 0;
-            bool hasMatchingRule = false;
-            bool isInherited = true;
+            var explicitDenyRules = new List<FileSystemAccessRule>();
+            var explicitAllowRules = new List<FileSystemAccessRule>();
+            var inheritedDenyRules = new List<FileSystemAccessRule>();
+            var inheritedAllowRules = new List<FileSystemAccessRule>();
 
-            var grantSources = new List<string>();
-            var grantTraces = new List<string>();
-
-            foreach (FileSystemAccessRule rule in rules)
+            foreach (FileSystemAccessRule rule in rawRules)
             {
                 var id = rule.IdentityReference.Value;
                 var idClean = id.Contains('\\') ? id.Split('\\')[1] : id;
 
                 bool isDirectMatch = targetNames.Contains(id) || targetNames.Contains(idClean);
-                bool isGroupMatch = groupMap.TryGetValue(id, out var matchedGroup) || groupMap.TryGetValue(idClean, out matchedGroup);
+                bool isGroupMatch = groupMap.ContainsKey(id) || groupMap.ContainsKey(idClean);
                 bool isSpecialPrincipal = IsSpecialWorldPrincipal(idClean);
 
                 if (!isDirectMatch && !isGroupMatch && !isSpecialPrincipal)
@@ -279,58 +373,124 @@ namespace FolderMorpher.Services
                     continue;
                 }
 
-                hasMatchingRule = true;
-                if (!rule.IsInherited) isInherited = false;
-
-                if (rule.AccessControlType == AccessControlType.Deny)
+                if (!rule.IsInherited)
                 {
-                    denied |= rule.FileSystemRights;
+                    if (rule.AccessControlType == AccessControlType.Deny) explicitDenyRules.Add(rule);
+                    else explicitAllowRules.Add(rule);
                 }
                 else
                 {
-                    allowed |= rule.FileSystemRights;
-
-                    if (isDirectMatch)
-                    {
-                        grantSources.Add($"👤 直接付与 ({idClean})");
-                        grantTraces.Add($"Direct: {idClean}");
-                    }
-                    else if (isGroupMatch && matchedGroup != null)
-                    {
-                        var badge = matchedGroup.IsDirect ? "👥" : "👥🔗";
-                        var depthStr = matchedGroup.IsDirect ? "" : $" (深度 {matchedGroup.NestingDepth})";
-                        grantSources.Add($"{badge} {matchedGroup.GroupName} 経由{depthStr}");
-                        grantTraces.Add(matchedGroup.MembershipPath);
-                    }
-                    else if (isSpecialPrincipal)
-                    {
-                        grantSources.Add($"🌐 {idClean} 経由");
-                        grantTraces.Add($"Special: {idClean}");
-                    }
+                    if (rule.AccessControlType == AccessControlType.Deny) inheritedDenyRules.Add(rule);
+                    else inheritedAllowRules.Add(rule);
                 }
             }
 
-            if (!hasMatchingRule) return null;
+            if (explicitDenyRules.Count == 0 && explicitAllowRules.Count == 0 &&
+                inheritedDenyRules.Count == 0 && inheritedAllowRules.Count == 0)
+            {
+                return null;
+            }
 
-            // NTFS Rule: Deny takes precedence over Allow
-            var effective = allowed & (~denied);
-            if (effective == 0) return null;
+            // Step 1: Explicit Deny
+            FileSystemRights explicitDenied = 0;
+            foreach (var r in explicitDenyRules)
+            {
+                explicitDenied |= r.FileSystemRights;
+            }
 
-            var level = DeterminePermissionLevel(effective);
+            // Step 2: Explicit Allow (Rights not blocked by Explicit Deny)
+            FileSystemRights explicitAllowed = 0;
+            var grantSources = new List<string>();
+            var grantTraces = new List<string>();
+
+            foreach (var r in explicitAllowRules)
+            {
+                var effectiveBits = r.FileSystemRights & ~explicitDenied;
+                if (effectiveBits != 0)
+                {
+                    explicitAllowed |= effectiveBits;
+                    RecordGrantTrace(r, targetNames, groupMap, grantSources, grantTraces, isInherited: false);
+                }
+            }
+
+            // Step 3: Inherited Deny
+            // CRUCIAL: Inherited Deny cannot revoke permissions explicitly granted on this object
+            FileSystemRights effectiveInheritedDenied = 0;
+            foreach (var r in inheritedDenyRules)
+            {
+                effectiveInheritedDenied |= (r.FileSystemRights & ~explicitAllowed);
+            }
+
+            FileSystemRights totalDenied = explicitDenied | effectiveInheritedDenied;
+
+            // Step 4: Inherited Allow (Rights not blocked by totalDenied)
+            FileSystemRights inheritedAllowed = 0;
+            foreach (var r in inheritedAllowRules)
+            {
+                var effectiveBits = r.FileSystemRights & ~totalDenied;
+                if (effectiveBits != 0)
+                {
+                    inheritedAllowed |= effectiveBits;
+                    RecordGrantTrace(r, targetNames, groupMap, grantSources, grantTraces, isInherited: true);
+                }
+            }
+
+            FileSystemRights totalEffectiveRights = explicitAllowed | inheritedAllowed;
+            if (totalEffectiveRights == 0) return null;
+
+            var level = DeterminePermissionLevel(totalEffectiveRights);
             if (level == EffectivePermissionLevel.None) return null;
+
+            bool isInheritedOnly = (explicitAllowed == 0 && inheritedAllowed != 0);
 
             return new EffectiveFolderAccessItem
             {
                 FolderPath = folderPath,
                 FolderName = folderName,
                 PermissionLevel = level,
-                AllowedRights = allowed,
-                DeniedRights = denied,
-                HasDeny = denied != 0,
-                IsInherited = isInherited,
+                AllowedRights = totalEffectiveRights,
+                DeniedRights = totalDenied,
+                HasDeny = totalDenied != 0,
+                IsInherited = isInheritedOnly,
                 GrantSource = grantSources.Distinct().FirstOrDefault() ?? "付与",
                 GrantPathTrace = string.Join(" / ", grantTraces.Distinct())
             };
+        }
+
+        private static void RecordGrantTrace(
+            FileSystemAccessRule rule,
+            HashSet<string> targetNames,
+            Dictionary<string, PrincipalGroupMembership> groupMap,
+            List<string> grantSources,
+            List<string> grantTraces,
+            bool isInherited)
+        {
+            var id = rule.IdentityReference.Value;
+            var idClean = id.Contains('\\') ? id.Split('\\')[1] : id;
+
+            bool isDirect = targetNames.Contains(id) || targetNames.Contains(idClean);
+            bool isGroup = groupMap.TryGetValue(id, out var matchedGroup) || groupMap.TryGetValue(idClean, out matchedGroup);
+            bool isSpecial = IsSpecialWorldPrincipal(idClean);
+
+            var inhStr = isInherited ? " (継承)" : "";
+
+            if (isDirect)
+            {
+                grantSources.Add($"👤 直接付与 ({idClean}){inhStr}");
+                grantTraces.Add($"Direct: {idClean}{inhStr}");
+            }
+            else if (isGroup && matchedGroup != null)
+            {
+                var badge = matchedGroup.IsDirect ? "👥" : "👥🔗";
+                var depthStr = matchedGroup.IsDirect ? "" : $" (深度 {matchedGroup.NestingDepth})";
+                grantSources.Add($"{badge} {matchedGroup.GroupName} 経由{depthStr}{inhStr}");
+                grantTraces.Add($"{matchedGroup.MembershipPath}{inhStr}");
+            }
+            else if (isSpecial)
+            {
+                grantSources.Add($"🌐 {idClean} 経由{inhStr}");
+                grantTraces.Add($"Special: {idClean}{inhStr}");
+            }
         }
 
         public static EffectivePermissionLevel DeterminePermissionLevel(FileSystemRights rights)

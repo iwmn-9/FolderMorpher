@@ -71,9 +71,9 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 7
-                Console.WriteLine("\n[TEST 7/7] Effective Access: Multi-Level Nested Group (3-Depth) Resolution & Deny Precedence...");
-                await TestEffectiveAccessMultiLevelNestingAsync();
-                Console.WriteLine("  --> [PASS] Effective Access: 3-level nested group permissions accurately traced and Deny precedence enforced.");
+                Console.WriteLine("\n[TEST 7/7] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
+                await TestEffectiveAccessCanonicalDaclAndNestingAsync();
+                Console.WriteLine("  --> [PASS] Effective Access: Canonical DACL ordering (Explicit Allow > Inherited Deny), multi-level tracing & user isolation verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -743,11 +743,12 @@ namespace FolderMorpher.Services.Testing
         }
 
         /// <summary>
-        /// 7. Effective Access: 多重入れ子グループ（3重ネスト）の解決と実効アクセス権（Deny優先含む）の判定テスト
-        /// ユーザーが直接権限を持たず、3重に入れ子になったグループにのみ付与されているフォルダーへのアクセス権が
-        /// 正確に特定され、経由元グループとしてトレースされることを検証。
+        /// 7. Effective Access: Canonical DACL 順序評価と多重入れ子グループ（3重ネスト）の判定テスト
+        /// - ユーザーが直接権限を持たず、3重に入れ子になったグループ経由のフォルダーへのアクセス権が正確に特定・トレースされること
+        /// - 別人アカウント指定時に実行中ユーザーのローカルグループが混入しないこと（他人誤爆防止）
+        /// - Windows Canonical DACL Ordering に従い、子の明示Allowが親の継承Denyより優先されること
         /// </summary>
-        public static async Task TestEffectiveAccessMultiLevelNestingAsync()
+        public static async Task TestEffectiveAccessCanonicalDaclAndNestingAsync()
         {
             string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_EffAccess_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDir);
@@ -874,6 +875,65 @@ namespace FolderMorpher.Services.Testing
                 if (directItem.PermissionLevel != EffectivePermissionLevel.Modify)
                 {
                     throw new InvalidOperationException($"実効権限レベル判定失敗: 期待値=Modify, 実際={directItem.PermissionLevel}");
+                }
+
+                // 検証 4: 別人指定時の実行者グループ誤爆防止
+                var (unrelatedGroups, resMode, resStatus) = await effService.ResolveMembershipsAsync("CompletelyUnrelatedAuditTarget_XYZ999");
+                if (unrelatedGroups.Count != 0)
+                {
+                    throw new InvalidOperationException(
+                        $"他人アカウントへの実行者グループ誤爆バグ検出: 未知アカウントなのに {unrelatedGroups.Count} 件のグループが混入しました。");
+                }
+                if (resMode != EffectiveAccessResolutionMode.DirectAclOnly)
+                {
+                    throw new InvalidOperationException($"解決モード誤り: 期待値=DirectAclOnly, 実際={resMode}");
+                }
+
+                // 検証 5: Windows Canonical DACL 順序評価（子の明示Allowが親の継承Denyより優先されること）
+                string parentFolder = Path.Combine(tempDir, "05_ParentDeny");
+                string childFolder = Path.Combine(parentFolder, "ChildExplicitAllow");
+                Directory.CreateDirectory(parentFolder);
+                Directory.CreateDirectory(childFolder);
+
+                // 子に明示的な Allow (Write | ReadAndExecute) を追加
+                var childDirInfo = new DirectoryInfo(childFolder);
+                var childSec = childDirInfo.GetAccessControl(AccessControlSections.Access);
+                childSec.AddAccessRule(new FileSystemAccessRule(
+                    new NTAccount(targetUser),
+                    FileSystemRights.Write | FileSystemRights.ReadAndExecute,
+                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    PropagationFlags.None,
+                    AccessControlType.Allow));
+                childDirInfo.SetAccessControl(childSec);
+
+                // 親に Deny (Write) を設定（子へ継承）
+                aclService.ApplySimAclEntries(parentFolder, new[]
+                {
+                    new SimAclEntry
+                    {
+                        AccountName = targetUser,
+                        AccessType = AccessControlType.Deny,
+                        Rights = FileSystemRights.Write,
+                        InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                        PropagationFlags = PropagationFlags.None
+                    }
+                }, inherit: false);
+
+                // 子の最新 ACL を読み取る（親からの継承Denyと子の明示Allowの両方が入っている）
+                var refreshedChildSec = childDirInfo.GetAccessControl(AccessControlSections.Access);
+                var targetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { targetUser };
+                var groupMap = new Dictionary<string, PrincipalGroupMembership>(StringComparer.OrdinalIgnoreCase);
+
+                var evalItem = effService.EvaluateEffectiveAccessOnAcl(refreshedChildSec, targetUser, targetNames, groupMap, childFolder, "ChildExplicitAllow");
+                if (evalItem == null)
+                {
+                    throw new InvalidOperationException("Canonical DACL 評価失敗: 明示的Allowが存在するのにnullが返されました。");
+                }
+                // 明示的Allow(Write)が親の継承Deny(Write)に勝つため、実効権限にWriteが含まれること！
+                if ((evalItem.AllowedRights & FileSystemRights.Write) == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Canonical DACL 順序バグ検出: 子の明示Allowが親の継承Denyに打ち消されました。(AllowedRights={evalItem.AllowedRights})");
                 }
             }
             finally

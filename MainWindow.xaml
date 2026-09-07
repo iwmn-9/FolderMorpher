@@ -71,7 +71,7 @@
                 <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="14,10">
                     <Grid>
                         <StackPanel x:Name="SidebarFooterPanel" VerticalAlignment="Center">
-                            <TextBlock Text="FolderMorpher v1.2.0" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
+                            <TextBlock Text="FolderMorpher v1.2.1" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
                             <TextBlock Text="Storage &amp; Migration Studio" FontSize="9" Foreground="#94A3B8" Margin="0,1,0,0"/>
                         </StackPanel>
                         <Button x:Name="LanguageToggleButton" Content="🌐 EN" HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -657,45 +657,72 @@
 
                 <!-- Reverse Lookup Toolbar -->
                 <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,12">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/> <!-- User label -->
-                            <ColumnDefinition Width="220"/>  <!-- Target Account input -->
-                            <ColumnDefinition Width="Auto"/> <!-- Root folder label -->
-                            <ColumnDefinition Width="*"/>    <!-- Root folder path -->
-                            <ColumnDefinition Width="Auto"/> <!-- Browse -->
-                            <ColumnDefinition Width="Auto"/> <!-- Action Buttons -->
-                        </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/> <!-- User label -->
+                                <ColumnDefinition Width="180"/>  <!-- Target Account input -->
+                                <ColumnDefinition Width="Auto"/> <!-- Root folder label -->
+                                <ColumnDefinition Width="*"/>    <!-- Root folder path -->
+                                <ColumnDefinition Width="Auto"/> <!-- Browse -->
+                                <ColumnDefinition Width="Auto"/> <!-- Depth Label -->
+                                <ColumnDefinition Width="120"/>  <!-- Depth ComboBox -->
+                                <ColumnDefinition Width="Auto"/> <!-- Action Buttons -->
+                            </Grid.ColumnDefinitions>
 
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-                            <TextBlock Text="👤 調査対象:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
-                        </StackPanel>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                                <TextBlock Text="👤 調査対象:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
+                            </StackPanel>
 
-                        <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,14,0">
-                            <TextBox x:Name="RevUserAccountTextBox" BorderThickness="0" Background="Transparent"
-                                     VerticalAlignment="Center" FontSize="11" Text="sato.hanako"/>
+                            <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,14,0">
+                                <TextBox x:Name="RevUserAccountTextBox" BorderThickness="0" Background="Transparent"
+                                         VerticalAlignment="Center" FontSize="11" Text="sato.hanako"/>
+                            </Border>
+
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                                <TextBlock Text="📁 走査ルート:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <Border Grid.Column="3" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,8,0">
+                                <TextBox x:Name="RevRootPathTextBox" BorderThickness="0" Background="Transparent"
+                                         VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"
+                                         TextChanged="RevRootPathTextBox_TextChanged"/>
+                            </Border>
+
+                            <Button Grid.Column="4" Content="参照..." Height="32" Margin="0,0,12,0" Style="{StaticResource FluentButtonSecondary}" Click="RevBrowseRoot_Click"/>
+
+                            <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0">
+                                <TextBlock Text="階層:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <ComboBox x:Name="RevDepthComboBox" Grid.Column="6" Height="32" Margin="0,0,14,0" FontSize="11" VerticalContentAlignment="Center" SelectedIndex="0">
+                                <ComboBoxItem Content="無制限 (推奨)" Tag="unlimited"/>
+                                <ComboBoxItem Content="3階層" Tag="3"/>
+                                <ComboBoxItem Content="5階層" Tag="5"/>
+                                <ComboBoxItem Content="8階層" Tag="8"/>
+                                <ComboBoxItem Content="10階層" Tag="10"/>
+                            </ComboBox>
+
+                            <StackPanel Grid.Column="7" Orientation="Horizontal">
+                                <Button x:Name="RevStartScanButton" Content="🔍 逆引き調査開始" Height="32" Margin="0,0,8,0"
+                                        Style="{StaticResource FluentButtonPrimary}" Click="RevStartScan_Click"/>
+                                <Button x:Name="RevCancelScanButton" Content="⏹️ 中止" Height="32" Margin="0,0,8,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="RevCancelScan_Click" Visibility="Collapsed"/>
+                                <Button x:Name="RevExportExcelButton" Content="📋 監査台帳 Excel" Height="32"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="RevExportExcel_Click" IsEnabled="False"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- UNC Share Permissions Notice Banner -->
+                        <Border x:Name="RevUncNoticeBanner" Background="#FEF3C7" BorderBrush="#FDE68A" BorderThickness="1"
+                                CornerRadius="6" Padding="10,6" Margin="0,10,0,0" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="⚠️" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="UNC共有フォルダ経由でのアクセスです。本ツールは「NTFS実効権限」を評価します。実際のファイルアクセスにはファイルサーバーの「SMB共有アクセス権（Share Permissions）」の上限も併せて適用されます。"
+                                           FontSize="10" Foreground="#92400E" FontWeight="Medium" VerticalAlignment="Center"/>
+                            </StackPanel>
                         </Border>
-
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-                            <TextBlock Text="📁 走査ルート:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
-                        </StackPanel>
-
-                        <Border Grid.Column="3" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,8,0">
-                            <TextBox x:Name="RevRootPathTextBox" BorderThickness="0" Background="Transparent"
-                                     VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"/>
-                        </Border>
-
-                        <Button Grid.Column="4" Content="参照..." Height="32" Margin="0,0,14,0" Style="{StaticResource FluentButtonSecondary}" Click="RevBrowseRoot_Click"/>
-
-                        <StackPanel Grid.Column="5" Orientation="Horizontal">
-                            <Button x:Name="RevStartScanButton" Content="🔍 逆引き調査開始" Height="32" Margin="0,0,8,0"
-                                    Style="{StaticResource FluentButtonPrimary}" Click="RevStartScan_Click"/>
-                            <Button x:Name="RevCancelScanButton" Content="⏹️ 中止" Height="32" Margin="0,0,8,0"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="RevCancelScan_Click" Visibility="Collapsed"/>
-                            <Button x:Name="RevExportExcelButton" Content="📋 監査台帳 Excel" Height="32"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="RevExportExcel_Click" IsEnabled="False"/>
-                        </StackPanel>
-                    </Grid>
+                    </StackPanel>
                 </Border>
 
                 <!-- Main 2-Pane: Left(Groups & Info), Right(Folders Grid) -->
@@ -1866,7 +1893,7 @@
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v1.2.0 - Storage &amp; Migration Studio" FontSize="11" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.2.1 - Storage &amp; Migration Studio" FontSize="11" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>

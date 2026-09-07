@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Security.AccessControl;
 using AstraSize.Models;
@@ -98,5 +98,19 @@ namespace FolderMorpher.Models
         public int FullControlCount { get; set; } = 0;
         public int ModifyCount { get; set; } = 0;
         public int ReadOnlyCount { get; set; } = 0;
+
+        public EffectiveAccessResolutionMode ResolutionMode { get; set; } = EffectiveAccessResolutionMode.DirectAclOnly;
+        public string ResolutionStatusText { get; set; } = string.Empty;
+        public bool IsUncPath => RootFolderPath.StartsWith(@"\\");
+        public string UncShareNotice => IsUncPath
+            ? "※UNC共有フォルダです。ファイルサーバー上のSMB共有アクセス権（Share Permissions）の上限も併せて適用されます。"
+            : string.Empty;
+    }
+
+    public enum EffectiveAccessResolutionMode
+    {
+        ActiveDirectory = 0,
+        CurrentLogonUserLocal = 1,
+        DirectAclOnly = 2
     }
 }
