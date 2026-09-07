@@ -194,28 +194,45 @@ namespace FolderMorpher.Services
             return (summary, items);
         }
 
-        private static void EnumerateFilesSafe(DirectoryInfo dir, List<FileInfo> result, IProgress<AuditProgress>? progress, CancellationToken ct)
+        private static void EnumerateFilesSafe(DirectoryInfo rootDir, List<FileInfo> result, IProgress<AuditProgress>? progress, CancellationToken ct)
         {
-            ct.ThrowIfCancellationRequested();
-            try
-            {
-                result.AddRange(dir.GetFiles());
-            }
-            catch (UnauthorizedAccessException) { }
-            catch (DirectoryNotFoundException) { }
+            var stack = new Stack<DirectoryInfo>();
+            stack.Push(rootDir);
 
-            try
+            int scanned = 0;
+            while (stack.Count > 0)
             {
-                foreach (var sub in dir.GetDirectories())
+                ct.ThrowIfCancellationRequested();
+                var currentDir = stack.Pop();
+
+                // 1. サブディレクトリ探索（アクセス拒否やジャンクションは安全にスキップ）
+                try
                 {
-                    ct.ThrowIfCancellationRequested();
-                    // ジャンクションや再帰ループを避ける
-                    if ((sub.Attributes & FileAttributes.ReparsePoint) != 0) continue;
-                    EnumerateFilesSafe(sub, result, progress, ct);
+                    foreach (var sub in currentDir.GetDirectories())
+                    {
+                        try
+                        {
+                            if ((sub.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+                        }
+                        catch { }
+                        stack.Push(sub);
+                    }
                 }
+                catch { }
+
+                // 2. カレントディレクトリ内のファイル取得
+                try
+                {
+                    var files = currentDir.GetFiles();
+                    result.AddRange(files);
+                    scanned += files.Length;
+                    if (scanned % 100 == 0)
+                    {
+                        progress?.Report(new AuditProgress { CurrentStatus = $"ファイル走査中 ({scanned} 件)...", ScannedFilesCount = scanned });
+                    }
+                }
+                catch { }
             }
-            catch (UnauthorizedAccessException) { }
-            catch (DirectoryNotFoundException) { }
         }
 
         private static async Task<string?> ComputeSha256Async(string filePath, CancellationToken ct)

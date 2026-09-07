@@ -326,7 +326,9 @@ namespace AstraSize.Services
                     var cacheRoot = JsonSerializer.Deserialize<TreeCacheRoot>(json);
                     if (cacheRoot?.Root == null) return null;
 
-                    return FromCacheNode(cacheRoot.Root, null, 0);
+                    var node = FromCacheNode(cacheRoot.Root, null, 0);
+                    DiskScanService.CalculatePercentages(node, node.Size > 0 ? node.Size : 1);
+                    return node;
                 }
                 catch
                 {

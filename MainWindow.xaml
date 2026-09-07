@@ -76,7 +76,7 @@
                 <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="14,10">
                     <Grid>
                         <StackPanel x:Name="SidebarFooterPanel" VerticalAlignment="Center">
-                            <TextBlock Text="FolderMorpher v1.4.1" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                            <TextBlock Text="FolderMorpher v1.4.2" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                             <TextBlock Text="Storage &amp; Migration Studio" FontSize="10.5" Foreground="#94A3B8" Margin="0,1,0,0"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -216,7 +216,7 @@
                         <Border Grid.Column="0" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
                             <StackPanel>
                                 <Grid>
-                                    <TextBlock Text="スキャン対象容量" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
+                                    <TextBlock x:Name="StorageKpiScannedSizeTitle" Text="スキャン対象容量" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
                                     <Border x:Name="MftBoostBadge" Visibility="Collapsed" Background="#EFF6FF" BorderBrush="#3B82F6" BorderThickness="1" CornerRadius="4" Padding="6,1" HorizontalAlignment="Right">
                                         <TextBlock Text="⚡ MFT Boost" FontSize="11" FontWeight="Bold" Foreground="#1D4ED8"/>
                                     </Border>
@@ -228,7 +228,7 @@
 
                         <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
                             <StackPanel>
-                                <TextBlock Text="最大ファイル (Top 1)" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
+                                <TextBlock x:Name="StorageKpiLargestFileTitle" Text="最大ファイル (Top 1)" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
                                 <TextBlock x:Name="LargestFileSizeTextBlock" Text="--" FontSize="22" FontWeight="Bold" Foreground="#E11D48" Margin="0,2,0,0"/>
                                 <TextBlock x:Name="LargestFileNameTextBlock" Text="--" FontSize="11.5" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
@@ -236,7 +236,7 @@
 
                         <Border Grid.Column="4" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
                             <StackPanel>
-                                <TextBlock Text="前回スキャンとの差分推移" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
+                                <TextBlock x:Name="StorageKpiDiffTrendTitle" Text="前回スキャンとの差分推移" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
                                 <TextBlock x:Name="TrendDiffTextBlock" Text="比較データなし" FontSize="22" FontWeight="Bold" Foreground="{StaticResource AccentSky}" Margin="0,2,0,0"/>
                                 <TextBlock x:Name="LastScanDateTextBlock" Text="初回スキャン" FontSize="11.5" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0"/>
                             </StackPanel>
@@ -285,7 +285,7 @@
                                 </ContextMenu>
                             </DataGrid.ContextMenu>
                             <DataGrid.Columns>
-                                <DataGridTemplateColumn Header="名前" Width="3.5*">
+                                <DataGridTemplateColumn x:Name="ColTreeName" Header="名前" Width="3.5*">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:FileItemNode}">
                                             <StackPanel Orientation="Horizontal" Margin="{Binding IndentMargin}">
@@ -301,7 +301,7 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="容量" Width="120">
+                                <DataGridTemplateColumn x:Name="ColTreeSize" Header="容量" Width="120">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:FileItemNode}">
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0">
@@ -313,7 +313,7 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="全体占有率" Width="115">
+                                <DataGridTemplateColumn x:Name="ColTreeShare" Header="全体占有率" Width="115">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:FileItemNode}">
                                             <Grid Margin="4,2">
@@ -332,8 +332,8 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="ファイル数" Binding="{Binding FileCount, StringFormat='{}{0:N0}'}" Width="80" ElementStyle="{StaticResource RightAlignedCell}"/>
-                                <DataGridTextColumn Header="最終更新" Binding="{Binding LastModified, StringFormat='yyyy/MM/dd HH:mm'}" Width="120" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColTreeCount" Header="ファイル数" Binding="{Binding FileCount, StringFormat='{}{0:N0}'}" Width="80" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColTreeModified" Header="最終更新" Binding="{Binding LastModified, StringFormat='yyyy/MM/dd HH:mm'}" Width="120" ElementStyle="{StaticResource LeftAlignedCell}"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Border>
@@ -357,7 +357,7 @@
                             <!-- Top 10 Header -->
                             <StackPanel Grid.Row="0" Margin="0,0,0,6">
                                 <Grid>
-                                    <TextBlock Text="💡 容量上位ファイル (Top 10)" FontWeight="Bold" FontSize="13" Foreground="#1E293B"/>
+                                    <TextBlock x:Name="StorageTopFilesTitleText" Text="💡 容量上位ファイル (Top 10)" FontWeight="Bold" FontSize="13" Foreground="#1E293B"/>
                                     <TextBlock x:Name="InsightsTargetScopeTextBlock" Text="スコープ: 全体" FontSize="11" Foreground="#0284C7" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"/>
                                 </Grid>
                             </StackPanel>
@@ -373,15 +373,15 @@
                                     </ContextMenu>
                                 </DataGrid.ContextMenu>
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="ファイル名" Binding="{Binding Name}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                    <DataGridTextColumn Header="サイズ" Binding="{Binding FormattedSize}" Width="75" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                    <DataGridTextColumn x:Name="ColTopFileName" Header="ファイル名" Binding="{Binding Name}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                    <DataGridTextColumn x:Name="ColTopFileSize" Header="サイズ" Binding="{Binding FormattedSize}" Width="75" ElementStyle="{StaticResource RightAlignedCell}"/>
                                 </DataGrid.Columns>
                             </DataGrid>
 
                             <!-- Folder Direct Children Shares Header -->
                             <Grid Grid.Row="2" Margin="0,6,0,6">
-                                <TextBlock Text="📁 選択フォルダの内訳 (直下シェア)" FontWeight="Bold" FontSize="13" Foreground="#1E293B"/>
-                                <TextBlock Text="Wクリックでツリー連動 ➔" FontSize="11" Foreground="#0284C7" HorizontalAlignment="Right"/>
+                                <TextBlock x:Name="StorageDirectSharesTitleText" Text="📁 選択フォルダの内訳 (直下シェア)" FontWeight="Bold" FontSize="13" Foreground="#1E293B"/>
+                                <TextBlock x:Name="StorageDirectSharesSubText" Text="Wクリックでツリー連動 ➔" FontSize="11" Foreground="#0284C7" HorizontalAlignment="Right"/>
                             </Grid>
 
                             <!-- Folder Direct Children Shares DataGrid -->
@@ -389,7 +389,7 @@
                                       BorderThickness="0" Background="Transparent" RowHeight="28" GridLinesVisibility="None" SelectionMode="Single"
                                       MouseDoubleClick="FolderChildSharesDataGrid_MouseDoubleClick" ToolTip="ダブルクリックで該当フォルダへドリルダウン">
                                 <DataGrid.Columns>
-                                    <DataGridTemplateColumn Header="項目名" Width="*">
+                                    <DataGridTemplateColumn x:Name="ColShareName" Header="項目名" Width="*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate DataType="{x:Type models:FolderChildShareItem}">
                                                 <StackPanel Orientation="Horizontal" Margin="4,0">
@@ -399,8 +399,8 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="容量" Binding="{Binding FormattedSize}" Width="75" ElementStyle="{StaticResource RightAlignedCell}"/>
-                                    <DataGridTemplateColumn Header="直下シェア" Width="105">
+                                    <DataGridTextColumn x:Name="ColShareSize" Header="容量" Binding="{Binding FormattedSize}" Width="75" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                    <DataGridTemplateColumn x:Name="ColShareRatio" Header="直下シェア" Width="105">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate DataType="{x:Type models:FolderChildShareItem}">
                                                 <Grid Margin="4,2">
@@ -437,7 +437,7 @@
                 <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,10">
                     <Grid>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="🛡️ 権限コントロール" FontWeight="Bold" FontSize="13" Foreground="#0F172A" VerticalAlignment="Center" Margin="0,0,20,0"/>
+                            <TextBlock x:Name="LiveAclHeaderTitle" Text="🛡️ 権限コントロール" FontWeight="Bold" FontSize="13" Foreground="#0F172A" VerticalAlignment="Center" Margin="0,0,20,0"/>
                             <!-- Segment Switch -->
                             <Border Background="#F1F5F9" CornerRadius="8" Padding="3">
                                 <StackPanel Orientation="Horizontal">
@@ -472,7 +472,7 @@
 
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
                             <TextBlock Text="🛡️" FontSize="16" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBlock Text="対象フォルダ:" FontWeight="SemiBold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="LiveAclTargetFolderLabel" Text="対象フォルダ:" FontWeight="SemiBold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="34" Padding="10,0" Margin="0,0,10,0">
@@ -488,11 +488,11 @@
 
                         <StackPanel Grid.Column="3" Orientation="Horizontal">
                             <Button x:Name="LiveAclApplyButton" Content="⚡ 実環境へ即時適用" Height="32" Margin="0,0,8,0"
-                                    Style="{StaticResource FluentButtonPrimary}" Click="LiveAclApplyButton_Click"/>
+                                     Style="{StaticResource FluentButtonPrimary}" Click="LiveAclApplyButton_Click"/>
                             <Button x:Name="LiveAclRollbackButton" Content="↩️ バックアップ復元" Height="32" Margin="0,0,8,0"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="LiveAclRollbackButton_Click" ToolTip="直前のSDDLスナップショットからロールバック"/>
+                                     Style="{StaticResource FluentButtonSecondary}" Click="LiveAclRollbackButton_Click" ToolTip="直前のSDDLスナップショットからロールバック"/>
                             <Button x:Name="LiveAclExportMatrixButton" Content="📋 台帳CSV出力" Height="32"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="LiveAclExportMatrixButton_Click"/>
+                                     Style="{StaticResource FluentButtonSecondary}" Click="LiveAclExportMatrixButton_Click"/>
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -521,7 +521,7 @@
                             <!-- Folder Header -->
                             <Grid Grid.Row="0" Margin="0,0,0,14">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="📁 設定中のフォルダ: " FontWeight="SemiBold" FontSize="13" Foreground="#475569"/>
+                                    <TextBlock x:Name="LiveAclSelectedFolderPrefixText" Text="📁 設定中のフォルダ: " FontWeight="SemiBold" FontSize="13" Foreground="#475569"/>
                                     <TextBlock x:Name="LiveAclFolderNameText" Text="(未読込)" FontWeight="Bold" FontSize="13" Foreground="#0284C7"/>
                                     <TextBlock x:Name="LiveAclOwnerText" Text="" FontSize="11" Foreground="#64748B" Margin="14,0,0,0" VerticalAlignment="Center"/>
                                 </StackPanel>
@@ -535,7 +535,7 @@
                             <!-- Drop Zone Banner (カード追加の受け皿) -->
                             <Border Grid.Row="1" Background="#F0F9FF" BorderBrush="#BAE6FD" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,12"
                                     AllowDrop="True" Drop="LiveAclDropZone_Drop" DragOver="SimGenericDragOver">
-                                <TextBlock Text="📥 右のADプリンシパル（ユーザー・グループ）をここにドロップして権限を追加"
+                                <TextBlock x:Name="LiveAclDropZoneHintText" Text="📥 右のADプリンシパル（ユーザー・グループ）をここにドロップして権限を追加"
                                            FontSize="11" FontWeight="SemiBold" Foreground="#0284C7" HorizontalAlignment="Center"/>
                             </Border>
 
@@ -545,7 +545,7 @@
                                 <StackPanel>
                                     <Grid Margin="0,0,0,10">
                                         <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="◐ 付与されているNTFSアクセス権 (カードWクリックでWindows詳細設定を編集)" FontWeight="SemiBold" FontSize="12" Foreground="#334155" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="LiveAclCardsTitleText" Text="◐ 付与されているNTFSアクセス権 (カードWクリックでWindows詳細設定を編集)" FontWeight="SemiBold" FontSize="12" Foreground="#334155" VerticalAlignment="Center"/>
                                         </StackPanel>
                                         <Button x:Name="LiveAclOpenSecModalButton" Content="⚙️ 詳細権限を直接編集" FontSize="10" Height="24" Padding="10,2"
                                                 Style="{StaticResource FluentButtonSecondary}" HorizontalAlignment="Right" Click="LiveAclOpenSecModalButton_Click"/>
@@ -554,28 +554,53 @@
                                     <ItemsControl x:Name="LiveAclCardsItemsControl">
                                         <ItemsControl.ItemsPanel>
                                             <ItemsPanelTemplate>
-                                                <WrapPanel Orientation="Horizontal"/>
+                                                <StackPanel Orientation="Vertical"/>
                                             </ItemsPanelTemplate>
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate DataType="{x:Type models:SimAclEntry}">
                                                 <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8"
-                                                        Padding="12,8" Margin="0,0,8,8" Cursor="Hand"
+                                                        Padding="14,10" Margin="0,0,0,8" Cursor="Hand"
                                                         MouseDown="LiveAclCard_MouseDown"
                                                         PreviewMouseMove="LiveAclCard_PreviewMouseMove">
                                                     <Border.Effect>
                                                         <DropShadowEffect BlurRadius="4" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.03"/>
                                                     </Border.Effect>
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <TextBlock Text="{Binding IconGlyph}" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11" Foreground="#0F172A" VerticalAlignment="Center"/>
-                                                        <Border Background="#EFF6FF" CornerRadius="4" Padding="6,2" Margin="10,0,6,0" VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding FormattedRights}" FontSize="10" FontWeight="Medium" Foreground="#2563EB"/>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <!-- Col 0: Principal Info -->
+                                                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding IconGlyph}" FontSize="15" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                                            <StackPanel VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
+                                                                <TextBlock Text="{Binding Identity}" FontSize="11" Foreground="#64748B" Margin="0,1,0,0"/>
+                                                            </StackPanel>
+                                                        </StackPanel>
+
+                                                        <!-- Col 1: Rights Badge -->
+                                                        <Border Grid.Column="1" Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="4" Padding="8,3" Margin="12,0" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding FormattedRights}" FontSize="11.5" FontWeight="SemiBold" Foreground="#1D4ED8"/>
                                                         </Border>
-                                                        <Button Content="✕" FontSize="10" Width="18" Height="18" Margin="4,0,0,0"
-                                                                Background="Transparent" BorderThickness="0" Foreground="#94A3B8"
-                                                                Click="LiveAclDeleteEntryButton_Click" Tag="{Binding}" ToolTip="権限解除"/>
-                                                    </StackPanel>
+
+                                                        <!-- Col 2: AppliesTo Badge -->
+                                                        <Border Grid.Column="2" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="8,3" Margin="0,0,12,0" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding AppliesTo}" FontSize="11" Foreground="#475569"/>
+                                                        </Border>
+
+                                                        <!-- Col 3: Action Buttons -->
+                                                        <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <Button Content="✕" FontSize="11" Width="24" Height="24"
+                                                                    Style="{StaticResource FluentButtonSecondary}" Padding="0"
+                                                                    Foreground="#E11D48" BorderThickness="0" Background="#FFF1F2"
+                                                                    Click="LiveAclDeleteEntryButton_Click" Tag="{Binding}" ToolTip="権限解除 (枠外へドラッグでも解除可能)"/>
+                                                        </StackPanel>
+                                                    </Grid>
                                                 </Border>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
@@ -597,7 +622,7 @@
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Text="👥 Active Directory / ローカルアカウント" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
+                            <TextBlock x:Name="LiveAclPrincipalsHeaderTitle" Grid.Row="0" Text="👥 Active Directory / ローカルアカウント" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
 
                             <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,0,10">
                                 <TextBox x:Name="LiveAclPrincipalSearchTextBox" BorderThickness="0" Background="Transparent"
@@ -629,8 +654,8 @@
                             <Border x:Name="LiveAclEmptyNoticeBorder" Grid.Row="2" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1"
                                     CornerRadius="6" Padding="16" Margin="0,4" VerticalAlignment="Center" Visibility="Collapsed">
                                 <StackPanel HorizontalAlignment="Center">
-                                    <TextBlock Text="⚠️ ローカルPC環境" FontWeight="Bold" FontSize="12" Foreground="#D97706" HorizontalAlignment="Center" Margin="0,0,0,4"/>
-                                    <TextBlock Text="※ローカルPC環境のためADプリンシパルは未接続です&#x0a;（上部の入力欄から直接アカウント名を入力して追加可能）"
+                                    <TextBlock x:Name="LiveAclLocalPcTitle" Text="⚠️ ローカルPC環境" FontWeight="Bold" FontSize="12" Foreground="#D97706" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                                    <TextBlock x:Name="LiveAclLocalPcDesc" Text="※ローカルPC環境のためADプリンシパルは未接続です&#x0a;（上部の入力欄から直接アカウント名を入力して追加可能）"
                                                FontSize="11" Foreground="#64748B" TextWrapping="Wrap" TextAlignment="Center" LineHeight="16"/>
                                 </StackPanel>
                             </Border>
@@ -662,7 +687,7 @@
                             </Grid.ColumnDefinitions>
 
                             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-                                <TextBlock Text="👤 調査対象:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="RevTargetAccountLabel" Text="👤 調査対象:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
                             </StackPanel>
 
                             <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,14,0">
@@ -671,7 +696,7 @@
                             </Border>
 
                             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-                                <TextBlock Text="📁 走査ルート:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="RevRootPathLabel" Text="📁 走査ルート:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
                             </StackPanel>
 
                             <Border Grid.Column="3" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,8,0">
@@ -683,7 +708,7 @@
                             <Button x:Name="RevBrowseRootButton" Grid.Column="4" Content="参照..." Height="32" Margin="0,0,12,0" Style="{StaticResource FluentButtonSecondary}" Click="RevBrowseRoot_Click"/>
 
                             <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0">
-                                <TextBlock Text="階層:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="RevDepthLabel" Text="階層:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
                             </StackPanel>
 
                             <ComboBox x:Name="RevDepthComboBox" Grid.Column="6" Height="32" Margin="0,0,14,0" FontSize="11" VerticalContentAlignment="Center" SelectedIndex="0">
@@ -709,7 +734,7 @@
                                 CornerRadius="6" Padding="10,6" Margin="0,10,0,0" Visibility="Collapsed">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="⚠️" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                <TextBlock Text="UNC共有フォルダ経由でのアクセスです。本ツールは「NTFS実効権限」を評価します。実際のファイルアクセスにはファイルサーバーの「SMB共有アクセス権（Share Permissions）」の上限も併せて適用されます。"
+                                <TextBlock x:Name="RevUncNoticeText" Text="UNC共有フォルダ経由でのアクセスです。本ツールは「NTFS実効権限」を評価します。実際のファイルアクセスにはファイルサーバーの「SMB共有アクセス権（Share Permissions）」の上限も併せて適用されます。"
                                            FontSize="10" Foreground="#92400E" FontWeight="Medium" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Border>
@@ -747,7 +772,7 @@
                             </Border>
 
                             <Grid Grid.Row="1" Margin="0,0,0,8">
-                                <TextBlock Text="👥 所属グループ (多重入れ子・再帰解決)" FontWeight="Bold" FontSize="11" Foreground="#1E293B"/>
+                                <TextBlock x:Name="RevGroupsHeaderTitle" Text="👥 所属グループ (多重入れ子・再帰解決)" FontWeight="Bold" FontSize="11" Foreground="#1E293B"/>
                                 <TextBlock x:Name="RevGroupCountText" Text="0 件" FontSize="11.5" Foreground="#64748B" HorizontalAlignment="Right"/>
                             </Grid>
 
@@ -776,7 +801,7 @@
 
                             <!-- Legend Footer -->
                             <Border Grid.Row="3" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,10,0,0">
-                                <TextBlock Text="💡 青バッジ＝直接所属 / 紫バッジ＝多重入れ子所属 (AD Chainにより自動解決)" FontSize="10" Foreground="#64748B" LineHeight="14" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="RevGroupsLegendText" Text="💡 青バッジ＝直接所属 / 紫バッジ＝多重入れ子所属 (AD Chainにより自動解決)" FontSize="10" Foreground="#64748B" LineHeight="14" TextWrapping="Wrap"/>
                             </Border>
                         </Grid>
                     </Border>
@@ -809,28 +834,28 @@
 
                                 <Border Grid.Column="0" Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="8" Padding="10,8">
                                     <StackPanel>
-                                        <TextBlock Text="アクセス可能" FontSize="10" Foreground="#1E40AF"/>
+                                        <TextBlock x:Name="RevKpiTotalTitle" Text="アクセス可能" FontSize="10" Foreground="#1E40AF"/>
                                         <TextBlock x:Name="RevKpiTotal" Text="0 箇所" FontSize="14" FontWeight="Bold" Foreground="#1D4ED8"/>
                                     </StackPanel>
                                 </Border>
 
                                 <Border Grid.Column="2" Background="#FEF2F2" BorderBrush="#FECACA" BorderThickness="1" CornerRadius="8" Padding="10,8">
                                     <StackPanel>
-                                        <TextBlock Text="フルコントロール" FontSize="10" Foreground="#991B1B"/>
+                                        <TextBlock x:Name="RevKpiFullTitle" Text="フルコントロール" FontSize="10" Foreground="#991B1B"/>
                                         <TextBlock x:Name="RevKpiFull" Text="0 箇所" FontSize="14" FontWeight="Bold" Foreground="#DC2626"/>
                                     </StackPanel>
                                 </Border>
 
                                 <Border Grid.Column="4" Background="#FFFBEB" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="8" Padding="10,8">
                                     <StackPanel>
-                                        <TextBlock Text="変更 (Modify)" FontSize="10" Foreground="#92400E"/>
+                                        <TextBlock x:Name="RevKpiModTitle" Text="変更 (Modify)" FontSize="10" Foreground="#92400E"/>
                                         <TextBlock x:Name="RevKpiMod" Text="0 箇所" FontSize="14" FontWeight="Bold" Foreground="#D97706"/>
                                     </StackPanel>
                                 </Border>
 
                                 <Border Grid.Column="6" Background="#ECFDF5" BorderBrush="#A7F3D0" BorderThickness="1" CornerRadius="8" Padding="10,8">
                                     <StackPanel>
-                                        <TextBlock Text="読み取り専用" FontSize="10" Foreground="#065F46"/>
+                                        <TextBlock x:Name="RevKpiReadTitle" Text="読み取り専用" FontSize="10" Foreground="#065F46"/>
                                         <TextBlock x:Name="RevKpiRead" Text="0 箇所" FontSize="14" FontWeight="Bold" Foreground="#059669"/>
                                     </StackPanel>
                                 </Border>
@@ -838,9 +863,9 @@
 
                             <!-- Table Header with Quick Filter -->
                             <Grid Grid.Row="1" Margin="0,0,0,8">
-                                <TextBlock Text="📂 アクセス可能フォルダー一覧 (Wクリックでエクスプローラー直行)" FontWeight="Bold" FontSize="11" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="RevFoldersTableTitle" Text="📂 アクセス可能フォルダー一覧 (Wクリックでエクスプローラー直行)" FontWeight="Bold" FontSize="11" Foreground="#1E293B" VerticalAlignment="Center"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <TextBlock Text="絞り込み:" FontSize="10" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock x:Name="RevFolderFilterLabel" Text="絞り込み:" FontSize="10" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                     <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="26" Width="180" Padding="6,0">
                                         <TextBox x:Name="RevFolderFilterTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="10" TextChanged="RevFolderFilterTextBox_TextChanged"/>
                                     </Border>
@@ -853,8 +878,8 @@
                                       HeadersVisibility="Column"
                                       MouseDoubleClick="RevFoldersDataGrid_MouseDoubleClick" SelectionMode="Single">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="フォルダー名" Binding="{Binding FolderName}" Width="160" FontWeight="Bold"/>
-                                    <DataGridTemplateColumn Header="実効アクセス権" Width="130">
+                                    <DataGridTextColumn x:Name="ColRevFolderName" Header="フォルダー名" Binding="{Binding FolderName}" Width="160" FontWeight="Bold"/>
+                                    <DataGridTemplateColumn x:Name="ColRevRights" Header="実効アクセス権" Width="130">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <Border Background="{Binding RightsBadgeBackground}" CornerRadius="4" Padding="6,2" HorizontalAlignment="Center">
@@ -863,8 +888,8 @@
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="付与形態 / 経由グループ" Binding="{Binding GrantSource}" Width="200"/>
-                                    <DataGridTextColumn Header="完全パス" Binding="{Binding FolderPath}" Width="*" FontFamily="{StaticResource MonoFont}" FontSize="10"/>
+                                    <DataGridTextColumn x:Name="ColRevGrantSource" Header="付与形態 / 経由グループ" Binding="{Binding GrantSource}" Width="200"/>
+                                    <DataGridTextColumn x:Name="ColRevFullPath" Header="完全パス" Binding="{Binding FolderPath}" Width="*" FontFamily="{StaticResource MonoFont}" FontSize="10"/>
                                 </DataGrid.Columns>
                             </DataGrid>
 
@@ -913,7 +938,7 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="📁 移行先ルート: " Foreground="#64748B" VerticalAlignment="Center" FontSize="11"/>
+                                <TextBlock x:Name="SimTargetRootLabel" Text="📁 移行先ルート: " Foreground="#64748B" VerticalAlignment="Center" FontSize="11"/>
                                 <TextBox x:Name="SimTargetRootTextBox" Grid.Column="1" BorderThickness="0" Background="Transparent"
                                          VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}" Text="\\NewServer01\Share"/>
                                 <Button x:Name="SimTargetBrowseButton" Grid.Column="2" Content="参照..." Background="Transparent" BorderThickness="0" Foreground="#0284C7" FontSize="11" Click="SimTargetBrowse_Click"/>
@@ -965,8 +990,8 @@
                             </Grid.RowDefinitions>
 
                             <StackPanel Grid.Row="0" Margin="0,0,0,10">
-                                <TextBlock Text="現行ファイルサーバー (移行元)" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
-                                <TextBlock Text="サブフォルダを掴んで中央のモックツリーへ直接ドロップ" FontSize="10" Foreground="#64748B"/>
+                                <TextBlock x:Name="SimSourceTitleText" Text="現行ファイルサーバー (移行元)" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
+                                <TextBlock x:Name="SimSourceSubText" Text="サブフォルダを掴んで中央のモックツリーへ直接ドロップ" FontSize="10" Foreground="#64748B"/>
                             </StackPanel>
 
                             <!-- Path & Load -->
@@ -988,6 +1013,12 @@
                                 <TreeView x:Name="SimSourceTreeView" BorderThickness="0" Background="Transparent"
                                           SelectedItemChanged="SimSourceTreeView_SelectedItemChanged"
                                           PreviewMouseMove="SimSourceTreeView_PreviewMouseMove">
+                                    <TreeView.ItemContainerStyle>
+                                        <Style TargetType="{x:Type TreeViewItem}">
+                                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                                        </Style>
+                                    </TreeView.ItemContainerStyle>
                                     <TreeView.ItemTemplate>
                                         <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                                             <StackPanel Orientation="Horizontal" Margin="0,2">
@@ -1025,8 +1056,8 @@
 
                             <Grid Grid.Row="0" Margin="0,0,0,10">
                                 <StackPanel>
-                                    <TextBlock Text="新環境 仮想フォルダツリー設計" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
-                                    <TextBlock Text="💡 閉じたフォルダ行に直ドロップでサブ化 / クイックボタンや左ずらしで一気にルートへ昇格" FontSize="10" Foreground="#0284C7"/>
+                                    <TextBlock x:Name="SimMockTreeTitleText" Text="新環境 仮想フォルダツリー設計" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
+                                    <TextBlock x:Name="SimMockTreeSubText" Text="💡 閉じたフォルダ行に直ドロップでサブ化 / クイックボタンや左ずらしで一気にルートへ昇格" FontSize="10" Foreground="#0284C7"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                     <Button x:Name="SimAddRootFolderButton" Content="＋ ルートフォルダ新設" Height="26" Style="{StaticResource FluentButtonSecondary}"
@@ -1042,6 +1073,12 @@
                                           Drop="SimMockTreeView_Drop"
                                           DragOver="SimMockTreeView_DragOver"
                                           PreviewMouseMove="SimMockTreeView_PreviewMouseMove">
+                                    <TreeView.ItemContainerStyle>
+                                        <Style TargetType="{x:Type TreeViewItem}">
+                                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                                        </Style>
+                                    </TreeView.ItemContainerStyle>
                                     <TreeView.ContextMenu>
                                         <ContextMenu>
                                             <MenuItem Header="📁 新規サブフォルダ作成" Click="CtxSimAddChild_Click"/>
@@ -1106,7 +1143,7 @@
                                         <!-- Selected Node Info -->
                                         <Grid Margin="0,0,0,8">
                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                <TextBlock Text="📁 選択中のフォルダ: " FontWeight="Bold" FontSize="12.5" Foreground="#334155"/>
+                                                <TextBlock x:Name="SimSelectedFolderPrefixText" Text="📁 選択中のフォルダ: " FontWeight="Bold" FontSize="12.5" Foreground="#334155"/>
                                                 <TextBlock x:Name="SimSelectedFolderNameText" Text="(未選択 - 上のフォルダをクリック)" FontWeight="Bold" FontSize="12.5" Foreground="#0284C7"/>
                                             </StackPanel>
                                             <CheckBox x:Name="SimInheritCheckBox" Content="親からの権限継承を含める" HorizontalAlignment="Right"
@@ -1117,7 +1154,7 @@
                                         <Border Background="#F1F5F9" BorderBrush="#94A3B8" BorderThickness="1"
                                                 CornerRadius="4" Padding="10,6" Margin="0,0,0,8" AllowDrop="True"
                                                 Drop="SimSubfolderDropZone_Drop" DragOver="SimGenericDragOver">
-                                            <TextBlock Text="📥 左の現行フォルダをここにドロップすると、この直下にサブフォルダ化"
+                                            <TextBlock x:Name="SimSubfolderDropHintText" Text="📥 左の現行フォルダをここにドロップすると、この直下にサブフォルダ化"
                                                        FontSize="11.5" Foreground="#64748B" HorizontalAlignment="Center"/>
                                         </Border>
 
@@ -1127,8 +1164,8 @@
                                                 Drop="SimMappingDropZone_Drop" DragOver="SimGenericDragOver">
                                             <StackPanel>
                                                 <Grid Margin="0,0,0,4">
-                                                    <TextBlock Text="🔗 現行サーバーとの紐づけ (データ移行元 / N対1統合)" FontSize="11.5" FontWeight="Bold" Foreground="#7E22CE"/>
-                                                    <TextBlock Text="ここに現行フォルダをドロップして追加統合" FontSize="11" Foreground="#A855F7" HorizontalAlignment="Right"/>
+                                                    <TextBlock x:Name="SimMappingTitleText" Text="🔗 現行サーバーとの紐づけ (データ移行元 / N対1統合)" FontSize="11.5" FontWeight="Bold" Foreground="#7E22CE"/>
+                                                    <TextBlock x:Name="SimMappingSubText" Text="ここに現行フォルダをドロップして追加統合" FontSize="11" Foreground="#A855F7" HorizontalAlignment="Right"/>
                                                 </Grid>
                                                 <!-- List of mapped sources -->
                                                 <ItemsControl x:Name="SimMappedSourcesItemsControl">
@@ -1155,7 +1192,7 @@
                                                 Drop="SimAclDropZone_Drop" DragOver="SimGenericDragOver">
                                             <StackPanel>
                                                 <Grid Margin="0,0,0,4">
-                                                    <TextBlock Text="🛡️ 割り当てられたADアクセス権 (カードWクリックで詳細編集)" FontSize="11.5" FontWeight="Bold" Foreground="#0369A1"/>
+                                                    <TextBlock x:Name="SimAclTitleText" Text="🛡️ 割り当てられたADアクセス権 (カードWクリックで詳細編集)" FontSize="11.5" FontWeight="Bold" Foreground="#0369A1"/>
                                                     <Button x:Name="SimOpenSecModalButton" Content="⚙️ セキュリティ詳細設定" FontSize="10.5" Height="22" Padding="6,1"
                                                             Style="{StaticResource FluentButtonSecondary}" HorizontalAlignment="Right"
                                                             Click="SimOpenSecModalButton_Click"/>
@@ -1213,12 +1250,12 @@
 
                             <StackPanel Grid.Row="0" Margin="0,0,0,10">
                                 <Grid>
-                                    <TextBlock Text="AD ユーザー &amp; グループ" FontWeight="Bold" FontSize="13.5" Foreground="#0F172A"/>
+                                    <TextBlock x:Name="SimAdHeaderTitle" Text="AD ユーザー &amp; グループ" FontWeight="Bold" FontSize="13.5" Foreground="#0F172A"/>
                                     <Border x:Name="DomainStatusBadge" Background="#DCFCE7" CornerRadius="4" Padding="6,1" HorizontalAlignment="Right">
                                         <TextBlock x:Name="DomainStatusText" Text="🟢 CORP.LOCAL" FontSize="10.5" FontWeight="SemiBold" Foreground="#15803D"/>
                                     </Border>
                                 </Grid>
-                                <TextBlock Text="カードを中央のフォルダへドラッグして権限付与" FontSize="11.5" Foreground="#64748B" Margin="0,2,0,0"/>
+                                <TextBlock x:Name="SimAdHeaderSubText" Text="カードを中央のフォルダへドラッグして権限付与" FontSize="11.5" Foreground="#64748B" Margin="0,2,0,0"/>
                             </StackPanel>
 
                             <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,0,10">
@@ -1284,8 +1321,8 @@
                         </Grid.RowDefinitions>
 
                         <StackPanel Grid.Row="0" Margin="0,0,0,14">
-                            <TextBlock Text="🔗 サーバー移行に伴うショートカット (LNK) / パス参照の一括修復" FontSize="15" FontWeight="Bold" Foreground="#0F172A"/>
-                            <TextBlock Text="ファイルサーバー移行後、旧パス（例: \\OldServer\Share）を指したまま切断されたショートカットを一括検出し、新パスへ安全に書き換えます。"
+                            <TextBlock x:Name="LinkFixHeaderTitle" Text="🔗 サーバー移行に伴うショートカット (LNK) / パス参照の一括修復" FontSize="15" FontWeight="Bold" Foreground="#0F172A"/>
+                            <TextBlock x:Name="LinkFixHeaderDesc" Text="ファイルサーバー移行後、旧パス（例: \\OldServer\Share）を指したまま切断されたショートカットを一括検出し、新パスへ安全に書き換えます。"
                                        FontSize="11" Foreground="#64748B" Margin="0,4,0,0"/>
                         </StackPanel>
 
@@ -1297,21 +1334,21 @@
                             </Grid.ColumnDefinitions>
 
                             <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                <TextBlock Text="検索対象フォルダ (デスクトップ等)" FontSize="11" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
+                                <TextBlock x:Name="LinkSearchScopeLabel" Text="検索対象フォルダ (デスクトップ等)" FontSize="11" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
                                 <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="34" Padding="10,0">
                                     <TextBox x:Name="LinkSearchScopeTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"/>
                                 </Border>
                             </StackPanel>
 
                             <StackPanel Grid.Column="1" Margin="0,0,12,0">
-                                <TextBlock Text="置換前 (旧サーバー名 / パス)" FontSize="11" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
+                                <TextBlock x:Name="LinkOldPatternLabel" Text="置換前 (旧サーバー名 / パス)" FontSize="11" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
                                 <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="34" Padding="10,0">
                                     <TextBox x:Name="LinkOldPatternTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"/>
                                 </Border>
                             </StackPanel>
 
                             <StackPanel Grid.Column="2">
-                                <TextBlock Text="置換後 (新サーバー名 / パス)" FontSize="11" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
+                                <TextBlock x:Name="LinkNewPatternLabel" Text="置換後 (新サーバー名 / パス)" FontSize="11" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
                                 <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="34" Padding="10,0">
                                     <TextBox x:Name="LinkNewPatternTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"/>
                                 </Border>
@@ -1343,15 +1380,15 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="検出されたショートカット一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
+                        <TextBlock x:Name="LinkTableTitleText" Grid.Row="0" Text="検出されたショートカット一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
                         <DataGrid x:Name="LinkItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="30" SelectionMode="Single">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="ファイル名" Binding="{Binding FileName}" Width="160" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="種別" Binding="{Binding FileType}" Width="120" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="現在のターゲットパス" Binding="{Binding OldTarget}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="置換後ターゲットパス" Binding="{Binding NewTarget}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="状態" Binding="{Binding Status}" Width="130" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColLinkFileName" Header="ファイル名" Binding="{Binding FileName}" Width="160" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColLinkFileType" Header="種別" Binding="{Binding FileType}" Width="120" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColLinkOldTarget" Header="現在のターゲットパス" Binding="{Binding OldTarget}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColLinkNewTarget" Header="置換後ターゲットパス" Binding="{Binding NewTarget}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColLinkStatus" Header="状態" Binding="{Binding Status}" Width="130" ElementStyle="{StaticResource LeftAlignedCell}"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Grid>
@@ -1381,8 +1418,8 @@
                         </Grid.RowDefinitions>
 
                         <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                            <TextBlock Text="🧹 ファイルサーバー健全化 ＆ 断捨離（GDMS代替・衛生監査）" FontSize="15" FontWeight="Bold" Foreground="#0F172A"/>
-                            <TextBlock Text="重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長260文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳や退避スクリプトを生成します。"
+                            <TextBlock x:Name="AuditHeaderTitle" Text="🧹 ファイルサーバー健全化 ＆ 断捨離（GDMS代替・衛生監査）" FontSize="15" FontWeight="Bold" Foreground="#0F172A"/>
+                            <TextBlock x:Name="AuditHeaderDesc" Text="重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長260文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳や退避スクリプトを生成します。"
                                        FontSize="11" Foreground="#64748B" Margin="0,4,0,0"/>
                         </StackPanel>
 
@@ -1393,7 +1430,7 @@
                             </Grid.ColumnDefinitions>
 
                             <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                <TextBlock Text="監査対象ディレクトリ (UNC / ローカル)" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
+                                <TextBlock x:Name="AuditTargetFolderLabel" Text="監査対象ディレクトリ (UNC / ローカル)" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -1402,7 +1439,7 @@
                                     <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="34" Padding="10,0">
                                         <TextBox x:Name="AuditPathTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="12" FontFamily="{StaticResource MonoFont}"/>
                                     </Border>
-                                    <Button x:Name="AuditBrowseButton" Grid.Column="1" Content="📁 参照" Width="80" Height="34" Margin="8,0,0,0"
+                                    <Button x:Name="AuditBrowseButton" Grid.Column="1" Content="📁 参照" Width="96" Height="34" Margin="8,0,0,0"
                                             Style="{StaticResource FluentButtonSecondary}" Click="AuditBrowseButton_Click"/>
                                 </Grid>
                             </StackPanel>
@@ -1443,28 +1480,28 @@
 
                     <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
                         <StackPanel>
-                            <TextBlock Text="総走査ファイル数" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="AuditKpiTotalFilesTitle" Text="総走査ファイル数" FontSize="11" Foreground="#64748B"/>
                             <TextBlock x:Name="AuditKpiTotalFiles" Text="0 件" FontSize="18" FontWeight="Bold" Foreground="#0F172A" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 
                     <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
                         <StackPanel>
-                            <TextBlock Text="重複ファイルによる無駄" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="AuditKpiDupWastedTitle" Text="重複ファイルによる無駄" FontSize="11" Foreground="#64748B"/>
                             <TextBlock x:Name="AuditKpiDupWasted" Text="0 B" FontSize="18" FontWeight="Bold" Foreground="#DC2626" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 
                     <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
                         <StackPanel>
-                            <TextBlock Text="休眠ファイル容量 (3年超)" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="AuditKpiDormantSizeTitle" Text="休眠ファイル容量 (3年超)" FontSize="11" Foreground="#64748B"/>
                             <TextBlock x:Name="AuditKpiDormantSize" Text="0 B" FontSize="18" FontWeight="Bold" Foreground="#D97706" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 
                     <Border Grid.Column="3" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12">
                         <StackPanel>
-                            <TextBlock Text="パス長超過 / 禁則文字" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="AuditKpiPathLimitsTitle" Text="パス長超過 / 禁則文字" FontSize="11" Foreground="#64748B"/>
                             <TextBlock x:Name="AuditKpiPathLimits" Text="0 件" FontSize="18" FontWeight="Bold" Foreground="#2563EB" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
@@ -1480,16 +1517,16 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="検出された課題・断捨離候補一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
+                        <TextBlock x:Name="AuditTableTitleText" Grid.Row="0" Text="検出された課題・断捨離候補一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
                         <DataGrid x:Name="AuditItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="28" HeadersVisibility="Column" RowHeaderWidth="0">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="問題種別" Binding="{Binding IssueTypeDisplay}" Width="150" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="ファイル名" Binding="{Binding FileName}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="容量" Binding="{Binding SizeFormatted}" Width="90" ElementStyle="{StaticResource RightAlignedCell}"/>
-                                <DataGridTextColumn Header="最終更新日時" Binding="{Binding LastWriteTime, StringFormat='yyyy/MM/dd HH:mm'}" Width="130" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="詳細" Binding="{Binding Detail}" Width="200" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="完全パス" Binding="{Binding FullPath}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColAuditIssueType" Header="問題種別" Binding="{Binding IssueTypeDisplay}" Width="150" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColAuditFileName" Header="ファイル名" Binding="{Binding FileName}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColAuditSize" Header="容量" Binding="{Binding SizeFormatted}" Width="90" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColAuditModified" Header="最終更新日時" Binding="{Binding LastWriteTime, StringFormat='yyyy/MM/dd HH:mm'}" Width="130" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColAuditDetail" Header="詳細" Binding="{Binding Detail}" Width="200" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColAuditFullPath" Header="完全パス" Binding="{Binding FullPath}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Grid>
@@ -1519,8 +1556,8 @@
                         </Grid.RowDefinitions>
 
                         <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                            <TextBlock Text="🖼️ メディア・オプティマイザ（写真の視覚的ロスレス軽量化 ＆ 巨大動画攻略）" FontSize="15" FontWeight="Bold" Foreground="#0F172A"/>
-                            <TextBlock Text="聖域（_Master、印刷用、RAW等）を自動保護しながら、スマホ写真（2MB超）を視覚的ロスレス（長辺2560px/85%品質）で上書き軽量化し、巨大動画のTop抽出と夜間圧縮バッチを出力します。"
+                            <TextBlock x:Name="MediaHeaderTitle" Text="🖼️ メディア・オプティマイザ（写真の視覚的ロスレス軽量化 ＆ 巨大動画攻略）" FontSize="15" FontWeight="Bold" Foreground="#0F172A"/>
+                            <TextBlock x:Name="MediaHeaderDesc" Text="聖域（_Master、印刷用、RAW等）を自動保護しながら、スマホ写真（2MB超）を視覚的ロスレス（長辺2560px/85%品質）で上書き軽量化し、巨大動画のTop抽出と夜間圧縮バッチを出力します。"
                                        FontSize="11" Foreground="#64748B" Margin="0,4,0,0"/>
                         </StackPanel>
 
@@ -1531,7 +1568,7 @@
                             </Grid.ColumnDefinitions>
 
                             <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                <TextBlock Text="走査対象ディレクトリ (UNC / ローカル)" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
+                                <TextBlock x:Name="MediaTargetDirLabel" Text="走査対象ディレクトリ (UNC / ローカル)" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -1540,26 +1577,26 @@
                                     <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="34" Padding="10,0">
                                         <TextBox x:Name="MediaPathTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="12" FontFamily="{StaticResource MonoFont}"/>
                                     </Border>
-                                    <Button x:Name="MediaBrowseButton" Grid.Column="1" Content="📁 参照" Width="80" Height="34" Margin="8,0,0,0"
+                                    <Button x:Name="MediaBrowseButton" Grid.Column="1" Content="📁 参照" Width="96" Height="34" Margin="8,0,0,0"
                                             Style="{StaticResource FluentButtonSecondary}" Click="MediaBrowseButton_Click"/>
                                 </Grid>
                             </StackPanel>
 
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,4">
                                 <StackPanel Margin="0,0,12,0">
-                                    <TextBlock Text="最大長辺 (px)" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
+                                    <TextBlock x:Name="MediaMaxDimLabel" Text="最大長辺 (px)" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
                                     <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Width="80" Padding="6,0">
                                         <TextBox x:Name="MediaMaxDimTextBox" Text="2560" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="12"/>
                                     </Border>
                                 </StackPanel>
                                 <StackPanel Margin="0,0,12,0">
-                                    <TextBlock Text="画質 (%)" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
+                                    <TextBlock x:Name="MediaQualityLabel" Text="画質 (%)" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
                                     <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Width="60" Padding="6,0">
                                         <TextBox x:Name="MediaQualityTextBox" Text="85" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="12"/>
                                     </Border>
                                 </StackPanel>
                                 <StackPanel>
-                                    <TextBlock Text="最小サイズ (MB)" FontSize="10" Foreground="#64748B" Margin="0,0,0,2"/>
+                                    <TextBlock x:Name="MediaMinSizeLabel" Text="最小サイズ (MB)" FontSize="10" Foreground="#64748B" Margin="0,0,0,2"/>
                                     <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Width="70" Padding="6,0">
                                         <TextBox x:Name="MediaMinSizeMbTextBox" Text="2" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11"/>
                                     </Border>
@@ -1596,28 +1633,28 @@
 
                     <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
                         <StackPanel>
-                            <TextBlock Text="走査対象 画像数" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="MediaKpiImagesCountTitle" Text="走査対象 画像数" FontSize="11" Foreground="#64748B"/>
                             <TextBlock x:Name="MediaKpiImagesCount" Text="0 枚" FontSize="18" FontWeight="Bold" Foreground="#0F172A" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 
                     <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
                         <StackPanel>
-                            <TextBlock Text="巨大動画 ファイル数" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="MediaKpiVideosCountTitle" Text="巨大動画 ファイル数" FontSize="11" Foreground="#64748B"/>
                             <TextBlock x:Name="MediaKpiVideosCount" Text="0 本" FontSize="18" FontWeight="Bold" Foreground="#2563EB" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 
                     <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
                         <StackPanel>
-                            <TextBlock Text="軽量化 完了数" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="MediaKpiOptimizedCountTitle" Text="軽量化 完了数" FontSize="11" Foreground="#64748B"/>
                             <TextBlock x:Name="MediaKpiOptimizedCount" Text="0 枚" FontSize="18" FontWeight="Bold" Foreground="#059669" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 
                     <Border Grid.Column="3" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12">
                         <StackPanel>
-                            <TextBlock Text="総削減容量 (解放された空き)" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="MediaKpiSavedSizeTitle" Text="総削減容量 (解放された空き)" FontSize="11" Foreground="#64748B"/>
                             <TextBlock x:Name="MediaKpiSavedSize" Text="0 B" FontSize="18" FontWeight="Bold" Foreground="#059669" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
@@ -1633,17 +1670,17 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="メディア一覧（画像 ＆ 巨大動画）" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
+                        <TextBlock x:Name="MediaTableTitleText" Grid.Row="0" Text="メディア一覧（画像 ＆ 巨大動画）" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
                         <DataGrid x:Name="MediaItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="28" HeadersVisibility="Column" RowHeaderWidth="0">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="種別" Binding="{Binding Extension}" Width="80" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="ファイル名" Binding="{Binding FileName}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="元容量" Binding="{Binding OriginalSizeFormatted}" Width="100" ElementStyle="{StaticResource RightAlignedCell}"/>
-                                <DataGridTextColumn Header="軽量化後" Binding="{Binding OptimizedSizeFormatted}" Width="100" ElementStyle="{StaticResource RightAlignedCell}"/>
-                                <DataGridTextColumn Header="削減容量" Binding="{Binding SavedSizeFormatted}" Width="100" ElementStyle="{StaticResource RightAlignedCell}"/>
-                                <DataGridTextColumn Header="状態 / 聖域保護" Binding="{Binding Status}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="完全パス" Binding="{Binding FullPath}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColMediaType" Header="種別" Binding="{Binding Extension}" Width="80" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColMediaFileName" Header="ファイル名" Binding="{Binding FileName}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColMediaOriginalSize" Header="元容量" Binding="{Binding OriginalSizeFormatted}" Width="100" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColMediaOptimizedSize" Header="軽量化後" Binding="{Binding OptimizedSizeFormatted}" Width="100" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColMediaSavedSize" Header="削減容量" Binding="{Binding SavedSizeFormatted}" Width="100" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColMediaStatus" Header="状態 / 聖域保護" Binding="{Binding Status}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColMediaFullPath" Header="完全パス" Binding="{Binding FullPath}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Grid>
@@ -1668,7 +1705,7 @@
 
                     <Grid Grid.Row="0" Margin="0,0,0,12">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="🛡️ セキュリティの詳細設定 - " FontWeight="Bold" FontSize="14" Foreground="#0F172A"/>
+                            <TextBlock x:Name="SecModalTitleText" Text="🛡️ セキュリティの詳細設定 - " FontWeight="Bold" FontSize="14" Foreground="#0F172A"/>
                             <TextBlock x:Name="SecModalTargetNameText" Text="フォルダ名" FontWeight="Bold" FontSize="14" Foreground="#0284C7"/>
                         </StackPanel>
                         <Button Content="✕" Width="24" Height="24" Background="Transparent" BorderThickness="0"
@@ -1678,7 +1715,7 @@
                     <ScrollViewer Grid.Row="1" MaxHeight="520" VerticalScrollBarVisibility="Auto">
                         <StackPanel>
                             <!-- Object Path -->
-                            <TextBlock Text="オブジェクト名:" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
+                            <TextBlock x:Name="SecModalObjectNameLabel" Text="オブジェクト名:" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
                             <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="0,0,0,10">
                                 <TextBlock x:Name="SecModalFullPathText" Text="\\NewServer01\Share\Folder" FontFamily="{StaticResource MonoFont}" FontSize="11" Foreground="#0369A1"/>
                             </Border>
@@ -1690,11 +1727,11 @@
                                     <ColumnDefinition Width="140"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                                    <TextBlock Text="プリンシパル (対象アカウント):" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
+                                    <TextBlock x:Name="SecModalPrincipalLabel" Text="プリンシパル (対象アカウント):" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
                                     <TextBox x:Name="SecPrincipalInput" Height="28" FontSize="11" FontWeight="Bold" VerticalContentAlignment="Center"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1">
-                                    <TextBlock Text="種類:" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
+                                    <TextBlock x:Name="SecModalTypeLabel" Text="種類:" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
                                     <ComboBox x:Name="SecAccessTypeCombo" Height="28" SelectedIndex="0" VerticalContentAlignment="Center">
                                         <ComboBoxItem Content="許可"/>
                                         <ComboBoxItem Content="拒否"/>
@@ -1703,7 +1740,7 @@
                             </Grid>
 
                             <StackPanel Margin="0,0,0,12">
-                                <TextBlock Text="適用先:" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
+                                <TextBlock x:Name="SecModalAppliesToLabel" Text="適用先:" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
                                 <ComboBox x:Name="SecAppliesToCombo" Height="28" SelectedIndex="0" VerticalContentAlignment="Center">
                                     <ComboBoxItem Content="このフォルダー、サブフォルダーおよびファイル"/>
                                     <ComboBoxItem Content="このフォルダーのみ"/>
@@ -1719,8 +1756,8 @@
                             <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,10">
                                 <StackPanel>
                                     <Grid Margin="0,0,0,8">
-                                        <TextBlock Text="基本アクセス許可:" FontWeight="Bold" FontSize="12.5" Foreground="#334155"/>
-                                        <TextBlock Text="※高度な権限と完全リアルタイム連動" FontSize="11.5" Foreground="#0284C7" HorizontalAlignment="Right"/>
+                                        <TextBlock x:Name="SecModalBasicPermTitle" Text="基本アクセス許可:" FontWeight="Bold" FontSize="12.5" Foreground="#334155"/>
+                                        <TextBlock x:Name="SecModalRealtimeNotice" Text="※高度な権限と完全リアルタイム連動" FontSize="11.5" Foreground="#0284C7" HorizontalAlignment="Right"/>
                                     </Grid>
                                     <UniformGrid Columns="2">
                                         <CheckBox x:Name="SecChkFullControl" Content="フル コントロール" Margin="0,3" FontWeight="Bold" Click="SecBasicPerm_Click"/>
@@ -1737,8 +1774,8 @@
                             <Border Background="#F1F5F9" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Padding="12">
                                 <StackPanel>
                                     <Grid Margin="0,0,0,8">
-                                        <TextBlock Text="⚙️ 高度なアクセス許可 (Windows ACL 14項目完全網羅):" FontWeight="Bold" FontSize="12" Foreground="#0284C7"/>
-                                        <TextBlock Text="Windows セキュリティ詳細設定準拠" FontSize="11" Foreground="#64748B" HorizontalAlignment="Right"/>
+                                        <TextBlock x:Name="SecModalAdvPermTitle" Text="⚙️ 高度なアクセス許可 (Windows ACL 14項目完全網羅):" FontWeight="Bold" FontSize="12" Foreground="#0284C7"/>
+                                        <TextBlock x:Name="SecModalAdvPermSubtitle" Text="Windows セキュリティ詳細設定準拠" FontSize="11" Foreground="#64748B" HorizontalAlignment="Right"/>
                                     </Grid>
                                     <UniformGrid Columns="2">
                                         <CheckBox x:Name="SecAdvTraverse" Content="フォルダーのスキャン / ファイルの実行" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>
@@ -1788,8 +1825,8 @@
 
                     <Grid Grid.Row="0" Margin="0,0,0,12">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="⚖️ 移行前後 変化点差分レビュー (Diff)" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
-                            <TextBlock Text=" - Before ➔ After 全体整合性インスペクター" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                            <TextBlock x:Name="DiffModalTitleText" Text="⚖️ 移行前後 変化点差分レビュー (Diff)" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
+                            <TextBlock x:Name="DiffModalSubTitleText" Text=" - Before ➔ After 全体整合性インスペクター" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="6,0,0,0"/>
                         </StackPanel>
                         <Button Content="✕" Width="24" Height="24" Background="Transparent" BorderThickness="0"
                                 FontSize="12" Foreground="#64748B" HorizontalAlignment="Right" Click="DiffModalClose_Click"/>
@@ -1808,7 +1845,7 @@
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="32"
                                   SelectionMode="Single">
                             <DataGrid.Columns>
-                                <DataGridTemplateColumn Header="変化の種別" Width="110">
+                                <DataGridTemplateColumn x:Name="ColDiffType" Header="変化の種別" Width="110">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:SimDiffItem}">
                                             <Border Background="{Binding DiffTypeBadgeBackground}" CornerRadius="4" Padding="6,2" HorizontalAlignment="Center">
@@ -1817,7 +1854,7 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="現行サーバー (Before)" Width="280">
+                                <DataGridTemplateColumn x:Name="ColDiffSource" Header="現行サーバー (Before)" Width="280">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:SimDiffItem}">
                                             <StackPanel Margin="6,4">
@@ -1827,7 +1864,7 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="新環境設計 (After)" Width="280">
+                                <DataGridTemplateColumn x:Name="ColDiffTarget" Header="新環境設計 (After)" Width="280">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:SimDiffItem}">
                                             <StackPanel Margin="6,4">
@@ -1837,7 +1874,7 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="権限 (ACL) 差分詳細" Width="*">
+                                <DataGridTemplateColumn x:Name="ColDiffAcl" Header="権限 (ACL) 差分詳細" Width="*">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:SimDiffItem}">
                                             <TextBlock Text="{Binding FormattedAclChanges}" FontSize="11" Foreground="#1E293B" Margin="6,4" TextWrapping="Wrap"/>
@@ -1980,7 +2017,7 @@
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v1.4.1 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.4.2 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>

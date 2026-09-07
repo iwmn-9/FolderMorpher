@@ -22,7 +22,7 @@ namespace AstraSize.Models
         private string _largestFileSize = "--";
         private string _diffText = "初回スキャン";
         private string _lastScanDateText = "-";
-        private string _statusMessage = "準備完了";
+        private string _statusMessage = string.Empty;
 
         public string StatusMessage
         {

@@ -115,6 +115,14 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
    - KPIカードを「スキャン対象容量」「最大ファイル Top 1」「前回差分推移」の3枚構成に整理し、ファイルサーバー監視用途に完全特化。
    - Storage Explorer、Simulation、Diff の各画面で ClosedXML による本物の `.xlsx` 出力（ハイパーリンク・自動列幅・ヘッダースタイル付き）と CSV 出力の双方を完全サポート。
    - `LiveAclRollback` は Windows カーネルによる `AI` フラグ付与に関わらず、セマンティクス（ACEルール等価性）で厳密に整合性を検証。
+21. **フォルダ別権限エディタの縦一列カードアーキテクチャ（Modern List Cards）**:
+   - 横並びを廃止し、1行1カードの洗練された縦リスト形式に変更。D&D仕様（右ADからの付与、枠外ドロップによる直感的解除、Escキャンセル保護、自枠内ドロップ誤爆防止）は100%完全維持。
+22. **移行スタジオの再帰的階層ドロップ＆NTFS ACL自動引き継ぎ＆親クリック不要展開**:
+   - 現行ファイルサーバーやエクスプローラーから階層構造を持つフォルダをドロップした際、配下のサブフォルダ階層を再帰的に生成し、既存のNTFS ACLおよび移行元マッピングを自動で忠実に引き継ぐ。
+   - `ItemContainerStyle` による `IsExpanded`/`IsSelected` 双方向バインディングにより、フォルダ追加時は親ノードを自動展開し、追加ノードを即座に選択状態にする。
+23. **深層（全階層）安全走査 ＆ 完全多言語（i18n）アーキテクチャ**:
+   - `MediaOptimizerService` および `AuditReportService` において、`SearchOption.AllDirectories` の `UnauthorizedAccessException` による探索即死バグを根絶し、`Stack<DirectoryInfo>` による堅牢な反復走査を採用。アクセス拒否フォルダーを安全にスキップしながら全階層を漏れなく探索。
+   - ボタンだけでなく、全タブ（Tab 0〜5）の静的ラベル、見出し、KPIタイトル、リストカラムヘッダー、プレースホルダー、モーダルテキストに至るまで日英完全動的ローカライズ（`ApplyLocalization`）を網羅。
 
 ---
 

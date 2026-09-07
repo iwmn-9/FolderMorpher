@@ -97,13 +97,13 @@ namespace AstraSize
         {
             try
             {
-                LocalizationService.Instance.LanguageChanged += ApplyLocalization;
-                ApplyLocalization();
-
                 InitializeStorageTabs();
                 InitializeSimulationStudio();
                 InitializeLiveAcl();
                 await LoadAdPrincipalsAsync();
+
+                LocalizationService.Instance.LanguageChanged += ApplyLocalization;
+                ApplyLocalization();
             }
             catch (Exception ex)
             {
@@ -141,15 +141,17 @@ namespace AstraSize
             AuditTabPanel.Visibility = Visibility.Collapsed;
             MediaTabPanel.Visibility = Visibility.Collapsed;
 
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+
             if (NavTabStorage.IsChecked == true)
             {
                 StorageTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = "モード: 容量分析 & 監視 (Storage Explorer)";
+                StatusTextBlock.Text = isJa ? "モード: 容量分析 & 監視 (Storage Explorer)" : "Mode: Storage Explorer";
             }
             else if (NavTabLiveAcl.IsChecked == true)
             {
                 LiveAclTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = "モード: 実環境 権限コントロール (Live ACL)";
+                StatusTextBlock.Text = isJa ? "モード: 実環境 権限コントロール (Live ACL)" : "Mode: Live ACL Control";
                 if (string.IsNullOrWhiteSpace(LiveAclPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     LiveAclPathTextBox.Text = PathTextBox.Text;
@@ -159,7 +161,7 @@ namespace AstraSize
             else if (NavTabSimulation.IsChecked == true)
             {
                 SimulationTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = "モード: 移行シミュレーションスタジオ (FolderMorph Studio)";
+                StatusTextBlock.Text = isJa ? "モード: 移行シミュレーションスタジオ (FolderMorph Studio)" : "Mode: Simulation Studio";
                 if (string.IsNullOrWhiteSpace(SimSourcePathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     SimSourcePathTextBox.Text = PathTextBox.Text;
@@ -168,7 +170,7 @@ namespace AstraSize
             else if (NavTabLinkFix.IsChecked == true)
             {
                 LinkFixTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = "モード: ショートカット ＆ Officeリンク修復 (LinkFixer)";
+                StatusTextBlock.Text = isJa ? "モード: ショートカット ＆ Officeリンク修復 (LinkFixer)" : "Mode: LinkFixer";
                 if (string.IsNullOrWhiteSpace(LinkSearchScopeTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     LinkSearchScopeTextBox.Text = PathTextBox.Text;
@@ -177,7 +179,7 @@ namespace AstraSize
             else if (NavTabAudit.IsChecked == true)
             {
                 AuditTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = "モード: ファイルサーバー健全化 ＆ 断捨離 (GDMS代替・衛生監査)";
+                StatusTextBlock.Text = isJa ? "モード: ファイルサーバー健全化 ＆ 断捨離 (GDMS代替・衛生監査)" : "Mode: Audit & Hygiene";
                 if (string.IsNullOrWhiteSpace(AuditPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     AuditPathTextBox.Text = PathTextBox.Text;
@@ -186,7 +188,7 @@ namespace AstraSize
             else if (NavTabMedia.IsChecked == true)
             {
                 MediaTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = "モード: メディア・オプティマイザ (写真軽量化 ＆ 巨大動画攻略)";
+                StatusTextBlock.Text = isJa ? "モード: メディア・オプティマイザ (写真軽量化 ＆ 巨大動画攻略)" : "Mode: Media Optimizer";
                 if (string.IsNullOrWhiteSpace(MediaPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     MediaPathTextBox.Text = PathTextBox.Text;
@@ -223,7 +225,7 @@ namespace AstraSize
 
             var initialTab = new ScanTabModel
             {
-                TabTitle = "新規スキャン",
+                TabTitle = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "新規スキャン" : "New Scan",
                 TargetPath = string.Empty,
                 IsSelected = true
             };
@@ -250,7 +252,9 @@ namespace AstraSize
             }
 
             UpdateMetricsCards(tab);
-            StatusTextBlock.Text = string.IsNullOrEmpty(tab.StatusMessage) ? "準備完了" : tab.StatusMessage;
+            StatusTextBlock.Text = string.IsNullOrEmpty(tab.StatusMessage) 
+                ? (LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "準備完了" : "Ready") 
+                : tab.StatusMessage;
         }
 
         private void StorageTabItem_MouseDown(object sender, MouseButtonEventArgs e)
@@ -356,6 +360,7 @@ namespace AstraSize
                 cachedRoot = await _historyService.LoadTreeCacheAsync(path);
                 if (cachedRoot != null)
                 {
+                    cachedRoot.IsExpanded = true;
                     _currentTab.RootNode = cachedRoot;
                     _currentTab.FlattenTree();
                     FileTreeDataGrid.ItemsSource = _currentTab.VisibleFlatList;
@@ -389,6 +394,7 @@ namespace AstraSize
                     hadDiff = root.DiffBytes.HasValue && root.DiffBytes.Value != 0;
                 }
 
+                root.IsExpanded = true;
                 _currentTab.RootNode = root;
                 _currentTab.Summary = summary;
                 _currentTab.FlattenTree();
@@ -1447,13 +1453,57 @@ namespace AstraSize
             }
         }
 
+        private SimFolderNode CreateSimNodeFromSourceWithAcl(FileItemNode src, SimFolderNode? parent, int level, int maxDepth = 4)
+        {
+            var node = new SimFolderNode
+            {
+                Name = src.Name,
+                EstimatedSizeBytes = src.SizeBytes,
+                Level = level,
+                Parent = parent,
+                IsExpanded = true
+            };
+
+            if (!string.IsNullOrEmpty(src.FullPath))
+            {
+                node.MappedSourcePaths.Add(src.FullPath);
+                try
+                {
+                    if (Directory.Exists(src.FullPath))
+                    {
+                        var (entries, isInherited, _) = _aclService.GetSimAclForFolder(src.FullPath);
+                        node.InheritAcl = isInherited;
+                        foreach (var entry in entries)
+                        {
+                            node.AclEntries.Add(entry);
+                        }
+                    }
+                }
+                catch
+                {
+                    // アクセス拒否等でもツリー構築は継続
+                }
+            }
+
+            if (level < maxDepth && src.Children != null && src.Children.Count > 0)
+            {
+                foreach (var childSrc in src.Children.Where(c => c.IsDirectory))
+                {
+                    var childNode = CreateSimNodeFromSourceWithAcl(childSrc, node, level + 1, maxDepth);
+                    node.Children.Add(childNode);
+                }
+            }
+
+            return node;
+        }
+
         private void SimCloneSelectedButton_Click(object sender, RoutedEventArgs e)
         {
             if (SimSourceTreeView.SelectedItem is FileItemNode selected)
             {
-                var simNode = _simService.ConvertToSimNode(selected);
+                var simNode = CreateSimNodeFromSourceWithAcl(selected, null, 0);
                 _simRootFolders.Add(simNode);
-                ShowToast($"新環境モックツリーに配置しました: {selected.Name}");
+                ShowToast($"新環境モックツリーに配置しました (権限・階層自動引き継ぎ): {selected.Name}");
             }
             else
             {
@@ -1467,7 +1517,8 @@ namespace AstraSize
             {
                 Name = $"0{_simRootFolders.Count + 1}_新設ルートフォルダ",
                 InheritAcl = true,
-                Level = 0
+                Level = 0,
+                IsExpanded = true
             };
             _simRootFolders.Add(newFolder);
             ShowToast($"ルートフォルダを追加しました: {newFolder.Name}");
@@ -1517,21 +1568,13 @@ namespace AstraSize
             var target = GetSimNodeFromDragEvent(e) ?? _selectedSimNode ?? _simRootFolders.FirstOrDefault();
             if (target == null) return;
 
-            // Case 1: Drop source folder from left explorer (Create subfolder)
+            // Case 1: Drop source folder from left explorer (Create subfolder with full ACL & hierarchy)
             if (e.Data.GetData("FolderMorpherSourceNode") is FileItemNode src)
             {
-                var newSub = new SimFolderNode
-                {
-                    Name = src.Name,
-                    EstimatedSizeBytes = src.SizeBytes,
-                    InheritAcl = true,
-                    Level = target.Level + 1,
-                    Parent = target
-                };
-                newSub.MappedSourcePaths.Add(src.FullPath);
+                var newSub = CreateSimNodeFromSourceWithAcl(src, target, target.Level + 1);
                 target.Children.Add(newSub);
                 target.IsExpanded = true;
-                ShowToast($"📁 「{src.Name}」を「{target.Name}」配下にサブフォルダ化しました");
+                ShowToast($"📁 「{src.Name}」を「{target.Name}」配下にサブフォルダ化（権限・階層継承）しました");
             }
             // Case 2: Drop existing sim node inside mock tree (Move & demote)
             else if (e.Data.GetData("FolderMorpherSimNode") is SimFolderNode movingNode)
@@ -1572,18 +1615,10 @@ namespace AstraSize
 
             if (e.Data.GetData("FolderMorpherSourceNode") is FileItemNode src)
             {
-                var newSub = new SimFolderNode
-                {
-                    Name = src.Name,
-                    EstimatedSizeBytes = src.SizeBytes,
-                    InheritAcl = true,
-                    Level = _selectedSimNode.Level + 1,
-                    Parent = _selectedSimNode
-                };
-                newSub.MappedSourcePaths.Add(src.FullPath);
+                var newSub = CreateSimNodeFromSourceWithAcl(src, _selectedSimNode, _selectedSimNode.Level + 1);
                 _selectedSimNode.Children.Add(newSub);
                 _selectedSimNode.IsExpanded = true;
-                ShowToast($"📥 「{src.Name}」をサブフォルダ化しました");
+                ShowToast($"📥 「{src.Name}」をサブフォルダ化（権限・階層継承）しました");
             }
             else if (e.Data.GetData("FolderMorpherSimNode") is SimFolderNode movingNode)
             {
@@ -1844,10 +1879,17 @@ namespace AstraSize
                     Name = $"サブフォルダ_{_selectedSimNode.Children.Count + 1}",
                     InheritAcl = true,
                     Level = _selectedSimNode.Level + 1,
-                    Parent = _selectedSimNode
+                    Parent = _selectedSimNode,
+                    IsExpanded = true
                 };
                 _selectedSimNode.Children.Add(child);
                 _selectedSimNode.IsExpanded = true;
+                child.IsSelected = true;
+                _selectedSimNode = child;
+                SimSelectedFolderNameText.Text = child.Name;
+                SimInheritCheckBox.IsChecked = child.InheritAcl;
+                SimMappedSourcesItemsControl.ItemsSource = child.MappedSourcePaths;
+                SimAclCardsItemsControl.ItemsSource = child.AclEntries;
                 ShowToast($"サブフォルダを追加しました: {child.Name}");
             }
         }
@@ -2976,7 +3018,9 @@ namespace AstraSize
             NavTabAudit.Content = isJa ? "断捨離・健全化" : "Audit & Hygiene";
             NavTabMedia.Content = isJa ? "メディア最適化" : "Media Optimizer";
 
+            // ==========================================
             // Tab 0 (Storage Explorer)
+            // ==========================================
             AddStorageTabButton.Content = isJa ? "＋ 新しいタブ" : "＋ New Tab";
             StorageBrowseButton.Content = isJa ? "参照..." : "Browse...";
             ScanButton.Content = isJa ? "スキャン開始" : "Start Scan";
@@ -2984,7 +3028,47 @@ namespace AstraSize
             ExportButton.Content = isJa ? "Excel / CSV 出力" : "Export Excel/CSV";
             TabHistoryButton.Content = isJa ? "📈 容量推移グラフ" : "📈 History Graph";
 
+            StorageKpiScannedSizeTitle.Text = isJa ? "スキャン対象 容量" : "Scanned Capacity";
+            StorageKpiLargestFileTitle.Text = isJa ? "最大ファイル Top 1" : "Largest File Top 1";
+            StorageKpiDiffTrendTitle.Text = isJa ? "前回差分推移" : "Historical Growth";
+
+            if (InsightsTargetScopeTextBlock.Text == "スコープ: 全体" || InsightsTargetScopeTextBlock.Text == "Scope: Entire Scan")
+            {
+                InsightsTargetScopeTextBlock.Text = isJa ? "スコープ: 全体" : "Scope: Entire Scan";
+            }
+            if (TrendDiffTextBlock.Text == "比較データなし" || TrendDiffTextBlock.Text == "No comparison data")
+            {
+                TrendDiffTextBlock.Text = isJa ? "比較データなし" : "No comparison data";
+            }
+            if (LastScanDateTextBlock.Text == "初回スキャン" || LastScanDateTextBlock.Text == "Initial scan")
+            {
+                LastScanDateTextBlock.Text = isJa ? "初回スキャン" : "Initial scan";
+            }
+            if (TotalFilesTextBlock.Text == "0 ファイル / 0 フォルダ" || TotalFilesTextBlock.Text == "0 Files / 0 Folders")
+            {
+                TotalFilesTextBlock.Text = isJa ? "0 ファイル / 0 フォルダ" : "0 Files / 0 Folders";
+            }
+
+            ColTreeName.Header = isJa ? "フォルダー / ファイル名" : "Folder / File Name";
+            ColTreeSize.Header = isJa ? "容量" : "Size";
+            ColTreeShare.Header = isJa ? "全体占有率" : "% of Scanned";
+            ColTreeCount.Header = isJa ? "配下ファイル数" : "Item Count";
+            ColTreeModified.Header = isJa ? "最終更新日時" : "Last Modified";
+
+            StorageTopFilesTitleText.Text = isJa ? "巨大ファイル Top 10 (直接起動対応)" : "Largest Files Top 10 (Double-Click to Reveal)";
+            ColTopFileName.Header = isJa ? "ファイル名" : "File Name";
+            ColTopFileSize.Header = isJa ? "容量" : "Size";
+
+            StorageDirectSharesTitleText.Text = isJa ? "選択フォルダーの内訳 (直下シェア)" : "Folder Content Share Breakdown";
+            StorageDirectSharesSubText.Text = isJa ? "Wクリックで下層へドリルダウン展開" : "Double-click item to drill down in tree";
+            ColShareName.Header = isJa ? "直下アイテム" : "Direct Child Item";
+            ColShareSize.Header = isJa ? "容量" : "Size";
+            ColShareRatio.Header = isJa ? "直下比率" : "Share Ratio";
+
+            // ==========================================
             // Tab 1 (Live ACL & Effective Access)
+            // ==========================================
+            LiveAclHeaderTitle.Text = isJa ? "🛡️ 権限コントロール" : "🛡️ Permission Control";
             LiveAclModeFolderRadio.Content = isJa ? "📁 フォルダ別 権限エディタ" : "📁 Folder ACL Editor";
             LiveAclModeReverseRadio.Content = isJa ? "🔍 ユーザー/グループ 逆引き監査 (Effective Access)" : "🔍 Effective Access (Reverse Lookup)";
             LiveAclBrowseButton.Content = isJa ? "参照..." : "Browse...";
@@ -2995,13 +3079,45 @@ namespace AstraSize
             LiveAclInheritCheckBox.Content = isJa ? "親フォルダからの権限継承を含める" : "Include inherited permissions";
             LiveAclOpenSecModalButton.Content = isJa ? "⚙️ 詳細権限を直接編集" : "⚙️ Advanced Permissions";
 
+            LiveAclTargetFolderLabel.Text = isJa ? "対象フォルダー (UNC / ローカル)" : "Target Folder (UNC / Local)";
+            LiveAclSelectedFolderPrefixText.Text = isJa ? "選択中: " : "Target: ";
+            if (LiveAclFolderNameText.Text == "(未読込)" || LiveAclFolderNameText.Text == "(Not Loaded)")
+            {
+                LiveAclFolderNameText.Text = isJa ? "(未読込)" : "(Not Loaded)";
+            }
+            LiveAclDropZoneHintText.Text = isJa ? "➕ 右側の Active Directory 候補からユーザーまたはグループをここにドラッグ＆ドロップして権限を追加" : "➕ Drag & drop Users or Groups from directory list on the right to grant permissions";
+            LiveAclCardsTitleText.Text = isJa ? "現在のアクセス権エントリ (ACE)" : "Current Access Control Entries (ACEs)";
+            LiveAclPrincipalsHeaderTitle.Text = isJa ? "Active Directory / ローカル候補" : "Active Directory / Local Principals";
+            LiveAclLocalPcTitle.Text = isJa ? "⚠️ ローカルPC環境 (ワークグループ)" : "⚠️ Local PC Environment (Workgroup)";
+            LiveAclLocalPcDesc.Text = isJa ? "本PCはActive Directoryドメインに参加していません。ローカルアカウントのみ表示しています。" : "This machine is not joined to an Active Directory domain. Only local accounts are displayed.";
+
             // Tab 1 - Reverse Lookup (Effective Access)
             RevBrowseRootButton.Content = isJa ? "参照..." : "Browse...";
             RevStartScanButton.Content = isJa ? "🔍 逆引き調査開始" : "🔍 Start Audit";
             RevCancelScanButton.Content = isJa ? "⏹️ 中止" : "⏹️ Cancel";
             RevExportExcelButton.Content = isJa ? "📋 監査台帳 Excel" : "📋 Export Audit Excel";
 
+            RevTargetAccountLabel.Text = isJa ? "調査対象 ユーザー / グループ (sAMAccountName または 表示名)" : "Target User / Group (sAMAccountName or Display Name)";
+            RevRootPathLabel.Text = isJa ? "調査ルートディレクトリ (UNC / ローカル)" : "Root Directory (UNC / Local)";
+            RevDepthLabel.Text = isJa ? "探索階層深度" : "Folder Depth";
+            RevUncNoticeText.Text = isJa ? "※UNC共有経由アクセス時は、ファイルサーバーのSMB共有権限（Share Permissions）の上限も併せて適用されます。" : "*When accessing via UNC shares, SMB share permissions also apply as an upper limit.";
+            RevGroupsHeaderTitle.Text = isJa ? "解決された所属セキュリティグループ (多重入れ子・ネスト全展開)" : "Resolved Security Group Memberships (Full Nested Chain)";
+            RevGroupsLegendText.Text = isJa ? "青=直属グループ / 紫=ネスト所属(親グループ経由) / 緑=ビルトイン等" : "Blue: Direct / Purple: Nested / Green: Built-in";
+            RevKpiTotalTitle.Text = isJa ? "調査対象フォルダ総数" : "Total Folders Audited";
+            RevKpiFullTitle.Text = isJa ? "フルコントロール" : "Full Control";
+            RevKpiModTitle.Text = isJa ? "変更 / 書込可能" : "Modify / Write";
+            RevKpiReadTitle.Text = isJa ? "読取のみ / その他" : "Read-Only / Other";
+            RevFoldersTableTitle.Text = isJa ? "アクセス可能フォルダー一覧 (多重グループ経由の実効NTFS権限)" : "Accessible Folders (Effective NTFS Permissions via Group Chain)";
+            RevFolderFilterLabel.Text = isJa ? "権限レベル絞り込み:" : "Filter Permission:";
+
+            ColRevFolderName.Header = isJa ? "フォルダ名" : "Folder Name";
+            ColRevRights.Header = isJa ? "実効権限レベル" : "Effective Rights";
+            ColRevGrantSource.Header = isJa ? "権限付与元 (直接付与 / 経由グループ)" : "Grant Source (Direct / Group)";
+            ColRevFullPath.Header = isJa ? "フォルダー完全パス" : "Full Folder Path";
+
+            // ==========================================
             // Tab 2 (Simulation Studio)
+            // ==========================================
             SimTargetBrowseButton.Content = isJa ? "参照..." : "Browse...";
             SimSourceLoadButton.Content = isJa ? "読込" : "Load";
             SimCloneSelectedButton.Content = isJa ? "➡️ 選択フォルダを中央へ新設配置" : "➡️ Clone Selected to Center";
@@ -3015,13 +3131,78 @@ namespace AstraSize
             SimInheritCheckBox.Content = isJa ? "親からの権限継承を含める" : "Inherit from parent";
             SimOpenSecModalButton.Content = isJa ? "⚙️ セキュリティ詳細設定" : "⚙️ Advanced Security";
 
+            if (SimProjectNameTextBox.Text == "新ファイルサーバー移行設計_Ver1" || SimProjectNameTextBox.Text == "New File Server Migration Plan_Ver1")
+            {
+                SimProjectNameTextBox.Text = isJa ? "新ファイルサーバー移行設計_Ver1" : "New File Server Migration Plan_Ver1";
+            }
+            if (SimSelectedFolderNameText.Text == "(未選択 - 上のフォルダをクリック)" || SimSelectedFolderNameText.Text == "(None selected - Click a folder above)")
+            {
+                SimSelectedFolderNameText.Text = isJa ? "(未選択 - 上のフォルダをクリック)" : "(None selected - Click a folder above)";
+            }
+            if (!_adService.IsDomainJoined)
+            {
+                DomainStatusText.Text = isJa ? "🟡 ローカル環境 (AD未接続)" : "🟡 Local PC (No AD Domain)";
+            }
+
+            SimTargetRootLabel.Text = isJa ? "移行先 新サーバーのルートパス (UNC / ローカル)" : "Target Root Path on Destination Server (UNC / Local)";
+            SimSourceTitleText.Text = isJa ? "現行ファイルサーバー (移行元)" : "Source File Server (Existing)";
+            SimSourceSubText.Text = isJa ? "フォルダーを選択して中央へドラッグ＆ドロップ、または下部ボタンで新設ツリーに配置" : "Select folders and drag & drop to center, or use button below";
+            SimMockTreeTitleText.Text = isJa ? "新サーバー仮想ツリー設計 (FolderMorph Studio)" : "Target Virtual Tree Architecture (FolderMorph Studio)";
+            SimMockTreeSubText.Text = isJa ? "N:1 統合・階層再編成・新設計ACLを直感的にデザイン。右クリックでフォルダ追加/削除" : "Intuitive N:1 consolidation, restructuring & ACL design. Right-click to add/remove";
+            SimSelectedFolderPrefixText.Text = isJa ? "選択中: " : "Target: ";
+            SimSubfolderDropHintText.Text = isJa ? "➕ 左の現行サーバーまたはエクスプローラーからフォルダをドロップして追加" : "➕ Drop folders from source server or Explorer to add subfolders";
+            SimMappingTitleText.Text = isJa ? "移行元マッピング (このフォルダーへ統合・コピーする現行パス)" : "Source Mappings (Existing paths to consolidate/copy into here)";
+            SimMappingSubText.Text = isJa ? "左ツリーからドラッグ＆ドロップで複数フォルダを登録可能（N:1マッピング）。枠外ドロップで解除" : "Drag & drop from source tree to register multiple paths (N:1). Drop outside to remove";
+            SimAclTitleText.Text = isJa ? "新設計 アクセス権エントリ (ACE)" : "Target Access Control Entries (ACEs)";
+            SimAdHeaderTitle.Text = isJa ? "Active Directory / ローカル候補" : "Active Directory / Local Principals";
+            SimAdHeaderSubText.Text = isJa ? "中央の権限エリアへドラッグ＆ドロップして付与" : "Drag & drop to center permissions area to grant";
+
+            // ==========================================
             // Tab 3 (LinkFixer)
+            // ==========================================
+            LinkFixHeaderTitle.Text = isJa ? "🔗 ショートカット ＆ Officeリンク一括修復（LinkFixer）" : "🔗 Broken Link & Office Reference Repair (LinkFixer)";
+            LinkFixHeaderDesc.Text = isJa ? "ファイルサーバー移行後に切断されたショートカット (.lnk) および Excel 内部リンク数式 (.xlsx / .xlsm) を高速検出し、新パスへ一括書き換えします。" : "Quickly scans and repairs broken shortcut (.lnk) targets and Excel formula references (.xlsx / .xlsm) after file server migrations.";
+            LinkSearchScopeLabel.Text = isJa ? "走査対象フォルダー (クライアントPCまたはサーバー)" : "Target Scan Directory (Client PC or File Server)";
+            LinkOldPatternLabel.Text = isJa ? "旧サーバーパス (置換前)" : "Old Server Path (To Replace)";
+            LinkNewPatternLabel.Text = isJa ? "新サーバーパス (置換後)" : "New Server Path (Replacement)";
+            LinkTableTitleText.Text = isJa ? "検出された切断リンク一覧" : "Detected Broken Links";
+
             LinkGenerateGpoButton.Content = isJa ? "📜 GPOログオンスクリプト生成 (.ps1)" : "📜 Generate GPO Script (.ps1)";
             LinkScanButton.Content = isJa ? "切断リンク検出スキャン" : "Scan Broken Links";
             LinkFixExecuteButton.Content = isJa ? "⚡ 一括修復を実行 (バックアップ付)" : "⚡ Execute Fix (with Backup)";
             LinkIncludeOfficeCheckBox.Content = isJa ? "Officeファイル内部リンク (.xlsx/.xlsm) も対象に含める" : "Include Office internal links (.xlsx/.xlsm)";
 
+            ColLinkFileName.Header = isJa ? "ファイル名" : "File Name";
+            ColLinkFileType.Header = isJa ? "種別" : "Type";
+            ColLinkOldTarget.Header = isJa ? "置換前の旧リンク先" : "Old Target Path";
+            ColLinkNewTarget.Header = isJa ? "置換後の新リンク先" : "New Target Path";
+            ColLinkStatus.Header = isJa ? "状態" : "Status";
+
+            // ==========================================
             // Tab 4 (Audit & Hygiene)
+            // ==========================================
+            AuditBrowseButton.Content = isJa ? "📁 参照" : "📁 Browse...";
+            if (AuditStatusText.Text == "待機中" || AuditStatusText.Text == "Ready")
+            {
+                AuditStatusText.Text = isJa ? "待機中" : "Ready";
+            }
+            if (AuditKpiTotalFiles.Text == "0 件" || AuditKpiTotalFiles.Text == "0 Items")
+            {
+                AuditKpiTotalFiles.Text = isJa ? "0 件" : "0 Items";
+            }
+            if (AuditKpiPathLimits.Text == "0 件" || AuditKpiPathLimits.Text == "0 Items")
+            {
+                AuditKpiPathLimits.Text = isJa ? "0 件" : "0 Items";
+            }
+            AuditHeaderTitle.Text = isJa ? "🧹 ファイルサーバー健全化 ＆ 断捨離（GDMS代替・衛生監査）" : "🧹 File Server Hygiene & Cleanup (GDMS Alternative)";
+            AuditHeaderDesc.Text = isJa ? "重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長260文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳や退避スクリプトを生成します。" : "Batch detects duplicates (SHA256), dormant files (3+ years), paths > 260 chars, and migration-invalid characters. Generates safe audit ledgers and archive batches.";
+            AuditTargetFolderLabel.Text = isJa ? "監査対象ディレクトリ (UNC / ローカル)" : "Target Audit Directory (UNC / Local)";
+            AuditKpiTotalFilesTitle.Text = isJa ? "総走査ファイル数" : "Total Files Scanned";
+            AuditKpiDupWastedTitle.Text = isJa ? "重複ファイルによる無駄" : "Wasted by Duplicates";
+            AuditKpiDormantSizeTitle.Text = isJa ? "休眠ファイル容量 (3年超)" : "Dormant Capacity (3+ Yrs)";
+            AuditKpiPathLimitsTitle.Text = isJa ? "パス長超過 / 禁則文字" : "Path Limits / Invalid Chars";
+            AuditTableTitleText.Text = isJa ? "検出された課題・断捨離候補一覧" : "Detected Issues & Cleanup Candidates";
+
             AuditStartButton.Content = isJa ? "🔍 監査スキャン開始" : "🔍 Start Audit Scan";
             AuditExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
             AuditExportCsvButton.Content = isJa ? "📄 CSV台帳出力" : "📄 Export CSV";
@@ -3030,15 +3211,105 @@ namespace AstraSize
             AuditCheckDormantCheckBox.Content = isJa ? "休眠ファイル (3年以上)" : "Dormant (3+ Years)";
             AuditCheckPathLimitsCheckBox.Content = isJa ? "パス長260字超/禁則文字" : "Path Limits / Invalid Chars";
 
+            ColAuditIssueType.Header = isJa ? "問題種別" : "Issue Type";
+            ColAuditFileName.Header = isJa ? "ファイル名" : "File Name";
+            ColAuditSize.Header = isJa ? "容量" : "Size";
+            ColAuditModified.Header = isJa ? "最終更新日時" : "Last Modified";
+            ColAuditDetail.Header = isJa ? "詳細" : "Details";
+            ColAuditFullPath.Header = isJa ? "完全パス" : "Full Path";
+
+            // ==========================================
             // Tab 5 (Media Optimizer)
+            // ==========================================
+            MediaBrowseButton.Content = isJa ? "📁 参照" : "📁 Browse...";
+            if (MediaStatusText.Text == "待機中" || MediaStatusText.Text == "Ready")
+            {
+                MediaStatusText.Text = isJa ? "待機中" : "Ready";
+            }
+            if (MediaKpiImagesCount.Text == "0 枚" || MediaKpiImagesCount.Text == "0 Items")
+            {
+                MediaKpiImagesCount.Text = isJa ? "0 枚" : "0 Items";
+            }
+            if (MediaKpiVideosCount.Text == "0 本" || MediaKpiVideosCount.Text == "0 Videos")
+            {
+                MediaKpiVideosCount.Text = isJa ? "0 本" : "0 Videos";
+            }
+            if (MediaKpiOptimizedCount.Text == "0 枚" || MediaKpiOptimizedCount.Text == "0 Items")
+            {
+                MediaKpiOptimizedCount.Text = isJa ? "0 枚" : "0 Items";
+            }
+            MediaHeaderTitle.Text = isJa ? "🖼️ メディア・オプティマイザ（写真の視覚的ロスレス軽量化 ＆ 巨大動画攻略）" : "🖼️ Media Optimizer (Visual Lossless Compression & Video Nightly Batch)";
+            MediaHeaderDesc.Text = isJa ? "聖域（_Master、印刷用、RAW等）を自動保護しながら、スマホ写真（2MB超）を視覚的ロスレス（長辺2560px/85%品質）で上書き軽量化し、巨大動画のTop抽出と夜間圧縮バッチを出力します。" : "Protects sanctuary folders (_Master, Print, RAW), compresses large photos (>2MB) losslessly in-place, and extracts large videos for nightly GPU H.265 compression.";
+            MediaTargetDirLabel.Text = isJa ? "走査対象ディレクトリ (UNC / ローカル)" : "Target Directory (UNC / Local)";
+            MediaMaxDimLabel.Text = isJa ? "最大長辺 (px)" : "Max Dimension (px)";
+            MediaQualityLabel.Text = isJa ? "画質 (%)" : "Quality (%)";
+            MediaMinSizeLabel.Text = isJa ? "最小サイズ (MB)" : "Min Size (MB)";
+            MediaKpiImagesCountTitle.Text = isJa ? "走査対象 画像数" : "Photos Found";
+            MediaKpiVideosCountTitle.Text = isJa ? "巨大動画 ファイル数" : "Large Videos";
+            MediaKpiOptimizedCountTitle.Text = isJa ? "軽量化 完了数" : "Photos Compressed";
+            MediaKpiSavedSizeTitle.Text = isJa ? "総削減容量 (解放された空き)" : "Total Capacity Freed";
+            MediaTableTitleText.Text = isJa ? "メディア一覧（画像 ＆ 巨大動画）" : "Media List (Images & Large Videos)";
+
             MediaScanButton.Content = isJa ? "🔍 メディア走査" : "🔍 Scan Media";
             MediaOptimizeButton.Content = isJa ? "⚡ 写真を軽量化 (直接上書き/日時維持)" : "⚡ Slim Photos (Lossless/In-Place)";
             MediaGenVideoBatchButton.Content = isJa ? "🎬 巨大動画 夜間圧縮バッチ出力 (.bat)" : "🎬 Export Nightly Video Batch (.bat)";
             MediaExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
 
-            // Modals
+            ColMediaType.Header = isJa ? "種別" : "Type";
+            ColMediaFileName.Header = isJa ? "ファイル名" : "File Name";
+            ColMediaOriginalSize.Header = isJa ? "元容量" : "Original Size";
+            ColMediaOptimizedSize.Header = isJa ? "軽量化後" : "Compressed Size";
+            ColMediaSavedSize.Header = isJa ? "削減容量" : "Saved Size";
+            ColMediaStatus.Header = isJa ? "状態 / 聖域保護" : "Status / Sanctuary";
+            ColMediaFullPath.Header = isJa ? "完全パス" : "Full Path";
+
+            // ==========================================
+            // Detailed Permission Modal (SecModal)
+            // ==========================================
+            SecModalTitleText.Text = isJa ? "🛡️ セキュリティの詳細設定 - " : "🛡️ Advanced Security Settings - ";
+            SecModalObjectNameLabel.Text = isJa ? "オブジェクト名:" : "Object name:";
+            SecModalPrincipalLabel.Text = isJa ? "プリンシパル (対象アカウント):" : "Principal:";
+            SecModalTypeLabel.Text = isJa ? "種類:" : "Type:";
+            SecModalAppliesToLabel.Text = isJa ? "適用先:" : "Applies to:";
+            SecModalBasicPermTitle.Text = isJa ? "基本アクセス許可:" : "Basic permissions:";
+            SecModalRealtimeNotice.Text = isJa ? "※高度な権限と完全リアルタイム連動" : "*Synced in real-time with advanced permissions";
+            SecModalAdvPermTitle.Text = isJa ? "⚙️ 高度なアクセス許可 (Windows ACL 14項目完全網羅):" : "⚙️ Advanced permissions (All 14 Windows ACL bits):";
+            SecModalAdvPermSubtitle.Text = isJa ? "Windows セキュリティ詳細設定準拠" : "Windows standard security compliant";
+
+            SecChkFullControl.Content = isJa ? "フル コントロール" : "Full control";
+            SecChkModify.Content = isJa ? "変更 (Modify)" : "Modify";
+            SecChkReadExecute.Content = isJa ? "読み取りと実行" : "Read & execute";
+            SecChkList.Content = isJa ? "フォルダーの内容の一覧表示" : "List folder contents";
+            SecChkRead.Content = isJa ? "読み取り" : "Read";
+            SecChkWrite.Content = isJa ? "書き込み" : "Write";
+
+            SecAdvTraverse.Content = isJa ? "フォルダーのスキャン / ファイルの実行" : "Traverse folder / execute file";
+            SecAdvList.Content = isJa ? "フォルダーの一覧 / データの読み取り" : "List folder / read data";
+            SecAdvReadAttr.Content = isJa ? "属性の読み取り" : "Read attributes";
+            SecAdvReadExtAttr.Content = isJa ? "拡張属性の読み取り" : "Read extended attributes";
+            SecAdvCreateFile.Content = isJa ? "ファイルの作成 / データの書き込み" : "Create files / write data";
+            SecAdvCreateFolder.Content = isJa ? "フォルダーの作成 / データの追加" : "Create folders / append data";
+            SecAdvWriteAttr.Content = isJa ? "属性の書き込み" : "Write attributes";
+            SecAdvWriteExtAttr.Content = isJa ? "拡張属性の書き込み" : "Write extended attributes";
+            SecAdvDelete.Content = isJa ? "削除" : "Delete";
+            SecAdvDeleteSub.Content = isJa ? "サブフォルダーとファイルの削除" : "Delete subfolders and files";
+            SecAdvReadPerm.Content = isJa ? "アクセス許可の読み取り" : "Read permissions";
+            SecAdvChangePerm.Content = isJa ? "アクセス許可の変更" : "Change permissions";
+            SecAdvTakeOwnership.Content = isJa ? "所有権の取得" : "Take ownership";
+            SecAdvSync.Content = isJa ? "同期 (Synchronize)" : "Synchronize";
+
             SecModalCancelButton.Content = isJa ? "キャンセル" : "Cancel";
             SecModalApplyButton.Content = isJa ? "変更を保存" : "Save Changes";
+
+            // ==========================================
+            // Diff Modal
+            // ==========================================
+            DiffModalTitleText.Text = isJa ? "⚖️ 移行前後 変化点差分レビュー (Diff)" : "⚖️ Migration Diff & Integrity Review (Diff)";
+            DiffModalSubTitleText.Text = isJa ? " - Before ➔ After 全体整合性インスペクター" : " - Before ➔ After Migration Inspector";
+            ColDiffType.Header = isJa ? "変化の種別" : "Diff Type";
+            ColDiffSource.Header = isJa ? "現行サーバー (Before)" : "Source Server (Before)";
+            ColDiffTarget.Header = isJa ? "新環境設計 (After)" : "Target Architecture (After)";
+            ColDiffAcl.Header = isJa ? "権限 (ACL) 差分詳細" : "ACL Diff Details";
             DiffModalCloseButton.Content = isJa ? "閉じる" : "Close";
             DiffExportExcelButton.Content = isJa ? "📊 差分レポートをExcel出力" : "📊 Export Diffs (Excel)";
 
@@ -3068,6 +3339,22 @@ namespace AstraSize
             SettingsBrowseCustomButton.Content = isJa ? "参照..." : "Browse...";
             SettingsCancelButton.Content = isJa ? "キャンセル" : "Cancel";
             SettingsSaveButton.Content = isJa ? "設定を保存" : "Save Settings";
+
+            // 既存の空タブのタイトルとステータス
+            if (StorageTabs != null)
+            {
+                foreach (var t in StorageTabs)
+                {
+                    if (t.TabTitle == "新規スキャン" || t.TabTitle == "New Scan")
+                    {
+                        t.TabTitle = isJa ? "新規スキャン" : "New Scan";
+                    }
+                    if (t.StatusMessage == "準備完了" || t.StatusMessage == "Ready")
+                    {
+                        t.StatusMessage = isJa ? "準備完了" : "Ready";
+                    }
+                }
+            }
 
             // ステータスバー
             if (StatusTextBlock.Text == "準備完了" || StatusTextBlock.Text == "Ready")
