@@ -296,7 +296,9 @@ namespace AstraSize.Services
                     var dir = Path.GetDirectoryName(filePath);
                     if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-                    var (topFiles, extStats) = DiskScanService.GetInsightsForNode(rootNode);
+                    var (topFiles, extStats) = (rootNode.CachedTopFiles != null && rootNode.CachedExtensionStats != null)
+                        ? (rootNode.CachedTopFiles, rootNode.CachedExtensionStats)
+                        : DiskScanService.GetInsightsForNode(rootNode);
 
                     var cacheRoot = new TreeCacheRoot
                     {

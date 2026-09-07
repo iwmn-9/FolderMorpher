@@ -1029,6 +1029,49 @@ namespace FolderMorpher.Services.Testing
                 throw new InvalidOperationException(
                     $"PowerShell スクリプト生成バグ: Allow ACE が正しく完全ビット・フラグで出力されていません。\n生成内容:\n{psScript}");
             }
+
+            // Canonical ACL Apply Contract: InheritAcl == true のとき、親からの継承ACE (IsInherited == true) は除外されること
+            var mixedAclNode = new SimFolderNode { Name = "MixedAclFolder", InheritAcl = true };
+            mixedAclNode.AclEntries.Add(new SimAclEntry
+            {
+                AccountName = "DOMAIN\\InheritedAdmins",
+                Rights = FileSystemRights.FullControl,
+                IsInherited = true // 親からの継承ルール
+            });
+            mixedAclNode.AclEntries.Add(new SimAclEntry
+            {
+                AccountName = "DOMAIN\\ExplicitUsers",
+                Rights = FileSystemRights.ReadAndExecute,
+                IsInherited = false // このフォルダ固有の明示ルール
+            });
+
+            var mixedPsScript = simService.GeneratePowerShellAclScript(new[] { mixedAclNode }, @"D:\TargetRoot");
+            if (mixedPsScript.Contains("DOMAIN\\InheritedAdmins"))
+            {
+                throw new InvalidOperationException(
+                    $"Canonical ACL Apply Contract 違反: InheritAcl == true なのに継承ACE (IsInherited == true) が明示ルールとして出力されました。\n生成内容:\n{mixedPsScript}");
+            }
+            if (!mixedPsScript.Contains("DOMAIN\\ExplicitUsers"))
+            {
+                throw new InvalidOperationException(
+                    $"Canonical ACL Apply Contract 違反: 明示ACE (IsInherited == false) が出力されていません。\n生成内容:\n{mixedPsScript}");
+            }
+
+            // Level クランプ撤廃検証 (5階層超えでもClampされず忠実に保持)
+            var deepNode = new SimFolderNode { Name = "DeepSubFolder", Level = 8 };
+            if (deepNode.Level != 8 || deepNode.LevelPillText != "第9階層")
+            {
+                throw new InvalidOperationException($"Level クランプ撤廃違反: Level が 8 に保持されていません (現在: {deepNode.Level}, {deepNode.LevelPillText})");
+            }
+
+            // SafeFileEnumerator の検証
+            var coverage = new ScanCoverage();
+            var dummyFiles = SafeFileEnumerator.EnumerateFilesSafe(".", "*.dll", coverage, CancellationToken.None).ToList();
+            if (coverage.TotalFoldersScanned == 0)
+            {
+                throw new InvalidOperationException("SafeFileEnumerator 検証失敗: 走査フォルダ数が 0 です。");
+            }
+
             // 空エントリかつ継承OFFノードの出力検証
             var emptyNode = new SimFolderNode { Name = "IsolatedEmpty", InheritAcl = false };
             var psScriptEmpty = simService.GeneratePowerShellAclScript(new[] { emptyNode }, @"D:\TargetRoot");

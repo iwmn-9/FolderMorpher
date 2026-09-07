@@ -45,7 +45,7 @@ namespace FolderMorpher.Services
                 catch { }
 
                 int scanned = 0;
-                foreach (var fi in dir.EnumerateFiles("*.lnk", SearchOption.AllDirectories))
+                foreach (var fi in SafeFileEnumerator.EnumerateFilesSafe(searchDirectory, "*.lnk", null, ct))
                 {
                     if (ct.IsCancellationRequested) break;
                     scanned++;

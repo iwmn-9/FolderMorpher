@@ -248,8 +248,15 @@ namespace AstraSize.Services
 
                         if (node.AclEntries.Count > 0)
                         {
+                            // Canonical ACL Apply Contract:
+                            // 継承有効時(InheritAcl == true)は親から受け継ぐべき継承ACE(IsInherited)を除外し、明示ACE(!IsInherited)のみを適用。
+                            // 継承無効時(InheritAcl == false)は親を遮断した上で全ACEを明示的ルールとして付与。
+                            var targetEntries = node.InheritAcl
+                                ? node.AclEntries.Where(a => !a.IsInherited)
+                                : node.AclEntries;
+
                             // Windows Canonical DACL Ordering: Deny rules FIRST, then Allow rules
-                            var orderedEntries = node.AclEntries
+                            var orderedEntries = targetEntries
                                 .OrderBy(a => a.AccessType == AccessControlType.Deny ? 0 : 1);
 
                             foreach (var acl in orderedEntries)
@@ -453,15 +460,22 @@ namespace AstraSize.Services
 
             var inheritParam = node.InheritAcl ? "$true" : "$false";
 
-            if (node.AclEntries.Count == 0)
+            // Canonical ACL Apply Contract:
+            // 継承ON時は明示ACE(!IsInherited)のみを適用。継承OFF時は全ACEを明示化。
+            var targetEntries = node.InheritAcl
+                ? node.AclEntries.Where(a => !a.IsInherited)
+                : node.AclEntries;
+
+            var orderedEntries = targetEntries
+                .OrderBy(a => a.AccessType == AccessControlType.Deny ? 0 : 1)
+                .ToList();
+
+            if (orderedEntries.Count == 0)
             {
                 sb.AppendLine($"Set-FolderMorpherAcl -Path {pathVar} -Inherit {inheritParam} -Rules @()");
             }
             else
             {
-                var orderedEntries = node.AclEntries
-                    .OrderBy(a => a.AccessType == AccessControlType.Deny ? 0 : 1);
-
                 var ruleItems = new List<string>();
                 foreach (var acl in orderedEntries)
                 {

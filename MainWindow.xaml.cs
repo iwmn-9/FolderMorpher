@@ -386,6 +386,8 @@ namespace AstraSize
             {
                 // --- バックグラウンド最新スキャン実行 ---
                 var (root, summary) = await _scanService.ScanPathAsync(path, progress, ct);
+                root.CachedTopFiles = summary.LargestFiles;
+                root.CachedExtensionStats = summary.ExtensionStats;
 
                 // --- 差分自動計算＆反映 ---
                 bool hadDiff = false;
@@ -547,21 +549,7 @@ namespace AstraSize
             if (InsightsTargetScopeTextBlock == null || TopFilesDataGrid == null || FolderChildSharesDataGrid == null) return;
             InsightsTargetScopeTextBlock.Text = $"スコープ: {node.Name}";
 
-            // 1. Top 10 largest files in this subtree
-            List<LargestFileInfo> topFiles;
-            if (node.CachedTopFiles != null && node.CachedTopFiles.Count > 0)
-            {
-                topFiles = node.CachedTopFiles;
-            }
-            else
-            {
-                var (computedTop, _) = DiskScanService.GetInsightsForNode(node);
-                node.CachedTopFiles = computedTop;
-                topFiles = computedTop;
-            }
-            TopFilesDataGrid.ItemsSource = topFiles;
-
-            // 2. Direct children breakdown (relative shares in this folder)
+            // 1. Direct children breakdown (relative shares in this folder) - 即時表示
             long parentSize = node.Size > 0 ? node.Size : 1;
             var childShares = node.Children
                 .OrderByDescending(c => c.Size)
@@ -579,6 +567,29 @@ namespace AstraSize
                 .ToList();
 
             FolderChildSharesDataGrid.ItemsSource = childShares;
+
+            // 2. Top 10 largest files in this subtree - キャッシュがあれば即時、未計算なら非同期バックグラウンドでUIブロック回避
+            if (node.CachedTopFiles != null && node.CachedTopFiles.Count > 0)
+            {
+                TopFilesDataGrid.ItemsSource = node.CachedTopFiles;
+            }
+            else
+            {
+                // バックグラウンドで非同期計算（UIスレッドを1ミリ秒も止めない）
+                _ = Task.Run(() =>
+                {
+                    var (computedTop, _) = DiskScanService.GetInsightsForNode(node);
+                    node.CachedTopFiles = computedTop;
+                    Dispatcher.InvokeAsync(() =>
+                    {
+                        // ユーザーが別のノードへ切り替えていないか確認して反映
+                        if (FileTreeDataGrid.SelectedItem == node || _currentTab?.RootNode == node)
+                        {
+                            TopFilesDataGrid.ItemsSource = computedTop;
+                        }
+                    });
+                });
+            }
         }
 
         private void FolderChildSharesDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -1474,7 +1485,7 @@ namespace AstraSize
             }
         }
 
-        private SimFolderNode CreateSimNodeFromSourceWithAcl(FileItemNode src, SimFolderNode? parent, int level, int maxDepth = 4)
+        private SimFolderNode CreateSimNodeFromSourceWithAcl(FileItemNode src, SimFolderNode? parent, int level, int maxDepth = int.MaxValue)
         {
             var node = new SimFolderNode
             {
@@ -1516,6 +1527,15 @@ namespace AstraSize
             }
 
             return node;
+        }
+
+        private static void UpdateDescendantLevels(SimFolderNode node, int newLevel)
+        {
+            node.Level = newLevel;
+            foreach (var child in node.Children)
+            {
+                UpdateDescendantLevels(child, newLevel + 1);
+            }
         }
 
         private void SimCloneSelectedButton_Click(object sender, RoutedEventArgs e)
@@ -1612,7 +1632,7 @@ namespace AstraSize
 
                 // Attach to target
                 movingNode.Parent = target;
-                movingNode.Level = target.Level + 1;
+                UpdateDescendantLevels(movingNode, target.Level + 1);
                 target.Children.Add(movingNode);
                 target.IsExpanded = true;
                 ShowToast($"📁 「{movingNode.Name}」を「{target.Name}」の配下に移動しました");

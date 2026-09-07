@@ -438,7 +438,7 @@ namespace AstraSize.Models
             get => _level;
             set
             {
-                _level = Math.Max(0, Math.Min(5, value));
+                _level = Math.Max(0, value);
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(IndentMargin));
                 OnPropertyChanged(nameof(LevelPillText));
@@ -483,7 +483,7 @@ namespace AstraSize.Models
         public SimFolderNode? Parent { get; set; }
 
         [JsonIgnore]
-        public System.Windows.Thickness IndentMargin => new System.Windows.Thickness(Level * 24, 0, 0, 0);
+        public System.Windows.Thickness IndentMargin => new System.Windows.Thickness(Math.Min(12, Level) * 18, 0, 0, 0);
 
         [JsonIgnore]
         public string LevelPillText => Level == 0 ? "第1階層 (ルート)" : $"第{Level + 1}階層";

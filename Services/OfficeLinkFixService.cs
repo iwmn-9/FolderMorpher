@@ -43,8 +43,8 @@ namespace FolderMorpher.Services
                 var dir = new DirectoryInfo(directoryPath);
                 int scannedCount = 0;
 
-                // 全対象ファイルを収集
-                var files = dir.EnumerateFiles("*.*", SearchOption.AllDirectories)
+                // 全対象ファイルを安全に収集（アクセス拒否で即死しない）
+                var files = SafeFileEnumerator.EnumerateFilesSafe(directoryPath, "*.*", null, ct)
                     .Where(f => SupportedModernExtensions.Contains(f.Extension.ToLowerInvariant()) ||
                                 SupportedLegacyExtensions.Contains(f.Extension.ToLowerInvariant()))
                     .ToList();

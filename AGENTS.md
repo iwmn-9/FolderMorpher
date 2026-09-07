@@ -128,6 +128,17 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
    - キャッシュ復元時は全ノード再帰走査を一切行わず、キャッシュ内の Top 10 および拡張子内訳を即座にUIへ反映（真の 0 秒・CPU負荷ゼロ復元）。
    - 最新スキャン時・ノード選択時の `GetInsightsForNode` は、100万ファイルあっても `LargestFileInfo` を大量アロケーションせず、サイズ10件のインプレース維持バッファと最小値閾値判定によりメモリ割り当てを 99.99% 削減。
    - `StorageHistoryService.LoadAllAsync` は、チーム共有（Shared）とローカル（Local）の両ディレクトリに存在するスナップショット（`history.json` / `snapshot_*.json`）を網羅的に集約し、`TargetPath` + `Timestamp` で一意に重複排除してマージ表示。共有マスターを参照しつつローカル最新履歴も確実にグラフへ合流。
+25. **単一正準 ACL 適用契約（Canonical ACL Apply Contract）＆ 深層完全インポート ＆ SafeFileEnumerator**:
+   - **ACL適用の意味論を複数箇所で独自実装してはならない**:
+     - `DeploySkeletonAsync`（C#直接展開）、`GeneratePowerShellAclScript`（PowerShell生成）、`AclService.ApplySimAclEntries` の全経路で同一の正準契約を順守。
+     - `InheritAcl == true`（継承有効）時は、親由来の継承ACE（`IsInherited == true`）を除外し、**そのフォルダ固有の明示ACE（`!IsInherited`）のみ**を適用・スクリプト出力。親の継承ルールを無駄に明示化して二重固定化・肥大化させない。
+     - `InheritAcl == false`（継承無効）時は、親の継承を遮断（`SetAccessRuleProtection(true, false)`）した上で、全ルールを明示ACEとして確実に適用。
+   - **シミュレーション深層走査 ＆ Level上限撤廃**:
+     - `CreateSimNodeFromSourceWithAcl` の階層上限（4階層制限）および `SimFolderNode.Level` の 5 クランプを完全撤廃。任意の深さまで独自ACLを欠落なく取り込み、D&D移動時は配下子孫ノードの `Level` を再帰的に再計算。
+   - **スキャン直後0走査 ＆ 非同期ノード集計 ＆ 耐障害SafeFileEnumerator**:
+     - 通常スキャン完了直後は `summary.LargestFiles` / `summary.ExtensionStats` を即座に流用し、スキャン後の全ツリー再走査を完全ゼロ化。
+     - サブフォルダ初選択時の Top10 算出は `Task.Run`（非同期）で実行し、UIスレッドのプチフリーズを完全撲滅。
+     - `SafeFileEnumerator` を共通導入し、LinkFix / OfficeLinkFix を含めた全探索処理でアクセス拒否（UnauthorizedAccessException）による探索即死を根絶。
 
 ---
 
