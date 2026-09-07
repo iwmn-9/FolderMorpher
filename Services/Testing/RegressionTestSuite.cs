@@ -30,56 +30,62 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 8;
+            int totalTests = 9;
 
             try
             {
                 // Test 1
-                Console.WriteLine("\n[TEST 1/8] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
+                Console.WriteLine("\n[TEST 1/9] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
                 await TestMediaOptimizerPngPreservationAsync();
                 Console.WriteLine("  --> [PASS] Media Optimizer: PNG signature (0x89 50 4E 47) and alpha channel 100% preserved.");
                 passCount++;
 
                 // Test 2
-                Console.WriteLine("\n[TEST 2/8] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
+                Console.WriteLine("\n[TEST 2/9] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
                 TestLiveAclDenyAndInheritance();
                 Console.WriteLine("  --> [PASS] Live ACL: ACEs preserved on inheritance disable, Deny rules ordered first (Canonical Order).");
                 passCount++;
 
                 // Test 3
-                Console.WriteLine("\n[TEST 3/8] Audit Archival: Original File Archive & Move Duplication...");
+                Console.WriteLine("\n[TEST 3/9] Audit Archival: Original File Archive & Move Duplication...");
                 TestAuditArchivalOriginalExclusionAndDeduplication();
                 Console.WriteLine("  --> [PASS] Audit: Original files safely protected from archive, move commands deduplicated.");
                 passCount++;
 
                 // Test 4
-                Console.WriteLine("\n[TEST 4/8] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
+                Console.WriteLine("\n[TEST 4/9] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
                 TestMftDataRunDecoderLcnCalculation();
                 Console.WriteLine("  --> [PASS] MFT Data Run Decoder: Initial LCN computed relative to 0 without double-addition.");
                 passCount++;
 
                 // Test 5
-                Console.WriteLine("\n[TEST 5/8] Live ACL: Special Inheritance & Propagation Flags Preservation...");
+                Console.WriteLine("\n[TEST 5/9] Live ACL: Special Inheritance & Propagation Flags Preservation...");
                 TestLiveAclSpecialInheritanceFlags();
                 Console.WriteLine("  --> [PASS] Live ACL: Special InheritanceFlags and PropagationFlags preserved across read/write.");
                 passCount++;
 
                 // Test 6
-                Console.WriteLine("\n[TEST 6/8] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
+                Console.WriteLine("\n[TEST 6/9] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
                 TestAclUiBindingAndHelper();
                 Console.WriteLine("  --> [PASS] ACL UI Binding: AppliesTo, AccessType, and Modal state perfectly synchronized.");
                 passCount++;
 
                 // Test 7
-                Console.WriteLine("\n[TEST 7/8] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
+                Console.WriteLine("\n[TEST 7/9] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
                 await TestEffectiveAccessCanonicalDaclAndNestingAsync();
                 Console.WriteLine("  --> [PASS] Effective Access: Canonical DACL ordering (Explicit Allow > Inherited Deny), multi-level tracing & user isolation verified.");
                 passCount++;
 
                 // Test 8
-                Console.WriteLine("\n[TEST 8/8] Simulation & Script Generation: Icacls Deny/Flags, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly Exclusion...");
+                Console.WriteLine("\n[TEST 8/9] Simulation & Script Generation: .NET PS Script, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly...");
                 TestSimulationAclRobocopyAndEffectiveAccessInheritOnly();
-                Console.WriteLine("  --> [PASS] Simulation & Effective Access: Icacls Deny (/deny) with exact flags, Robocopy /XD descendant exclusion, and InheritOnly exclusion verified.");
+                Console.WriteLine("  --> [PASS] Simulation & Effective Access: .NET PS script fidelity, Robocopy /XD exclusion, and InheritOnly exclusion verified.");
+                passCount++;
+
+                // Test 9
+                Console.WriteLine("\n[TEST 9/9] Live ACL Rollback DACL SDDL Fidelity & Skeleton Empty-ACL Inheritance Disable...");
+                await TestLiveAclRollbackAndSkeletonEmptyAclInheritanceAsync();
+                Console.WriteLine("  --> [PASS] Live ACL Rollback & Skeleton Deploy: DACL SDDL 100% restored after mutation, empty ACL inheritance disabled.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -959,7 +965,7 @@ namespace FolderMorpher.Services.Testing
             var simService = new SimulationProjectService();
             var effService = new EffectiveAccessService();
 
-            // Part 1: Icacls スクリプト生成検証 (Deny, /deny, フラグ)
+            // Part 1: .NET PowerShell スクリプト生成検証 (Set-FolderMorpherAcl, Deny, Allow, 完全ビット保持)
             var testNode = new SimFolderNode
             {
                 Name = "FinanceFolder",
@@ -984,15 +990,33 @@ namespace FolderMorpher.Services.Testing
 
             var psScript = simService.GeneratePowerShellAclScript(new[] { testNode }, @"D:\TargetRoot");
 
-            if (!psScript.Contains("/deny \"DOMAIN\\Contractors:(OI)(CI)(IO)(W)\""))
+            if (!psScript.Contains("function Set-FolderMorpherAcl"))
             {
                 throw new InvalidOperationException(
-                    $"Icacls スクリプト生成バグ: Deny ACE が正しく /deny かつ (OI)(CI)(IO)(W) で出力されていません。\n生成内容:\n{psScript}");
+                    $"PowerShell スクリプト生成バグ: Set-FolderMorpherAcl 関数が出力されていません。\n生成内容:\n{psScript}");
             }
-            if (!psScript.Contains("/grant \"DOMAIN\\FinanceTeam:(CI)(M)\""))
+            if (!psScript.Contains("SetAccessRuleProtection($true, $false)"))
             {
                 throw new InvalidOperationException(
-                    $"Icacls スクリプト生成バグ: Allow ACE が正しく /grant かつ (CI)(M) で出力されていません。\n生成内容:\n{psScript}");
+                    $"PowerShell スクリプト生成バグ: 継承遮断で SetAccessRuleProtection($true, $false) が呼ばれていません。\n生成内容:\n{psScript}");
+            }
+            if (!psScript.Contains("Account = \"DOMAIN\\Contractors\"; Rights = 278; Inheritance = 3; Propagation = 2; AccessType = \"Deny\""))
+            {
+                throw new InvalidOperationException(
+                    $"PowerShell スクリプト生成バグ: Deny ACE が正しく完全ビット・フラグで出力されていません。\n生成内容:\n{psScript}");
+            }
+            if (!psScript.Contains("Account = \"DOMAIN\\FinanceTeam\"; Rights = 197055; Inheritance = 1; Propagation = 0; AccessType = \"Allow\""))
+            {
+                throw new InvalidOperationException(
+                    $"PowerShell スクリプト生成バグ: Allow ACE が正しく完全ビット・フラグで出力されていません。\n生成内容:\n{psScript}");
+            }
+            // 空エントリかつ継承OFFノードの出力検証
+            var emptyNode = new SimFolderNode { Name = "IsolatedEmpty", InheritAcl = false };
+            var psScriptEmpty = simService.GeneratePowerShellAclScript(new[] { emptyNode }, @"D:\TargetRoot");
+            if (!psScriptEmpty.Contains("-Inherit $false -Rules @()"))
+            {
+                throw new InvalidOperationException(
+                    $"PowerShell スクリプト生成バグ: 空エントリ継承OFFノードが正しく出力されていません。\n生成内容:\n{psScriptEmpty}");
             }
 
             // Part 2: Robocopy スクリプトの子孫除外 (/XD) 検証
@@ -1073,6 +1097,87 @@ namespace FolderMorpher.Services.Testing
                 if ((eval2.AllowedRights & FileSystemRights.ReadAndExecute) == 0)
                 {
                     throw new InvalidOperationException("Effective Access 評価失敗: 有効な ReadAndExecute が認識されませんでした。");
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 9. Live ACL Rollback DACL SDDL 完全一致検証 & 空エントリ直接展開での継承OFF検証:
+        /// - Live ACL の Snapshot 取得 ➔ ACL変更 ➔ RollbackToSnapshot で、DACL SDDL が変更前と1文字の狂いもなく完全復元されること。
+        /// - スケルトン先行展開（DeploySkeletonAsync）で、ACLエントリが0件でも InheritAcl = false の場合に親の継承が確実に切られること。
+        /// </summary>
+        public static async Task TestLiveAclRollbackAndSkeletonEmptyAclInheritanceAsync()
+        {
+            var aclService = new AclService();
+            var simService = new SimulationProjectService();
+
+            string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_Rollback_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+                var dirInfo = new DirectoryInfo(tempDir);
+
+                // 検証 1: Live ACL Rollback の DACL SDDL 完全復元
+                // 変更前のオリジナル DACL SDDL を取得してスナップショットを作成
+                var snapshot = await aclService.CreateSnapshotAsync(tempDir, "Rollbackテスト");
+                var originalSddl = dirInfo.GetAccessControl(AccessControlSections.Access).GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+
+                if (snapshot.Sddl != originalSddl)
+                {
+                    throw new InvalidOperationException(
+                        $"Snapshot SDDL 不一致: スナップショット作成時のSDDLが実際のDACLと異なります。\nSnapshot: {snapshot.Sddl}\nActual: {originalSddl}");
+                }
+
+                // ACL を変更（別のルールを付与）
+                var modifiedSec = dirInfo.GetAccessControl(AccessControlSections.Access);
+                modifiedSec.AddAccessRule(new FileSystemAccessRule(
+                    new NTAccount(Environment.UserDomainName, Environment.UserName),
+                    FileSystemRights.FullControl,
+                    AccessControlType.Deny));
+                dirInfo.SetAccessControl(modifiedSec);
+
+                var changedSddl = dirInfo.GetAccessControl(AccessControlSections.Access).GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+                if (changedSddl == originalSddl)
+                {
+                    throw new InvalidOperationException("ACL変更テスト失敗: ルール変更後のSDDLが変化していません。");
+                }
+
+                // ロールバックを実行
+                aclService.RollbackToSnapshot(tempDir, snapshot);
+
+                var restoredSddl = dirInfo.GetAccessControl(AccessControlSections.Access).GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+                if (restoredSddl != originalSddl)
+                {
+                    throw new InvalidOperationException(
+                        $"Rollback 失敗: ロールバック後のDACL SDDLが元と一致しません！\n期待値: {originalSddl}\n復元値: {restoredSddl}");
+                }
+
+                // 検証 2: スケルトン先行展開で、エントリ0件かつ InheritAcl = false のフォルダの継承遮断
+                string skeletonTarget = Path.Combine(tempDir, "SkeletonTarget");
+                Directory.CreateDirectory(skeletonTarget);
+
+                var emptyInheritOffNode = new SimFolderNode
+                {
+                    Name = "ProtectedChild",
+                    InheritAcl = false
+                };
+
+                var (count, logs) = await simService.DeploySkeletonAsync(new[] { emptyInheritOffNode }, skeletonTarget, null, CancellationToken.None);
+                if (count != 1)
+                {
+                    throw new InvalidOperationException($"スケルトン展開失敗: フォルダ作成数が不正です ({count})");
+                }
+
+                string childPath = Path.Combine(skeletonTarget, "ProtectedChild");
+                var childSec = new DirectoryInfo(childPath).GetAccessControl(AccessControlSections.Access);
+                if (!childSec.AreAccessRulesProtected)
+                {
+                    throw new InvalidOperationException(
+                        "スケルトン展開バグ検出: エントリが0件のフォルダで InheritAcl = false なのに親からの継承が遮断されていません！");
                 }
             }
             finally

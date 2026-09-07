@@ -163,8 +163,9 @@ namespace AstraSize.Services
         public async Task<AclSnapshot> CreateSnapshotAsync(string path, string note = "変更前のバックアップ")
         {
             var dir = new DirectoryInfo(path);
-            var sec = dir.GetAccessControl(AccessControlSections.All);
-            var sddl = sec.GetSecurityDescriptorSddlForm(AccessControlSections.All);
+            // ADR: SACL(監査権限)によるPrivilegeNotHeldExceptionを防止するため、DACL(AccessControlSections.Access)のみを対象とする
+            var sec = dir.GetAccessControl(AccessControlSections.Access);
+            var sddl = sec.GetSecurityDescriptorSddlForm(AccessControlSections.Access);
 
             var snapshot = new AclSnapshot
             {
@@ -284,7 +285,8 @@ namespace AstraSize.Services
         {
             var dir = new DirectoryInfo(path);
             var sec = new DirectorySecurity();
-            sec.SetSecurityDescriptorSddlForm(snapshot.Sddl, AccessControlSections.All);
+            // DACL(AccessControlSections.Access)のみを復元して安全・確実にロールバック
+            sec.SetSecurityDescriptorSddlForm(snapshot.Sddl, AccessControlSections.Access);
             dir.SetAccessControl(sec);
         }
     }

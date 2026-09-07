@@ -201,7 +201,7 @@ namespace FolderMorpher.Services
             BitmapEncoder encoder;
             if (ext == ".png")
             {
-                // PNG: 完全可逆・アルファ透過チャンネル100%保持
+                // PNG: 透過（アルファチャンネル）を100%保持した最適化
                 encoder = new PngBitmapEncoder
                 {
                     Interlace = PngInterlaceOption.Off

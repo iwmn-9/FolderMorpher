@@ -2100,7 +2100,22 @@ namespace AstraSize
         private void SimExportScriptsButton_Click(object sender, RoutedEventArgs e)
         {
             var targetRoot = SimTargetRootTextBox.Text.Trim();
-            var roboScript = _simService.GenerateRobocopyScript(_simRootFolders, targetRoot);
+
+            var modeResult = MessageBox.Show(
+                "Robocopy の転送モードを選択してください：\n\n" +
+                "【はい (推奨)】 新設計ACL維持モード (/COPY:DAT)\n" +
+                "  FolderMorpherで設計・先行展開した新ACLを保護し、データと日時のみ高速転送します。\n\n" +
+                "【いいえ】 旧環境ACL完全維持モード (/COPYALL)\n" +
+                "  FolderMorpherで設計した新ACLは上書きされ、移行元の古いアクセス権をそのまま引き継ぎます。\n\n" +
+                "（キャンセルで出力中止）",
+                "Robocopy 転送モード選択",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Question);
+
+            if (modeResult == MessageBoxResult.Cancel) return;
+            bool copyAcl = (modeResult == MessageBoxResult.No);
+
+            var roboScript = _simService.GenerateRobocopyScript(_simRootFolders, targetRoot, copyAcl: copyAcl);
             var psScript = _simService.GeneratePowerShellAclScript(_simRootFolders, targetRoot);
 
             var dialog = new SaveFileDialog

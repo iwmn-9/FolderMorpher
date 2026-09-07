@@ -187,8 +187,8 @@ namespace AstraSize.Services
         public async Task<(int CreatedCount, List<string> Logs)> DeploySkeletonAsync(
             IEnumerable<SimFolderNode> rootNodes,
             string destinationRoot,
-            IProgress<(string Status, int Count)> progress,
-            CancellationToken ct)
+            IProgress<(string Status, int Count)>? progress = null,
+            CancellationToken ct = default)
         {
             return await Task.Run(() =>
             {
@@ -215,7 +215,7 @@ namespace AstraSize.Services
             string currentParentPath,
             ref int count,
             List<string> logs,
-            IProgress<(string Status, int Count)> progress,
+            IProgress<(string Status, int Count)>? progress,
             CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
@@ -227,12 +227,13 @@ namespace AstraSize.Services
                 {
                     Directory.CreateDirectory(folderPath);
                     count++;
-                    progress.Report(($"フォルダ作成中: {node.Name}", count));
+                    progress?.Report(($"フォルダ作成中: {node.Name}", count));
                     logs.Add($"[作成] {folderPath}");
                 }
 
                 // Apply ACL if configured
-                if (node.AclEntries.Count > 0)
+                // Apply ACL if configured or inheritance is explicitly disabled
+                if (!node.InheritAcl || node.AclEntries.Count > 0)
                 {
                     try
                     {
@@ -245,27 +246,30 @@ namespace AstraSize.Services
                             ds.SetAccessRuleProtection(true, false);
                         }
 
-                        // Windows Canonical DACL Ordering: Deny rules FIRST, then Allow rules
-                        var orderedEntries = node.AclEntries
-                            .OrderBy(a => a.AccessType == AccessControlType.Deny ? 0 : 1);
-
-                        foreach (var acl in orderedEntries)
+                        if (node.AclEntries.Count > 0)
                         {
-                            try
+                            // Windows Canonical DACL Ordering: Deny rules FIRST, then Allow rules
+                            var orderedEntries = node.AclEntries
+                                .OrderBy(a => a.AccessType == AccessControlType.Deny ? 0 : 1);
+
+                            foreach (var acl in orderedEntries)
                             {
-                                var sid = new NTAccount(acl.AccountName);
-                                var rule = new FileSystemAccessRule(
-                                    sid,
-                                    acl.Rights,
-                                    acl.InheritanceFlags,
-                                    acl.PropagationFlags,
-                                    acl.AccessType);
-                                ds.AddAccessRule(rule);
-                                logs.Add($"  [権限付与] {acl.AccountName} ({acl.AccessType}) -> {acl.FormattedRights}");
-                            }
-                            catch (Exception aex)
-                            {
-                                logs.Add($"  [権限警告] アカウント '{acl.AccountName}' の解決失敗: {aex.Message}");
+                                try
+                                {
+                                    var sid = new NTAccount(acl.AccountName);
+                                    var rule = new FileSystemAccessRule(
+                                        sid,
+                                        acl.Rights,
+                                        acl.InheritanceFlags,
+                                        acl.PropagationFlags,
+                                        acl.AccessType);
+                                    ds.AddAccessRule(rule);
+                                    logs.Add($"  [権限付与] {acl.AccountName} ({acl.AccessType}) -> {acl.FormattedRights}");
+                                }
+                                catch (Exception aex)
+                                {
+                                    logs.Add($"  [権限警告] アカウント '{acl.AccountName}' の解決失敗: {aex.Message}");
+                                }
                             }
                         }
 
@@ -289,18 +293,25 @@ namespace AstraSize.Services
         }
 
         /// <summary>
-        /// Generate Robocopy script with multi-source mapping and descendant /XD exclusion support
+        /// Generate Robocopy script with multi-source mapping and descendant /XD exclusion support.
+        /// copyAcl: false = 新ACL設計維持モード (/COPY:DAT: データのみ転送し、新設計ACLを維持)
+        /// copyAcl: true  = 旧ACL完全維持モード (/COPYALL: 旧環境のアクセス権をそのまま引き継ぐ)
         /// </summary>
-        public string GenerateRobocopyScript(IEnumerable<SimFolderNode> rootNodes, string targetRoot, bool copyAcl = true, int threads = 16)
+        public string GenerateRobocopyScript(IEnumerable<SimFolderNode> rootNodes, string targetRoot, bool copyAcl = false, int threads = 16)
         {
             var copyFlags = copyAcl ? "/COPYALL" : "/COPY:DAT";
+            var modeDesc = copyAcl
+                ? "旧環境ACL完全維持モード (/COPYALL: 旧環境のアクセス権をそのまま移行先に引き継ぎます)"
+                : "新設計ACL維持モード（推奨） (/COPY:DAT: データのみ転送し、FolderMorpherで設計・展開した新ACLを保持します)";
+
             var sb = new StringBuilder();
             sb.AppendLine("@echo off");
             sb.AppendLine("chcp 65001 > nul");
             sb.AppendLine("echo ==================================================================");
             sb.AppendLine("echo   FolderMorpher - High Performance Robocopy Batch");
-            sb.AppendLine($"echo   Target Root : {targetRoot}");
-            sb.AppendLine($"echo   Generated   : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"echo   Target Root   : {targetRoot}");
+            sb.AppendLine($"echo   Transfer Mode : {modeDesc}");
+            sb.AppendLine($"echo   Generated     : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sb.AppendLine("echo ==================================================================");
             sb.AppendLine();
 
@@ -377,14 +388,52 @@ namespace AstraSize.Services
         }
 
         /// <summary>
-        /// Generate PowerShell ACL application script
+        /// Generate PowerShell ACL application script using native .NET FileSystemAccessRule.
+        /// Fully mirrors C# DeploySkeletonAsync semantics without icacls syntax truncation or privilege mismatch.
         /// </summary>
         public string GeneratePowerShellAclScript(IEnumerable<SimFolderNode> rootNodes, string targetRoot)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("# FolderMorpher Auto-Generated ACL Provisioning Script");
-            sb.AppendLine($"# Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine("# ==============================================================================");
+            sb.AppendLine("# FolderMorpher Auto-Generated ACL Provisioning Script (.NET Canonical Engine)");
+            sb.AppendLine($"# Generated  : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"# TargetRoot : {targetRoot}");
+            sb.AppendLine("# ==============================================================================");
+            sb.AppendLine();
             sb.AppendLine($"$TargetRoot = \"{targetRoot}\"");
+            sb.AppendLine();
+            sb.AppendLine(@"function Set-FolderMorpherAcl {
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [Parameter(Mandatory=$true)][bool]$Inherit,
+        [Parameter(Mandatory=$true)][array]$Rules
+    )
+    if (!(Test-Path -LiteralPath $Path)) {
+        New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    }
+    $item = Get-Item -LiteralPath $Path
+    $acl = $item.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access)
+    if (-not $Inherit) {
+        # ADR 10: 継承無効化時は親由来の不要ルールを破棄 (SetAccessRuleProtection(true, false))
+        $acl.SetAccessRuleProtection($true, $false)
+    }
+    foreach ($r in $Rules) {
+        try {
+            $account = New-Object System.Security.Principal.NTAccount($r.Account)
+            $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $account,
+                [System.Security.AccessControl.FileSystemRights]$r.Rights,
+                [System.Security.AccessControl.InheritanceFlags]$r.Inheritance,
+                [System.Security.AccessControl.PropagationFlags]$r.Propagation,
+                [System.Security.AccessControl.AccessControlType]$r.AccessType
+            )
+            $acl.AddAccessRule($rule)
+        } catch {
+            Write-Warning ""ACL entry failed for $($r.Account) on ${Path}: $_""
+        }
+    }
+    $item.SetAccessControl($acl)
+}");
             sb.AppendLine();
 
             foreach (var root in rootNodes)
@@ -392,16 +441,8 @@ namespace AstraSize.Services
                 AppendAclPsScript(root, "$TargetRoot", sb);
             }
 
-            return sb.ToString();
-        }
-
-        private static string GetIcaclsInheritanceString(InheritanceFlags inh, PropagationFlags prop)
-        {
-            var sb = new StringBuilder();
-            if (inh.HasFlag(InheritanceFlags.ObjectInherit)) sb.Append("(OI)");
-            if (inh.HasFlag(InheritanceFlags.ContainerInherit)) sb.Append("(CI)");
-            if (prop.HasFlag(PropagationFlags.InheritOnly)) sb.Append("(IO)");
-            if (prop.HasFlag(PropagationFlags.NoPropagateInherit)) sb.Append("(NP)");
+            sb.AppendLine();
+            sb.AppendLine("Write-Host 'すべてのACLプロビジョニングが完了しました。' -ForegroundColor Green");
             return sb.ToString();
         }
 
@@ -409,29 +450,33 @@ namespace AstraSize.Services
         {
             var pathVar = $"$p_{Math.Abs(node.Id.GetHashCode())}";
             sb.AppendLine($"{pathVar} = Join-Path {parentVar} \"{node.Name}\"");
-            sb.AppendLine($"if (!(Test-Path {pathVar})) {{ New-Item -ItemType Directory -Path {pathVar} -Force | Out-Null }}");
 
-            if (!node.InheritAcl)
+            var inheritParam = node.InheritAcl ? "$true" : "$false";
+
+            if (node.AclEntries.Count == 0)
             {
-                sb.AppendLine($"# Disable inheritance");
-                sb.AppendLine($"icacls {pathVar} /inheritance:d | Out-Null");
+                sb.AppendLine($"Set-FolderMorpherAcl -Path {pathVar} -Inherit {inheritParam} -Rules @()");
             }
-
-            var orderedEntries = node.AclEntries
-                .OrderBy(a => a.AccessType == AccessControlType.Deny ? 0 : 1);
-
-            foreach (var acl in orderedEntries)
+            else
             {
-                string rightCode = acl.IsFullControl ? "(F)" :
-                                   acl.IsModify ? "(M)" :
-                                   acl.IsReadExecute ? "(RX)" :
-                                   acl.IsRead ? "(R)" :
-                                   acl.IsWrite ? "(W)" : "(M)";
+                var orderedEntries = node.AclEntries
+                    .OrderBy(a => a.AccessType == AccessControlType.Deny ? 0 : 1);
 
-                var flagStr = GetIcaclsInheritanceString(acl.InheritanceFlags, acl.PropagationFlags);
-                var switchType = acl.AccessType == AccessControlType.Deny ? "/deny" : "/grant";
+                var ruleItems = new List<string>();
+                foreach (var acl in orderedEntries)
+                {
+                    var rightsInt = (int)acl.Rights;
+                    var inhInt = (int)acl.InheritanceFlags;
+                    var propInt = (int)acl.PropagationFlags;
+                    var accTypeStr = acl.AccessType == AccessControlType.Deny ? "Deny" : "Allow";
+                    var comment = $"{acl.AccessType} {acl.FormattedRights}";
 
-                sb.AppendLine($"icacls {pathVar} {switchType} \"{acl.AccountName}:{flagStr}{rightCode}\" | Out-Null");
+                    ruleItems.Add($"        [pscustomobject]@{{ Account = \"{acl.AccountName}\"; Rights = {rightsInt}; Inheritance = {inhInt}; Propagation = {propInt}; AccessType = \"{accTypeStr}\" }} # {comment}");
+                }
+
+                sb.AppendLine($"Set-FolderMorpherAcl -Path {pathVar} -Inherit {inheritParam} -Rules @(");
+                sb.AppendLine(string.Join("," + Environment.NewLine, ruleItems));
+                sb.AppendLine(")");
             }
 
             foreach (var child in node.Children)

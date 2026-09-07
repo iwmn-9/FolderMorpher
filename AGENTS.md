@@ -78,9 +78,13 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
      - スコープを「NTFS実効権限」と厳密定義し、UNC共有フォルダ経由アクセス時はファイルサーバーの「SMB共有権限（Share Permissions）」の上限も併せて適用される旨を明記・注釈する。
    - 継承無効化（`ApplySimAclEntries` の `inherit: false`）時は `SetAccessRuleProtection(true, false)` を用い、親由来の不要なWell-Knownルール（`Users`等）を意図せず複製保持させない。
 11. **移行スクリプト（icacls / Robocopy）と実効権限の整合性**:
-   - `icacls` 生成時は Deny ルールを必ず `/deny`、フラグを `(OI)(CI)(IO)` 等の icacls 構文にマッピングする。
    - Robocopy 生成時は、親フォルダの移行元に含まれる子孫ノードのソースパスを `/XD` に自動連動し、新旧ツリーの多重コピーを防止する。
    - Effective Access 評価時は `InheritOnly` ACE を現在のフォルダ自身の権限から除外し、直下の誤認を防ぐ。
+12. **移行ACL全経路一本化 (.NET Engine)・Robocopyモード分離・Live ACL Rollback DACL限定**:
+   - スケルトン直接展開（C#）と PowerShell 生成スクリプトは、共に .NET の `FileSystemAccessRule` と `SetAccessRuleProtection(true, false)` を用いて 100% 同一の権限ビット・フラグを適用する。
+   - ルール0件かつ継承OFF（`InheritAcl = false`）のフォルダでも確実に親の継承が遮断される。
+   - Robocopy は「新設計ACL維持モード（`/COPY:DAT`）」と「旧環境ACL完全維持モード（`/COPYALL`）」を明示分離し、新設計ACLの上書き破壊を防止。
+   - Live ACL の Snapshot および Rollback は `AccessControlSections.Access`（DACL）に限定し、SACL（監査権限）による `PrivilegeNotHeldException` を完全根絶。
 
 ---
 
@@ -100,7 +104,7 @@ Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe"
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 8/8 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 9/9 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

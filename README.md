@@ -1,7 +1,7 @@
 # 🚀 FolderMorpher — Enterprise IT Storage, Audit & Migration Studio
 
-> **"Replace multi-thousand-dollar enterprise suites." "Never dread file server migrations or departmental restructures again."**  
-> An all-in-one, zero-dependency, portable Windows GUI studio built for SysAdmins and IT teams. Handles disk space monitoring, virtual tree redesign (N:1 mapping), live NTFS permissions with SDDL rollback, broken shortcut/Office macro path fixes, 90% image lossless slimming, and executive Excel audit reporting.
+> **Complete Windows file server storage analysis, NTFS permission auditing, and migration restructuring in a single portable tool.**  
+> An all-in-one, zero-dependency, portable Windows GUI studio built for SysAdmins and IT teams. Handles disk space monitoring, virtual tree redesign (N:1 mapping), live NTFS permissions with SDDL rollback, broken shortcut/Office macro path fixes, image optimization with alpha preservation, and executive Excel audit reporting.
 
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20%2F%20Server-blue.svg)
 ![Framework](https://img.shields.io/badge/.NET-8.0%20(Self--Contained)-purple.svg)
@@ -76,7 +76,7 @@ Please submit your feedback or bug reports via [GitHub Issues](../../issues)!
 ### 6. 🖼️ Media Optimizer (Visually Lossless Image Slimmer & Video Top)
 ![Tab 5: Media Optimizer](docs/screenshots/tab5_media.png)
 - **Sanctuary Protection (Auto-Skip)**: Automatically protects designated master folders (`_Master`, `_Original`, `RAW`) and creative professional extensions (`.psd`, `.ai`, `.raw`).
-- **Visually Lossless Recompression**: Resizes 10MB+ camera snapshots to 2560px max dimension at 85% JPEG quality directly in-place, and lossless PNG recompression preserving 100% alpha transparency. **Reduces photo weight by ~90%** while preserving EXIF metadata, timestamps, and orientation.
+- **Visually Lossless Recompression**: Resizes 10MB+ camera snapshots to 2560px max dimension at 85% JPEG quality directly in-place, and optimized PNG compression preserving 100% alpha transparency. **Reduces photo weight by ~90%** while preserving EXIF metadata, timestamps, and orientation.
 - **Giant Video Ranker & Nightly GPU Batch**: Extracts multi-gigabyte video files and generates GPU-accelerated (NVENC/QSV H.265) overnight encoding batch scripts.
 
 
@@ -96,7 +96,7 @@ Please submit your feedback or bug reports via [GitHub Issues](../../issues)!
 - **Zero prerequisites**: No .NET runtime installation required (100% self-contained single executable).
 
 ### Instructions
-1. Download the single executable [**`FolderMorpher.exe`**](FolderMorpher.exe) from the repository root (or [Releases](../../releases)).
+1. Download the latest single executable (`FolderMorpher.exe`) from [**Releases**](../../releases).
 2. Double-click `FolderMorpher.exe` to launch. No installer, no registry pollution.
 
 ---
