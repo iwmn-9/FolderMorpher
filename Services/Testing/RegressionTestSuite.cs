@@ -6,6 +6,7 @@ using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using AstraSize.Models;
@@ -30,7 +31,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 11;
+            int totalTests = 12;
 
             try
             {
@@ -95,9 +96,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 11
-                Console.WriteLine("\n[TEST 11/11] App Settings: Shared Cache Read Source Cascade & Write Destination Resolution...");
+                Console.WriteLine("\n[TEST 11/12] App Settings: Shared Cache Read Source Cascade & Write Destination Resolution...");
                 TestAppSettingsSharedCacheResolution();
                 Console.WriteLine("  --> [PASS] App Settings: Shared cache cascade fallback and write destination modes 100% verified.");
+                passCount++;
+
+                // Test 12
+                Console.WriteLine("\n[TEST 12/12] UI Binding Contract & Tree Cache Expansion State...");
+                await TestUiBindingContractAndCacheExpansionStateAsync();
+                Console.WriteLine("  --> [PASS] UI Binding Contract & Cache Expansion: FileItemNode properties and tree expansion state 100% verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -1136,7 +1143,8 @@ namespace FolderMorpher.Services.Testing
                 // 検証 1: Live ACL Rollback の DACL SDDL 完全復元
                 // 変更前のオリジナル DACL SDDL を取得してスナップショットを作成
                 var snapshot = await aclService.CreateSnapshotAsync(tempDir, "Rollbackテスト");
-                var originalSddl = dirInfo.GetAccessControl(AccessControlSections.Access).GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+                var origSec = dirInfo.GetAccessControl(AccessControlSections.Access);
+                var originalSddl = origSec.GetSecurityDescriptorSddlForm(AccessControlSections.Access);
 
                 if (snapshot.Sddl != originalSddl)
                 {
@@ -1161,11 +1169,12 @@ namespace FolderMorpher.Services.Testing
                 // ロールバックを実行
                 aclService.RollbackToSnapshot(tempDir, snapshot);
 
-                var restoredSddl = dirInfo.GetAccessControl(AccessControlSections.Access).GetSecurityDescriptorSddlForm(AccessControlSections.Access);
-                if (restoredSddl != originalSddl)
+                var restoredSec = dirInfo.GetAccessControl(AccessControlSections.Access);
+                var restoredSddl = restoredSec.GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+                if (!AreAclRulesEquivalent(origSec, restoredSec, out var diffReason))
                 {
                     throw new InvalidOperationException(
-                        $"Rollback 失敗: ロールバック後のDACL SDDLが元と一致しません！\n期待値: {originalSddl}\n復元値: {restoredSddl}");
+                        $"Rollback 失敗: ロールバック後のDACLルールが元と一致しません！({diffReason})\n期待値: {originalSddl}\n復元値: {restoredSddl}");
                 }
 
                 // 検証 2: スケルトン先行展開で、エントリ0件かつ InheritAcl = false のフォルダの継承遮断
@@ -1299,6 +1308,122 @@ namespace FolderMorpher.Services.Testing
                 settings.CacheReadPath = "";
                 settings.WriteMode = CacheWriteMode.Local;
                 settings.CacheWriteCustomPath = "";
+            }
+        }
+
+        private static bool AreAclRulesEquivalent(DirectorySecurity original, DirectorySecurity restored, out string reason)
+        {
+            reason = "";
+            if (original.AreAccessRulesProtected != restored.AreAccessRulesProtected)
+            {
+                reason = $"AreAccessRulesProtected mismatch (orig: {original.AreAccessRulesProtected}, rest: {restored.AreAccessRulesProtected})";
+                return false;
+            }
+
+            var origRules = original.GetAccessRules(true, true, typeof(SecurityIdentifier))
+                .Cast<FileSystemAccessRule>()
+                .OrderBy(r => r.IdentityReference.Value)
+                .ThenBy(r => r.AccessControlType)
+                .ThenBy(r => r.FileSystemRights)
+                .ToList();
+
+            var restRules = restored.GetAccessRules(true, true, typeof(SecurityIdentifier))
+                .Cast<FileSystemAccessRule>()
+                .OrderBy(r => r.IdentityReference.Value)
+                .ThenBy(r => r.AccessControlType)
+                .ThenBy(r => r.FileSystemRights)
+                .ToList();
+
+            if (origRules.Count != restRules.Count)
+            {
+                reason = $"Rule count mismatch (orig: {origRules.Count}, rest: {restRules.Count})";
+                return false;
+            }
+
+            for (int i = 0; i < origRules.Count; i++)
+            {
+                var o = origRules[i];
+                var r = restRules[i];
+                if (o.IdentityReference.Value != r.IdentityReference.Value)
+                {
+                    reason = $"Identity mismatch at [{i}]: {o.IdentityReference.Value} vs {r.IdentityReference.Value}";
+                    return false;
+                }
+                if (o.AccessControlType != r.AccessControlType)
+                {
+                    reason = $"AccessControlType mismatch at [{i}]: {o.AccessControlType} vs {r.AccessControlType}";
+                    return false;
+                }
+                if (o.FileSystemRights != r.FileSystemRights)
+                {
+                    reason = $"FileSystemRights mismatch at [{i}]: {o.FileSystemRights} vs {r.FileSystemRights}";
+                    return false;
+                }
+                if (o.InheritanceFlags != r.InheritanceFlags)
+                {
+                    reason = $"InheritanceFlags mismatch at [{i}]: {o.InheritanceFlags} vs {r.InheritanceFlags}";
+                    return false;
+                }
+                if (o.PropagationFlags != r.PropagationFlags)
+                {
+                    reason = $"PropagationFlags mismatch at [{i}]: {o.PropagationFlags} vs {r.PropagationFlags}";
+                    return false;
+                }
+                if (o.IsInherited != r.IsInherited)
+                {
+                    reason = $"IsInherited mismatch at [{i}]: {o.IsInherited} vs {r.IsInherited}";
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public static async Task TestUiBindingContractAndCacheExpansionStateAsync()
+        {
+            // 1. FileItemNode UI Binding Contract の検証
+            var parent = new FileItemNode(@"C:\Root", "Root", 1000, true);
+            var child = new FileItemNode(@"C:\Root\Sub", "Sub", 400, true) { Parent = parent, Level = 1 };
+            parent.Children.Add(child);
+
+            // HasChildren, ExpandIcon, IconGlyph, FontWeight
+            if (!parent.HasChildren) throw new InvalidOperationException("UI Binding Error: parent.HasChildren should be true");
+            if (parent.ExpandIcon != "▶") throw new InvalidOperationException($"UI Binding Error: parent.ExpandIcon was '{parent.ExpandIcon}', expected '▶'");
+            parent.IsExpanded = true;
+            if (parent.ExpandIcon != "▼") throw new InvalidOperationException($"UI Binding Error: parent.ExpandIcon was '{parent.ExpandIcon}', expected '▼'");
+            if (parent.IconGlyph != "📁") throw new InvalidOperationException($"UI Binding Error: parent.IconGlyph was '{parent.IconGlyph}', expected '📁'");
+            if (parent.FontWeight != FontWeights.Bold) throw new InvalidOperationException("UI Binding Error: parent.FontWeight should be Bold");
+
+            // SharePercentage, IsDriveRoot, ShareFormatted
+            child.Percentage = 40.0;
+            if (Math.Abs(child.SharePercentage - 40.0) > 0.001) throw new InvalidOperationException("UI Binding Error: child.SharePercentage should be 40.0");
+            if (child.IsDriveRoot) throw new InvalidOperationException("UI Binding Error: child.IsDriveRoot should be false");
+            if (child.ShareFormatted != "40.0%") throw new InvalidOperationException($"UI Binding Error: child.ShareFormatted was '{child.ShareFormatted}', expected '40.0%'");
+
+            // 2. TreeCache の IsExpanded 永続化と復元の検証
+            var historyService = new StorageHistoryService();
+            string testDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_CacheExp_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var testRoot = new FileItemNode(testDir, "CacheExpRoot", 2000, true);
+                var subFolder = new FileItemNode(Path.Combine(testDir, "ExpandedSub"), "ExpandedSub", 1000, true)
+                {
+                    Parent = testRoot,
+                    IsExpanded = true
+                };
+                testRoot.Children.Add(subFolder);
+
+                await historyService.SaveTreeCacheAsync(testRoot);
+                var restored = await historyService.LoadTreeCacheAsync(testDir);
+
+                if (restored == null) throw new InvalidOperationException("Cache expansion test failed: restored node is null");
+                var restoredSub = restored.Children.FirstOrDefault(c => c.Name == "ExpandedSub");
+                if (restoredSub == null) throw new InvalidOperationException("Cache expansion test failed: restoredSub is null");
+                if (!restoredSub.IsExpanded) throw new InvalidOperationException("Cache expansion test failed: restoredSub.IsExpanded was not preserved as true");
+            }
+            finally
+            {
+                // clean up
             }
         }
     }

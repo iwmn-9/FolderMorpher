@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text.Json;
 
@@ -113,6 +113,7 @@ namespace FolderMorpher.Services
                 {
                     return GetDefaultLocalBaseDirectory();
                 }
+                return string.Empty;
             }
 
             return GetDefaultLocalBaseDirectory();
@@ -161,6 +162,7 @@ namespace FolderMorpher.Services
         public string GetReadDirectory(string subDirName)
         {
             var baseDir = GetEffectiveReadBaseDirectory();
+            if (string.IsNullOrEmpty(baseDir)) return string.Empty;
             var dir = Path.Combine(baseDir, subDirName);
             try
             {

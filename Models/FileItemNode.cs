@@ -73,11 +73,19 @@ namespace AstraSize.Models
             set { }
         }
 
+        public bool HasChildren => CanExpand;
+
         public string ExpandGlyph
         {
             get => !CanExpand ? "" : IsExpanded ? "▼" : "▶";
             set { }
         }
+
+        public string ExpandIcon => ExpandGlyph;
+
+        public string IconGlyph => IsDirectory ? "📁" : "📄";
+
+        public FontWeight FontWeight => IsDirectory ? FontWeights.Bold : FontWeights.Normal;
 
         public Thickness IndentMargin
         {
@@ -98,6 +106,8 @@ namespace AstraSize.Models
                     OnPropertyChanged(nameof(PercentageFormatted));
                     OnPropertyChanged(nameof(FormattedPercentage));
                     OnPropertyChanged(nameof(PercentageOfParent));
+                    OnPropertyChanged(nameof(SharePercentage));
+                    OnPropertyChanged(nameof(ShareFormatted));
                 }
             }
         }
@@ -112,6 +122,16 @@ namespace AstraSize.Models
             get => Percentage;
             set => Percentage = value;
         }
+
+        public double SharePercentage
+        {
+            get => Percentage;
+            set => Percentage = value;
+        }
+
+        public bool IsDriveRoot => IsRoot;
+
+        public string ShareFormatted => PercentageFormatted;
 
         public string FormattedSize
         {

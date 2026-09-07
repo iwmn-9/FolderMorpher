@@ -100,7 +100,6 @@ namespace AstraSize
                 LocalizationService.Instance.LanguageChanged += ApplyLocalization;
                 ApplyLocalization();
 
-                LoadDrives();
                 InitializeStorageTabs();
                 InitializeSimulationStudio();
                 InitializeLiveAcl();
@@ -224,8 +223,8 @@ namespace AstraSize
 
             var initialTab = new ScanTabModel
             {
-                TabTitle = "C: ドライブ",
-                TargetPath = @"C:\",
+                TabTitle = "新規スキャン",
+                TargetPath = string.Empty,
                 IsSelected = true
             };
             StorageTabs.Add(initialTab);
@@ -291,33 +290,6 @@ namespace AstraSize
                 {
                     int nextIdx = Math.Min(idx, StorageTabs.Count - 1);
                     SelectTab(StorageTabs[nextIdx]);
-                }
-            }
-        }
-
-        private void LoadDrives()
-        {
-            DriveComboBox.Items.Clear();
-            foreach (var drive in DriveInfo.GetDrives().Where(d => d.IsReady))
-            {
-                DriveComboBox.Items.Add($"{drive.Name} ({drive.DriveType}) - {FileItemNode.FormatBytes(drive.AvailableFreeSpace)} 空き");
-            }
-            if (DriveComboBox.Items.Count > 0)
-            {
-                DriveComboBox.SelectedIndex = 0;
-            }
-        }
-
-        private void DriveComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (DriveComboBox.SelectedItem is string sel)
-            {
-                var driveRoot = sel.Split(' ')[0];
-                PathTextBox.Text = driveRoot;
-                if (_currentTab != null)
-                {
-                    _currentTab.TargetPath = driveRoot;
-                    _currentTab.TabTitle = driveRoot;
                 }
             }
         }
@@ -462,6 +434,7 @@ namespace AstraSize
             if (_currentTab != null)
             {
                 _currentTab.FilterKeyword = FilterTextBox.Text.Trim();
+                _currentTab.FlattenTree();
                 FileTreeDataGrid.ItemsSource = _currentTab.VisibleFlatList;
             }
         }
@@ -473,28 +446,48 @@ namespace AstraSize
             if (tab.RootNode != null)
             {
                 ScannedSizeTextBlock.Text = FileItemNode.FormatBytes(tab.RootNode.SizeBytes);
-                TotalFilesTextBlock.Text = $"{tab.RootNode.FileCount:N0} ファイル";
-            }
+                TotalFilesTextBlock.Text = $"{tab.RootNode.FileCount:N0} ファイル / {tab.RootNode.FolderCount:N0} フォルダ";
 
-            try
-            {
-                var root = Path.GetPathRoot(tab.TargetPath);
-                if (!string.IsNullOrEmpty(root) && Directory.Exists(root))
+                // 最大ファイル (Top 1)
+                var (topFiles, _) = DiskScanService.GetInsightsForNode(tab.RootNode);
+                var largest = topFiles.FirstOrDefault();
+                if (largest != null)
                 {
-                    var drive = new DriveInfo(root);
-                    if (drive.IsReady)
-                    {
-                        var total = drive.TotalSize;
-                        var free = drive.AvailableFreeSpace;
-                        var percent = (double)(total - free) / total * 100;
+                    LargestFileSizeTextBlock.Text = largest.FormattedSize;
+                    LargestFileNameTextBlock.Text = largest.Name;
+                }
+                else
+                {
+                    LargestFileSizeTextBlock.Text = "--";
+                    LargestFileNameTextBlock.Text = "--";
+                }
 
-                        FreeSpaceTextBlock.Text = $"{FileItemNode.FormatBytes(free)} 空き";
-                        FreePercentTextBlock.Text = $"{percent:F1}% 使用中";
-                        DriveUsageProgressBar.Value = percent;
-                    }
+                // 前回スキャンとの差分推移
+                if (tab.RootNode.DiffBytes.HasValue && tab.RootNode.DiffBytes.Value != 0)
+                {
+                    TrendDiffTextBlock.Text = tab.RootNode.DiffFormatted;
+                    LastScanDateTextBlock.Text = "前回キャッシュ比較";
+                }
+                else if (tab.RootNode.DiffBytes.HasValue && tab.RootNode.DiffBytes.Value == 0)
+                {
+                    TrendDiffTextBlock.Text = "±0 B (変化なし)";
+                    LastScanDateTextBlock.Text = "前回キャッシュ比較";
+                }
+                else
+                {
+                    TrendDiffTextBlock.Text = "比較データなし";
+                    LastScanDateTextBlock.Text = "初回スキャン";
                 }
             }
-            catch { }
+            else
+            {
+                ScannedSizeTextBlock.Text = "0.00 GB";
+                TotalFilesTextBlock.Text = "0 ファイル / 0 フォルダ";
+                LargestFileSizeTextBlock.Text = "--";
+                LargestFileNameTextBlock.Text = "--";
+                TrendDiffTextBlock.Text = "比較データなし";
+                LastScanDateTextBlock.Text = "初回スキャン";
+            }
         }
 
         private void ExpandCollapseButton_Click(object sender, RoutedEventArgs e)
@@ -733,21 +726,30 @@ namespace AstraSize
 
             var dialog = new SaveFileDialog
             {
-                Title = "スキャン結果を CSV で保存",
-                Filter = "CSVファイル (*.csv)|*.csv",
-                FileName = $"ScanResult_{DateTime.Now:yyyyMMdd_HHmmss}.csv"
+                Title = "スキャン結果を保存",
+                Filter = "Excelブック (*.xlsx)|*.xlsx|CSVファイル (*.csv)|*.csv",
+                FileName = $"ScanResult_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx"
             };
             if (dialog.ShowDialog() == true)
             {
-                var sb = new StringBuilder();
-                sb.Append('\uFEFF');
-                sb.AppendLine("名前,パス,容量,割合,ファイル数,最終更新");
-                foreach (var item in _currentTab.VisibleFlatList)
+                if (dialog.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
                 {
-                    sb.AppendLine($"\"{item.Name}\",\"{item.FullPath}\",\"{item.FormattedSize}\",\"{item.FormattedPercentage}\",\"{item.FileCount}\",\"{item.LastModified:yyyy/MM/dd HH:mm}\"");
+                    var excelService = new ExcelReportService();
+                    excelService.ExportStorageScanResult(dialog.FileName, _currentTab.TargetPath, _currentTab.VisibleFlatList);
+                    ShowToast("Excelレポートを出力しました");
                 }
-                File.WriteAllText(dialog.FileName, sb.ToString(), Encoding.UTF8);
-                ShowToast("CSVレポートを出力しました");
+                else
+                {
+                    var sb = new StringBuilder();
+                    sb.Append('\uFEFF');
+                    sb.AppendLine("名前,パス,容量,全体占有率,ファイル数,フォルダ数,最終更新");
+                    foreach (var item in _currentTab.VisibleFlatList)
+                    {
+                        sb.AppendLine($"\"{item.Name}\",\"{item.FullPath}\",\"{item.FormattedSize}\",\"{item.PercentageFormatted}\",\"{item.FileCount}\",\"{item.FolderCount}\",\"{item.LastModified:yyyy/MM/dd HH:mm}\"");
+                    }
+                    File.WriteAllText(dialog.FileName, sb.ToString(), Encoding.UTF8);
+                    ShowToast("CSVレポートを出力しました");
+                }
             }
         }
 
@@ -2250,20 +2252,29 @@ namespace AstraSize
             var dialog = new SaveFileDialog
             {
                 Title = "移行変化点 差分対比レポートを保存",
-                Filter = "CSVファイル (*.csv)|*.csv",
-                FileName = $"FolderMorpher_DiffReport_{DateTime.Now:yyyyMMdd}.csv"
+                Filter = "Excelブック (*.xlsx)|*.xlsx|CSVファイル (*.csv)|*.csv",
+                FileName = $"FolderMorpher_DiffReport_{DateTime.Now:yyyyMMdd}.xlsx"
             };
             if (dialog.ShowDialog() == true)
             {
-                var sb = new StringBuilder();
-                sb.Append('\uFEFF');
-                sb.AppendLine("変化の種別,現行サーバー (Before),Before詳細,新環境設計 (After),After詳細,権限差分詳細");
-                foreach (var d in diffs)
+                if (dialog.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
                 {
-                    sb.AppendLine($"\"{d.DiffType}\",\"{d.SourcePath.Replace("\n", " | ")}\",\"{d.SourceDetail}\",\"{d.TargetPath}\",\"{d.TargetDetail}\",\"{d.FormattedAclChanges.Replace("\n", " | ")}\"");
+                    var excelService = new ExcelReportService();
+                    excelService.ExportSimDiffReport(dialog.FileName, diffs);
+                    ShowToast("Excel差分対比レポートを出力しました");
                 }
-                File.WriteAllText(dialog.FileName, sb.ToString(), Encoding.UTF8);
-                ShowToast("差分対比レポートを出力しました");
+                else
+                {
+                    var sb = new StringBuilder();
+                    sb.Append('\uFEFF');
+                    sb.AppendLine("変化の種別,現行サーバー (Before),Before詳細,新環境設計 (After),After詳細,権限差分詳細");
+                    foreach (var d in diffs)
+                    {
+                        sb.AppendLine($"\"{d.DiffType}\",\"{d.SourcePath.Replace("\n", " | ")}\",\"{d.SourceDetail}\",\"{d.TargetPath}\",\"{d.TargetDetail}\",\"{d.FormattedAclChanges.Replace("\n", " | ")}\"");
+                    }
+                    File.WriteAllText(dialog.FileName, sb.ToString(), Encoding.UTF8);
+                    ShowToast("CSV差分対比レポートを出力しました");
+                }
             }
         }
         #endregion
@@ -2416,15 +2427,24 @@ namespace AstraSize
             var dialog = new SaveFileDialog
             {
                 Title = "移行台帳マトリクス (Excel/CSV) を保存",
-                Filter = "CSVファイル (*.csv)|*.csv",
-                FileName = $"FolderMorpher_Ledger_{DateTime.Now:yyyyMMdd}.csv"
+                Filter = "Excelブック (*.xlsx)|*.xlsx|CSVファイル (*.csv)|*.csv",
+                FileName = $"FolderMorpher_Ledger_{DateTime.Now:yyyyMMdd}.xlsx"
             };
 
             if (dialog.ShowDialog() == true)
             {
-                var csv = _simService.ExportDesignMatrixCsv(_simRootFolders);
-                File.WriteAllText(dialog.FileName, csv, Encoding.UTF8);
-                ShowToast("移行台帳を出力しました");
+                if (dialog.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                {
+                    var excelService = new ExcelReportService();
+                    excelService.ExportSimulationDesignMatrix(dialog.FileName, _simRootFolders);
+                    ShowToast("Excel移行台帳を出力しました");
+                }
+                else
+                {
+                    var csv = _simService.ExportDesignMatrixCsv(_simRootFolders);
+                    File.WriteAllText(dialog.FileName, csv, Encoding.UTF8);
+                    ShowToast("CSV移行台帳を出力しました");
+                }
             }
         }
         #endregion

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using ClosedXML.Excel;
+using AstraSize.Models;
 using FolderMorpher.Models;
 
 namespace FolderMorpher.Services
@@ -375,6 +376,231 @@ namespace FolderMorpher.Services
             ws.Columns(2, 7).AdjustToContents(3, 120);
 
             workbook.SaveAs(outputPath);
+        }
+
+        public void ExportStorageScanResult(string outputPath, string targetPath, IEnumerable<AstraSize.Models.FileItemNode> items)
+        {
+            using var wb = new XLWorkbook();
+            var ws = wb.Worksheets.Add("容量分析結果");
+            ws.ShowGridLines = true;
+
+            // Title
+            ws.Cell("B2").Value = "FolderMorpher — 容量分析レポート";
+            ws.Cell("B2").Style.Font.Bold = true;
+            ws.Cell("B2").Style.Font.FontSize = 15;
+            ws.Cell("B2").Style.Font.FontColor = XLColor.FromHtml("#1E3A8A");
+
+            ws.Cell("B3").Value = $"対象パス: {targetPath}  |  出力日時: {DateTime.Now:yyyy/MM/dd HH:mm:ss}";
+            ws.Cell("B3").Style.Font.FontSize = 10;
+            ws.Cell("B3").Style.Font.FontColor = XLColor.DimGray;
+
+            int headerRow = 5;
+            string[] headers = { "名前", "フルパス", "容量", "サイズ (Bytes)", "全体占有率", "ファイル数", "フォルダ数", "最終更新" };
+            for (int col = 0; col < headers.Length; col++)
+            {
+                var cell = ws.Cell(headerRow, col + 2);
+                cell.Value = headers[col];
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1E3A8A");
+                cell.Style.Font.FontColor = XLColor.White;
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            }
+
+            int row = headerRow + 1;
+            foreach (var item in items)
+            {
+                ws.Cell(row, 2).Value = item.Name;
+                ws.Cell(row, 2).Style.Font.Bold = item.IsDirectory;
+
+                var pathCell = ws.Cell(row, 3);
+                pathCell.Value = item.FullPath;
+                try
+                {
+                    string linkUri = "file:///" + item.FullPath.Replace('\\', '/');
+                    pathCell.SetHyperlink(new XLHyperlink(linkUri));
+                    pathCell.Style.Font.FontColor = XLColor.FromHtml("#2563EB");
+                    pathCell.Style.Font.Underline = XLFontUnderlineValues.Single;
+                }
+                catch { }
+
+                ws.Cell(row, 4).Value = item.FormattedSize;
+                ws.Cell(row, 4).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+
+                ws.Cell(row, 5).Value = item.Size;
+                ws.Cell(row, 5).Style.NumberFormat.Format = "#,##0";
+                ws.Cell(row, 5).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+
+                ws.Cell(row, 6).Value = item.PercentageFormatted;
+                ws.Cell(row, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+
+                ws.Cell(row, 7).Value = item.FileCount;
+                ws.Cell(row, 7).Style.NumberFormat.Format = "#,##0";
+                ws.Cell(row, 7).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+
+                ws.Cell(row, 8).Value = item.FolderCount;
+                ws.Cell(row, 8).Style.NumberFormat.Format = "#,##0";
+                ws.Cell(row, 8).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+
+                ws.Cell(row, 9).Value = item.LastModified?.ToString("yyyy/MM/dd HH:mm") ?? "-";
+                ws.Cell(row, 9).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                row++;
+            }
+
+            var tableRange = ws.Range(headerRow, 2, row - 1, 9);
+            tableRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            tableRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            tableRange.SetAutoFilter();
+
+            ws.Columns(2, 9).AdjustToContents(3, 100);
+            wb.SaveAs(outputPath);
+        }
+
+        public void ExportSimDiffReport(string outputPath, IEnumerable<SimDiffItem> diffs)
+        {
+            using var wb = new XLWorkbook();
+            var ws = wb.Worksheets.Add("移行変化点・差分対比");
+            ws.ShowGridLines = true;
+
+            ws.Cell("B2").Value = "FolderMorpher — 移行変化点 差分対比レポート";
+            ws.Cell("B2").Style.Font.Bold = true;
+            ws.Cell("B2").Style.Font.FontSize = 15;
+            ws.Cell("B2").Style.Font.FontColor = XLColor.FromHtml("#1E3A8A");
+
+            ws.Cell("B3").Value = $"出力日時: {DateTime.Now:yyyy/MM/dd HH:mm:ss}";
+            ws.Cell("B3").Style.Font.FontSize = 10;
+            ws.Cell("B3").Style.Font.FontColor = XLColor.DimGray;
+
+            int headerRow = 5;
+            string[] headers = { "変化の種別", "現行サーバー (Before)", "Before詳細", "新環境設計 (After)", "After詳細", "権限差分詳細" };
+            for (int col = 0; col < headers.Length; col++)
+            {
+                var cell = ws.Cell(headerRow, col + 2);
+                cell.Value = headers[col];
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1E3A8A");
+                cell.Style.Font.FontColor = XLColor.White;
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            }
+
+            int row = headerRow + 1;
+            foreach (var d in diffs)
+            {
+                ws.Cell(row, 2).Value = d.DiffType;
+                ws.Cell(row, 2).Style.Font.Bold = true;
+
+                var srcCell = ws.Cell(row, 3);
+                srcCell.Value = d.SourcePath;
+                if (!string.IsNullOrWhiteSpace(d.SourcePath))
+                {
+                    try
+                    {
+                        var firstPath = d.SourcePath.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                        if (!string.IsNullOrEmpty(firstPath))
+                        {
+                            string linkUri = "file:///" + firstPath.Replace('\\', '/');
+                            srcCell.SetHyperlink(new XLHyperlink(linkUri));
+                            srcCell.Style.Font.FontColor = XLColor.FromHtml("#2563EB");
+                            srcCell.Style.Font.Underline = XLFontUnderlineValues.Single;
+                        }
+                    }
+                    catch { }
+                }
+
+                ws.Cell(row, 4).Value = d.SourceDetail;
+                ws.Cell(row, 5).Value = d.TargetPath;
+                ws.Cell(row, 6).Value = d.TargetDetail;
+                ws.Cell(row, 7).Value = d.FormattedAclChanges;
+
+                row++;
+            }
+
+            var tableRange = ws.Range(headerRow, 2, row - 1, 7);
+            tableRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            tableRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            tableRange.SetAutoFilter();
+
+            ws.Columns(2, 7).AdjustToContents(3, 100);
+            wb.SaveAs(outputPath);
+        }
+
+        public void ExportSimulationDesignMatrix(string outputPath, IEnumerable<SimFolderNode> rootNodes)
+        {
+            using var wb = new XLWorkbook();
+            var ws = wb.Worksheets.Add("新環境設計マトリクス");
+            ws.ShowGridLines = true;
+
+            ws.Cell("B2").Value = "FolderMorpher — 移行設計台帳マトリクス";
+            ws.Cell("B2").Style.Font.Bold = true;
+            ws.Cell("B2").Style.Font.FontSize = 15;
+            ws.Cell("B2").Style.Font.FontColor = XLColor.FromHtml("#1E3A8A");
+
+            ws.Cell("B3").Value = $"出力日時: {DateTime.Now:yyyy/MM/dd HH:mm:ss}";
+            ws.Cell("B3").Style.Font.FontSize = 10;
+            ws.Cell("B3").Style.Font.FontColor = XLColor.DimGray;
+
+            int headerRow = 5;
+            string[] headers = { "階層パス", "フォルダ名", "階層レベル", "移行元マッピング", "元容量", "継承状態", "アカウント", "権限種別", "アクセス許可" };
+            for (int col = 0; col < headers.Length; col++)
+            {
+                var cell = ws.Cell(headerRow, col + 2);
+                cell.Value = headers[col];
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1E3A8A");
+                cell.Style.Font.FontColor = XLColor.White;
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            }
+
+            int row = headerRow + 1;
+
+            void WriteNode(SimFolderNode node)
+            {
+                var mappingStr = node.MappedSourcePaths.Count == 0 ? "(新設)" : string.Join(" | ", node.MappedSourcePaths);
+                if (node.AclEntries.Count == 0)
+                {
+                    ws.Cell(row, 2).Value = node.RelativePath;
+                    ws.Cell(row, 3).Value = node.Name;
+                    ws.Cell(row, 4).Value = node.LevelPillText;
+                    ws.Cell(row, 5).Value = mappingStr;
+                    ws.Cell(row, 6).Value = node.FormattedSize;
+                    ws.Cell(row, 7).Value = node.InheritStatusBadge;
+                    ws.Cell(row, 8).Value = "(設定なし)";
+                    ws.Cell(row, 9).Value = "-";
+                    ws.Cell(row, 10).Value = "-";
+                    row++;
+                }
+                else
+                {
+                    foreach (var acl in node.AclEntries)
+                    {
+                        ws.Cell(row, 2).Value = node.RelativePath;
+                        ws.Cell(row, 3).Value = node.Name;
+                        ws.Cell(row, 4).Value = node.LevelPillText;
+                        ws.Cell(row, 5).Value = mappingStr;
+                        ws.Cell(row, 6).Value = node.FormattedSize;
+                        ws.Cell(row, 7).Value = node.InheritStatusBadge;
+                        ws.Cell(row, 8).Value = acl.DisplayName;
+                        ws.Cell(row, 9).Value = acl.AccessType.ToString();
+                        ws.Cell(row, 10).Value = acl.FormattedRights;
+                        row++;
+                    }
+                }
+
+                foreach (var c in node.Children) WriteNode(c);
+            }
+
+            foreach (var root in rootNodes)
+            {
+                WriteNode(root);
+            }
+
+            var tableRange = ws.Range(headerRow, 2, row - 1, 10);
+            tableRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            tableRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            tableRange.SetAutoFilter();
+
+            ws.Columns(2, 10).AdjustToContents(3, 100);
+            wb.SaveAs(outputPath);
         }
     }
 }

@@ -76,7 +76,7 @@
                 <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="14,10">
                     <Grid>
                         <StackPanel x:Name="SidebarFooterPanel" VerticalAlignment="Center">
-                            <TextBlock Text="FolderMorpher v1.4.0" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                            <TextBlock Text="FolderMorpher v1.4.1" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                             <TextBlock Text="Storage &amp; Migration Studio" FontSize="10.5" Foreground="#94A3B8" Margin="0,1,0,0"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -161,17 +161,13 @@
                 <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,10">
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
-                        <ComboBox x:Name="DriveComboBox" Grid.Column="0" Width="160" Height="32" Margin="0,0,8,0"
-                                  VerticalContentAlignment="Center" FontSize="12.5" SelectionChanged="DriveComboBox_SelectionChanged"/>
-
-                        <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="32" Padding="8,0">
+                        <Border Grid.Column="0" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="32" Padding="8,0">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
@@ -184,16 +180,16 @@
                             </Grid>
                         </Border>
 
-                        <Button x:Name="StorageBrowseButton" Grid.Column="2" Content="参照..." Margin="8,0,0,0" Height="32"
+                        <Button x:Name="StorageBrowseButton" Grid.Column="1" Content="参照..." Margin="8,0,0,0" Height="32"
                                 Style="{StaticResource FluentButtonSecondary}" Click="BrowseButton_Click"/>
 
-                        <Border Grid.Column="3" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="32" Width="140" Margin="10,0,10,0" Padding="8,0">
+                        <Border Grid.Column="2" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="32" Width="160" Margin="10,0,10,0" Padding="8,0">
                             <TextBox x:Name="FilterTextBox" BorderThickness="0" Background="Transparent"
                                      VerticalAlignment="Center" FontSize="12.5" Foreground="#0F172A"
                                      TextChanged="FilterTextBox_TextChanged"/>
                         </Border>
 
-                        <StackPanel Grid.Column="4" Orientation="Horizontal">
+                        <StackPanel Grid.Column="3" Orientation="Horizontal">
                             <Button x:Name="ScanButton" Content="スキャン開始" Height="32" Margin="0,0,8,0"
                                     Style="{StaticResource FluentButtonPrimary}" Click="ScanButton_Click"/>
                             <Button x:Name="CancelButton" Content="中止" Height="32" Margin="0,0,8,0" Background="#E11D48"
@@ -210,8 +206,6 @@
                 <Border Grid.Row="2" Background="{StaticResource CanvasBackground}" Padding="20,12">
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="16"/>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="16"/>
                             <ColumnDefinition Width="*"/>
@@ -234,24 +228,13 @@
 
                         <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
                             <StackPanel>
-                                <Grid>
-                                    <TextBlock Text="ドライブ / ボリューム空き容量" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
-                                    <TextBlock x:Name="FreePercentTextBlock" Text="--%" FontSize="12" FontWeight="Bold" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Right"/>
-                                </Grid>
-                                <TextBlock x:Name="FreeSpaceTextBlock" Text="-- GB 空き" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0"/>
-                                <ProgressBar x:Name="DriveUsageProgressBar" Height="4" Margin="0,6,0,0" Minimum="0" Maximum="100" Value="0" Foreground="{StaticResource AccentSky}" Background="#E2E8F0" BorderThickness="0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Grid.Column="4" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
-                            <StackPanel>
                                 <TextBlock Text="最大ファイル (Top 1)" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
                                 <TextBlock x:Name="LargestFileSizeTextBlock" Text="--" FontSize="22" FontWeight="Bold" Foreground="#E11D48" Margin="0,2,0,0"/>
                                 <TextBlock x:Name="LargestFileNameTextBlock" Text="--" FontSize="11.5" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
 
-                        <Border Grid.Column="6" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
+                        <Border Grid.Column="4" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
                             <StackPanel>
                                 <TextBlock Text="前回スキャンとの差分推移" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
                                 <TextBlock x:Name="TrendDiffTextBlock" Text="比較データなし" FontSize="22" FontWeight="Bold" Foreground="{StaticResource AccentSky}" Margin="0,2,0,0"/>
@@ -1997,7 +1980,7 @@
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v1.4.0 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.4.1 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>
