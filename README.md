@@ -39,6 +39,7 @@ Please submit your feedback or bug reports via [GitHub Issues](../../issues)!
 ### 2. 🛡️ Live ACL Manager & SDDL Instant Rollback
 ![Tab 1: Live ACL](docs/screenshots/tab1_liveacl.png)
 - **Direct NTFS Permission Control**: Drag-and-drop Active Directory accounts/groups, trash zone to delete, without opening sluggish RSAT/ADUC.
+- **🔍 Reverse Effective Access Inspector (Multi-Level Nested AD Groups)**: Select any AD user or security group to reverse-scan entire file servers. Recursively resolves deeply nested AD group memberships (via `LDAP_MATCHING_RULE_IN_CHAIN` / tokenGroups) to uncover every folder the user can reach (Full Control, Modify, Read) with exact grant path tracing and one-click Excel compliance reporting.
 - **Full Windows Security Modal Fidelity**: Real-time two-way sync between standard basic permissions (6 items) and advanced NTFS permission bits (14 granular items: Traversal, Extended Attributes, Ownership, etc.) supporting both Allow and Deny rules in Canonical ACL Ordering.
 - **Atomic Pre-Apply SDDL Snapshot & 1-Click Rollback**: Automatically backs up full SDDL string prior to commit. Instant one-click rollback if accidental lockouts occur.
 - **Access Permission Matrix CSV Export**: Generate compliance-ready audit tables in one click.

@@ -25,7 +25,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
 | :--- | :--- | :--- | :--- | :--- |
 | **全体共通 / 左サイドバー** | `SidebarBorder`, `SidebarToggleButton` (L22-75) | `SidebarToggleButton_Click`<br>`NavTab_Checked` | `Converters/ValueConverters.cs` | 収縮対応ナビゲーション（幅220px ⇄ 58px）、グローバルステータスバー、通知トースト |
 | **Tab 1: 容量分析 & 監視**<br>(Storage Explorer) | `StorageTabPanel` (L82-410) | `ScanButton_Click`<br>`StorageTreeView_SelectedItemChanged`<br>`SubfolderShareGrid_MouseDoubleClick` | `DiskScanService.cs`<br>`DriveInfoService.cs`<br>`StorageHistoryService.cs`<br>`ScanTabModel.cs`<br>`FileItemNode.cs` | 複数タブスキャン、ドライブ空き容量メーター、全体占有率メーター（案A）、容量上位Top10（Explorer起動連動）、直下シェア内訳（Wクリックツリー連動） |
-| **Tab 2: 権限コントロール**<br>(Live ACL) | `LiveAclTabPanel` (L413-605) | `LiveAclReloadButton_Click`<br>`LiveAclApplyButton_Click`<br>`LiveAclRollbackButton_Click`<br>`LiveAclDropZone_Drop` | `AclService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs` | 実環境NTFS ACLの可視化・直接編集、ADドラッグ＆ドロップ付与、ポイ捨て削除、SDDL直前スナップショット復元（ロールバック）、台帳CSV |
+| **Tab 2: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `LiveAclTabPanel`, `LiveAclFolderView`, `LiveAclReverseView` (L413-750) | `LiveAclReloadButton_Click`<br>`LiveAclApplyButton_Click`<br>`LiveAclReverseScanButton_Click`<br>`LiveAclReverseExportExcelButton_Click` | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACLの可視化・直接編集、SDDLロールバック、**ADユーザー/グループ逆引き権限監査（多重入れ子・ネスト所属グループ完全展開、アクセス可能フォルダ抽出、エクスプローラー直行ハイパーリンク付きExcel監査台帳出力）** |
 | **Tab 3: 移行スタジオ**<br>(Simulation Studio) | `SimulationTabPanel` (L608-995) | `SimSourceLoadButton_Click`<br>`SimMockTreeView_Drop`<br>`SimDiffReviewButton_Click`<br>`SimDeploySkeletonButton_Click` | `SimulationProjectService.cs`<br>`MigrationService.cs`<br>`SimModels.cs` | 現行ファイルサーバーから新環境への仮想ツリー設計（N:1マッピング）、ACL引き継ぎ設計、Diffインスペクター、ガワ先行作成（空フォルダ+ACL一括展開）、Robocopy生成 |
 | **Tab 4: リンク一括修復**<br>(LinkFixer) | `LinkFixTabPanel` (L998-1094) | `LinkScanButton_Click`<br>`LinkFixExecuteButton_Click`<br>`LinkGenerateGpoButton_Click` | `LinkFixService.cs`<br>`OfficeLinkFixService.cs` | サーバー移行後の切断ショートカット（.lnk）およびOffice内部リンク（.xlsx/.xlsm）一括検出・修復、全社配布用GPOログオンスクリプト（.ps1）生成 |
 | **Tab 5: 断捨離・健全化**<br>(Audit & Hygiene) | `AuditTabPanel` (L1097-1240) | `AuditStartButton_Click`<br>`AuditExportExcelButton_Click`<br>`AuditExportCsvButton_Click`<br>`AuditGenArchiveScriptButton_Click` | `AuditReportService.cs`<br>`ExcelReportService.cs`<br>`AuditModels.cs` | GDMS完全代替。重複ファイル（SHA256）、休眠ファイル（3年超）、パス長260文字超・禁則文字検出。ハイパーリンク付きExcelレポート出力、安全退避バッチ生成 |
@@ -66,6 +66,10 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
 9. **NTFS ACE適用範囲（InheritanceFlags / PropagationFlags）の完全保持**:
    - `SimAclEntry` はアクセス権の適用先（このフォルダーのみ、サブフォルダーおよびファイルのみ等）を決定する `InheritanceFlags` と `PropagationFlags` を完全保持する。
    - 適用時（`ApplySimAclEntries`）に一律 `ContainerInherit | ObjectInherit` かつ `None` に上書きしてはならず、ACE本来の適用範囲を忠実に維持・適用しなければならない。またUI（`SecAppliesToCombo`）との双方向マッピングは `AclInheritanceHelper` / `AclUiBindingHelper` で厳密に連動させる。
+10. **AD多重入れ子逆引き権限（Effective Access）の評価規則**:
+   - ユーザーの実効権限は、本人直接付与だけでなく、所属する全階層のADセキュリティグループ（`LDAP_MATCHING_RULE_IN_CHAIN` / `tokenGroups` による多重ネスト解決）を網羅して算出する。
+   - NTFSの標準アクセス制御原則に基づき、同一または包含される権限ビットについて **Deny（拒否）はAllow（許可）より常に優先** して相殺（`allowed & (~denied)`）する。
+   - 継承無効化（`ApplySimAclEntries` の `inherit: false`）時は `SetAccessRuleProtection(true, false)` を用い、親由来の不要なWell-Knownルール（`Users`等）を意図せず複製保持させない。
 
 ---
 
@@ -85,7 +89,7 @@ Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe"
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 6/6 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 7/7 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

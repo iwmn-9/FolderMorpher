@@ -30,44 +30,50 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 6;
+            int totalTests = 7;
 
             try
             {
                 // Test 1
-                Console.WriteLine("\n[TEST 1/6] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
+                Console.WriteLine("\n[TEST 1/7] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
                 await TestMediaOptimizerPngPreservationAsync();
                 Console.WriteLine("  --> [PASS] Media Optimizer: PNG signature (0x89 50 4E 47) and alpha channel 100% preserved.");
                 passCount++;
 
                 // Test 2
-                Console.WriteLine("\n[TEST 2/6] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
+                Console.WriteLine("\n[TEST 2/7] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
                 TestLiveAclDenyAndInheritance();
                 Console.WriteLine("  --> [PASS] Live ACL: ACEs preserved on inheritance disable, Deny rules ordered first (Canonical Order).");
                 passCount++;
 
                 // Test 3
-                Console.WriteLine("\n[TEST 3/6] Audit Archival: Original File Archive & Move Duplication...");
+                Console.WriteLine("\n[TEST 3/7] Audit Archival: Original File Archive & Move Duplication...");
                 TestAuditArchivalOriginalExclusionAndDeduplication();
                 Console.WriteLine("  --> [PASS] Audit: Original files safely protected from archive, move commands deduplicated.");
                 passCount++;
 
                 // Test 4
-                Console.WriteLine("\n[TEST 4/6] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
+                Console.WriteLine("\n[TEST 4/7] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
                 TestMftDataRunDecoderLcnCalculation();
                 Console.WriteLine("  --> [PASS] MFT Data Run Decoder: Initial LCN computed relative to 0 without double-addition.");
                 passCount++;
 
                 // Test 5
-                Console.WriteLine("\n[TEST 5/6] Live ACL: Special Inheritance & Propagation Flags Preservation...");
+                Console.WriteLine("\n[TEST 5/7] Live ACL: Special Inheritance & Propagation Flags Preservation...");
                 TestLiveAclSpecialInheritanceFlags();
                 Console.WriteLine("  --> [PASS] Live ACL: Special InheritanceFlags and PropagationFlags preserved across read/write.");
                 passCount++;
 
                 // Test 6
-                Console.WriteLine("\n[TEST 6/6] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
+                Console.WriteLine("\n[TEST 6/7] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
                 TestAclUiBindingAndHelper();
                 Console.WriteLine("  --> [PASS] ACL UI Binding: AppliesTo, AccessType, and Modal state perfectly synchronized.");
+                passCount++;
+
+                // Test 7
+                Console.WriteLine("\n[TEST 7/7] Effective Access: Multi-Level Nested Group (3-Depth) Resolution & Deny Precedence...");
+                await TestEffectiveAccessMultiLevelNestingAsync();
+                Console.WriteLine("  --> [PASS] Effective Access: 3-level nested group permissions accurately traced and Deny precedence enforced.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -734,6 +740,146 @@ namespace FolderMorpher.Services.Testing
                 throw new InvalidOperationException($"InheritanceFlags 連動失敗: 実際={testEntry.InheritanceFlags}");
             if ((testEntry.PropagationFlags & PropagationFlags.InheritOnly) != PropagationFlags.InheritOnly)
                 throw new InvalidOperationException($"PropagationFlags 連動失敗: 実際={testEntry.PropagationFlags}");
+        }
+
+        /// <summary>
+        /// 7. Effective Access: 多重入れ子グループ（3重ネスト）の解決と実効アクセス権（Deny優先含む）の判定テスト
+        /// ユーザーが直接権限を持たず、3重に入れ子になったグループにのみ付与されているフォルダーへのアクセス権が
+        /// 正確に特定され、経由元グループとしてトレースされることを検証。
+        /// </summary>
+        public static async Task TestEffectiveAccessMultiLevelNestingAsync()
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_EffAccess_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            string subDirect = Path.Combine(tempDir, "01_Direct");
+            string subNested = Path.Combine(tempDir, "02_NestedLevel3");
+            string subDeny = Path.Combine(tempDir, "03_DenyPrecedence");
+            string subUnrelated = Path.Combine(tempDir, "04_Unrelated");
+
+            Directory.CreateDirectory(subDirect);
+            Directory.CreateDirectory(subNested);
+            Directory.CreateDirectory(subDeny);
+            Directory.CreateDirectory(subUnrelated);
+
+            try
+            {
+                var targetUser = Environment.UserDomainName + "\\" + Environment.UserName;
+
+                // 3重入れ子グループの合成データ
+                // targetUser -> Team_L1 (Direct) -> Section_L2 (Depth 2) -> BUILTIN\Users (Depth 3)
+                var groups = new List<PrincipalGroupMembership>
+                {
+                    new PrincipalGroupMembership
+                    {
+                        GroupName = "Team_L1",
+                        DisplayName = "開発第1チーム",
+                        IsDirect = true,
+                        NestingDepth = 1,
+                        MembershipPath = "直接所属"
+                    },
+                    new PrincipalGroupMembership
+                    {
+                        GroupName = "Section_L2",
+                        DisplayName = "システム開発課",
+                        IsDirect = false,
+                        NestingDepth = 2,
+                        MembershipPath = "Team_L1 -> Section_L2"
+                    },
+                    new PrincipalGroupMembership
+                    {
+                        GroupName = "Users",
+                        DisplayName = "BUILTIN\\Users",
+                        IsDirect = false,
+                        NestingDepth = 3,
+                        MembershipPath = "Team_L1 -> Section_L2 -> BUILTIN\\Users"
+                    }
+                };
+
+                var aclService = new AclService();
+
+                // Sub 1: ユーザー直接付与 (Modify)
+                aclService.ApplySimAclEntries(subDirect, new[]
+                {
+                    new SimAclEntry { AccountName = targetUser, AccessType = AccessControlType.Allow, Rights = FileSystemRights.Modify }
+                }, inherit: false);
+
+                // Sub 2: 3重入れ子グループにのみ付与 (BUILTIN\Users -> ReadAndExecute)
+                // ターゲットユーザー本人はACLに一切記述されていない！
+                aclService.ApplySimAclEntries(subNested, new[]
+                {
+                    new SimAclEntry { AccountName = @"BUILTIN\Users", AccessType = AccessControlType.Allow, Rights = FileSystemRights.ReadAndExecute }
+                }, inherit: false);
+
+                // Sub 3: ユーザー本人に Allow と Deny (Write) の組み合わせ
+                aclService.ApplySimAclEntries(subDeny, new[]
+                {
+                    new SimAclEntry { AccountName = targetUser, AccessType = AccessControlType.Allow, Rights = FileSystemRights.Modify },
+                    new SimAclEntry { AccountName = targetUser, AccessType = AccessControlType.Deny, Rights = FileSystemRights.Write }
+                }, inherit: false);
+
+                // Sub 4: 全く無関係なローカルサービスアカウントにのみ付与
+                aclService.ApplySimAclEntries(subUnrelated, new[]
+                {
+                    new SimAclEntry { AccountName = @"NT AUTHORITY\LOCAL SERVICE", AccessType = AccessControlType.Allow, Rights = FileSystemRights.FullControl }
+                }, inherit: false);
+
+                // 実行
+                var effService = new EffectiveAccessService();
+                var report = await effService.ScanEffectiveAccessAsync(tempDir, targetUser, groups, maxDepth: 2);
+
+                // 検証 1: 検出件数（Sub1, Sub2, Sub3 の3件が検出され、Sub4は除外されること）
+                var foundPaths = report.AccessibleFolders.Select(f => f.FolderPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                if (!foundPaths.Contains(subDirect))
+                {
+                    throw new InvalidOperationException("Sub 1 (直接付与フォルダー) が検出されませんでした。");
+                }
+                if (!foundPaths.Contains(subNested))
+                {
+                    throw new InvalidOperationException(
+                        "多重入れ子バグ検出: 3重ネストされたグループ 'BUILTIN\\Users' 経由のフォルダーが検出されませんでした。");
+                }
+                if (!foundPaths.Contains(subDeny))
+                {
+                    throw new InvalidOperationException("Sub 3 (Deny一部適用フォルダー) が検出されませんでした。");
+                }
+                if (foundPaths.Contains(subUnrelated))
+                {
+                    throw new InvalidOperationException(
+                        "誤判定バグ検出: 権限を持たないはずの 'Sub 4 (無関係グループ)' がアクセス可能と判定されました。");
+                }
+
+                // 検証 2: 多重入れ子フォルダーの付与元トレース
+                var nestedItem = report.AccessibleFolders.First(f => f.FolderPath.Equals(subNested, StringComparison.OrdinalIgnoreCase));
+                if (!nestedItem.GrantSource.Contains("Users"))
+                {
+                    throw new InvalidOperationException($"付与元グループ特定失敗: 実際={nestedItem.GrantSource}");
+                }
+                if (!nestedItem.GrantSource.Contains("深度 3"))
+                {
+                    throw new InvalidOperationException($"入れ子深度特定失敗: 実際={nestedItem.GrantSource}");
+                }
+                if (nestedItem.PermissionLevel != EffectivePermissionLevel.ReadAndExecute)
+                {
+                    throw new InvalidOperationException($"実効権限レベル判定失敗: 期待値=ReadAndExecute, 実際={nestedItem.PermissionLevel}");
+                }
+
+                // 検証 3: 直接付与の特定
+                var directItem = report.AccessibleFolders.First(f => f.FolderPath.Equals(subDirect, StringComparison.OrdinalIgnoreCase));
+                if (!directItem.GrantSource.Contains("直接付与"))
+                {
+                    throw new InvalidOperationException($"直接付与判定失敗: 実際={directItem.GrantSource}");
+                }
+                if (directItem.PermissionLevel != EffectivePermissionLevel.Modify)
+                {
+                    throw new InvalidOperationException($"実効権限レベル判定失敗: 期待値=Modify, 実際={directItem.PermissionLevel}");
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
         }
     }
 }

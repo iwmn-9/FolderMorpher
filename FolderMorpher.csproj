@@ -8,7 +8,8 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>FolderMorpher</AssemblyName>
     <RootNamespace>FolderMorpher</RootNamespace>
-    <ApplicationTitle>FolderMorpher - Storage Monitor &amp; Migration Studio</ApplicationTitle>
+    <ApplicationTitle>FolderMorpher - Storage &amp; Migration Studio</ApplicationTitle>
+    <Version>1.2.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

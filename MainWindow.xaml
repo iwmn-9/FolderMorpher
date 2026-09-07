@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AstraSize"
         xmlns:models="clr-namespace:AstraSize.Models"
+        xmlns:eff="clr-namespace:FolderMorpher.Models"
         mc:Ignorable="d"
         Title="FolderMorpher - Storage Monitor &amp; Migration Studio"
         Height="920" Width="1480"
@@ -70,7 +71,7 @@
                 <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="14,10">
                     <Grid>
                         <StackPanel x:Name="SidebarFooterPanel" VerticalAlignment="Center">
-                            <TextBlock Text="FolderMorpher v1.1.3" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
+                            <TextBlock Text="FolderMorpher v1.2.0" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
                             <TextBlock Text="Storage &amp; Migration Studio" FontSize="9" Foreground="#94A3B8" Margin="0,1,0,0"/>
                         </StackPanel>
                         <Button x:Name="LanguageToggleButton" Content="🌐 EN" HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -431,12 +432,39 @@
             <!-- ======================================================== -->
             <Grid x:Name="LiveAclTabPanel" Visibility="Collapsed">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/> <!-- Action Toolbar & Path -->
-                    <RowDefinition Height="*"/>    <!-- 2-Pane Split View -->
+                    <RowDefinition Height="Auto"/> <!-- Top Mode Selector Bar -->
+                    <RowDefinition Height="*"/>    <!-- Active Mode View Container -->
                 </Grid.RowDefinitions>
 
-                <!-- Toolbar -->
-                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,12">
+                <!-- Top Mode Selector Bar -->
+                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,10">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="🛡️ 権限コントロール" FontWeight="Bold" FontSize="13" Foreground="#0F172A" VerticalAlignment="Center" Margin="0,0,20,0"/>
+                            <!-- Segment Switch -->
+                            <Border Background="#F1F5F9" CornerRadius="8" Padding="3">
+                                <StackPanel Orientation="Horizontal">
+                                    <RadioButton x:Name="LiveAclModeFolderRadio" Content="📁 フォルダ別 権限エディタ" IsChecked="True"
+                                                 Style="{StaticResource SegmentRadioButton}" Checked="LiveAclMode_Checked"/>
+                                    <RadioButton x:Name="LiveAclModeReverseRadio" Content="🔍 ユーザー/グループ 逆引き監査 (Effective Access)"
+                                                 Style="{StaticResource SegmentRadioButton}" Checked="LiveAclMode_Checked"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Content Container: Row 1 -->
+                <Grid Grid.Row="1">
+                    <!-- VIEW 1: フォルダ別 権限エディタ (LiveAclFolderView) -->
+                    <Grid x:Name="LiveAclFolderView" Visibility="Visible">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/> <!-- Action Toolbar & Path -->
+                            <RowDefinition Height="*"/>    <!-- 2-Pane Split View -->
+                        </Grid.RowDefinitions>
+
+                        <!-- Toolbar -->
+                        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,12">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/> <!-- Label -->
@@ -619,6 +647,220 @@
                     </Border>
                 </Grid>
             </Grid>
+
+            <!-- VIEW 2: ユーザー/グループ 逆引き監査 (LiveAclReverseView) -->
+            <Grid x:Name="LiveAclReverseView" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/> <!-- Search & Control Toolbar -->
+                    <RowDefinition Height="*"/>    <!-- 2-Pane: Left(Groups), Right(Folders) -->
+                </Grid.RowDefinitions>
+
+                <!-- Reverse Lookup Toolbar -->
+                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/> <!-- User label -->
+                            <ColumnDefinition Width="220"/>  <!-- Target Account input -->
+                            <ColumnDefinition Width="Auto"/> <!-- Root folder label -->
+                            <ColumnDefinition Width="*"/>    <!-- Root folder path -->
+                            <ColumnDefinition Width="Auto"/> <!-- Browse -->
+                            <ColumnDefinition Width="Auto"/> <!-- Action Buttons -->
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                            <TextBlock Text="👤 調査対象:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,14,0">
+                            <TextBox x:Name="RevUserAccountTextBox" BorderThickness="0" Background="Transparent"
+                                     VerticalAlignment="Center" FontSize="11" Text="sato.hanako"/>
+                        </Border>
+
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                            <TextBlock Text="📁 走査ルート:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <Border Grid.Column="3" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,8,0">
+                            <TextBox x:Name="RevRootPathTextBox" BorderThickness="0" Background="Transparent"
+                                     VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"/>
+                        </Border>
+
+                        <Button Grid.Column="4" Content="参照..." Height="32" Margin="0,0,14,0" Style="{StaticResource FluentButtonSecondary}" Click="RevBrowseRoot_Click"/>
+
+                        <StackPanel Grid.Column="5" Orientation="Horizontal">
+                            <Button x:Name="RevStartScanButton" Content="🔍 逆引き調査開始" Height="32" Margin="0,0,8,0"
+                                    Style="{StaticResource FluentButtonPrimary}" Click="RevStartScan_Click"/>
+                            <Button x:Name="RevCancelScanButton" Content="⏹️ 中止" Height="32" Margin="0,0,8,0"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="RevCancelScan_Click" Visibility="Collapsed"/>
+                            <Button x:Name="RevExportExcelButton" Content="📋 監査台帳 Excel" Height="32"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="RevExportExcel_Click" IsEnabled="False"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Main 2-Pane: Left(Groups & Info), Right(Folders Grid) -->
+                <Grid Grid.Row="1" Margin="20,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="3.2*"/> <!-- Group Memberships & Trace -->
+                        <ColumnDefinition Width="14"/>
+                        <ColumnDefinition Width="6.8*"/> <!-- Accessible Folders Table -->
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: Profile & Group Memberships -->
+                    <Border Grid.Column="0" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
+                            BorderThickness="1" CornerRadius="12" Padding="16">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
+                        </Border.Effect>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/> <!-- Account Header -->
+                                <RowDefinition Height="Auto"/> <!-- Section Title -->
+                                <RowDefinition Height="*"/>    <!-- Groups List -->
+                                <RowDefinition Height="Auto"/> <!-- Help / Nesting Legend -->
+                            </Grid.RowDefinitions>
+
+                            <!-- Account Info Banner -->
+                            <Border Grid.Row="0" Background="#F0F9FF" BorderBrush="#BAE6FD" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <TextBlock x:Name="RevTargetAccountHeader" Text="👤 調査対象: (未選択)" FontWeight="Bold" FontSize="12" Foreground="#0284C7"/>
+                                    <TextBlock x:Name="RevTargetAccountSub" Text="所属グループと実効権限を自動解決します" FontSize="10" Foreground="#64748B" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Grid Grid.Row="1" Margin="0,0,0,8">
+                                <TextBlock Text="👥 所属グループ (多重入れ子・再帰解決)" FontWeight="Bold" FontSize="11" Foreground="#1E293B"/>
+                                <TextBlock x:Name="RevGroupCountText" Text="0 件" FontSize="10" Foreground="#64748B" HorizontalAlignment="Right"/>
+                            </Grid>
+
+                            <!-- Groups ListBox -->
+                            <ListBox x:Name="RevGroupsListBox" Grid.Row="2" BorderThickness="0" Background="Transparent" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type eff:PrincipalGroupMembership}">
+                                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,2">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding Sid}" FontFamily="{StaticResource MonoFont}" FontSize="9" Foreground="#94A3B8"/>
+                                                </StackPanel>
+                                                <Border Grid.Column="1" Background="{Binding DirectBadgeColor}" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding DirectStatusText}" FontSize="9" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <!-- Legend Footer -->
+                            <Border Grid.Row="3" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,10,0,0">
+                                <TextBlock Text="💡 青バッジ＝直接所属 / 紫バッジ＝多重入れ子所属 (AD Chainにより自動解決)" FontSize="10" Foreground="#64748B" LineHeight="14" TextWrapping="Wrap"/>
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- Right: Accessible Folders & Stats -->
+                    <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
+                            BorderThickness="1" CornerRadius="12" Padding="16">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
+                        </Border.Effect>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/> <!-- KPI Cards Row -->
+                                <RowDefinition Height="Auto"/> <!-- Section Title / Filter -->
+                                <RowDefinition Height="*"/>    <!-- DataGrid -->
+                                <RowDefinition Height="Auto"/> <!-- Status / Progress -->
+                            </Grid.RowDefinitions>
+
+                            <!-- KPI Cards -->
+                            <Grid Grid.Row="0" Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Border Grid.Column="0" Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                                    <StackPanel>
+                                        <TextBlock Text="アクセス可能" FontSize="10" Foreground="#1E40AF"/>
+                                        <TextBlock x:Name="RevKpiTotal" Text="0 箇所" FontSize="14" FontWeight="Bold" Foreground="#1D4ED8"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Column="2" Background="#FEF2F2" BorderBrush="#FECACA" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                                    <StackPanel>
+                                        <TextBlock Text="フルコントロール" FontSize="10" Foreground="#991B1B"/>
+                                        <TextBlock x:Name="RevKpiFull" Text="0 箇所" FontSize="14" FontWeight="Bold" Foreground="#DC2626"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Column="4" Background="#FFFBEB" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                                    <StackPanel>
+                                        <TextBlock Text="変更 (Modify)" FontSize="10" Foreground="#92400E"/>
+                                        <TextBlock x:Name="RevKpiMod" Text="0 箇所" FontSize="14" FontWeight="Bold" Foreground="#D97706"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Grid.Column="6" Background="#ECFDF5" BorderBrush="#A7F3D0" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                                    <StackPanel>
+                                        <TextBlock Text="読み取り専用" FontSize="10" Foreground="#065F46"/>
+                                        <TextBlock x:Name="RevKpiRead" Text="0 箇所" FontSize="14" FontWeight="Bold" Foreground="#059669"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
+                            <!-- Table Header with Quick Filter -->
+                            <Grid Grid.Row="1" Margin="0,0,0,8">
+                                <TextBlock Text="📂 アクセス可能フォルダー一覧 (Wクリックでエクスプローラー直行)" FontWeight="Bold" FontSize="11" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <TextBlock Text="絞り込み:" FontSize="10" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="26" Width="180" Padding="6,0">
+                                        <TextBox x:Name="RevFolderFilterTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="10" TextChanged="RevFolderFilterTextBox_TextChanged"/>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- DataGrid -->
+                            <DataGrid x:Name="RevFoldersDataGrid" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True"
+                                      Background="Transparent" BorderThickness="0" GridLinesVisibility="Horizontal"
+                                      HorizontalGridLinesBrush="#F1F5F9" HeadersVisibility="Column"
+                                      MouseDoubleClick="RevFoldersDataGrid_MouseDoubleClick" SelectionMode="Single">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="フォルダー名" Binding="{Binding FolderName}" Width="160" FontWeight="Bold"/>
+                                    <DataGridTemplateColumn Header="実効アクセス権" Width="130">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{Binding RightsBadgeBackground}" CornerRadius="4" Padding="6,2" HorizontalAlignment="Center">
+                                                    <TextBlock Text="{Binding FormattedRights}" FontSize="10" FontWeight="Bold" Foreground="{Binding RightsBadgeForeground}"/>
+                                                </Border>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTextColumn Header="付与形態 / 経由グループ" Binding="{Binding GrantSource}" Width="200"/>
+                                    <DataGridTextColumn Header="完全パス" Binding="{Binding FolderPath}" Width="*" FontFamily="{StaticResource MonoFont}" FontSize="10"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+
+                            <!-- Progress & Status -->
+                            <Grid Grid.Row="3" Margin="0,8,0,0">
+                                <TextBlock x:Name="RevStatusText" Text="準備完了" FontSize="10" Foreground="#64748B" VerticalAlignment="Center"/>
+                                <ProgressBar x:Name="RevProgressBar" Height="4" IsIndeterminate="True" Visibility="Collapsed" VerticalAlignment="Center" Margin="100,0,0,0"/>
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
 
             <!-- ======================================================== -->
             <!-- TAB 3: MIGRATION SIMULATION STUDIO (FolderMorph Studio)   -->
@@ -1624,7 +1866,7 @@
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v1.1.3 - Storage &amp; Migration Studio" FontSize="11" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.2.0 - Storage &amp; Migration Studio" FontSize="11" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>

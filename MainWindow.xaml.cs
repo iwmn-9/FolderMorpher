@@ -63,6 +63,14 @@ namespace AstraSize
         private readonly ObservableCollection<AdPrincipalItem> _liveAclPrincipals = new();
         private bool _isLiveAclEditing = false;
 
+        // Effective Access (Reverse Lookup) State
+        private readonly EffectiveAccessService _effectiveAccessService = new();
+        private EffectiveAccessAuditReport? _currentEffectiveReport;
+        private readonly ObservableCollection<PrincipalGroupMembership> _revGroups = new();
+        private readonly ObservableCollection<EffectiveFolderAccessItem> _revFolders = new();
+        private readonly List<EffectiveFolderAccessItem> _revAllFoldersCache = new();
+        private CancellationTokenSource? _revCts;
+
         // Toast notification timer
         private DispatcherTimer? _toastTimer;
 
@@ -705,6 +713,9 @@ namespace AstraSize
             LiveAclCardsItemsControl.ItemsSource = _liveAclEntries;
             LiveAclPrincipalsListBox.ItemsSource = _liveAclPrincipals;
 
+            RevGroupsListBox.ItemsSource = _revGroups;
+            RevFoldersDataGrid.ItemsSource = _revFolders;
+
             _adPrincipals.CollectionChanged += (s, e) =>
             {
                 _liveAclPrincipals.Clear();
@@ -713,6 +724,27 @@ namespace AstraSize
             };
 
             UpdateLiveAclNoticeState();
+        }
+
+        private void LiveAclMode_Checked(object sender, RoutedEventArgs e)
+        {
+            if (LiveAclFolderView == null || LiveAclReverseView == null) return;
+
+            if (LiveAclModeFolderRadio.IsChecked == true)
+            {
+                LiveAclFolderView.Visibility = Visibility.Visible;
+                LiveAclReverseView.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                LiveAclFolderView.Visibility = Visibility.Collapsed;
+                LiveAclReverseView.Visibility = Visibility.Visible;
+
+                if (string.IsNullOrWhiteSpace(RevRootPathTextBox.Text) && !string.IsNullOrWhiteSpace(LiveAclPathTextBox.Text))
+                {
+                    RevRootPathTextBox.Text = LiveAclPathTextBox.Text;
+                }
+            }
         }
 
         private void UpdateLiveAclNoticeState()
@@ -994,6 +1026,182 @@ namespace AstraSize
                 DragDrop.DoDragDrop(LiveAclPrincipalsListBox, item, DragDropEffects.Copy);
             }
         }
+
+        #region Effective Access (ユーザー/グループ 逆引き監査) Handlers
+        private void RevBrowseRoot_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFolderDialog
+            {
+                Title = "逆引き走査を行うルートフォルダーを選択（UNC対応）",
+                InitialDirectory = string.IsNullOrWhiteSpace(RevRootPathTextBox.Text) ? @"C:\" : RevRootPathTextBox.Text
+            };
+
+            if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.FolderName))
+            {
+                RevRootPathTextBox.Text = dialog.FolderName;
+            }
+        }
+
+        private async void RevStartScan_Click(object sender, RoutedEventArgs e)
+        {
+            var targetAccount = RevUserAccountTextBox.Text.Trim();
+            var rootPath = RevRootPathTextBox.Text.Trim();
+
+            if (string.IsNullOrWhiteSpace(targetAccount))
+            {
+                MessageBox.Show("調査対象のアカウント名（ユーザーまたはグループ）を入力してください。", "入力確認", MessageBoxButton.OK, MessageBoxImage.Warning);
+                RevUserAccountTextBox.Focus();
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath))
+            {
+                MessageBox.Show("有効な走査ルートフォルダーを指定してください。", "入力確認", MessageBoxButton.OK, MessageBoxImage.Warning);
+                RevRootPathTextBox.Focus();
+                return;
+            }
+
+            RevStartScanButton.Visibility = Visibility.Collapsed;
+            RevCancelScanButton.Visibility = Visibility.Visible;
+            RevProgressBar.Visibility = Visibility.Visible;
+            RevExportExcelButton.IsEnabled = false;
+
+            RevTargetAccountHeader.Text = $"👤 調査対象: {targetAccount}";
+            RevTargetAccountSub.Text = "所属グループを解決中...";
+            RevStatusText.Text = "Active Directory / ローカルグループを解決中...";
+
+            _revGroups.Clear();
+            _revFolders.Clear();
+            _revAllFoldersCache.Clear();
+            RevKpiTotal.Text = "0 箇所";
+            RevKpiFull.Text = "0 箇所";
+            RevKpiMod.Text = "0 箇所";
+            RevKpiRead.Text = "0 箇所";
+
+            _revCts = new CancellationTokenSource();
+            var ct = _revCts.Token;
+
+            try
+            {
+                // 1. グループ解決（直接所属＋多重入れ子AD Chain）
+                var groups = await _effectiveAccessService.GetGroupMembershipsAsync(targetAccount);
+                foreach (var g in groups) _revGroups.Add(g);
+                RevGroupCountText.Text = $"{_revGroups.Count} 件";
+                RevTargetAccountSub.Text = $"所属グループ {_revGroups.Count} 件 (直接: {_revGroups.Count(g => g.IsDirect)}, 入れ子: {_revGroups.Count(g => !g.IsDirect)})";
+
+                // 2. フォルダツリーの実効アクセス権スキャン
+                RevStatusText.Text = "フォルダーツリーの実効アクセス権（Effective Access）を監査中...";
+
+                var progress = new Progress<(int scanned, int found)>(p =>
+                {
+                    RevStatusText.Text = $"スキャン進行中: {p.scanned:N0} フォルダ走査済み / {p.found:N0} 箇所でアクセス権検出";
+                });
+
+                var report = await _effectiveAccessService.ScanEffectiveAccessAsync(
+                    rootPath,
+                    targetAccount,
+                    groups,
+                    maxDepth: 6,
+                    progress: progress,
+                    ct: ct);
+
+                _currentEffectiveReport = report;
+                _revAllFoldersCache.AddRange(report.AccessibleFolders);
+                foreach (var f in report.AccessibleFolders) _revFolders.Add(f);
+
+                RevKpiTotal.Text = $"{report.AccessibleFolders.Count:N0} 箇所";
+                RevKpiFull.Text = $"{report.FullControlCount:N0} 箇所";
+                RevKpiMod.Text = $"{report.ModifyCount:N0} 箇所";
+                RevKpiRead.Text = $"{report.ReadOnlyCount:N0} 箇所";
+
+                RevStatusText.Text = $"監査完了: 総走査 {report.TotalFoldersScanned:N0} フォルダ中、{report.AccessibleFolders.Count:N0} 箇所のフォルダーにアクセス権があります。";
+                RevExportExcelButton.IsEnabled = report.AccessibleFolders.Count > 0;
+                ShowToast($"🔍 「{targetAccount}」の逆引き監査が完了しました ({report.AccessibleFolders.Count:N0} 箇所)");
+            }
+            catch (OperationCanceledException)
+            {
+                RevStatusText.Text = "⚠️ ユーザーによって調査が中止されました。";
+                ShowToast("⏹️ 逆引き調査を中止しました");
+            }
+            catch (Exception ex)
+            {
+                RevStatusText.Text = $"エラー: {ex.Message}";
+                MessageBox.Show($"逆引き調査中にエラーが発生しました:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                RevStartScanButton.Visibility = Visibility.Visible;
+                RevCancelScanButton.Visibility = Visibility.Collapsed;
+                RevProgressBar.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void RevCancelScan_Click(object sender, RoutedEventArgs e)
+        {
+            _revCts?.Cancel();
+        }
+
+        private void RevExportExcel_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentEffectiveReport == null || _currentEffectiveReport.AccessibleFolders.Count == 0) return;
+
+            var safeName = _currentEffectiveReport.TargetAccountName.Replace('\\', '_').Replace('/', '_');
+            var sfd = new SaveFileDialog
+            {
+                Title = "実効アクセス権（逆引き監査）台帳の保存先を指定",
+                Filter = "Excel ワークブック (*.xlsx)|*.xlsx",
+                FileName = $"EffectiveAccessAudit_{safeName}_{DateTime.Now:yyyyMMdd_HHmm}.xlsx"
+            };
+
+            if (sfd.ShowDialog() == true)
+            {
+                try
+                {
+                    _excelService.ExportEffectiveAccessReport(sfd.FileName, _currentEffectiveReport);
+                    ShowToast("📋 監査台帳 Excel を出力しました");
+                    Process.Start(new ProcessStartInfo(sfd.FileName) { UseShellExecute = true });
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Excel出力に失敗しました:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void RevFoldersDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (RevFoldersDataGrid.SelectedItem is EffectiveFolderAccessItem item && !string.IsNullOrWhiteSpace(item.FolderPath))
+            {
+                try
+                {
+                    if (Directory.Exists(item.FolderPath))
+                    {
+                        Process.Start(new ProcessStartInfo("explorer.exe", item.FolderPath) { UseShellExecute = true });
+                    }
+                }
+                catch { }
+            }
+        }
+
+        private void RevFolderFilterTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            var filter = RevFolderFilterTextBox.Text.Trim();
+            _revFolders.Clear();
+
+            var source = string.IsNullOrWhiteSpace(filter)
+                ? _revAllFoldersCache
+                : _revAllFoldersCache.Where(f =>
+                    f.FolderName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                    f.FolderPath.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                    f.GrantSource.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                    f.FormattedRights.Contains(filter, StringComparison.OrdinalIgnoreCase));
+
+            foreach (var item in source)
+            {
+                _revFolders.Add(item);
+            }
+        }
+        #endregion
         #endregion
 
         #region Tab 3: Migration Simulation Studio (FolderMorph Studio)

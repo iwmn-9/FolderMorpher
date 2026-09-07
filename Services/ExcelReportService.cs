@@ -236,5 +236,137 @@ namespace FolderMorpher.Services
             range.Style.Border.OutsideBorder = XLBorderStyleValues.Medium;
             range.Style.Border.OutsideBorderColor = XLColor.FromHtml(accentColorHex);
         }
+
+        /// <summary>
+        /// Generates a professional Excel audit report for user/group effective folder access
+        /// </summary>
+        public void ExportEffectiveAccessReport(string outputPath, EffectiveAccessAuditReport report)
+        {
+            using var workbook = new XLWorkbook();
+            var ws = workbook.Worksheets.Add("実効アクセス権台帳");
+            ws.ShowGridLines = true;
+
+            // Title
+            ws.Cell("B2").Value = "FolderMorpher — AD実効アクセス権（逆引き監査）台帳";
+            ws.Cell("B2").Style.Font.Bold = true;
+            ws.Cell("B2").Style.Font.FontSize = 16;
+            ws.Cell("B2").Style.Font.FontColor = XLColor.FromHtml("#0F172A");
+
+            ws.Cell("B3").Value = $"調査対象: {report.TargetDisplayName} ({report.TargetAccountName})  |  スキャンルート: {report.RootFolderPath}  |  出力日時: {report.ScanTimestamp:yyyy/MM/dd HH:mm:ss}";
+            ws.Cell("B3").Style.Font.FontSize = 10;
+            ws.Cell("B3").Style.Font.FontColor = XLColor.DimGray;
+
+            // KPI Cards
+            DrawKpiCard(ws, "B5", "C6", "アクセス可能フォルダ数", $"{report.AccessibleFolders.Count:N0} 箇所", "#2563EB");
+            DrawKpiCard(ws, "D5", "E6", "フルコントロール", $"{report.FullControlCount:N0} 箇所", "#DC2626");
+            DrawKpiCard(ws, "F5", "G6", "変更 (Modify)", $"{report.ModifyCount:N0} 箇所", "#D97706");
+            DrawKpiCard(ws, "H5", "I6", "読み取り専用", $"{report.ReadOnlyCount:N0} 箇所", "#059669");
+
+            // Group Memberships Section
+            int row = 8;
+            ws.Cell(row, 2).Value = "【所属グループ一覧 (多重入れ子・再帰解決済み)】";
+            ws.Cell(row, 2).Style.Font.Bold = true;
+            ws.Cell(row, 2).Style.Font.FontSize = 11;
+            ws.Cell(row, 2).Style.Font.FontColor = XLColor.FromHtml("#1E293B");
+            row++;
+
+            string[] grpHeaders = { "グループ名", "表示名", "所属形態", "入れ子深度", "SID" };
+            for (int i = 0; i < grpHeaders.Length; i++)
+            {
+                var cell = ws.Cell(row, 2 + i);
+                cell.Value = grpHeaders[i];
+                cell.Style.Font.Bold = true;
+                cell.Style.Font.FontColor = XLColor.White;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#475569");
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            }
+            row++;
+
+            if (report.GroupMemberships.Count == 0)
+            {
+                ws.Cell(row, 2).Value = "(所属グループなし、または直接所属のみ)";
+                ws.Cell(row, 2).Style.Font.Italic = true;
+                ws.Cell(row, 2).Style.Font.FontColor = XLColor.Gray;
+                row++;
+            }
+            else
+            {
+                foreach (var g in report.GroupMemberships)
+                {
+                    ws.Cell(row, 2).Value = g.GroupName;
+                    ws.Cell(row, 3).Value = g.DisplayName;
+                    ws.Cell(row, 4).Value = g.DirectStatusText;
+                    ws.Cell(row, 4).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    ws.Cell(row, 5).Value = g.NestingDepth;
+                    ws.Cell(row, 5).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    ws.Cell(row, 6).Value = g.Sid;
+                    row++;
+                }
+            }
+
+            row += 2;
+
+            // Accessible Folders Table
+            ws.Cell(row, 2).Value = "【アクセス可能フォルダー詳細一覧】";
+            ws.Cell(row, 2).Style.Font.Bold = true;
+            ws.Cell(row, 2).Style.Font.FontSize = 11;
+            ws.Cell(row, 2).Style.Font.FontColor = XLColor.FromHtml("#1E293B");
+            row++;
+
+            int folderHeaderRow = row;
+            string[] folderHeaders = { "No.", "フォルダー名", "実効アクセス権", "権限付与元 / 経由グループ", "継承状態", "完全パス (クリックで開く)" };
+            for (int i = 0; i < folderHeaders.Length; i++)
+            {
+                var cell = ws.Cell(row, 2 + i);
+                cell.Value = folderHeaders[i];
+                cell.Style.Font.Bold = true;
+                cell.Style.Font.FontColor = XLColor.White;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1E3A8A");
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            }
+            row++;
+
+            int folderIndex = 1;
+            foreach (var item in report.AccessibleFolders)
+            {
+                ws.Cell(row, 2).Value = folderIndex++;
+                ws.Cell(row, 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                ws.Cell(row, 3).Value = item.FolderName;
+                ws.Cell(row, 3).Style.Font.Bold = true;
+
+                var permCell = ws.Cell(row, 4);
+                permCell.Value = item.FormattedRights;
+                permCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                permCell.Style.Font.Bold = true;
+                permCell.Style.Font.FontColor = XLColor.FromHtml(item.RightsBadgeBackground);
+
+                ws.Cell(row, 5).Value = item.GrantSource;
+                ws.Cell(row, 6).Value = item.InheritanceBadgeText;
+                ws.Cell(row, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                var pathCell = ws.Cell(row, 7);
+                pathCell.Value = item.FolderPath;
+                try
+                {
+                    string linkUri = "file:///" + item.FolderPath.Replace('\\', '/');
+                    pathCell.SetHyperlink(new XLHyperlink(linkUri));
+                    pathCell.Style.Font.FontColor = XLColor.FromHtml("#2563EB");
+                    pathCell.Style.Font.Underline = XLFontUnderlineValues.Single;
+                }
+                catch { }
+
+                row++;
+            }
+
+            var tableRange = ws.Range(folderHeaderRow, 2, row - 1, 7);
+            tableRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            tableRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            tableRange.SetAutoFilter();
+
+            ws.Columns(2, 7).AdjustToContents(3, 120);
+
+            workbook.SaveAs(outputPath);
+        }
     }
 }

@@ -246,7 +246,7 @@ namespace AstraSize.Services
             if (!dirInfo.Exists) throw new DirectoryNotFoundException($"指定フォルダが存在しません: {path}");
 
             var sec = dirInfo.GetAccessControl(AccessControlSections.Access);
-            sec.SetAccessRuleProtection(!inherit, true);
+            sec.SetAccessRuleProtection(!inherit, false);
 
             var existingRules = sec.GetAccessRules(true, false, typeof(NTAccount));
             foreach (FileSystemAccessRule rule in existingRules)
