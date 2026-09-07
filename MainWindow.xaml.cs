@@ -74,9 +74,18 @@ namespace AstraSize
         // Toast notification timer
         private DispatcherTimer? _toastTimer;
 
-        // Drag & Drop State (枠外ドロップ解除 & 広域受容)
+        // Drag & Drop State (枠外ドロップ解除 & 広域受容 & Escキャンセル保護)
         private bool _droppedInSelfContainer = false;
+        private bool _dragCancelled = false;
         private Point _cardDragStartPoint;
+
+        private void OnCardQueryContinueDrag(object sender, QueryContinueDragEventArgs e)
+        {
+            if (e.EscapePressed || e.Action == DragAction.Cancel)
+            {
+                _dragCancelled = true;
+            }
+        }
 
         public MainWindow()
         {
@@ -1012,14 +1021,17 @@ namespace AstraSize
                 if (sender is FrameworkElement fe && fe.DataContext is SimAclEntry acl)
                 {
                     _droppedInSelfContainer = false;
+                    _dragCancelled = false;
                     try
                     {
+                        DragDrop.AddQueryContinueDragHandler(fe, OnCardQueryContinueDrag);
                         DragDrop.DoDragDrop(fe, acl, DragDropEffects.Move | DragDropEffects.Copy);
                     }
                     finally
                     {
-                        // 自枠外（コンテナ外・他パネル・画面外など）にドロップされた場合はポイ捨て解除
-                        if (!_droppedInSelfContainer)
+                        DragDrop.RemoveQueryContinueDragHandler(fe, OnCardQueryContinueDrag);
+                        // Escキャンセルされた場合は削除しない。マウスドロップで枠外に落ちた場合のみ解除
+                        if (!_dragCancelled && !_droppedInSelfContainer)
                         {
                             _liveAclEntries.Remove(acl);
                             ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
@@ -1634,14 +1646,17 @@ namespace AstraSize
                 if (sender is FrameworkElement fe && fe.DataContext is string sourcePath)
                 {
                     _droppedInSelfContainer = false;
+                    _dragCancelled = false;
                     try
                     {
+                        DragDrop.AddQueryContinueDragHandler(fe, OnCardQueryContinueDrag);
                         DragDrop.DoDragDrop(fe, sourcePath, DragDropEffects.Move | DragDropEffects.Copy);
                     }
                     finally
                     {
-                        // 自枠外（アコーディオン枠外・他パネル・画面外など）にドロップされた場合は解除
-                        if (!_droppedInSelfContainer && _selectedSimNode != null)
+                        DragDrop.RemoveQueryContinueDragHandler(fe, OnCardQueryContinueDrag);
+                        // Escキャンセルされた場合は削除しない。マウスドロップで枠外に落ちた場合のみ解除
+                        if (!_dragCancelled && !_droppedInSelfContainer && _selectedSimNode != null)
                         {
                             _selectedSimNode.MappedSourcePaths.Remove(sourcePath);
                             _selectedSimNode.NotifyMappingChanged();
@@ -1903,14 +1918,17 @@ namespace AstraSize
                 if (sender is FrameworkElement fe && fe.DataContext is SimAclEntry acl)
                 {
                     _droppedInSelfContainer = false;
+                    _dragCancelled = false;
                     try
                     {
+                        DragDrop.AddQueryContinueDragHandler(fe, OnCardQueryContinueDrag);
                         DragDrop.DoDragDrop(fe, acl, DragDropEffects.Move | DragDropEffects.Copy);
                     }
                     finally
                     {
-                        // 自枠外（アコーディオン枠外・他パネル・画面外など）にドロップされた場合は解除
-                        if (!_droppedInSelfContainer && _selectedSimNode != null)
+                        DragDrop.RemoveQueryContinueDragHandler(fe, OnCardQueryContinueDrag);
+                        // Escキャンセルされた場合は削除しない。マウスドロップで枠外に落ちた場合のみ解除
+                        if (!_dragCancelled && !_droppedInSelfContainer && _selectedSimNode != null)
                         {
                             _selectedSimNode.AclEntries.Remove(acl);
                             _selectedSimNode.NotifyAclChanged();
