@@ -139,6 +139,10 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
      - 通常スキャン完了直後は `summary.LargestFiles` / `summary.ExtensionStats` を即座に流用し、スキャン後の全ツリー再走査を完全ゼロ化。
      - サブフォルダ初選択時の Top10 算出は `Task.Run`（非同期）で実行し、UIスレッドのプチフリーズを完全撲滅。
      - `SafeFileEnumerator` を共通導入し、LinkFix / OfficeLinkFix を含めた全探索処理でアクセス拒否（UnauthorizedAccessException）による探索即死を根絶。
+26. **Excel保存体験統一 ＆ AD/ローカル OUツリー参照ピッカー ＆ 重複ファイル色分けグルーピング**:
+    - **エクスポートExcelの行方不明防止**: 全エクスポート画面で `SaveFileDialog.InitialDirectory` をユーザーのデスクトップ（または設定済みReportsフォルダ）に標準初期化。保存完了後は `Process.Start("explorer.exe", $"/select,\"{path}\"")` でエクスプローラーを自動起動・ファイル選択状態にし、保存先迷子を完全根絶。
+    - **Active Directory / ローカル OU 階層参照ピッカー**: 逆引き監査に「👥 参照...」ボタンを新設。LDAP経由でOU/コンテナ階層ツリーを動的構築し、ドメイン未参加環境では自動で「ローカルPC ➔ ローカルグループ/ユーザー」にフォールバック。OU選択で配下のユーザー・グループを一覧表示し、直感的に選択可能。
+    - **重複ファイルの色分けグルーピング（UI & Excel）**: 6色のソフトパステルカラー（Soft Blue, Emerald, Amber, Purple, Rose, Cyan）を隣接グループ間で絶対に被らないようサイクリックに割り当て。UI DataGridで行全体をパステルハイライト＆バッジ表示し、ClosedXMLによるExcel出力でも同一のソフト背景色で行を塗り分け。原本候補を先頭にソートし、どのファイル同士が重複ペアか一目で識別可能。
 
 ---
 
@@ -158,7 +162,7 @@ Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe"
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 12/12 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 13/13 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

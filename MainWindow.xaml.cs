@@ -74,6 +74,25 @@ namespace AstraSize
         // Toast notification timer
         private DispatcherTimer? _toastTimer;
 
+        // Principal Picker (OU Hierarchy) State
+        private readonly ObservableCollection<FolderMorpher.Models.AdOuNode> _pickerOuRoots = new();
+        private readonly ObservableCollection<AdPrincipalItem> _pickerPrincipals = new();
+        private FolderMorpher.Models.AdOuNode? _pickerSelectedOu;
+        private AdPrincipalItem? _pickerSelectedPrincipal;
+
+        private string GetDefaultExportDirectory()
+        {
+            try
+            {
+                var custom = AppSettingsService.Instance.Current.CacheWriteCustomPath;
+                if (!string.IsNullOrWhiteSpace(custom) && Directory.Exists(custom)) return custom;
+                var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                if (Directory.Exists(desktop)) return desktop;
+            }
+            catch { }
+            return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        }
+
         // Drag & Drop State (枠外ドロップ解除 & 広域受容 & Escキャンセル保護)
         private bool _droppedInSelfContainer = false;
         private bool _dragCancelled = false;
@@ -90,6 +109,8 @@ namespace AstraSize
         public MainWindow()
         {
             InitializeComponent();
+            PickerOuTreeView.ItemsSource = _pickerOuRoots;
+            PickerPrincipalsDataGrid.ItemsSource = _pickerPrincipals;
             Loaded += MainWindow_Loaded;
         }
 
@@ -766,27 +787,37 @@ namespace AstraSize
             {
                 Title = "スキャン結果を保存",
                 Filter = "Excelブック (*.xlsx)|*.xlsx|CSVファイル (*.csv)|*.csv",
+                InitialDirectory = GetDefaultExportDirectory(),
                 FileName = $"ScanResult_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx"
             };
             if (dialog.ShowDialog() == true)
             {
-                if (dialog.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                try
                 {
-                    var excelService = new ExcelReportService();
-                    excelService.ExportStorageScanResult(dialog.FileName, _currentTab.TargetPath, _currentTab.VisibleFlatList);
-                    ShowToast("Excelレポートを出力しました");
-                }
-                else
-                {
-                    var sb = new StringBuilder();
-                    sb.Append('\uFEFF');
-                    sb.AppendLine("名前,パス,容量,全体占有率,ファイル数,フォルダ数,最終更新");
-                    foreach (var item in _currentTab.VisibleFlatList)
+                    if (dialog.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
                     {
-                        sb.AppendLine($"\"{item.Name}\",\"{item.FullPath}\",\"{item.FormattedSize}\",\"{item.PercentageFormatted}\",\"{item.FileCount}\",\"{item.FolderCount}\",\"{item.LastModified:yyyy/MM/dd HH:mm}\"");
+                        var excelService = new ExcelReportService();
+                        excelService.ExportStorageScanResult(dialog.FileName, _currentTab.TargetPath, _currentTab.VisibleFlatList);
+                        ShowToast($"📊 {Path.GetFileName(dialog.FileName)} を出力しました");
                     }
-                    File.WriteAllText(dialog.FileName, sb.ToString(), Encoding.UTF8);
-                    ShowToast("CSVレポートを出力しました");
+                    else
+                    {
+                        var sb = new StringBuilder();
+                        sb.Append('\uFEFF');
+                        sb.AppendLine("名前,パス,容量,全体占有率,ファイル数,フォルダ数,最終更新");
+                        foreach (var item in _currentTab.VisibleFlatList)
+                        {
+                            sb.AppendLine($"\"{item.Name}\",\"{item.FullPath}\",\"{item.FormattedSize}\",\"{item.PercentageFormatted}\",\"{item.FileCount}\",\"{item.FolderCount}\",\"{item.LastModified:yyyy/MM/dd HH:mm}\"");
+                        }
+                        File.WriteAllText(dialog.FileName, sb.ToString(), Encoding.UTF8);
+                        ShowToast($"📄 {Path.GetFileName(dialog.FileName)} を出力しました");
+                    }
+
+                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -1327,6 +1358,7 @@ namespace AstraSize
             {
                 Title = "実効アクセス権（逆引き監査）台帳の保存先を指定",
                 Filter = "Excel ワークブック (*.xlsx)|*.xlsx",
+                InitialDirectory = GetDefaultExportDirectory(),
                 FileName = $"EffectiveAccessAudit_{safeName}_{DateTime.Now:yyyyMMdd_HHmm}.xlsx"
             };
 
@@ -1335,7 +1367,8 @@ namespace AstraSize
                 try
                 {
                     _excelService.ExportEffectiveAccessReport(sfd.FileName, _currentEffectiveReport);
-                    ShowToast("📋 監査台帳 Excel を出力しました");
+                    ShowToast($"📋 {Path.GetFileName(sfd.FileName)} を出力しました");
+                    Process.Start("explorer.exe", $"/select,\"{sfd.FileName}\"");
                     Process.Start(new ProcessStartInfo(sfd.FileName) { UseShellExecute = true });
                 }
                 catch (Exception ex)
@@ -1344,6 +1377,144 @@ namespace AstraSize
                 }
             }
         }
+
+        #region Principal Picker Modal (OU Hierarchy & Account Selection)
+        private async void RevBrowseUser_Click(object sender, RoutedEventArgs e)
+        {
+            PrincipalPickerModalOverlay.Visibility = Visibility.Visible;
+            PickerSelectedAccountText.Text = string.IsNullOrWhiteSpace(RevUserAccountTextBox.Text) ? "(未選択)" : RevUserAccountTextBox.Text.Trim();
+            PickerApplyButton.IsEnabled = !string.IsNullOrWhiteSpace(RevUserAccountTextBox.Text);
+
+            if (_pickerOuRoots.Count == 0)
+            {
+                StatusTextBlock.Text = "Active Directory / ローカルの組織単位 (OU) 階層を取得中...";
+                GlobalProgressBar.Visibility = Visibility.Visible;
+                GlobalProgressBar.IsIndeterminate = true;
+
+                try
+                {
+                    var ous = await _adService.GetOuHierarchyAsync();
+                    _pickerOuRoots.Clear();
+                    foreach (var ou in ous)
+                    {
+                        _pickerOuRoots.Add(ou);
+                    }
+
+                    // 最初に見つかったノードを展開・選択
+                    if (_pickerOuRoots.Count > 0)
+                    {
+                        _pickerSelectedOu = _pickerOuRoots[0];
+                        await LoadPrincipalsForSelectedOuAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Failed to load OU hierarchy: {ex}");
+                }
+                finally
+                {
+                    GlobalProgressBar.Visibility = Visibility.Collapsed;
+                    StatusTextBlock.Text = "準備完了";
+                }
+            }
+            else if (_pickerSelectedOu != null)
+            {
+                await LoadPrincipalsForSelectedOuAsync();
+            }
+        }
+
+        private async void PickerOuTreeView_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+        {
+            if (e.NewValue is FolderMorpher.Models.AdOuNode node)
+            {
+                _pickerSelectedOu = node;
+                await LoadPrincipalsForSelectedOuAsync();
+            }
+        }
+
+        private async Task LoadPrincipalsForSelectedOuAsync()
+        {
+            if (_pickerSelectedOu == null) return;
+
+            var keyword = PickerSearchTextBox.Text.Trim();
+            bool incUsers = PickerIncludeUsersCheck.IsChecked == true;
+            bool incGroups = PickerIncludeGroupsCheck.IsChecked == true;
+
+            try
+            {
+                var list = await _adService.GetPrincipalsInOuAsync(_pickerSelectedOu.DistinguishedName, keyword, incUsers, incGroups);
+                _pickerPrincipals.Clear();
+                foreach (var p in list)
+                {
+                    _pickerPrincipals.Add(p);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error querying principals in OU: {ex}");
+            }
+        }
+
+        private async void PickerFilter_Changed(object sender, RoutedEventArgs e)
+        {
+            if (PrincipalPickerModalOverlay.Visibility == Visibility.Visible)
+            {
+                await LoadPrincipalsForSelectedOuAsync();
+            }
+        }
+
+        private async void PickerSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (PrincipalPickerModalOverlay.Visibility == Visibility.Visible)
+            {
+                await LoadPrincipalsForSelectedOuAsync();
+            }
+        }
+
+        private void PickerPrincipalsDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (PickerPrincipalsDataGrid.SelectedItem is AdPrincipalItem item)
+            {
+                _pickerSelectedPrincipal = item;
+                PickerSelectedAccountText.Text = item.AccountName;
+                PickerApplyButton.IsEnabled = true;
+            }
+        }
+
+        private void PickerPrincipalsDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (PickerPrincipalsDataGrid.SelectedItem is AdPrincipalItem item)
+            {
+                _pickerSelectedPrincipal = item;
+                ApplySelectedPrincipal();
+            }
+        }
+
+        private void PickerApplyButton_Click(object sender, RoutedEventArgs e)
+        {
+            ApplySelectedPrincipal();
+        }
+
+        private void ApplySelectedPrincipal()
+        {
+            if (_pickerSelectedPrincipal != null)
+            {
+                RevUserAccountTextBox.Text = _pickerSelectedPrincipal.AccountName;
+                PrincipalPickerModalOverlay.Visibility = Visibility.Collapsed;
+                ShowToast($"👤 調査対象を「{_pickerSelectedPrincipal.AccountName}」に設定しました");
+            }
+            else if (!string.IsNullOrWhiteSpace(PickerSelectedAccountText.Text) && PickerSelectedAccountText.Text != "(未選択)")
+            {
+                RevUserAccountTextBox.Text = PickerSelectedAccountText.Text;
+                PrincipalPickerModalOverlay.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private void PickerCancelButton_Click(object sender, RoutedEventArgs e)
+        {
+            PrincipalPickerModalOverlay.Visibility = Visibility.Collapsed;
+        }
+        #endregion
 
         private void RevFoldersDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
@@ -2336,27 +2507,37 @@ namespace AstraSize
             {
                 Title = "移行変化点 差分対比レポートを保存",
                 Filter = "Excelブック (*.xlsx)|*.xlsx|CSVファイル (*.csv)|*.csv",
+                InitialDirectory = GetDefaultExportDirectory(),
                 FileName = $"FolderMorpher_DiffReport_{DateTime.Now:yyyyMMdd}.xlsx"
             };
             if (dialog.ShowDialog() == true)
             {
-                if (dialog.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                try
                 {
-                    var excelService = new ExcelReportService();
-                    excelService.ExportSimDiffReport(dialog.FileName, diffs);
-                    ShowToast("Excel差分対比レポートを出力しました");
-                }
-                else
-                {
-                    var sb = new StringBuilder();
-                    sb.Append('\uFEFF');
-                    sb.AppendLine("変化の種別,現行サーバー (Before),Before詳細,新環境設計 (After),After詳細,権限差分詳細");
-                    foreach (var d in diffs)
+                    if (dialog.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
                     {
-                        sb.AppendLine($"\"{d.DiffType}\",\"{d.SourcePath.Replace("\n", " | ")}\",\"{d.SourceDetail}\",\"{d.TargetPath}\",\"{d.TargetDetail}\",\"{d.FormattedAclChanges.Replace("\n", " | ")}\"");
+                        var excelService = new ExcelReportService();
+                        excelService.ExportSimDiffReport(dialog.FileName, diffs);
+                        ShowToast($"📊 {Path.GetFileName(dialog.FileName)} を出力しました");
                     }
-                    File.WriteAllText(dialog.FileName, sb.ToString(), Encoding.UTF8);
-                    ShowToast("CSV差分対比レポートを出力しました");
+                    else
+                    {
+                        var sb = new StringBuilder();
+                        sb.Append('\uFEFF');
+                        sb.AppendLine("変化の種別,現行サーバー (Before),Before詳細,新環境設計 (After),After詳細,権限差分詳細");
+                        foreach (var d in diffs)
+                        {
+                            sb.AppendLine($"\"{d.DiffType}\",\"{d.SourcePath.Replace("\n", " | ")}\",\"{d.SourceDetail}\",\"{d.TargetPath}\",\"{d.TargetDetail}\",\"{d.FormattedAclChanges.Replace("\n", " | ")}\"");
+                        }
+                        File.WriteAllText(dialog.FileName, sb.ToString(), Encoding.UTF8);
+                        ShowToast($"📄 {Path.GetFileName(dialog.FileName)} を出力しました");
+                    }
+
+                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -2511,22 +2692,32 @@ namespace AstraSize
             {
                 Title = "移行台帳マトリクス (Excel/CSV) を保存",
                 Filter = "Excelブック (*.xlsx)|*.xlsx|CSVファイル (*.csv)|*.csv",
+                InitialDirectory = GetDefaultExportDirectory(),
                 FileName = $"FolderMorpher_Ledger_{DateTime.Now:yyyyMMdd}.xlsx"
             };
 
             if (dialog.ShowDialog() == true)
             {
-                if (dialog.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                try
                 {
-                    var excelService = new ExcelReportService();
-                    excelService.ExportSimulationDesignMatrix(dialog.FileName, _simRootFolders);
-                    ShowToast("Excel移行台帳を出力しました");
+                    if (dialog.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var excelService = new ExcelReportService();
+                        excelService.ExportSimulationDesignMatrix(dialog.FileName, _simRootFolders);
+                        ShowToast($"📊 {Path.GetFileName(dialog.FileName)} を出力しました");
+                    }
+                    else
+                    {
+                        var csv = _simService.ExportDesignMatrixCsv(_simRootFolders);
+                        File.WriteAllText(dialog.FileName, csv, Encoding.UTF8);
+                        ShowToast($"📄 {Path.GetFileName(dialog.FileName)} を出力しました");
+                    }
+
+                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
                 }
-                else
+                catch (Exception ex)
                 {
-                    var csv = _simService.ExportDesignMatrixCsv(_simRootFolders);
-                    File.WriteAllText(dialog.FileName, csv, Encoding.UTF8);
-                    ShowToast("CSV移行台帳を出力しました");
+                    MessageBox.Show($"出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -2739,6 +2930,7 @@ namespace AstraSize
             {
                 Title = "Excelレポートの保存先",
                 Filter = "Excel ワークブック (*.xlsx)|*.xlsx",
+                InitialDirectory = GetDefaultExportDirectory(),
                 FileName = $"FolderMorpher_AuditReport_{DateTime.Now:yyyyMMdd_HHmm}.xlsx"
             };
 
@@ -3011,6 +3203,7 @@ namespace AstraSize
             {
                 Title = "メディア分析 Excelレポートの保存先",
                 Filter = "Excel ワークブック (*.xlsx)|*.xlsx",
+                InitialDirectory = GetDefaultExportDirectory(),
                 FileName = $"FolderMorpher_MediaReport_{DateTime.Now:yyyyMMdd}.xlsx"
             };
 
@@ -3253,6 +3446,7 @@ namespace AstraSize
             AuditCheckPathLimitsCheckBox.Content = isJa ? "パス長260字超/禁則文字" : "Path Limits / Invalid Chars";
 
             ColAuditIssueType.Header = isJa ? "問題種別" : "Issue Type";
+            ColAuditDupGroup.Header = isJa ? "重複グループ" : "Duplicate Group";
             ColAuditFileName.Header = isJa ? "ファイル名" : "File Name";
             ColAuditSize.Header = isJa ? "容量" : "Size";
             ColAuditModified.Header = isJa ? "最終更新日時" : "Last Modified";
@@ -3380,6 +3574,18 @@ namespace AstraSize
             SettingsBrowseCustomButton.Content = isJa ? "参照..." : "Browse...";
             SettingsCancelButton.Content = isJa ? "キャンセル" : "Cancel";
             SettingsSaveButton.Content = isJa ? "設定を保存" : "Save Settings";
+
+            // Principal Picker Modal
+            PickerTitleText.Text = isJa ? "👥 調査対象アカウントの参照・選択" : "👥 Browse Target Account";
+            PickerDescText.Text = isJa
+                ? "組織単位 (OU) 階層からユーザーまたはセキュリティグループを選択します。"
+                : "Select user or security group from Organizational Unit (OU) hierarchy.";
+            PickerListTitleText.Text = isJa ? "選択OU内の所属アカウント一覧" : "Accounts in Selected OU";
+            PickerIncludeUsersCheck.Content = isJa ? "👤 ユーザー" : "👤 Users";
+            PickerIncludeGroupsCheck.Content = isJa ? "👥 グループ" : "👥 Groups";
+            PickerCancelButton.Content = isJa ? "キャンセル" : "Cancel";
+            PickerApplyButton.Content = isJa ? "決定" : "Select";
+            RevBrowseUserButton.Content = isJa ? "👥 参照..." : "👥 Browse...";
 
             // 既存の空タブのタイトルとステータス
             if (StorageTabs != null)

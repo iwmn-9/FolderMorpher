@@ -139,10 +139,15 @@ namespace FolderMorpher.Services
             {
                 ws.Cell(row, 2).Value = item.IssueTypeDisplay;
                 ws.Cell(row, 3).Value = item.FileName;
+                if (item.IsOriginalCandidate)
+                {
+                    ws.Cell(row, 3).Style.Font.Bold = true;
+                }
+
                 ws.Cell(row, 4).Value = item.SizeFormatted;
                 ws.Cell(row, 5).Value = item.LastWriteTime.ToString("yyyy/MM/dd HH:mm");
                 ws.Cell(row, 6).Value = item.Detail;
-                ws.Cell(row, 7).Value = item.DuplicateGroupId;
+                ws.Cell(row, 7).Value = item.DuplicateGroupBadge;
 
                 // フルパスセル（ハイパーリンク化）
                 var pathCell = ws.Cell(row, 8);
@@ -158,6 +163,13 @@ namespace FolderMorpher.Services
                 catch
                 {
                     // URI変換失敗時はテキストのまま
+                }
+
+                // 重複グループごとの背景色ソフト塗り分け（隣接グループで被らない視認性カラー）
+                if (item.IssueType == AuditIssueType.Duplicate && item.DuplicateGroupIndex > 0)
+                {
+                    var rowRange = ws.Range(row, 2, row, 8);
+                    rowRange.Style.Fill.BackgroundColor = XLColor.FromHtml(item.RowBackgroundHex);
                 }
 
                 row++;

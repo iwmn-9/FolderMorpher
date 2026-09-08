@@ -151,7 +151,8 @@ namespace FolderMorpher.Services
                     // 同一ハッシュが複数あれば重複確定
                     foreach (var kvp in hashToFiles.Where(k => k.Value.Count > 1))
                     {
-                        var groupId = $"DUP-{dupGroupIndex++:D4}";
+                        var groupNum = dupGroupIndex++;
+                        var groupId = $"DUP-{groupNum:D4}";
                         var fileList = kvp.Value;
 
                         // 最初以外のファイルを「重複による無駄（Wasted）」として集計
@@ -176,7 +177,10 @@ namespace FolderMorpher.Services
                                 IssueType = AuditIssueType.Duplicate,
                                 Detail = isOriginal ? $"[原本候補] ハッシュ: {kvp.Key[..12]}..." : $"[重複] ハッシュ: {kvp.Key[..12]}...",
                                 Sha256Hash = kvp.Key,
-                                DuplicateGroupId = groupId
+                                DuplicateGroupId = groupId,
+                                DuplicateGroupIndex = groupNum,
+                                DuplicateGroupColorIndex = (groupNum - 1) % AuditItem.GroupBgPalette.Length,
+                                IsOriginalCandidate = isOriginal
                             });
                         }
                     }
@@ -189,6 +193,14 @@ namespace FolderMorpher.Services
                     });
                 }
             }
+
+            // 重複ファイルをグループ順・原本優先でソートし、視認性と色分けの並びを完璧にする
+            items = items
+                .OrderBy(it => it.IssueType == AuditIssueType.Duplicate ? 0 : 1)
+                .ThenBy(it => it.DuplicateGroupIndex)
+                .ThenByDescending(it => it.IsOriginalCandidate)
+                .ThenBy(it => it.FileName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             progress?.Report(new AuditProgress { CurrentStatus = "監査完了", ScannedFilesCount = summary.TotalFilesScanned, IssueCount = items.Count });
             return (summary, items);

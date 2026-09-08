@@ -677,7 +677,7 @@
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/> <!-- User label -->
-                                <ColumnDefinition Width="180"/>  <!-- Target Account input -->
+                                <ColumnDefinition Width="240"/>  <!-- Target Account input + Browse -->
                                 <ColumnDefinition Width="Auto"/> <!-- Root folder label -->
                                 <ColumnDefinition Width="*"/>    <!-- Root folder path -->
                                 <ColumnDefinition Width="Auto"/> <!-- Browse -->
@@ -690,10 +690,19 @@
                                 <TextBlock x:Name="RevTargetAccountLabel" Text="👤 調査対象:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
                             </StackPanel>
 
-                            <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,14,0">
-                                <TextBox x:Name="RevUserAccountTextBox" BorderThickness="0" Background="Transparent"
-                                         VerticalAlignment="Center" FontSize="11" Text="sato.hanako"/>
-                            </Border>
+                            <Grid Grid.Column="1" Margin="0,0,14,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1,1,0,1" CornerRadius="8,0,0,8" Height="32" Padding="8,0">
+                                    <TextBox x:Name="RevUserAccountTextBox" BorderThickness="0" Background="Transparent"
+                                             VerticalAlignment="Center" FontSize="11" Text="sato.hanako"/>
+                                </Border>
+                                <Button x:Name="RevBrowseUserButton" Grid.Column="1" Content="👥 参照..." Height="32" Padding="8,0"
+                                        Style="{StaticResource FluentButtonSecondary}" BorderThickness="1"
+                                        Click="RevBrowseUser_Click" ToolTip="Active Directory / ローカルの組織単位 (OU) 階層からアカウントを選択"/>
+                            </Grid>
 
                             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
                                 <TextBlock x:Name="RevRootPathLabel" Text="📁 走査ルート:" FontWeight="SemiBold" FontSize="11" Foreground="#475569" VerticalAlignment="Center"/>
@@ -1519,9 +1528,33 @@
                         </Grid.RowDefinitions>
                         <TextBlock x:Name="AuditTableTitleText" Grid.Row="0" Text="検出された課題・断捨離候補一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
                         <DataGrid x:Name="AuditItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
-                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="28" HeadersVisibility="Column" RowHeaderWidth="0">
+                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="30" HeadersVisibility="Column" RowHeaderWidth="0">
+                            <DataGrid.RowStyle>
+                                <Style TargetType="DataGridRow">
+                                    <Setter Property="Background" Value="{Binding RowBackgroundHex}"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="Background" Value="#E2E8F0"/>
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#F1F5F9"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGrid.RowStyle>
                             <DataGrid.Columns>
-                                <DataGridTextColumn x:Name="ColAuditIssueType" Header="問題種別" Binding="{Binding IssueTypeDisplay}" Width="150" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColAuditIssueType" Header="問題種別" Binding="{Binding IssueTypeDisplay}" Width="130" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTemplateColumn x:Name="ColAuditDupGroup" Header="重複グループ" Width="140">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{Binding BadgeBackgroundHex}" BorderBrush="{Binding BadgeBorderHex}"
+                                                    BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="4,2" HorizontalAlignment="Left">
+                                                <TextBlock Text="{Binding DuplicateGroupBadge}" FontSize="10.5" FontWeight="SemiBold"
+                                                           Foreground="{Binding BadgeForegroundHex}" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                                 <DataGridTextColumn x:Name="ColAuditFileName" Header="ファイル名" Binding="{Binding FileName}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                 <DataGridTextColumn x:Name="ColAuditSize" Header="容量" Binding="{Binding SizeFormatted}" Width="90" ElementStyle="{StaticResource RightAlignedCell}"/>
                                 <DataGridTextColumn x:Name="ColAuditModified" Header="最終更新日時" Binding="{Binding LastWriteTime, StringFormat='yyyy/MM/dd HH:mm'}" Width="130" ElementStyle="{StaticResource LeftAlignedCell}"/>
@@ -1894,6 +1927,130 @@
         </Grid>
 
         <!-- ======================================================== -->
+        <!-- MODAL 4: PRINCIPAL PICKER (OU階層 ユーザー/グループ参照)   -->
+        <!-- ======================================================== -->
+        <Grid x:Name="PrincipalPickerModalOverlay" Grid.RowSpan="3" Background="#80000000" Visibility="Collapsed">
+            <Border Background="#FFFFFF" Width="820" Height="580" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    CornerRadius="12" BorderBrush="#CBD5E1" BorderThickness="1" Padding="24">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="24" ShadowDepth="6" Direction="270" Color="#000000" Opacity="0.25"/>
+                </Border.Effect>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/> <!-- Title & Toolbar -->
+                        <RowDefinition Height="*"/>    <!-- 2-Pane: OU Tree + Principals Table -->
+                        <RowDefinition Height="Auto"/> <!-- Footer -->
+                    </Grid.RowDefinitions>
+
+                    <!-- Title & Toolbar -->
+                    <Grid Grid.Row="0" Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <TextBlock x:Name="PickerTitleText" Text="👥 調査対象アカウントの参照・選択" FontSize="16" FontWeight="Bold" Foreground="#0F172A"/>
+                            <TextBlock x:Name="PickerDescText" Text="組織単位 (OU) 階層からユーザーまたはセキュリティグループを選択します。" FontSize="11" Foreground="#64748B" Margin="0,2,0,0"/>
+                        </StackPanel>
+
+                        <!-- Search Box -->
+                        <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="16,0,12,0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="🔍" FontSize="11" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBox x:Name="PickerSearchTextBox" Grid.Column="1" BorderThickness="0" Background="Transparent"
+                                         VerticalAlignment="Center" FontSize="11" TextChanged="PickerSearchTextBox_TextChanged"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Filter Toggles -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <CheckBox x:Name="PickerIncludeUsersCheck" Content="👤 ユーザー" IsChecked="True" FontSize="11" Margin="0,0,10,0" Checked="PickerFilter_Changed" Unchecked="PickerFilter_Changed"/>
+                            <CheckBox x:Name="PickerIncludeGroupsCheck" Content="👥 グループ" IsChecked="True" FontSize="11" Checked="PickerFilter_Changed" Unchecked="PickerFilter_Changed"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Main 2-Pane -->
+                    <Grid Grid.Row="1" Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="280"/> <!-- Left: OU Tree -->
+                            <ColumnDefinition Width="12"/>
+                            <ColumnDefinition Width="*"/>   <!-- Right: Principals Table -->
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Left: OU Tree -->
+                        <Border Grid.Column="0" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="8">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="📁 組織単位 (OU) / コンテナ" FontWeight="SemiBold" FontSize="11" Foreground="#475569" Margin="4,2,4,6"/>
+                                <TreeView x:Name="PickerOuTreeView" Grid.Row="1" BorderThickness="0" Background="Transparent"
+                                          SelectedItemChanged="PickerOuTreeView_SelectedItemChanged">
+                                    <TreeView.ItemTemplate>
+                                        <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                            <StackPanel Orientation="Horizontal" Margin="2,3">
+                                                <TextBlock Text="{Binding Icon}" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Name}" FontSize="11" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </HierarchicalDataTemplate>
+                                    </TreeView.ItemTemplate>
+                                </TreeView>
+                            </Grid>
+                        </Border>
+
+                        <!-- Right: Principals List -->
+                        <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="6">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock x:Name="PickerListTitleText" Text="選択OU内の所属アカウント一覧" FontWeight="SemiBold" FontSize="11" Foreground="#475569" Margin="4,2,4,6"/>
+                                <DataGrid x:Name="PickerPrincipalsDataGrid" Grid.Row="1" BorderThickness="0" Background="Transparent" GridLinesVisibility="None"
+                                          AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" RowHeight="30"
+                                          SelectionMode="Single" SelectionChanged="PickerPrincipalsDataGrid_SelectionChanged"
+                                          MouseDoubleClick="PickerPrincipalsDataGrid_MouseDoubleClick">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="種別" Binding="{Binding PrincipalTypeDisplay}" Width="80" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                        <DataGridTextColumn Header="表示名 (アカウント名)" Binding="{Binding DisplayName}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                        <DataGridTextColumn Header="説明" Binding="{Binding Description}" Width="160" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                    <!-- Footer: Selected & Action Buttons -->
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="選択中:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="PickerSelectedAccountText" Text="(未選択)" FontWeight="Bold" FontSize="12" Foreground="#2563EB" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button x:Name="PickerCancelButton" Content="キャンセル" Width="90" Height="32" Margin="0,0,8,0"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="PickerCancelButton_Click"/>
+                            <Button x:Name="PickerApplyButton" Content="決定" Width="90" Height="32"
+                                    Style="{StaticResource FluentButtonPrimary}" Click="PickerApplyButton_Click" IsEnabled="False"/>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ======================================================== -->
         <!-- MODAL 3: SETTINGS MODAL (環境設定: キャッシュ共有・保存先)   -->
         <!-- ======================================================== -->
         <Grid x:Name="SettingsModalOverlay" Grid.RowSpan="3" Background="#80000000" Visibility="Collapsed">
@@ -2017,7 +2174,7 @@
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v1.4.3 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.4.4 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>

@@ -31,7 +31,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 12;
+            int totalTests = 13;
 
             try
             {
@@ -102,9 +102,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 12
-                Console.WriteLine("\n[TEST 12/12] UI Binding Contract & Tree Cache Expansion State...");
+                Console.WriteLine("\n[TEST 12/13] UI Binding Contract & Tree Cache Expansion State...");
                 await TestUiBindingContractAndCacheExpansionStateAsync();
                 Console.WriteLine("  --> [PASS] UI Binding Contract & Cache Expansion: FileItemNode properties and tree expansion state 100% verified.");
+                passCount++;
+
+                // Test 13
+                Console.WriteLine("\n[TEST 13/13] Audit: Duplicate Grouping Colors & ActiveDirectory OU Hierarchy Fallback...");
+                await TestDuplicateGroupingAndOuHierarchyAsync();
+                Console.WriteLine("  --> [PASS] Audit & AD: Duplicate cyclic color palette, group sorting, and OU hierarchy fallback 100% verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -1494,6 +1500,94 @@ namespace FolderMorpher.Services.Testing
             finally
             {
                 // clean up
+            }
+        }
+
+        /// <summary>
+        /// 13. 重複ファイル色分けグルーピング & AD/ローカル OU階層ツリー構築の検証
+        /// </summary>
+        public static async Task TestDuplicateGroupingAndOuHierarchyAsync()
+        {
+            // 1. 重複ファイル色分け・グルーピングの検証
+            var auditService = new AuditReportService();
+            string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_DupGroup_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            try
+            {
+                // グループ1 (サイズ 120KB) 2ファイル
+                byte[] contentA = new byte[120 * 1024];
+                new Random(42).NextBytes(contentA);
+                File.WriteAllBytes(Path.Combine(tempDir, "original_A.dat"), contentA);
+                File.WriteAllBytes(Path.Combine(tempDir, "copy_A.dat"), contentA);
+
+                // グループ2 (サイズ 150KB) 2ファイル
+                byte[] contentB = new byte[150 * 1024];
+                new Random(84).NextBytes(contentB);
+                File.WriteAllBytes(Path.Combine(tempDir, "original_B.dat"), contentB);
+                File.WriteAllBytes(Path.Combine(tempDir, "copy_B.dat"), contentB);
+
+                var options = new AuditOptions
+                {
+                    TargetDirectory = tempDir,
+                    CheckDuplicates = true,
+                    CheckDormant = false,
+                    CheckPathLimits = false,
+                    MinFileSizeBytes = 50 * 1024
+                };
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                var (summary, items) = await auditService.RunAuditAsync(options, null, cts.Token);
+
+                if (summary.DuplicateCount != 2)
+                    throw new InvalidOperationException($"DuplicateCount expected 2, got {summary.DuplicateCount}");
+
+                var dupItems = items.Where(i => i.IssueType == AuditIssueType.Duplicate).ToList();
+                if (dupItems.Count != 4)
+                    throw new InvalidOperationException($"Duplicate items count expected 4, got {dupItems.Count}");
+
+                var group1 = dupItems.Where(i => i.DuplicateGroupIndex == 1).ToList();
+                var group2 = dupItems.Where(i => i.DuplicateGroupIndex == 2).ToList();
+                if (group1.Count != 2 || group2.Count != 2)
+                    throw new InvalidOperationException("Duplicate grouping index assignment failed");
+
+                // 隣接グループで色インデックスが異なり、各行に有効なHEX背景色が設定されているか
+                if (group1[0].DuplicateGroupColorIndex == group2[0].DuplicateGroupColorIndex)
+                    throw new InvalidOperationException("Adjacent duplicate groups must have distinct cyclic color indexes");
+
+                if (string.IsNullOrEmpty(group1[0].RowBackgroundHex) || group1[0].RowBackgroundHex == "Transparent")
+                    throw new InvalidOperationException("Duplicate item RowBackgroundHex should be non-transparent pastel color");
+
+                // 原本候補が先頭に並んでいるか
+                if (!group1[0].IsOriginalCandidate || group1[1].IsOriginalCandidate)
+                    throw new InvalidOperationException("Original candidate should be sorted first in each duplicate group");
+
+                // Excel出力の検証
+                string excelOut = Path.Combine(tempDir, "test_dup_report.xlsx");
+                var excelService = new ExcelReportService();
+                excelService.GenerateComprehensiveReport(excelOut, tempDir, summary, items, null, null);
+                if (!File.Exists(excelOut))
+                    throw new InvalidOperationException("Excel report generation with duplicate group colors failed");
+
+                // 2. Active Directory / ローカル OU 階層ツリー構築の検証
+                var adService = new ActiveDirectoryService();
+                var ouRoots = await adService.GetOuHierarchyAsync();
+                if (ouRoots == null || ouRoots.Count == 0)
+                    throw new InvalidOperationException("OU hierarchy tree returned empty list");
+
+                var root = ouRoots[0];
+                if (string.IsNullOrEmpty(root.Name) || root.Children.Count == 0)
+                    throw new InvalidOperationException("OU root node should have name and children");
+
+                // ローカルまたはADコンテナのプリンシパル取得検証
+                var firstChild = root.Children[0];
+                var principals = await adService.GetPrincipalsInOuAsync(firstChild.DistinguishedName);
+                if (principals == null)
+                    throw new InvalidOperationException("GetPrincipalsInOuAsync returned null");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
             }
         }
     }

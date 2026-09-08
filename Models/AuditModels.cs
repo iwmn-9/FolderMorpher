@@ -32,6 +32,40 @@ namespace FolderMorpher.Models
         public string Detail { get; set; } = string.Empty;
         public string? Sha256Hash { get; set; }
         public string DuplicateGroupId { get; set; } = string.Empty;
+        public int DuplicateGroupIndex { get; set; }
+        public int DuplicateGroupColorIndex { get; set; }
+        public bool IsOriginalCandidate { get; set; }
+
+        public string DuplicateGroupBadge
+        {
+            get
+            {
+                if (IssueType != AuditIssueType.Duplicate || string.IsNullOrEmpty(DuplicateGroupId))
+                    return "-";
+                return IsOriginalCandidate ? $"{DuplicateGroupId} (原本候補)" : $"{DuplicateGroupId} (重複)";
+            }
+        }
+
+        // 6色のソフトパステルパレット（隣接グループで重複しない視認性カラー）
+        public static readonly string[] GroupBgPalette = { "#EFF6FF", "#ECFDF5", "#FEF3C7", "#F3E8FF", "#FFE4E6", "#E0F2FE" };
+        public static readonly string[] GroupBorderPalette = { "#BFDBFE", "#A7F3D0", "#FDE68A", "#DDD6FE", "#FECDD3", "#BAE6FD" };
+        public static readonly string[] GroupTextPalette = { "#1E40AF", "#065F46", "#92400E", "#5B21B6", "#9F1239", "#075985" };
+
+        public string RowBackgroundHex => IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0
+            ? GroupBgPalette[DuplicateGroupColorIndex % GroupBgPalette.Length]
+            : "Transparent";
+
+        public string BadgeBackgroundHex => IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0
+            ? GroupBgPalette[DuplicateGroupColorIndex % GroupBgPalette.Length]
+            : "Transparent";
+
+        public string BadgeBorderHex => IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0
+            ? GroupBorderPalette[DuplicateGroupColorIndex % GroupBorderPalette.Length]
+            : "#E2E8F0";
+
+        public string BadgeForegroundHex => IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0
+            ? GroupTextPalette[DuplicateGroupColorIndex % GroupTextPalette.Length]
+            : "#64748B";
 
         private static string FormatSize(long bytes)
         {
