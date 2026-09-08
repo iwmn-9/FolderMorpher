@@ -76,7 +76,7 @@
                 <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="14,10">
                     <Grid>
                         <StackPanel x:Name="SidebarFooterPanel" VerticalAlignment="Center">
-                            <TextBlock Text="FolderMorpher v1.4.5" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                            <TextBlock Text="FolderMorpher v1.4.6" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                             <TextBlock Text="Storage &amp; Migration Studio" FontSize="10.5" Foreground="#94A3B8" Margin="0,1,0,0"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -1625,8 +1625,8 @@
                         </Grid.RowDefinitions>
 
                         <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                            <TextBlock x:Name="MediaHeaderTitle" Text="🖼️ メディア・オプティマイザ（写真の視覚的ロスレス軽量化 ＆ 巨大動画攻略）" FontSize="15" FontWeight="Bold" Foreground="#0F172A"/>
-                            <TextBlock x:Name="MediaHeaderDesc" Text="聖域（_Master、印刷用、RAW等）を自動保護しながら、スマホ写真（2MB超）を視覚的ロスレス（長辺2560px/85%品質）で上書き軽量化し、巨大動画のTop抽出と夜間圧縮バッチを出力します。"
+                            <TextBlock x:Name="MediaHeaderTitle" Text="🖼️ メディア・オプティマイザ（写真・画像最適化 ＆ 巨大動画攻略）" FontSize="15" FontWeight="Bold" Foreground="#0F172A"/>
+                            <TextBlock x:Name="MediaHeaderDesc" Text="聖域（_Master、印刷用、RAW等）を自動保護しながら、大容量写真（2MB超）を最適化（長辺2560px超は縮小/85%品質/Exif・日時保持）で上書き軽量化し、巨大動画のTop抽出と夜間圧縮バッチを出力します。"
                                        FontSize="11" Foreground="#64748B" Margin="0,4,0,0"/>
                         </StackPanel>
 
@@ -2211,7 +2211,7 @@
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v1.4.5 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.4.6 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>

@@ -29,12 +29,26 @@ namespace FolderMorpher.Services
                 throw new DirectoryNotFoundException($"対象ディレクトリが見つかりません: {options.TargetDirectory}");
             }
 
-            // 1. ファイル列挙
+            // 1. ファイル列挙（SafeFileEnumerator に一本化）
+            var coverage = new ScanCoverage();
+            summary.Coverage = coverage;
             progress?.Report(new AuditProgress { CurrentStatus = "ファイル一覧を走査中...", ScannedFilesCount = 0, IssueCount = 0 });
 
             await Task.Run(() =>
             {
-                EnumerateFilesSafe(new DirectoryInfo(options.TargetDirectory), scannedFiles, progress, ct);
+                int scanned = 0;
+                foreach (var file in SafeFileEnumerator.EnumerateFilesSafe(options.TargetDirectory, "*.*", coverage, ct))
+                {
+                    scannedFiles.Add(file);
+                    scanned++;
+                    if (scanned % 100 == 0)
+                    {
+                        string status = coverage.AccessDeniedFolders > 0
+                            ? $"ファイル走査中 ({scanned:N0} 件 / ⚠️アクセス拒否: {coverage.AccessDeniedFolders} 箇所)..."
+                            : $"ファイル走査中 ({scanned:N0} 件)...";
+                        progress?.Report(new AuditProgress { CurrentStatus = status, ScannedFilesCount = scanned });
+                    }
+                }
             }, ct);
 
             summary.TotalFilesScanned = scannedFiles.Count;
@@ -218,47 +232,6 @@ namespace FolderMorpher.Services
             return (summary, items);
         }
 
-        private static void EnumerateFilesSafe(DirectoryInfo rootDir, List<FileInfo> result, IProgress<AuditProgress>? progress, CancellationToken ct)
-        {
-            var stack = new Stack<DirectoryInfo>();
-            stack.Push(rootDir);
-
-            int scanned = 0;
-            while (stack.Count > 0)
-            {
-                ct.ThrowIfCancellationRequested();
-                var currentDir = stack.Pop();
-
-                // 1. サブディレクトリ探索（アクセス拒否やジャンクションは安全にスキップ）
-                try
-                {
-                    foreach (var sub in currentDir.GetDirectories())
-                    {
-                        try
-                        {
-                            if ((sub.Attributes & FileAttributes.ReparsePoint) != 0) continue;
-                        }
-                        catch { }
-                        stack.Push(sub);
-                    }
-                }
-                catch { }
-
-                // 2. カレントディレクトリ内のファイル取得
-                try
-                {
-                    var files = currentDir.GetFiles();
-                    result.AddRange(files);
-                    scanned += files.Length;
-                    if (scanned % 100 == 0)
-                    {
-                        progress?.Report(new AuditProgress { CurrentStatus = $"ファイル走査中 ({scanned} 件)...", ScannedFilesCount = scanned });
-                    }
-                }
-                catch { }
-            }
-        }
-
         private static async Task<string?> ComputeSha256Async(string filePath, CancellationToken ct)
         {
             try
@@ -294,7 +267,12 @@ namespace FolderMorpher.Services
             File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
         }
 
-        public void GenerateArchiveRobocopyScript(string scriptPath, IEnumerable<AuditItem> items, string targetRoot, string archiveDestinationRoot)
+        public void GenerateArchiveRobocopyScript(
+            string scriptPath,
+            IEnumerable<AuditItem> items,
+            string targetRoot,
+            string archiveDestinationRoot,
+            bool includeDuplicates = true)
         {
             var sb = new StringBuilder();
             sb.AppendLine("@echo off");
@@ -303,29 +281,40 @@ namespace FolderMorpher.Services
             sb.AppendLine("rem FolderMorpher - 休眠・重複ファイル安全退避スクリプト");
             sb.AppendLine($"rem 元パス: {targetRoot}");
             sb.AppendLine($"rem 退避先: {archiveDestinationRoot}");
+            sb.AppendLine($"rem 重複ファイルの退避: {(includeDuplicates ? "有効（原本候補以外）" : "無効（休眠ファイルのみ退避）")}");
             sb.AppendLine($"rem 作成日時: {DateTime.Now:yyyy/MM/dd HH:mm:ss}");
             sb.AppendLine("rem ========================================================");
             sb.AppendLine();
             sb.AppendLine("echo [1/2] 退避ディレクトリ構造の準備中...");
             sb.AppendLine();
 
-            // 1. 重複グループの「原本候補」のパスを聖域として抽出（絶対に退避させない）
+            // 1. 原本候補のパスを聖域として抽出（絶対に退避させない）
+            // プロパティ IsOriginalCandidate を主たる判定根拠とし、互換性のため [原本候補] 文字列も多層防御でサポート
             var originalFilePaths = new HashSet<string>(
-                items.Where(i => i.IssueType == AuditIssueType.Duplicate && i.Detail.Contains("[原本候補]"))
+                items.Where(i => i.IsOriginalCandidate || (i.Detail != null && i.Detail.Contains("[原本候補]")))
                      .Select(i => i.FullPath),
                 StringComparer.OrdinalIgnoreCase);
 
             // 2. 退避対象アイテムの抽出：
-            //    - 原本候補は休眠判定されていても絶対に除外
+            //    - 原本候補（IsOriginalCandidate == true）は休眠判定されていても絶対に除外
+            //    - includeDuplicates == true の場合のみ、原本候補以外の重複ファイルを退避対象に含める
             //    - 同一ファイルが休眠と重複の両方に該当しても FullPath で確実に1件に重複排除
             var archiveItems = items
-                .Where(i => (i.IssueType == AuditIssueType.Dormant || i.IssueType == AuditIssueType.Duplicate)
-                            && !originalFilePaths.Contains(i.FullPath)
-                            && !i.Detail.Contains("[原本候補]"))
+                .Where(i =>
+                {
+                    if (i.IsOriginalCandidate || originalFilePaths.Contains(i.FullPath)) return false;
+                    if (i.IssueType == AuditIssueType.Dormant) return true;
+                    if (includeDuplicates && i.IssueType == AuditIssueType.Duplicate) return true;
+                    return false;
+                })
                 .GroupBy(i => i.FullPath, StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.First())
                 .ToList();
 
+            string modeDesc = includeDuplicates
+                ? "休眠ファイル ＋ 重複ファイル（原本候補は保護）"
+                : "休眠ファイル（3年以上未更新）のみ";
+            sb.AppendLine($"echo 退避モード: {modeDesc}");
             sb.AppendLine($"echo 対象ファイル数: {archiveItems.Count} 件 (※重複原本は安全保護のため現場に残されます)");
             sb.AppendLine("pause");
             sb.AppendLine();

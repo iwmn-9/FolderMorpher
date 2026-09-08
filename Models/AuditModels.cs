@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using FolderMorpher.Services;
 
 namespace FolderMorpher.Models
 {
@@ -82,6 +83,8 @@ namespace FolderMorpher.Models
     public class AuditSummary
     {
         public long TotalFilesScanned { get; set; }
+        public ScanCoverage Coverage { get; set; } = new();
+        public int InaccessibleDirectoriesCount => Coverage.AccessDeniedFolders;
         public int DuplicateCount { get; set; }
         public long DuplicateWastedBytes { get; set; }
         public int DormantCount { get; set; }

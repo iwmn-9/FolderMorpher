@@ -45,6 +45,7 @@ namespace AstraSize
         private AuditSummary? _lastAuditSummary;
         private List<AuditItem> _lastAuditItems = new();
         private readonly ObservableCollection<AuditItem> _auditVisibleItems = new();
+        private DispatcherTimer? _auditFilterDebounceTimer;
         private MediaOptimizeSummary? _lastMediaSummary;
         private List<MediaItem> _lastMediaImages = new();
         private List<MediaItem> _lastMediaVideos = new();
@@ -2896,13 +2897,18 @@ namespace AstraSize
                 ApplyAuditFilters();
 
                 // Update KPI Cards
-                AuditKpiTotalFiles.Text = $"{summary.TotalFilesScanned:N0} 件";
+                AuditKpiTotalFiles.Text = summary.InaccessibleDirectoriesCount > 0
+                    ? $"{summary.TotalFilesScanned:N0} 件 (⚠️未走査 {summary.InaccessibleDirectoriesCount})"
+                    : $"{summary.TotalFilesScanned:N0} 件";
                 AuditKpiDupWasted.Text = summary.DuplicateWastedSizeFormatted;
                 AuditKpiDormantSize.Text = summary.DormantSizeFormatted;
                 AuditKpiPathLimits.Text = $"{summary.PathTooLongCount + summary.InvalidCharCount} 件";
 
-                AuditStatusText.Text = $"完了: 課題 {items.Count} 件検出";
-                ShowToast($"監査完了: 課題 {items.Count} 件");
+                string statusMsg = summary.InaccessibleDirectoriesCount > 0
+                    ? $"完了: 課題 {items.Count} 件検出 (⚠️アクセス拒否: {summary.InaccessibleDirectoriesCount} 箇所)"
+                    : $"完了: 課題 {items.Count} 件検出";
+                AuditStatusText.Text = statusMsg;
+                ShowToast(statusMsg);
             }
             catch (OperationCanceledException)
             {
@@ -2995,11 +3001,31 @@ namespace AstraSize
                 return;
             }
 
+            // 重複ファイル（原本候補以外）が存在するか確認し、安全オプトインを選択させる
+            bool hasDuplicates = _lastAuditItems.Any(i => i.IssueType == AuditIssueType.Duplicate && !i.IsOriginalCandidate);
+            bool includeDuplicates = false;
+
+            if (hasDuplicates)
+            {
+                var choice = MessageBox.Show(
+                    "検出された重複ファイル（原本候補以外）も退避バッチに含めますか？\n\n" +
+                    "【はい】: 休眠ファイル ＋ 重複ファイル（原本候補以外）を両方退避\n" +
+                    "【いいえ (推奨)】: 休眠ファイル（3年以上未更新）のみを安全に退避\n\n" +
+                    "※別部署や別システムの設定ファイル等の意図しない誤退避を防ぐため、通常は【いいえ】を推奨します。",
+                    "退避対象の選択（重複ファイルの安全確認）",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Question);
+
+                if (choice == MessageBoxResult.Cancel) return;
+                includeDuplicates = (choice == MessageBoxResult.Yes);
+            }
+
             var dialog = new SaveFileDialog
             {
                 Title = "安全退避バッチの保存先",
                 Filter = "バッチファイル (*.bat)|*.bat",
-                FileName = "Archive-Dormant-Files.bat"
+                InitialDirectory = GetDefaultExportDirectory(),
+                FileName = includeDuplicates ? "Archive-Dormant-And-Duplicates.bat" : "Archive-Dormant-Files.bat"
             };
 
             if (dialog.ShowDialog() == true)
@@ -3007,7 +3033,7 @@ namespace AstraSize
                 try
                 {
                     string dest = Path.Combine(Path.GetDirectoryName(dialog.FileName) ?? @"C:\", "FolderMorpher_Archive");
-                    _auditService.GenerateArchiveRobocopyScript(dialog.FileName, _lastAuditItems, AuditPathTextBox.Text.Trim(), dest);
+                    _auditService.GenerateArchiveRobocopyScript(dialog.FileName, _lastAuditItems, AuditPathTextBox.Text.Trim(), dest, includeDuplicates);
                     ShowToast("安全退避バッチを生成しました");
                     Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
                 }
@@ -3020,7 +3046,23 @@ namespace AstraSize
 
         private void AuditFilter_Changed(object sender, RoutedEventArgs e)
         {
-            ApplyAuditFilters();
+            // テキスト入力時は200msデバウンス（大量件数でのタイピング詰まり防止）
+            if (sender == AuditSearchFilterTextBox)
+            {
+                _auditFilterDebounceTimer?.Stop();
+                _auditFilterDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+                _auditFilterDebounceTimer.Tick += (s, ev) =>
+                {
+                    _auditFilterDebounceTimer.Stop();
+                    ApplyAuditFilters();
+                };
+                _auditFilterDebounceTimer.Start();
+            }
+            else
+            {
+                _auditFilterDebounceTimer?.Stop();
+                ApplyAuditFilters();
+            }
         }
 
         private void ApplyAuditFilters()
@@ -3055,17 +3097,15 @@ namespace AstraSize
             }
 
             var resultList = filtered.ToList();
-            _auditVisibleItems.Clear();
-            foreach (var item in resultList)
-            {
-                _auditVisibleItems.Add(item);
-            }
+
+            // 一括仮想化バインド（1件ずつAddするループを撤廃し、数十万件でも一瞬で表示切替）
+            AuditItemsDataGrid.ItemsSource = resultList;
 
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             string baseTitle = isJa ? "検出された課題・断捨離候補一覧" : "Detected Issues & Cleanup Candidates";
             if (_lastAuditItems.Count > 0)
             {
-                AuditTableTitleText.Text = $"{baseTitle} ({_auditVisibleItems.Count:N0} / {_lastAuditItems.Count:N0} 件)";
+                AuditTableTitleText.Text = $"{baseTitle} ({resultList.Count:N0} / {_lastAuditItems.Count:N0} 件)";
             }
             else
             {
@@ -3189,8 +3229,8 @@ namespace AstraSize
                 return;
             }
 
-            if (MessageBox.Show($"{targets.Count} 枚の写真を視覚的ロスレス（長辺2560px/85%品質/日時保持）で上書き軽量化します。\n聖域保護されたフォルダやRAWデータは保護されます。\n\n実行しますか？",
-                                "写真の最適化確認", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show($"{targets.Count} 枚の写真・画像を最適化（長辺2560px超は縮小/85%品質/Exif・日時完全保持）で上書き軽量化します。\n聖域保護されたフォルダやRAWデータは保護されます。\n\n実行しますか？",
+                                "写真・画像の最適化確認", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
             {
                 return;
             }
@@ -3589,8 +3629,8 @@ namespace AstraSize
             {
                 MediaKpiOptimizedCount.Text = isJa ? "0 枚" : "0 Items";
             }
-            MediaHeaderTitle.Text = isJa ? "🖼️ メディア・オプティマイザ（写真の視覚的ロスレス軽量化 ＆ 巨大動画攻略）" : "🖼️ Media Optimizer (Visual Lossless Compression & Video Nightly Batch)";
-            MediaHeaderDesc.Text = isJa ? "聖域（_Master、印刷用、RAW等）を自動保護しながら、スマホ写真（2MB超）を視覚的ロスレス（長辺2560px/85%品質）で上書き軽量化し、巨大動画のTop抽出と夜間圧縮バッチを出力します。" : "Protects sanctuary folders (_Master, Print, RAW), compresses large photos (>2MB) losslessly in-place, and extracts large videos for nightly GPU H.265 compression.";
+            MediaHeaderTitle.Text = isJa ? "🖼️ メディア・オプティマイザ（写真・画像最適化 ＆ 巨大動画攻略）" : "🖼️ Media Optimizer (Photo Optimization & Video Nightly Batch)";
+            MediaHeaderDesc.Text = isJa ? "聖域（_Master、印刷用、RAW等）を自動保護しながら、大容量写真（2MB超）を最適化（長辺2560px超は縮小/85%品質/Exif・日時保持）で上書き軽量化し、巨大動画のTop抽出と夜間圧縮バッチを出力します。" : "Protects sanctuary folders (_Master, Print, RAW), optimizes large photos (>2MB) in-place with high quality (resizes if >2560px, preserves Exif & timestamps), and extracts large videos for nightly GPU H.265 compression.";
             MediaTargetDirLabel.Text = isJa ? "走査対象ディレクトリ (UNC / ローカル)" : "Target Directory (UNC / Local)";
             MediaMaxDimLabel.Text = isJa ? "最大長辺 (px)" : "Max Dimension (px)";
             MediaQualityLabel.Text = isJa ? "画質 (%)" : "Quality (%)";
@@ -3602,7 +3642,7 @@ namespace AstraSize
             MediaTableTitleText.Text = isJa ? "メディア一覧（画像 ＆ 巨大動画）" : "Media List (Images & Large Videos)";
 
             MediaScanButton.Content = isJa ? "🔍 メディア走査" : "🔍 Scan Media";
-            MediaOptimizeButton.Content = isJa ? "⚡ 写真を軽量化 (直接上書き/日時維持)" : "⚡ Slim Photos (Lossless/In-Place)";
+            MediaOptimizeButton.Content = isJa ? "⚡ 写真を軽量化 (直接上書き/日時維持)" : "⚡ Optimize Photos (In-Place)";
             MediaGenVideoBatchButton.Content = isJa ? "🎬 巨大動画 夜間圧縮バッチ出力 (.bat)" : "🎬 Export Nightly Video Batch (.bat)";
             MediaExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
 

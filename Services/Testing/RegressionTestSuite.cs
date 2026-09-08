@@ -31,92 +31,98 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 14;
+            int totalTests = 15;
 
             try
             {
                 // Test 1
-                Console.WriteLine("\n[TEST 1/14] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
+                Console.WriteLine("\n[TEST 1/15] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
                 await TestMediaOptimizerPngPreservationAsync();
                 Console.WriteLine("  --> [PASS] Media Optimizer: PNG signature (0x89 50 4E 47) and alpha channel 100% preserved.");
                 passCount++;
 
                 // Test 2
-                Console.WriteLine("\n[TEST 2/14] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
+                Console.WriteLine("\n[TEST 2/15] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
                 TestLiveAclDenyAndInheritance();
                 Console.WriteLine("  --> [PASS] Live ACL: ACEs preserved on inheritance disable, Deny rules ordered first (Canonical Order).");
                 passCount++;
 
                 // Test 3
-                Console.WriteLine("\n[TEST 3/14] Audit Archival: Original File Archive & Move Duplication...");
+                Console.WriteLine("\n[TEST 3/15] Audit Archival: Original File Archive & Move Duplication...");
                 TestAuditArchivalOriginalExclusionAndDeduplication();
                 Console.WriteLine("  --> [PASS] Audit: Original files safely protected from archive, move commands deduplicated.");
                 passCount++;
 
                 // Test 4
-                Console.WriteLine("\n[TEST 4/14] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
+                Console.WriteLine("\n[TEST 4/15] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
                 TestMftDataRunDecoderLcnCalculation();
                 Console.WriteLine("  --> [PASS] MFT Data Run Decoder: Initial LCN computed relative to 0 without double-addition.");
                 passCount++;
 
                 // Test 5
-                Console.WriteLine("\n[TEST 5/14] Live ACL: Special Inheritance & Propagation Flags Preservation...");
+                Console.WriteLine("\n[TEST 5/15] Live ACL: Special Inheritance & Propagation Flags Preservation...");
                 TestLiveAclSpecialInheritanceFlags();
                 Console.WriteLine("  --> [PASS] Live ACL: Special InheritanceFlags and PropagationFlags preserved across read/write.");
                 passCount++;
 
                 // Test 6
-                Console.WriteLine("\n[TEST 6/14] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
+                Console.WriteLine("\n[TEST 6/15] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
                 TestAclUiBindingAndHelper();
                 Console.WriteLine("  --> [PASS] ACL UI Binding: AppliesTo, AccessType, and Modal state perfectly synchronized.");
                 passCount++;
 
                 // Test 7
-                Console.WriteLine("\n[TEST 7/14] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
+                Console.WriteLine("\n[TEST 7/15] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
                 await TestEffectiveAccessCanonicalDaclAndNestingAsync();
                 Console.WriteLine("  --> [PASS] Effective Access: Canonical DACL ordering (Explicit Allow > Inherited Deny), multi-level tracing & user isolation verified.");
                 passCount++;
 
                 // Test 8
-                Console.WriteLine("\n[TEST 8/14] Simulation & Script Generation: .NET PS Script, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly...");
+                Console.WriteLine("\n[TEST 8/15] Simulation & Script Generation: .NET PS Script, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly...");
                 TestSimulationAclRobocopyAndEffectiveAccessInheritOnly();
                 Console.WriteLine("  --> [PASS] Simulation & Effective Access: .NET PS script fidelity, Robocopy /XD exclusion, and InheritOnly exclusion verified.");
                 passCount++;
 
                 // Test 9
-                Console.WriteLine("\n[TEST 9/14] Live ACL Rollback DACL SDDL Fidelity & Skeleton Empty-ACL Inheritance Disable...");
+                Console.WriteLine("\n[TEST 9/15] Live ACL Rollback DACL SDDL Fidelity & Skeleton Empty-ACL Inheritance Disable...");
                 await TestLiveAclRollbackAndSkeletonEmptyAclInheritanceAsync();
                 Console.WriteLine("  --> [PASS] Live ACL Rollback & Skeleton Deploy: DACL SDDL 100% restored after mutation, empty ACL inheritance disabled.");
                 passCount++;
 
                 // Test 10
-                Console.WriteLine("\n[TEST 10/14] Storage History: 0s Tree Cache Persistence & Automatic Background Diff Detection...");
+                Console.WriteLine("\n[TEST 10/15] Storage History: 0s Tree Cache Persistence & Automatic Background Diff Detection...");
                 await TestStorageHistoryTreeCacheAndDiffAsync();
                 Console.WriteLine("  --> [PASS] Storage History: Tree cache restored in 0s, size diffs & badges automatically calculated.");
                 passCount++;
 
                 // Test 11
-                Console.WriteLine("\n[TEST 11/14] App Settings: Shared Cache Read Source Cascade & Write Destination Resolution...");
+                Console.WriteLine("\n[TEST 11/15] App Settings: Shared Cache Read Source Cascade & Write Destination Resolution...");
                 TestAppSettingsSharedCacheResolution();
                 Console.WriteLine("  --> [PASS] App Settings: Shared cache cascade fallback and write destination modes 100% verified.");
                 passCount++;
 
                 // Test 12
-                Console.WriteLine("\n[TEST 12/14] UI Binding Contract & Tree Cache Expansion State...");
+                Console.WriteLine("\n[TEST 12/15] UI Binding Contract & Tree Cache Expansion State...");
                 await TestUiBindingContractAndCacheExpansionStateAsync();
                 Console.WriteLine("  --> [PASS] UI Binding Contract & Cache Expansion: FileItemNode properties and tree expansion state 100% verified.");
                 passCount++;
 
                 // Test 13
-                Console.WriteLine("\n[TEST 13/14] Audit: Duplicate Grouping Colors & ActiveDirectory OU Hierarchy Fallback...");
+                Console.WriteLine("\n[TEST 13/15] Audit: Duplicate Grouping Colors & ActiveDirectory OU Hierarchy Fallback...");
                 await TestDuplicateGroupingAndOuHierarchyAsync();
                 Console.WriteLine("  --> [PASS] Audit & AD: Duplicate cyclic color palette, group sorting, and OU hierarchy fallback 100% verified.");
                 passCount++;
 
                 // Test 14
-                Console.WriteLine("\n[TEST 14/14] Audit: Smart Original Candidate Scoring & Copy Keyword Detection...");
+                Console.WriteLine("\n[TEST 14/15] Audit: Smart Original Candidate Scoring & Copy Keyword Detection...");
                 await TestSmartOriginalCandidateScoringAsync();
                 Console.WriteLine("  --> [PASS] Audit: Smart original candidate scoring correctly prioritizes non-copy names and root proximity.");
+                passCount++;
+
+                // Test 15
+                Console.WriteLine("\n[TEST 15/15] Audit: Safe Archival Opt-In & IsOriginalCandidate Property Fidelity...");
+                TestAuditArchiveScriptOptInAndPropertyFidelity();
+                Console.WriteLine("  --> [PASS] Audit: Archive script generation strictly respects IsOriginalCandidate property and duplicate opt-in.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -1655,6 +1661,91 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException($"Expected exactly 1 original candidate, but found {originalCount}");
                 }
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 15. Audit: 安全退避スクリプト生成（原本保護の IsOriginalCandidate プロパティ判定 & 重複オプトイン）の検証
+        /// </summary>
+        public static void TestAuditArchiveScriptOptInAndPropertyFidelity()
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), "fm_test_archive_optin_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            try
+            {
+                string targetRoot = Path.Combine(tempDir, "Source");
+                string archiveRoot = Path.Combine(tempDir, "Archive");
+                Directory.CreateDirectory(targetRoot);
+
+                string fileOriginal = Path.Combine(targetRoot, "important_original.xlsx");
+                string fileCopy = Path.Combine(targetRoot, "important_copy.xlsx");
+                string fileDormant = Path.Combine(targetRoot, "old_dormant_2020.pdf");
+
+                // 意図的に Detail から "[原本候補]" という文字を排除し、IsOriginalCandidate プロパティのみで判定されるかを検証
+                var items = new List<AuditItem>
+                {
+                    new()
+                    {
+                        FullPath = fileOriginal,
+                        FileName = "important_original.xlsx",
+                        IssueType = AuditIssueType.Duplicate,
+                        IsOriginalCandidate = true,
+                        Detail = "推奨マスターファイル (カスタム文言)"
+                    },
+                    new()
+                    {
+                        FullPath = fileCopy,
+                        FileName = "important_copy.xlsx",
+                        IssueType = AuditIssueType.Duplicate,
+                        IsOriginalCandidate = false,
+                        Detail = "重複ファイル (カスタム文言)"
+                    },
+                    new()
+                    {
+                        FullPath = fileDormant,
+                        FileName = "old_dormant_2020.pdf",
+                        IssueType = AuditIssueType.Dormant,
+                        IsOriginalCandidate = false,
+                        Detail = "4.2年間更新なし"
+                    }
+                };
+
+                var auditService = new AuditReportService();
+
+                // 1. includeDuplicates = false (デフォルト/安全推奨: 休眠のみ退避)
+                string scriptDormantOnly = Path.Combine(tempDir, "test_dormant_only.bat");
+                auditService.GenerateArchiveRobocopyScript(scriptDormantOnly, items, targetRoot, archiveRoot, includeDuplicates: false);
+                string contentDormantOnly = File.ReadAllText(scriptDormantOnly);
+
+                // 休眠ファイルは退避対象
+                if (!contentDormantOnly.Contains("old_dormant_2020.pdf"))
+                    throw new InvalidOperationException("Dormant file should be included in archive script");
+
+                // 重複コピーおよび原本は絶対に退避対象外
+                if (contentDormantOnly.Contains("important_copy.xlsx"))
+                    throw new InvalidOperationException("Duplicate copy should NOT be included when includeDuplicates is false");
+                if (contentDormantOnly.Contains("important_original.xlsx"))
+                    throw new InvalidOperationException("Original file should NEVER be included in archive script");
+
+                // 2. includeDuplicates = true (オプトイン: 休眠 + 原本以外の重複を退避)
+                string scriptWithDuplicates = Path.Combine(tempDir, "test_with_duplicates.bat");
+                auditService.GenerateArchiveRobocopyScript(scriptWithDuplicates, items, targetRoot, archiveRoot, includeDuplicates: true);
+                string contentWithDuplicates = File.ReadAllText(scriptWithDuplicates);
+
+                // 休眠ファイルと重複コピーは両方含まれる
+                if (!contentWithDuplicates.Contains("old_dormant_2020.pdf"))
+                    throw new InvalidOperationException("Dormant file should be included when includeDuplicates is true");
+                if (!contentWithDuplicates.Contains("important_copy.xlsx"))
+                    throw new InvalidOperationException("Duplicate copy should be included when includeDuplicates is true");
+
+                // 原本（IsOriginalCandidate == true）は文字列に [原本候補] がなくても絶対に除外されること
+                if (contentWithDuplicates.Contains("important_original.xlsx"))
+                    throw new InvalidOperationException("Original file must NEVER be included in archive script even when includeDuplicates is true");
             }
             finally
             {
