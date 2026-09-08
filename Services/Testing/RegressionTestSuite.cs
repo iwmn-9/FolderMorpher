@@ -31,110 +31,116 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 17;
+            int totalTests = 18;
 
             try
             {
                 // Test 1
-                Console.WriteLine("\n[TEST 1/17] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
+                Console.WriteLine("\n[TEST 1/18] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
                 await TestMediaOptimizerPngPreservationAsync();
                 Console.WriteLine("  --> [PASS] Media Optimizer: PNG signature (0x89 50 4E 47) and alpha channel 100% preserved.");
                 passCount++;
 
                 // Test 2
-                Console.WriteLine("\n[TEST 2/17] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
+                Console.WriteLine("\n[TEST 2/18] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
                 TestLiveAclDenyAndInheritance();
                 Console.WriteLine("  --> [PASS] Live ACL: ACEs preserved on inheritance disable, Deny rules ordered first (Canonical Order).");
                 passCount++;
 
                 // Test 3
-                Console.WriteLine("\n[TEST 3/17] Audit Archival: Original File Archive & Move Duplication...");
+                Console.WriteLine("\n[TEST 3/18] Audit Archival: Original File Archive & Move Duplication...");
                 TestAuditArchivalOriginalExclusionAndDeduplication();
                 Console.WriteLine("  --> [PASS] Audit: Original files safely protected from archive, move commands deduplicated.");
                 passCount++;
 
                 // Test 4
-                Console.WriteLine("\n[TEST 4/17] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
+                Console.WriteLine("\n[TEST 4/18] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
                 TestMftDataRunDecoderLcnCalculation();
                 Console.WriteLine("  --> [PASS] MFT Data Run Decoder: Initial LCN computed relative to 0 without double-addition.");
                 passCount++;
 
                 // Test 5
-                Console.WriteLine("\n[TEST 5/17] Live ACL: Special Inheritance & Propagation Flags Preservation...");
+                Console.WriteLine("\n[TEST 5/18] Live ACL: Special Inheritance & Propagation Flags Preservation...");
                 TestLiveAclSpecialInheritanceFlags();
                 Console.WriteLine("  --> [PASS] Live ACL: Special InheritanceFlags and PropagationFlags preserved across read/write.");
                 passCount++;
 
                 // Test 6
-                Console.WriteLine("\n[TEST 6/17] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
+                Console.WriteLine("\n[TEST 6/18] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
                 TestAclUiBindingAndHelper();
                 Console.WriteLine("  --> [PASS] ACL UI Binding: AppliesTo, AccessType, and Modal state perfectly synchronized.");
                 passCount++;
 
                 // Test 7
-                Console.WriteLine("\n[TEST 7/17] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
+                Console.WriteLine("\n[TEST 7/18] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
                 await TestEffectiveAccessCanonicalDaclAndNestingAsync();
                 Console.WriteLine("  --> [PASS] Effective Access: Canonical DACL ordering (Explicit Allow > Inherited Deny), multi-level tracing & user isolation verified.");
                 passCount++;
 
                 // Test 8
-                Console.WriteLine("\n[TEST 8/17] Simulation & Script Generation: .NET PS Script, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly...");
+                Console.WriteLine("\n[TEST 8/18] Simulation & Script Generation: .NET PS Script, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly...");
                 TestSimulationAclRobocopyAndEffectiveAccessInheritOnly();
                 Console.WriteLine("  --> [PASS] Simulation & Effective Access: .NET PS script fidelity, Robocopy /XD exclusion, and InheritOnly exclusion verified.");
                 passCount++;
 
                 // Test 9
-                Console.WriteLine("\n[TEST 9/17] Live ACL Rollback DACL SDDL Fidelity & Skeleton Empty-ACL Inheritance Disable...");
+                Console.WriteLine("\n[TEST 9/18] Live ACL Rollback DACL SDDL Fidelity & Skeleton Empty-ACL Inheritance Disable...");
                 await TestLiveAclRollbackAndSkeletonEmptyAclInheritanceAsync();
                 Console.WriteLine("  --> [PASS] Live ACL Rollback & Skeleton Deploy: DACL SDDL 100% restored after mutation, empty ACL inheritance disabled.");
                 passCount++;
 
                 // Test 10
-                Console.WriteLine("\n[TEST 10/17] Storage History: 0s Tree Cache Persistence & Automatic Background Diff Detection...");
+                Console.WriteLine("\n[TEST 10/18] Storage History: 0s Tree Cache Persistence & Automatic Background Diff Detection...");
                 await TestStorageHistoryTreeCacheAndDiffAsync();
                 Console.WriteLine("  --> [PASS] Storage History: Tree cache restored in 0s, size diffs & badges automatically calculated.");
                 passCount++;
 
                 // Test 11
-                Console.WriteLine("\n[TEST 11/17] App Settings: Shared Cache Read Source Cascade & Write Destination Resolution...");
+                Console.WriteLine("\n[TEST 11/18] App Settings: Shared Cache Read Source Cascade & Write Destination Resolution...");
                 TestAppSettingsSharedCacheResolution();
                 Console.WriteLine("  --> [PASS] App Settings: Shared cache cascade fallback and write destination modes 100% verified.");
                 passCount++;
 
                 // Test 12
-                Console.WriteLine("\n[TEST 12/17] UI Binding Contract & Tree Cache Expansion State...");
+                Console.WriteLine("\n[TEST 12/18] UI Binding Contract & Tree Cache Expansion State...");
                 await TestUiBindingContractAndCacheExpansionStateAsync();
                 Console.WriteLine("  --> [PASS] UI Binding Contract & Cache Expansion: FileItemNode properties and tree expansion state 100% verified.");
                 passCount++;
 
                 // Test 13
-                Console.WriteLine("\n[TEST 13/17] Audit: Duplicate Grouping Colors & ActiveDirectory OU Hierarchy Fallback...");
+                Console.WriteLine("\n[TEST 13/18] Audit: Duplicate Grouping Colors & ActiveDirectory OU Hierarchy Fallback...");
                 await TestDuplicateGroupingAndOuHierarchyAsync();
                 Console.WriteLine("  --> [PASS] Audit & AD: Duplicate cyclic color palette, group sorting, and OU hierarchy fallback 100% verified.");
                 passCount++;
 
                 // Test 14
-                Console.WriteLine("\n[TEST 14/17] Audit: Smart Original Candidate Scoring & Copy Keyword Detection...");
+                Console.WriteLine("\n[TEST 14/18] Audit: Smart Original Candidate Scoring & Copy Keyword Detection...");
                 await TestSmartOriginalCandidateScoringAsync();
                 Console.WriteLine("  --> [PASS] Audit: Smart original candidate scoring correctly prioritizes non-copy names and root proximity.");
                 passCount++;
 
                 // Test 15
-                Console.WriteLine("\n[TEST 15/17] Audit: Safe Archival Opt-In & IsOriginalCandidate Property Fidelity...");
+                Console.WriteLine("\n[TEST 15/18] Audit: Safe Archival Opt-In & IsOriginalCandidate Property Fidelity...");
                 TestAuditArchiveScriptOptInAndPropertyFidelity();
                 Console.WriteLine("  --> [PASS] Audit: Archive script generation strictly respects IsOriginalCandidate property and duplicate opt-in.");
                 passCount++;
 
                 // Test 16
-                Console.WriteLine("\n[TEST 16/17] Simulation Studio: Lazy Loading, Auto-Expand & D&D Movement/Drop Outside Contract...");
+                Console.WriteLine("\n[TEST 16/18] Simulation Studio: Lazy Loading, Auto-Expand & D&D Movement/Drop Outside Contract...");
                 TestSimulationStudioLazyLoadingAndDropOutside();
                 Console.WriteLine("  --> [PASS] Simulation Studio: Source lazy loading, root auto-expand, D&D movement & outside removal verified.");
                 passCount++;
 
                 // Test 17
-                Console.WriteLine("\n[TEST 17/17] Audit & Hygiene: Smart Selection, Original File Protection & Safe Permanent Deletion...");
+                Console.WriteLine("\n[TEST 17/18] Audit & Hygiene: Smart Selection, Original File Protection & Safe Permanent Deletion...");
                 TestAuditSmartSelectAndSafePermanentDeletion();
                 Console.WriteLine("  --> [PASS] Audit & Hygiene: Smart select, original preservation guard, read-only unsetting & deletion verified.");
+                passCount++;
+
+                // Test 18
+                Console.WriteLine("\n[TEST 18/18] Audit: Hierarchical Size Sorting with Preserved Duplicate Groups & Original Priority...");
+                TestAuditHierarchicalSizeSortingWithDuplicateGroups();
+                Console.WriteLine("  --> [PASS] Audit: Hierarchical size sorting keeps duplicate groups strictly cohesive with original candidates first.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -2045,6 +2051,76 @@ namespace FolderMorpher.Services.Testing
             {
                 try { Directory.Delete(tempDir, true); } catch { }
             }
+        }
+
+        /// <summary>
+        /// 18. Audit & Hygiene: 容量ソート時の重複グループ一括束ね ＆ 原本最優先整列の検証
+        /// </summary>
+        public static void TestAuditHierarchicalSizeSortingWithDuplicateGroups()
+        {
+            var dorm10G = new AuditItem { FileName = "dormant_10g.iso", Size = 10_000_000_000L, IssueType = AuditIssueType.Dormant, DuplicateGroupIndex = 0, IsOriginalCandidate = false };
+            var dup1Copy1 = new AuditItem { FileName = "dup1_copy1.zip", Size = 5_000_000_000L, IssueType = AuditIssueType.Duplicate, DuplicateGroupIndex = 1, IsOriginalCandidate = false };
+            var dup1Orig = new AuditItem { FileName = "dup1_master.zip", Size = 5_000_000_000L, IssueType = AuditIssueType.Duplicate, DuplicateGroupIndex = 1, IsOriginalCandidate = true };
+            var dup1Copy2 = new AuditItem { FileName = "dup1_copy2.zip", Size = 5_000_000_000L, IssueType = AuditIssueType.Duplicate, DuplicateGroupIndex = 1, IsOriginalCandidate = false };
+            var dorm3G = new AuditItem { FileName = "dormant_3g.vhdx", Size = 3_000_000_000L, IssueType = AuditIssueType.Dormant, DuplicateGroupIndex = 0, IsOriginalCandidate = false };
+            var dup2Copy1 = new AuditItem { FileName = "dup2_copy.pdf", Size = 1_000_000_000L, IssueType = AuditIssueType.Duplicate, DuplicateGroupIndex = 2, IsOriginalCandidate = false };
+            var dup2Orig = new AuditItem { FileName = "dup2_master.pdf", Size = 1_000_000_000L, IssueType = AuditIssueType.Duplicate, DuplicateGroupIndex = 2, IsOriginalCandidate = true };
+            var dorm500M = new AuditItem { FileName = "dormant_500m.dat", Size = 500_000_000L, IssueType = AuditIssueType.Dormant, DuplicateGroupIndex = 0, IsOriginalCandidate = false };
+
+            // わざとバラバラ順序で投入
+            var rawList = new List<AuditItem>
+            {
+                dup1Copy2, dorm3G, dup2Copy1, dorm10G, dup1Copy1, dorm500M, dup2Orig, dup1Orig
+            };
+
+            // 1. 降順ソート検証 (Descending)
+            var descSorted = AuditReportService.SortAuditItems(rawList, "Size", descending: true);
+            if (descSorted.Count != 8)
+                throw new InvalidOperationException($"Expected 8 items, got {descSorted.Count}");
+
+            if (descSorted[0].FileName != "dormant_10g.iso")
+                throw new InvalidOperationException($"[0] Expected dormant_10g.iso, got {descSorted[0].FileName}");
+
+            // 重複グループ1 (5GB): 原本が先頭で、コピー2件が同一セットで連続すること
+            if (descSorted[1].FileName != "dup1_master.zip" || !descSorted[1].IsOriginalCandidate || descSorted[1].DuplicateGroupIndex != 1)
+                throw new InvalidOperationException($"[1] Expected dup1_master.zip as original at top of group 1, got {descSorted[1].FileName}");
+            if (descSorted[2].DuplicateGroupIndex != 1 || descSorted[3].DuplicateGroupIndex != 1)
+                throw new InvalidOperationException("Duplicate group 1 items must stay strictly together!");
+
+            if (descSorted[4].FileName != "dormant_3g.vhdx")
+                throw new InvalidOperationException($"[4] Expected dormant_3g.vhdx, got {descSorted[4].FileName}");
+
+            // 重複グループ2 (1GB): 原本が先頭で、コピーが連続すること
+            if (descSorted[5].FileName != "dup2_master.pdf" || !descSorted[5].IsOriginalCandidate || descSorted[5].DuplicateGroupIndex != 2)
+                throw new InvalidOperationException($"[5] Expected dup2_master.pdf as original at top of group 2, got {descSorted[5].FileName}");
+            if (descSorted[6].DuplicateGroupIndex != 2)
+                throw new InvalidOperationException("Duplicate group 2 copy must follow immediately after original!");
+
+            if (descSorted[7].FileName != "dormant_500m.dat")
+                throw new InvalidOperationException($"[7] Expected dormant_500m.dat, got {descSorted[7].FileName}");
+
+            // 2. 昇順ソート検証 (Ascending)
+            var ascSorted = AuditReportService.SortAuditItems(rawList, "Size", descending: false);
+            if (ascSorted[0].FileName != "dormant_500m.dat")
+                throw new InvalidOperationException($"[Asc 0] Expected dormant_500m.dat, got {ascSorted[0].FileName}");
+
+            // 重複グループ2 (1GB): 原本が先頭
+            if (ascSorted[1].FileName != "dup2_master.pdf" || !ascSorted[1].IsOriginalCandidate || ascSorted[1].DuplicateGroupIndex != 2)
+                throw new InvalidOperationException($"[Asc 1] Expected dup2_master.pdf as original, got {ascSorted[1].FileName}");
+            if (ascSorted[2].DuplicateGroupIndex != 2)
+                throw new InvalidOperationException("[Asc 2] Duplicate group 2 items must stay together!");
+
+            if (ascSorted[3].FileName != "dormant_3g.vhdx")
+                throw new InvalidOperationException($"[Asc 3] Expected dormant_3g.vhdx, got {ascSorted[3].FileName}");
+
+            // 重複グループ1 (5GB): 原本が先頭
+            if (ascSorted[4].FileName != "dup1_master.zip" || !ascSorted[4].IsOriginalCandidate || ascSorted[4].DuplicateGroupIndex != 1)
+                throw new InvalidOperationException($"[Asc 4] Expected dup1_master.zip as original, got {ascSorted[4].FileName}");
+            if (ascSorted[5].DuplicateGroupIndex != 1 || ascSorted[6].DuplicateGroupIndex != 1)
+                throw new InvalidOperationException("[Asc 5,6] Duplicate group 1 items must stay together!");
+
+            if (ascSorted[7].FileName != "dormant_10g.iso")
+                throw new InvalidOperationException($"[Asc 7] Expected dormant_10g.iso, got {ascSorted[7].FileName}");
         }
     }
 }

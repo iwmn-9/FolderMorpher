@@ -221,15 +221,97 @@ namespace FolderMorpher.Services
             }
 
             // 重複ファイルをグループ順・原本優先でソートし、視認性と色分けの並びを完璧にする
-            items = items
-                .OrderBy(it => it.IssueType == AuditIssueType.Duplicate ? 0 : 1)
-                .ThenBy(it => it.DuplicateGroupIndex)
-                .ThenByDescending(it => it.IsOriginalCandidate)
-                .ThenBy(it => it.FileName, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            items = SortAuditItems(items, "Default", false);
 
             progress?.Report(new AuditProgress { CurrentStatus = "監査完了", ScannedFilesCount = summary.TotalFilesScanned, IssueCount = items.Count });
             return (summary, items);
+        }
+
+        /// <summary>
+        /// 監査アイテム一覧を指定列で階層ソートする。
+        /// 【重要】容量ソート時、重複グループは同一セットとして固まり、原本候補が必ず先頭に配置される。
+        /// </summary>
+        public static List<AuditItem> SortAuditItems(IEnumerable<AuditItem> source, string sortProperty, bool descending)
+        {
+            var list = source.ToList();
+            if (list.Count <= 1) return list;
+
+            switch (sortProperty)
+            {
+                case "Size":
+                    // 容量ソート:
+                    // 1. ファイルサイズ
+                    // 2. 重複グループ（DUP-0001等）で必ず1つに束ねる
+                    // 3. グループ内では原本候補が必ず最優先（先頭）
+                    // 4. ファイル名順
+                    return descending
+                        ? list.OrderByDescending(x => x.Size)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ThenBy(x => x.FileName, StringComparer.OrdinalIgnoreCase)
+                              .ToList()
+                        : list.OrderBy(x => x.Size)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ThenBy(x => x.FileName, StringComparer.OrdinalIgnoreCase)
+                              .ToList();
+
+                case "LastWriteTime":
+                    return descending
+                        ? list.OrderByDescending(x => x.LastWriteTime)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList()
+                        : list.OrderBy(x => x.LastWriteTime)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList();
+
+                case "FileName":
+                    return descending
+                        ? list.OrderByDescending(x => x.FileName, StringComparer.OrdinalIgnoreCase)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList()
+                        : list.OrderBy(x => x.FileName, StringComparer.OrdinalIgnoreCase)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList();
+
+                case "IssueType":
+                    return descending
+                        ? list.OrderByDescending(x => x.IssueType)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList()
+                        : list.OrderBy(x => x.IssueType)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList();
+
+                case "DuplicateGroupIndex":
+                    return descending
+                        ? list.OrderByDescending(x => x.DuplicateGroupIndex)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList()
+                        : list.OrderBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList();
+
+                case "FullPath":
+                    return descending
+                        ? list.OrderByDescending(x => x.FullPath, StringComparer.OrdinalIgnoreCase).ToList()
+                        : list.OrderBy(x => x.FullPath, StringComparer.OrdinalIgnoreCase).ToList();
+
+                default:
+                    // デフォルト表示（重複グループ優先、グループ順、原本先頭）
+                    return list
+                        .OrderBy(it => it.IssueType == AuditIssueType.Duplicate ? 0 : 1)
+                        .ThenBy(it => it.DuplicateGroupIndex > 0 ? it.DuplicateGroupIndex : int.MaxValue)
+                        .ThenByDescending(it => it.IsOriginalCandidate)
+                        .ThenBy(it => it.FileName, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+            }
         }
 
         private static async Task<string?> ComputeSha256Async(string filePath, CancellationToken ct)

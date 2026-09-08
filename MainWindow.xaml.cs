@@ -46,6 +46,8 @@ namespace AstraSize
         private List<AuditItem> _lastAuditItems = new();
         private readonly ObservableCollection<AuditItem> _auditVisibleItems = new();
         private DispatcherTimer? _auditFilterDebounceTimer;
+        private string _auditSortProperty = "Default";
+        private bool _auditSortDescending = false;
         private MediaOptimizeSummary? _lastMediaSummary;
         private List<MediaItem> _lastMediaImages = new();
         private List<MediaItem> _lastMediaVideos = new();
@@ -3129,6 +3131,12 @@ namespace AstraSize
                 var (summary, items) = await _auditService.RunAuditAsync(options, progress, _auditCts.Token);
                 _lastAuditSummary = summary;
                 _lastAuditItems = items;
+                _auditSortProperty = "Default";
+                _auditSortDescending = false;
+                if (AuditItemsDataGrid != null)
+                {
+                    foreach (var col in AuditItemsDataGrid.Columns) col.SortDirection = null;
+                }
                 ApplyAuditFilters();
 
                 // Update KPI Cards
@@ -3333,6 +3341,9 @@ namespace AstraSize
 
             var resultList = filtered.ToList();
 
+            // 階層ソート適用（容量ソート時は重複グループをひとかたまりに束ね、原本候補を先頭に配置）
+            resultList = AuditReportService.SortAuditItems(resultList, _auditSortProperty, _auditSortDescending);
+
             // 一括仮想化バインド（1件ずつAddするループを撤廃し、数十万件でも一瞬で表示切替）
             AuditItemsDataGrid.ItemsSource = resultList;
 
@@ -3346,6 +3357,31 @@ namespace AstraSize
             {
                 AuditTableTitleText.Text = baseTitle;
             }
+        }
+
+        private void AuditItemsDataGrid_Sorting(object sender, DataGridSortingEventArgs e)
+        {
+            e.Handled = true; // WPFの標準ソートを抑止し、重複グループを壊さないカスタム階層ソートを実行
+
+            string sortProp = e.Column.SortMemberPath;
+            if (string.IsNullOrEmpty(sortProp)) return;
+
+            // ソート方向のトグル
+            System.ComponentModel.ListSortDirection newDirection = (e.Column.SortDirection != System.ComponentModel.ListSortDirection.Ascending)
+                ? System.ComponentModel.ListSortDirection.Ascending
+                : System.ComponentModel.ListSortDirection.Descending;
+
+            // 全列のインジケーターをクリアして対象列に設定
+            foreach (var col in AuditItemsDataGrid.Columns)
+            {
+                col.SortDirection = null;
+            }
+            e.Column.SortDirection = newDirection;
+
+            _auditSortProperty = sortProp;
+            _auditSortDescending = (newDirection == System.ComponentModel.ListSortDirection.Descending);
+
+            ApplyAuditFilters();
         }
 
         private void AuditItemsDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)

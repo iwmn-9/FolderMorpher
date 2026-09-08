@@ -237,6 +237,15 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
       - 削除成功した `DeletedPaths` を用いて、`_lastAuditItems.RemoveAll(x => DeletedPaths.Contains(x.FullPath))` を実行。実ファイルが消えたのに別カテゴリの行が画面に残る幽霊行バグを完全根絶。
     - **ReadOnly属性の一時解除と安全ロールバック**:
       - 削除前にファイルの元の属性を退避し、万が一ファイルロックや権限不足で削除に失敗した場合は元の属性を自動復元。
+32. **断捨離・健全化の階層ソート ＆ 重複グループ一括束ね ＆ 数値ソート規約 (v1.5.0)**:
+    - **重複グループの結束性維持（Cohesive Duplicate Group Sorting）**:
+      - `AuditItemsDataGrid` の「容量」列ソート時、WPFの単純1行ソートを抑止し、`AuditReportService.SortAuditItems` による階層ソートを実行。
+      - 同一容量に複数の重複グループや休眠ファイルが存在しても、`ThenBy(DuplicateGroupIndex)` により同一重複グループが途切れず1セットにまとまる。
+      - グループ内では `ThenByDescending(IsOriginalCandidate)` により、**原本候補（`IsOriginalCandidate == true`）が必ず最優先（先頭）** に配置され、色分けパレットと原本保護の視覚的意図を100%忠実に維持。
+    - **バイト単位数値ソートの保証**:
+      - 容量列（`ColAuditSize`）に `SortMemberPath="Size"` を設定し、`SizeFormatted` の文字列ソート（`"100 MB"` < `"20 MB"`）による並び順破綻を根絶。
+    - **フィルター連動・動的ソート維持**:
+      - 絞り込みフィルター（カテゴリ切り替え・テキスト検索）適用時も現在のソート列・ソート方向（昇順/降順）を透過的に維持。
 
 ---
 

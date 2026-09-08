@@ -78,7 +78,7 @@
                         <!-- Expanded Footer (2-tier layout: Brand on top, Controls below) -->
                         <StackPanel x:Name="SidebarFooterExpandedPanel" Margin="14,8,14,10">
                             <StackPanel Margin="0,0,0,8">
-                                <TextBlock Text="FolderMorpher v1.4.9" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock Text="FolderMorpher v1.5.0" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                                 <TextBlock Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#94A3B8" Margin="0,1,0,0"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal">
@@ -1593,7 +1593,8 @@
                         </Grid>
                         <DataGrid x:Name="AuditItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="30" HeadersVisibility="Column" RowHeaderWidth="0"
-                                  MouseDoubleClick="AuditItemsDataGrid_MouseDoubleClick">
+                                  MouseDoubleClick="AuditItemsDataGrid_MouseDoubleClick"
+                                  Sorting="AuditItemsDataGrid_Sorting">
                             <DataGrid.RowStyle>
                                 <Style TargetType="DataGridRow">
                                     <Setter Property="Background" Value="{Binding RowBackgroundHex}"/>
@@ -1608,7 +1609,7 @@
                                 </Style>
                             </DataGrid.RowStyle>
                             <DataGrid.Columns>
-                                <DataGridTemplateColumn Width="38">
+                                <DataGridTemplateColumn Width="38" CanUserSort="False">
                                     <DataGridTemplateColumn.Header>
                                         <CheckBox x:Name="AuditHeaderCheckBox" HorizontalAlignment="Center" VerticalAlignment="Center" Click="AuditHeaderCheckBox_Click" ToolTip="すべて選択 / すべて解除"/>
                                     </DataGridTemplateColumn.Header>
@@ -1619,8 +1620,8 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTextColumn x:Name="ColAuditIssueType" Header="問題種別" Binding="{Binding IssueTypeDisplay}" Width="130" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTemplateColumn x:Name="ColAuditDupGroup" Header="重複グループ" Width="140">
+                                <DataGridTextColumn x:Name="ColAuditIssueType" Header="問題種別" Binding="{Binding IssueTypeDisplay}" SortMemberPath="IssueType" Width="130" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTemplateColumn x:Name="ColAuditDupGroup" Header="重複グループ" SortMemberPath="DuplicateGroupIndex" Width="140">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <Border Background="{Binding BadgeBackgroundHex}" BorderBrush="{Binding BadgeBorderHex}"
@@ -1631,11 +1632,11 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTextColumn x:Name="ColAuditFileName" Header="ファイル名" Binding="{Binding FileName}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn x:Name="ColAuditSize" Header="容量" Binding="{Binding SizeFormatted}" Width="90" ElementStyle="{StaticResource RightAlignedCell}"/>
-                                <DataGridTextColumn x:Name="ColAuditModified" Header="最終更新日時" Binding="{Binding LastWriteTime, StringFormat='yyyy/MM/dd HH:mm'}" Width="130" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn x:Name="ColAuditDetail" Header="詳細" Binding="{Binding Detail}" Width="200" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn x:Name="ColAuditFullPath" Header="完全パス" Binding="{Binding FullPath}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColAuditFileName" Header="ファイル名" Binding="{Binding FileName}" SortMemberPath="FileName" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColAuditSize" Header="容量" Binding="{Binding SizeFormatted}" SortMemberPath="Size" Width="90" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColAuditModified" Header="最終更新日時" Binding="{Binding LastWriteTime, StringFormat='yyyy/MM/dd HH:mm'}" SortMemberPath="LastWriteTime" Width="130" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColAuditDetail" Header="詳細" Binding="{Binding Detail}" SortMemberPath="Detail" Width="200" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColAuditFullPath" Header="完全パス" Binding="{Binding FullPath}" SortMemberPath="FullPath" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Grid>
@@ -2251,7 +2252,7 @@
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v1.4.9 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.5.0 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>
