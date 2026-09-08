@@ -3368,6 +3368,249 @@ namespace AstraSize
                 Debug.WriteLine($"Failed to open explorer for audit item: {ex.Message}");
             }
         }
+
+        private void AuditSmartSelectComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (AuditSmartSelectComboBox.SelectedItem is not ComboBoxItem item) return;
+            string tag = item.Tag?.ToString() ?? "None";
+            if (tag == "None") return;
+
+            if (_lastAuditItems == null || _lastAuditItems.Count == 0)
+            {
+                AuditSmartSelectComboBox.SelectedIndex = 0;
+                return;
+            }
+
+            var visibleList = AuditItemsDataGrid.ItemsSource as List<AuditItem> ?? _lastAuditItems;
+
+            switch (tag)
+            {
+                case "DupCopyOnly":
+                    // 重複ファイルの原本候補以外を選択（原本は保護）
+                    foreach (var ai in _lastAuditItems)
+                    {
+                        if (ai.IssueType == AuditIssueType.Duplicate)
+                        {
+                            ai.IsChecked = !ai.IsOriginalCandidate;
+                        }
+                        else
+                        {
+                            ai.IsChecked = false;
+                        }
+                    }
+                    ShowToast("重複ファイルの原本以外（コピー）を一括選択しました");
+                    break;
+
+                case "Dormant3Y":
+                    // 3年以上前の休眠ファイルを選択
+                    DateTime threshold3Y = DateTime.Now.AddYears(-3);
+                    foreach (var ai in _lastAuditItems)
+                    {
+                        ai.IsChecked = (ai.IssueType == AuditIssueType.Dormant && ai.LastWriteTime < threshold3Y);
+                    }
+                    ShowToast("3年以上未更新の休眠ファイルを選択しました");
+                    break;
+
+                case "Dormant5Y":
+                    // 5年以上前の休眠ファイルを選択
+                    DateTime threshold5Y = DateTime.Now.AddYears(-5);
+                    foreach (var ai in _lastAuditItems)
+                    {
+                        ai.IsChecked = (ai.IssueType == AuditIssueType.Dormant && ai.LastWriteTime < threshold5Y);
+                    }
+                    ShowToast("5年以上未更新の休眠ファイルを選択しました");
+                    break;
+
+                case "SelectVisible":
+                    // 現在の絞り込み表示中のみすべて選択
+                    foreach (var ai in visibleList)
+                    {
+                        ai.IsChecked = true;
+                    }
+                    ShowToast($"表示中の {visibleList.Count:N0} 件を選択しました");
+                    break;
+
+                case "ClearAll":
+                    // すべて選択解除
+                    foreach (var ai in _lastAuditItems)
+                    {
+                        ai.IsChecked = false;
+                    }
+                    if (AuditHeaderCheckBox != null) AuditHeaderCheckBox.IsChecked = false;
+                    ShowToast("選択をすべて解除しました");
+                    break;
+            }
+
+            // 次回も同じプリセットを選択できるように初期インデックスへリセット
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (AuditSmartSelectComboBox != null) AuditSmartSelectComboBox.SelectedIndex = 0;
+            }));
+        }
+
+        private void AuditHeaderCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            bool check = AuditHeaderCheckBox.IsChecked == true;
+            var visibleList = AuditItemsDataGrid.ItemsSource as List<AuditItem> ?? _lastAuditItems;
+            if (visibleList != null)
+            {
+                foreach (var item in visibleList)
+                {
+                    item.IsChecked = check;
+                }
+            }
+        }
+
+        private async void AuditDeleteSelectedButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_lastAuditItems == null || _lastAuditItems.Count == 0)
+            {
+                MessageBox.Show("削除対象のファイルがありません。先に監査スキャンを実行してください。", "案内", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var selectedItems = _lastAuditItems.Where(x => x.IsChecked).ToList();
+            if (selectedItems.Count == 0)
+            {
+                MessageBox.Show("削除するファイルが選択されていません。チェックボックスでファイルを選択してから実行してください。", "案内", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // 1. 原本候補保護の安全ガード
+            var originalCandidates = selectedItems.Where(x => x.IssueType == AuditIssueType.Duplicate && x.IsOriginalCandidate).ToList();
+            if (originalCandidates.Count > 0)
+            {
+                var origResult = MessageBox.Show(
+                    $"⚠️ 警告: 選択項目の中に、重複グループの【原本候補】が {originalCandidates.Count:N0} 件含まれています！\n\n" +
+                    "原本を削除すると、そのグループの全データが消失する恐れがあります。\n\n" +
+                    "・[はい (Yes)] : 原本候補を除外して、重複コピーのみ削除する（推奨・安全）\n" +
+                    "・[いいえ (No)] : 原本候補も含め、選択された全ファイルを削除する\n" +
+                    "・[キャンセル] : 処理を中止する",
+                    "原本候補の検出 - 削除安全確認",
+                    MessageBoxButton.YesNoCancel,
+                    MessageBoxImage.Warning);
+
+                if (origResult == MessageBoxResult.Cancel) return;
+
+                if (origResult == MessageBoxResult.Yes)
+                {
+                    foreach (var orig in originalCandidates)
+                    {
+                        orig.IsChecked = false;
+                    }
+                    selectedItems = selectedItems.Where(x => !(x.IssueType == AuditIssueType.Duplicate && x.IsOriginalCandidate)).ToList();
+                    if (selectedItems.Count == 0)
+                    {
+                        ShowToast("原本候補を除外した結果、削除対象が0件になりました");
+                        return;
+                    }
+                }
+            }
+
+            // 2. 完全削除の最終確認ダイアログ
+            long totalBytes = selectedItems.Sum(x => x.Size);
+            string sizeFormatted = FileItemNode.FormatBytes(totalBytes);
+            var confirm = MessageBox.Show(
+                $"選択された {selectedItems.Count:N0} 件（合計 {sizeFormatted}）のファイルを【完全に削除】します。\n\n" +
+                "⚠️ 注意:\n" +
+                "・ファイルはごみ箱に入らず完全に削除され、アプリ側から復元することはできません。\n" +
+                "・本当に削除を実行してもよろしいですか？",
+                "ファイル完全削除の確認",
+                MessageBoxButton.OKCancel,
+                MessageBoxImage.Stop);
+
+            if (confirm != MessageBoxResult.OK) return;
+
+            // 3. バックグラウンド削除処理
+            AuditDeleteSelectedButton.IsEnabled = false;
+            AuditStartButton.IsEnabled = false;
+            GlobalProgressBar.Visibility = Visibility.Visible;
+            AuditStatusText.Text = "ファイル削除中...";
+
+            int successCount = 0;
+            long freedBytes = 0;
+            var errorList = new List<string>();
+            var deletedItems = new List<AuditItem>();
+
+            await Task.Run(() =>
+            {
+                foreach (var item in selectedItems)
+                {
+                    try
+                    {
+                        if (File.Exists(item.FullPath))
+                        {
+                            var fi = new FileInfo(item.FullPath);
+                            if (fi.IsReadOnly) fi.IsReadOnly = false;
+                            fi.Delete();
+                        }
+                        successCount++;
+                        freedBytes += item.Size;
+                        deletedItems.Add(item);
+                    }
+                    catch (Exception ex)
+                    {
+                        errorList.Add($"{item.FileName}: {ex.Message}");
+                    }
+                }
+            });
+
+            // 4. データ・UIの最新化
+            foreach (var item in deletedItems)
+            {
+                _lastAuditItems.Remove(item);
+            }
+            ApplyAuditFilters();
+            UpdateAuditKpiAfterDeletion();
+
+            GlobalProgressBar.Visibility = Visibility.Collapsed;
+            AuditDeleteSelectedButton.IsEnabled = true;
+            AuditStartButton.IsEnabled = true;
+            AuditStatusText.Text = $"削除完了: {successCount:N0} 件削除 ({FileItemNode.FormatBytes(freedBytes)} 削減)";
+
+            if (errorList.Count > 0)
+            {
+                MessageBox.Show(
+                    $"{successCount:N0} 件のファイルを削除しました（{FileItemNode.FormatBytes(freedBytes)} 削減）。\n\n" +
+                    $"以下の {errorList.Count:N0} 件でエラーが発生しました:\n" +
+                    string.Join("\n", errorList.Take(5)) + (errorList.Count > 5 ? $"\n...他 {errorList.Count - 5} 件" : ""),
+                    "削除完了（一部エラー）",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+            else
+            {
+                ShowToast($"🗑️ {successCount:N0} 件のファイルを完全削除しました（{FileItemNode.FormatBytes(freedBytes)} 削減）");
+            }
+        }
+
+        private void UpdateAuditKpiAfterDeletion()
+        {
+            if (_lastAuditItems == null || _lastAuditSummary == null) return;
+
+            long dupWasted = _lastAuditItems
+                .Where(x => x.IssueType == AuditIssueType.Duplicate && !x.IsOriginalCandidate)
+                .Sum(x => x.Size);
+            int dupCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.Duplicate);
+
+            long dormantSize = _lastAuditItems
+                .Where(x => x.IssueType == AuditIssueType.Dormant)
+                .Sum(x => x.Size);
+            int dormantCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.Dormant);
+
+            int pathLimits = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.PathTooLong || x.IssueType == AuditIssueType.InvalidChar);
+
+            _lastAuditSummary.DuplicateWastedBytes = dupWasted;
+            _lastAuditSummary.DuplicateCount = dupCount;
+            _lastAuditSummary.DormantBytes = dormantSize;
+            _lastAuditSummary.DormantCount = dormantCount;
+            _lastAuditSummary.PathTooLongCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.PathTooLong);
+            _lastAuditSummary.InvalidCharCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.InvalidChar);
+
+            AuditKpiDupWasted.Text = _lastAuditSummary.DuplicateWastedSizeFormatted;
+            AuditKpiDormantSize.Text = _lastAuditSummary.DormantSizeFormatted;
+            AuditKpiPathLimits.Text = $"{pathLimits:N0} 件";
+        }
         #endregion
 
         #region Media Optimizer Tab

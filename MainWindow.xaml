@@ -78,7 +78,7 @@
                         <!-- Expanded Footer (2-tier layout: Brand on top, Controls below) -->
                         <StackPanel x:Name="SidebarFooterExpandedPanel" Margin="14,8,14,10">
                             <StackPanel Margin="0,0,0,8">
-                                <TextBlock Text="FolderMorpher v1.4.7" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock Text="FolderMorpher v1.4.8" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                                 <TextBlock Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#94A3B8" Margin="0,1,0,0"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal">
@@ -1488,6 +1488,10 @@
                                         Style="{StaticResource FluentButtonSecondary}" Click="AuditExportCsvButton_Click"/>
                                 <Button x:Name="AuditGenArchiveScriptButton" Content="📦 安全退避バッチ生成 (.bat)" Height="32" Margin="0,0,8,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="AuditGenArchiveScriptButton_Click" ToolTip="休眠・重複ファイルを安全に別フォルダへ退避するスクリプトを出力"/>
+                                <Button x:Name="AuditDeleteSelectedButton" Content="🗑️ 選択ファイルを完全削除" Height="32" Margin="0,0,8,0"
+                                        Background="#EF4444" Foreground="#FFFFFF" FontWeight="Bold" BorderThickness="0"
+                                        Style="{StaticResource FluentButtonPrimary}" Click="AuditDeleteSelectedButton_Click"
+                                        ToolTip="チェックを入れたファイルを直接完全削除します（※復元不可）"/>
                                 <Button x:Name="AuditStartButton" Content="🔍 監査スキャン開始" Height="32"
                                         Style="{StaticResource FluentButtonPrimary}" Click="AuditStartButton_Click"/>
                             </StackPanel>
@@ -1551,6 +1555,16 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Name="AuditTableTitleText" Grid.Column="0" Text="検出された課題・断捨離候補一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock x:Name="AuditSmartSelectLabel" Text="☑️ 一括選択:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox x:Name="AuditSmartSelectComboBox" Width="170" Height="28" FontSize="11" Margin="0,0,12,0" SelectionChanged="AuditSmartSelectComboBox_SelectionChanged">
+                                    <ComboBoxItem Content="選択プリセット..." IsSelected="True" Tag="None"/>
+                                    <ComboBoxItem Content="重複の原本以外を選択" Tag="DupCopyOnly"/>
+                                    <ComboBoxItem Content="3年以上前の休眠を選択" Tag="Dormant3Y"/>
+                                    <ComboBoxItem Content="5年以上前の休眠を選択" Tag="Dormant5Y"/>
+                                    <ComboBoxItem Content="表示中のみすべて選択" Tag="SelectVisible"/>
+                                    <ComboBoxItem Content="選択をすべて解除" Tag="ClearAll"/>
+                                </ComboBox>
+
                                 <TextBlock x:Name="AuditFilterLabel" Text="絞り込み:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                 <ComboBox x:Name="AuditCategoryFilterComboBox" Width="135" Height="28" FontSize="11.5" Margin="0,0,10,0" SelectionChanged="AuditFilter_Changed">
                                     <ComboBoxItem Content="すべて表示" IsSelected="True" Tag="All"/>
@@ -1594,6 +1608,17 @@
                                 </Style>
                             </DataGrid.RowStyle>
                             <DataGrid.Columns>
+                                <DataGridTemplateColumn Width="38">
+                                    <DataGridTemplateColumn.Header>
+                                        <CheckBox x:Name="AuditHeaderCheckBox" HorizontalAlignment="Center" VerticalAlignment="Center" Click="AuditHeaderCheckBox_Click" ToolTip="すべて選択 / すべて解除"/>
+                                    </DataGridTemplateColumn.Header>
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                                 <DataGridTextColumn x:Name="ColAuditIssueType" Header="問題種別" Binding="{Binding IssueTypeDisplay}" Width="130" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                 <DataGridTemplateColumn x:Name="ColAuditDupGroup" Header="重複グループ" Width="140">
                                     <DataGridTemplateColumn.CellTemplate>
@@ -2226,7 +2251,7 @@
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v1.4.7 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.4.8 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>

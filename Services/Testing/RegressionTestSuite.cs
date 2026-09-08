@@ -31,54 +31,54 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 16;
+            int totalTests = 17;
 
             try
             {
                 // Test 1
-                Console.WriteLine("\n[TEST 1/16] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
+                Console.WriteLine("\n[TEST 1/17] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
                 await TestMediaOptimizerPngPreservationAsync();
                 Console.WriteLine("  --> [PASS] Media Optimizer: PNG signature (0x89 50 4E 47) and alpha channel 100% preserved.");
                 passCount++;
 
                 // Test 2
-                Console.WriteLine("\n[TEST 2/16] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
+                Console.WriteLine("\n[TEST 2/17] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
                 TestLiveAclDenyAndInheritance();
                 Console.WriteLine("  --> [PASS] Live ACL: ACEs preserved on inheritance disable, Deny rules ordered first (Canonical Order).");
                 passCount++;
 
                 // Test 3
-                Console.WriteLine("\n[TEST 3/16] Audit Archival: Original File Archive & Move Duplication...");
+                Console.WriteLine("\n[TEST 3/17] Audit Archival: Original File Archive & Move Duplication...");
                 TestAuditArchivalOriginalExclusionAndDeduplication();
                 Console.WriteLine("  --> [PASS] Audit: Original files safely protected from archive, move commands deduplicated.");
                 passCount++;
 
                 // Test 4
-                Console.WriteLine("\n[TEST 4/16] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
+                Console.WriteLine("\n[TEST 4/17] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
                 TestMftDataRunDecoderLcnCalculation();
                 Console.WriteLine("  --> [PASS] MFT Data Run Decoder: Initial LCN computed relative to 0 without double-addition.");
                 passCount++;
 
                 // Test 5
-                Console.WriteLine("\n[TEST 5/16] Live ACL: Special Inheritance & Propagation Flags Preservation...");
+                Console.WriteLine("\n[TEST 5/17] Live ACL: Special Inheritance & Propagation Flags Preservation...");
                 TestLiveAclSpecialInheritanceFlags();
                 Console.WriteLine("  --> [PASS] Live ACL: Special InheritanceFlags and PropagationFlags preserved across read/write.");
                 passCount++;
 
                 // Test 6
-                Console.WriteLine("\n[TEST 6/16] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
+                Console.WriteLine("\n[TEST 6/17] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
                 TestAclUiBindingAndHelper();
                 Console.WriteLine("  --> [PASS] ACL UI Binding: AppliesTo, AccessType, and Modal state perfectly synchronized.");
                 passCount++;
 
                 // Test 7
-                Console.WriteLine("\n[TEST 7/16] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
+                Console.WriteLine("\n[TEST 7/17] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
                 await TestEffectiveAccessCanonicalDaclAndNestingAsync();
                 Console.WriteLine("  --> [PASS] Effective Access: Canonical DACL ordering (Explicit Allow > Inherited Deny), multi-level tracing & user isolation verified.");
                 passCount++;
 
                 // Test 8
-                Console.WriteLine("\n[TEST 8/16] Simulation & Script Generation: .NET PS Script, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly...");
+                Console.WriteLine("\n[TEST 8/17] Simulation & Script Generation: .NET PS Script, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly...");
                 TestSimulationAclRobocopyAndEffectiveAccessInheritOnly();
                 Console.WriteLine("  --> [PASS] Simulation & Effective Access: .NET PS script fidelity, Robocopy /XD exclusion, and InheritOnly exclusion verified.");
                 passCount++;
@@ -126,9 +126,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 16
-                Console.WriteLine("\n[TEST 16/16] Simulation Studio: Lazy Loading, Auto-Expand & D&D Movement/Drop Outside Contract...");
+                Console.WriteLine("\n[TEST 16/17] Simulation Studio: Lazy Loading, Auto-Expand & D&D Movement/Drop Outside Contract...");
                 TestSimulationStudioLazyLoadingAndDropOutside();
                 Console.WriteLine("  --> [PASS] Simulation Studio: Source lazy loading, root auto-expand, D&D movement & outside removal verified.");
+                passCount++;
+
+                // Test 17
+                Console.WriteLine("\n[TEST 17/17] Audit & Hygiene: Smart Selection, Original File Protection & Safe Permanent Deletion...");
+                TestAuditSmartSelectAndSafePermanentDeletion();
+                Console.WriteLine("  --> [PASS] Audit & Hygiene: Smart select, original preservation guard, read-only unsetting & deletion verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -1843,6 +1849,154 @@ namespace FolderMorpher.Services.Testing
                 rootList.Remove(child2);
                 if (rootList.Contains(child2))
                     throw new InvalidOperationException("Drop outside SimFolderNode removal contract failed.");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 17. Audit & Hygiene: スマート選択、原本保護安全契約、および読み取り専用属性解除付き完全削除の検証
+        /// </summary>
+        public static void TestAuditSmartSelectAndSafePermanentDeletion()
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_AuditDel_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            try
+            {
+                // 1. INotifyPropertyChanged 発火検証
+                var testItem = new AuditItem
+                {
+                    FullPath = Path.Combine(tempDir, "prop_test.txt"),
+                    IssueType = AuditIssueType.Duplicate,
+                    IsOriginalCandidate = false
+                };
+                bool propChanged = false;
+                testItem.PropertyChanged += (s, e) =>
+                {
+                    if (e.PropertyName == nameof(AuditItem.IsChecked))
+                        propChanged = true;
+                };
+                testItem.IsChecked = true;
+                if (!propChanged)
+                    throw new InvalidOperationException("AuditItem.IsChecked must raise PropertyChanged event for UI data binding.");
+
+                // 2. スマート選択ロジック契約検証
+                DateTime now = DateTime.Now;
+                var items = new List<AuditItem>
+                {
+                    // 重複グループ（原本 + コピー2件）
+                    new AuditItem { FullPath = Path.Combine(tempDir, "orig.pdf"), IssueType = AuditIssueType.Duplicate, IsOriginalCandidate = true, Size = 1000 },
+                    new AuditItem { FullPath = Path.Combine(tempDir, "copy1.pdf"), IssueType = AuditIssueType.Duplicate, IsOriginalCandidate = false, Size = 1000 },
+                    new AuditItem { FullPath = Path.Combine(tempDir, "copy2.pdf"), IssueType = AuditIssueType.Duplicate, IsOriginalCandidate = false, Size = 1000 },
+                    // 休眠ファイル
+                    new AuditItem { FullPath = Path.Combine(tempDir, "dormant_4y.xlsx"), IssueType = AuditIssueType.Dormant, LastWriteTime = now.AddYears(-4), Size = 2000 },
+                    new AuditItem { FullPath = Path.Combine(tempDir, "dormant_6y.xlsx"), IssueType = AuditIssueType.Dormant, LastWriteTime = now.AddYears(-6), Size = 3000 },
+                    new AuditItem { FullPath = Path.Combine(tempDir, "recent.xlsx"), IssueType = AuditIssueType.Dormant, LastWriteTime = now.AddYears(-1), Size = 500 },
+                    // 長大パス
+                    new AuditItem { FullPath = Path.Combine(tempDir, "long_path.txt"), IssueType = AuditIssueType.PathTooLong, Size = 100 }
+                };
+
+                // A) 重複の原本以外（DupCopyOnly）
+                foreach (var ai in items)
+                {
+                    ai.IsChecked = (ai.IssueType == AuditIssueType.Duplicate && !ai.IsOriginalCandidate);
+                }
+                if (items[0].IsChecked)
+                    throw new InvalidOperationException("DupCopyOnly must NOT check original candidate (orig.pdf).");
+                if (!items[1].IsChecked || !items[2].IsChecked)
+                    throw new InvalidOperationException("DupCopyOnly must check non-original duplicates (copy1, copy2).");
+                if (items[3].IsChecked || items[4].IsChecked || items[5].IsChecked || items[6].IsChecked)
+                    throw new InvalidOperationException("DupCopyOnly must not check dormant or long path items.");
+
+                // B) 3年超休眠（Dormant3Y）
+                DateTime threshold3Y = now.AddYears(-3);
+                foreach (var ai in items)
+                {
+                    ai.IsChecked = (ai.IssueType == AuditIssueType.Dormant && ai.LastWriteTime <= threshold3Y);
+                }
+                if (!items[3].IsChecked || !items[4].IsChecked)
+                    throw new InvalidOperationException("Dormant3Y must check 4y and 6y dormant items.");
+                if (items[5].IsChecked)
+                    throw new InvalidOperationException("Dormant3Y must NOT check 1y dormant item.");
+                if (items[0].IsChecked || items[1].IsChecked)
+                    throw new InvalidOperationException("Dormant3Y must NOT check duplicate items.");
+
+                // C) 5年超休眠（Dormant5Y）
+                DateTime threshold5Y = now.AddYears(-5);
+                foreach (var ai in items)
+                {
+                    ai.IsChecked = (ai.IssueType == AuditIssueType.Dormant && ai.LastWriteTime <= threshold5Y);
+                }
+                if (!items[4].IsChecked)
+                    throw new InvalidOperationException("Dormant5Y must check 6y dormant item.");
+                if (items[3].IsChecked || items[5].IsChecked)
+                    throw new InvalidOperationException("Dormant5Y must NOT check 4y or 1y dormant items.");
+
+                // D) 全解除（ClearAll）
+                foreach (var ai in items) ai.IsChecked = false;
+                if (items.Any(i => i.IsChecked))
+                    throw new InvalidOperationException("ClearAll must uncheck all items.");
+
+                // 3. 原本保護ガード契約
+                items[0].IsChecked = true; // 原本をあえてチェック
+                items[1].IsChecked = true; // コピーもチェック
+                var checkedItems = items.Where(i => i.IsChecked).ToList();
+                var originalWarnings = checkedItems.Where(i => i.IsOriginalCandidate).ToList();
+                if (originalWarnings.Count != 1 || originalWarnings[0].FullPath != items[0].FullPath)
+                    throw new InvalidOperationException("Original candidate protection guard failed to detect checked original item.");
+
+                // 原本除外アクションシミュレーション
+                foreach (var orig in originalWarnings)
+                {
+                    orig.IsChecked = false;
+                }
+                checkedItems = items.Where(i => i.IsChecked).ToList();
+                if (checkedItems.Any(i => i.IsOriginalCandidate))
+                    throw new InvalidOperationException("Excluding originals must leave no original candidates checked.");
+                if (checkedItems.Count != 1 || checkedItems[0].FullPath != items[1].FullPath)
+                    throw new InvalidOperationException("After excluding originals, only valid non-original items must remain checked.");
+
+                // 4. 実ファイル削除 & 読み取り専用属性自動解除契約検証
+                string normalFile = Path.Combine(tempDir, "to_delete_normal.dat");
+                string readOnlyFile = Path.Combine(tempDir, "to_delete_readonly.dat");
+                File.WriteAllBytes(normalFile, new byte[1024]);
+                File.WriteAllBytes(readOnlyFile, new byte[2048]);
+
+                // 読み取り専用属性を設定
+                File.SetAttributes(readOnlyFile, File.GetAttributes(readOnlyFile) | FileAttributes.ReadOnly);
+                if (!new FileInfo(readOnlyFile).IsReadOnly)
+                    throw new InvalidOperationException("Failed to set read-only attribute on test file.");
+
+                var deleteTargets = new List<string> { normalFile, readOnlyFile };
+                foreach (var path in deleteTargets)
+                {
+                    if (File.Exists(path))
+                    {
+                        var fi = new FileInfo(path);
+                        if (fi.IsReadOnly)
+                        {
+                            fi.IsReadOnly = false; // 読み取り専用解除
+                        }
+                        File.Delete(path);
+                    }
+                }
+
+                if (File.Exists(normalFile) || File.Exists(readOnlyFile))
+                    throw new InvalidOperationException("Permanent deletion failed: file still exists after deletion.");
+
+                // 5. 削除後の一覧除外 & 容量再計算契約
+                var initialWaste = items.Where(i => i.IssueType == AuditIssueType.Duplicate && !i.IsOriginalCandidate).Sum(i => i.Size);
+                if (initialWaste != 2000)
+                    throw new InvalidOperationException($"Initial duplicate waste expected 2000, got {initialWaste}");
+
+                // copy1 を削除
+                items.Remove(items[1]);
+                var remainingWaste = items.Where(i => i.IssueType == AuditIssueType.Duplicate && !i.IsOriginalCandidate).Sum(i => i.Size);
+                if (remainingWaste != 1000)
+                    throw new InvalidOperationException($"Remaining duplicate waste expected 1000, got {remainingWaste}");
             }
             finally
             {

@@ -12,8 +12,22 @@ namespace FolderMorpher.Models
         InvalidChar    // 移行禁則文字
     }
 
-    public class AuditItem
+    public class AuditItem : System.ComponentModel.INotifyPropertyChanged
     {
+        private bool _isChecked;
+        public bool IsChecked
+        {
+            get => _isChecked;
+            set
+            {
+                if (_isChecked != value)
+                {
+                    _isChecked = value;
+                    OnPropertyChanged(nameof(IsChecked));
+                }
+            }
+        }
+
         public string FullPath { get; set; } = string.Empty;
         public string FileName { get; set; } = string.Empty;
         public string DirectoryPath { get; set; } = string.Empty;
@@ -36,6 +50,9 @@ namespace FolderMorpher.Models
         public int DuplicateGroupIndex { get; set; }
         public int DuplicateGroupColorIndex { get; set; }
         public bool IsOriginalCandidate { get; set; }
+
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged(string prop) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(prop));
 
         public string DuplicateGroupBadge
         {
