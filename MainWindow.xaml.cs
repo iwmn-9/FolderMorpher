@@ -100,11 +100,24 @@ namespace AstraSize
         private bool _dragCancelled = false;
         private Point _cardDragStartPoint;
 
+        private Point _simDragStartPoint;
+        private bool _isSimNodeDragging = false;
+        private bool _simNodeDroppedInTree = false;
+        private bool _simDragCancelled = false;
+
         private void OnCardQueryContinueDrag(object sender, QueryContinueDragEventArgs e)
         {
             if (e.EscapePressed || e.Action == DragAction.Cancel)
             {
                 _dragCancelled = true;
+            }
+        }
+
+        private void OnSimQueryContinueDrag(object sender, QueryContinueDragEventArgs e)
+        {
+            if (e.EscapePressed || e.Action == DragAction.Cancel)
+            {
+                _simDragCancelled = true;
             }
         }
 
@@ -229,14 +242,16 @@ namespace AstraSize
             {
                 SidebarBorder.Width = 58;
                 SidebarBrandPanel.Visibility = Visibility.Collapsed;
-                SidebarFooterPanel.Visibility = Visibility.Collapsed;
+                SidebarFooterExpandedPanel.Visibility = Visibility.Collapsed;
+                SidebarFooterCollapsedPanel.Visibility = Visibility.Visible;
                 SidebarToggleButton.ToolTip = "サイドバーを展開";
             }
             else
             {
                 SidebarBorder.Width = 220;
                 SidebarBrandPanel.Visibility = Visibility.Visible;
-                SidebarFooterPanel.Visibility = Visibility.Visible;
+                SidebarFooterExpandedPanel.Visibility = Visibility.Visible;
+                SidebarFooterCollapsedPanel.Visibility = Visibility.Collapsed;
                 SidebarToggleButton.ToolTip = "サイドバーを収縮";
             }
         }
@@ -1613,6 +1628,21 @@ namespace AstraSize
             }
         }
 
+        private void SimSourceBrowseButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFolderDialog { Title = "現行ファイルサーバー（移行元）のフォルダーを選択" };
+            var current = SimSourcePathTextBox.Text.Trim();
+            if (!string.IsNullOrWhiteSpace(current) && Directory.Exists(current))
+            {
+                dialog.InitialDirectory = current;
+            }
+            if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.FolderName))
+            {
+                SimSourcePathTextBox.Text = dialog.FolderName;
+                LoadSourceTree(dialog.FolderName);
+            }
+        }
+
         private void SimSourceLoadButton_Click(object sender, RoutedEventArgs e)
         {
             var path = SimSourcePathTextBox.Text.Trim();
@@ -1620,6 +1650,7 @@ namespace AstraSize
             {
                 if (_currentTab?.RootNode != null)
                 {
+                    _currentTab.RootNode.IsExpanded = true;
                     SimSourceTreeView.ItemsSource = new List<FileItemNode> { _currentTab.RootNode };
                     ShowToast("容量分析スキャン結果を移行元ツリーに読み込みました");
                     return;
@@ -1628,20 +1659,86 @@ namespace AstraSize
                 return;
             }
 
+            LoadSourceTree(path);
+        }
+
+        private void LoadSourceTree(string path)
+        {
             try
             {
                 var di = new DirectoryInfo(path);
                 var rootItem = new FileItemNode(di.FullName, di.Name, 0, true, di.LastWriteTime);
-                foreach (var sub in di.GetDirectories())
-                {
-                    rootItem.Children.Add(new FileItemNode(sub.FullName, sub.Name, 0, true, sub.LastWriteTime) { Parent = rootItem });
-                }
+
+                PopulateSubdirectoriesSafe(rootItem, di);
+
+                // 初期状態で直下を展開して表示
+                rootItem.IsExpanded = true;
                 SimSourceTreeView.ItemsSource = new List<FileItemNode> { rootItem };
                 ShowToast($"移行元ツリーをロードしました: {path}");
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"移行元読込エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private static void PopulateSubdirectoriesSafe(FileItemNode parentNode, DirectoryInfo di)
+        {
+            try
+            {
+                foreach (var sub in di.GetDirectories())
+                {
+                    var subNode = new FileItemNode(sub.FullName, sub.Name, 0, true, sub.LastWriteTime)
+                    {
+                        Parent = parentNode,
+                        Level = parentNode.Level + 1
+                    };
+
+                    // サブフォルダの存在確認（遅延展開用ダミー）
+                    try
+                    {
+                        if (sub.EnumerateDirectories().Any())
+                        {
+                            subNode.Children.Add(new FileItemNode(string.Empty, "__DUMMY__", 0, false));
+                        }
+                    }
+                    catch
+                    {
+                        // アクセス権限等で判定できない場合も展開可能にしておく
+                        subNode.Children.Add(new FileItemNode(string.Empty, "__DUMMY__", 0, false));
+                    }
+
+                    parentNode.Children.Add(subNode);
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // アクセス拒否は安全にスキップ
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error enumerating directories in {di.FullName}: {ex.Message}");
+            }
+        }
+
+        private void SimSourceTreeViewItem_Expanded(object sender, RoutedEventArgs e)
+        {
+            if (e.OriginalSource is TreeViewItem treeViewItem && treeViewItem.DataContext is FileItemNode folderNode)
+            {
+                if (folderNode.Children.Count == 1 && folderNode.Children[0].Name == "__DUMMY__")
+                {
+                    folderNode.Children.Clear();
+                    try
+                    {
+                        var di = new DirectoryInfo(folderNode.FullPath);
+                        PopulateSubdirectoriesSafe(folderNode, di);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Failed to expand {folderNode.FullPath}: {ex.Message}");
+                    }
+                }
+                e.Handled = true;
             }
         }
 
@@ -1691,12 +1788,35 @@ namespace AstraSize
                 }
             }
 
-            if (level < maxDepth && src.Children != null && src.Children.Count > 0)
+            if (level < maxDepth)
             {
-                foreach (var childSrc in src.Children.Where(c => c.IsDirectory))
+                // もし既に展開済みの子があればそれを採用（ダミーは除外）
+                var validChildren = src.Children.Where(c => c.IsDirectory && c.Name != "__DUMMY__").ToList();
+                if (validChildren.Count > 0)
                 {
-                    var childNode = CreateSimNodeFromSourceWithAcl(childSrc, node, level + 1, maxDepth);
-                    node.Children.Add(childNode);
+                    foreach (var childSrc in validChildren)
+                    {
+                        var childNode = CreateSimNodeFromSourceWithAcl(childSrc, node, level + 1, maxDepth);
+                        node.Children.Add(childNode);
+                    }
+                }
+                else if (!string.IsNullOrEmpty(src.FullPath) && Directory.Exists(src.FullPath))
+                {
+                    // 未展開の場合は実ファイルシステムから再帰的にサブフォルダを安全走査構築
+                    try
+                    {
+                        var di = new DirectoryInfo(src.FullPath);
+                        foreach (var subDir in di.GetDirectories())
+                        {
+                            var subFileItem = new FileItemNode(subDir.FullName, subDir.Name, 0, true, subDir.LastWriteTime);
+                            var childNode = CreateSimNodeFromSourceWithAcl(subFileItem, node, level + 1, maxDepth);
+                            node.Children.Add(childNode);
+                        }
+                    }
+                    catch
+                    {
+                        // アクセス拒否等はスキップ
+                    }
                 }
             }
 
@@ -1758,12 +1878,87 @@ namespace AstraSize
             }
         }
 
+        private void SimMockTreeView_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _simDragStartPoint = e.GetPosition(null);
+            _isSimNodeDragging = false;
+            _simNodeDroppedInTree = false;
+            _simDragCancelled = false;
+        }
+
         private void SimMockTreeView_PreviewMouseMove(object sender, MouseEventArgs e)
         {
-            if (e.LeftButton == MouseButtonState.Pressed && SimMockTreeView.SelectedItem is SimFolderNode node)
+            if (e.LeftButton != MouseButtonState.Pressed) return;
+            if (_isSimNodeDragging) return;
+
+            Point currentPoint = e.GetPosition(null);
+            Vector diff = _simDragStartPoint - currentPoint;
+
+            if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
             {
-                var data = new DataObject("FolderMorpherSimNode", node);
-                DragDrop.DoDragDrop(SimMockTreeView, data, DragDropEffects.Move);
+                SimFolderNode? node = null;
+                if (e.OriginalSource is DependencyObject d)
+                {
+                    var treeItem = FindVisualParent<TreeViewItem>(d);
+                    node = treeItem?.DataContext as SimFolderNode;
+                }
+                node ??= SimMockTreeView.SelectedItem as SimFolderNode;
+
+                if (node != null)
+                {
+                    _isSimNodeDragging = true;
+                    _simNodeDroppedInTree = false;
+                    _simDragCancelled = false;
+
+                    var data = new DataObject("FolderMorpherSimNode", node);
+                    DragDrop.AddQueryContinueDragHandler(SimMockTreeView, OnSimQueryContinueDrag);
+
+                    try
+                    {
+                        DragDropEffects effects = DragDrop.DoDragDrop(SimMockTreeView, data, DragDropEffects.Move | DragDropEffects.Copy);
+
+                        // 枠外ドロップ削除の判定:
+                        // ツリー内の別ノードや余白・サブフォルダゾーンに正常ドロップされず（_simNodeDroppedInTree == false）
+                        // かつ Escキーによるキャンセルでもない場合、枠外ポイ捨て削除として扱う
+                        if (!_simNodeDroppedInTree && !_simDragCancelled)
+                        {
+                            Point endPoint = Mouse.GetPosition(SimMockTreeView);
+                            bool isOutside = endPoint.X < 0 || endPoint.Y < 0 ||
+                                             endPoint.X > SimMockTreeView.ActualWidth ||
+                                             endPoint.Y > SimMockTreeView.ActualHeight;
+
+                            if (isOutside || effects == DragDropEffects.None)
+                            {
+                                if (node.Parent != null)
+                                {
+                                    node.Parent.Children.Remove(node);
+                                }
+                                else
+                                {
+                                    _simRootFolders.Remove(node);
+                                }
+
+                                if (_selectedSimNode == node)
+                                {
+                                    _selectedSimNode = null;
+                                    SimSelectedFolderNameText.Text = "(未選択)";
+                                    SimMappedSourcesItemsControl.ItemsSource = null;
+                                    SimAclCardsItemsControl.ItemsSource = null;
+                                }
+
+                                ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                                    ? $"🗑️ フォルダ「{node.Name}」をツリーから削除しました"
+                                    : $"🗑️ Deleted folder '{node.Name}' from tree");
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        DragDrop.RemoveQueryContinueDragHandler(SimMockTreeView, OnSimQueryContinueDrag);
+                        _isSimNodeDragging = false;
+                    }
+                }
             }
         }
 
@@ -1780,41 +1975,73 @@ namespace AstraSize
 
         private void SimMockTreeView_Drop(object sender, DragEventArgs e)
         {
-            var target = GetSimNodeFromDragEvent(e) ?? _selectedSimNode ?? _simRootFolders.FirstOrDefault();
-            if (target == null) return;
+            var target = GetSimNodeFromDragEvent(e);
 
             // Case 1: Drop source folder from left explorer (Create subfolder with full ACL & hierarchy)
             if (e.Data.GetData("FolderMorpherSourceNode") is FileItemNode src)
             {
-                var newSub = CreateSimNodeFromSourceWithAcl(src, target, target.Level + 1);
-                target.Children.Add(newSub);
-                target.IsExpanded = true;
-                ShowToast($"📁 「{src.Name}」を「{target.Name}」配下にサブフォルダ化（権限・階層継承）しました");
-            }
-            // Case 2: Drop existing sim node inside mock tree (Move & demote)
-            else if (e.Data.GetData("FolderMorpherSimNode") is SimFolderNode movingNode)
-            {
-                if (movingNode == target || IsDescendant(target, movingNode))
+                var effectiveTarget = target ?? _selectedSimNode ?? _simRootFolders.FirstOrDefault();
+                if (effectiveTarget != null)
                 {
-                    ShowToast("自身またはその配下へは移動できません");
-                    return;
+                    var newSub = CreateSimNodeFromSourceWithAcl(src, effectiveTarget, effectiveTarget.Level + 1);
+                    effectiveTarget.Children.Add(newSub);
+                    effectiveTarget.IsExpanded = true;
+                    ShowToast($"📁 「{src.Name}」を「{effectiveTarget.Name}」配下にサブフォルダ化（権限・階層継承）しました");
                 }
-
-                // Detach from current parent
-                if (movingNode.Parent != null) movingNode.Parent.Children.Remove(movingNode);
-                else _simRootFolders.Remove(movingNode);
-
-                // Attach to target
-                movingNode.Parent = target;
-                UpdateDescendantLevels(movingNode, target.Level + 1);
-                target.Children.Add(movingNode);
-                target.IsExpanded = true;
-                ShowToast($"📁 「{movingNode.Name}」を「{target.Name}」の配下に移動しました");
+                return;
             }
-            // Case 3: Drop AD Card (Assign permissions)
-            else if (e.Data.GetData(typeof(AdPrincipalItem)) is AdPrincipalItem principal)
+
+            // Case 2: Drop existing sim node inside mock tree (Move)
+            if (e.Data.GetData("FolderMorpherSimNode") is SimFolderNode movingNode)
             {
-                AssignAdPrincipal(target, principal);
+                _simNodeDroppedInTree = true; // 自枠ツリー内ドロップ
+
+                // 2-A: 特定のフォルダの上にドロップされた場合 ➔ その配下へ移動
+                if (target != null)
+                {
+                    if (movingNode == target || IsDescendant(target, movingNode))
+                    {
+                        ShowToast("自身またはその配下へは移動できません");
+                        return;
+                    }
+
+                    // 現在の親から切り離す
+                    if (movingNode.Parent != null) movingNode.Parent.Children.Remove(movingNode);
+                    else _simRootFolders.Remove(movingNode);
+
+                    // 新しい親に接続
+                    movingNode.Parent = target;
+                    UpdateDescendantLevels(movingNode, target.Level + 1);
+                    target.Children.Add(movingNode);
+                    target.IsExpanded = true;
+                    ShowToast($"📁 「{movingNode.Name}」を「{target.Name}」の配下に移動しました");
+                }
+                // 2-B: ツリーの余白部分（下部空白）にドロップされた場合 ➔ 第1階層（ルート）へ昇格移動！
+                else
+                {
+                    if (movingNode.Parent == null)
+                    {
+                        return;
+                    }
+
+                    movingNode.Parent.Children.Remove(movingNode);
+                    movingNode.Parent = null;
+                    UpdateDescendantLevels(movingNode, 0);
+                    _simRootFolders.Add(movingNode);
+                    ShowToast($"📁 「{movingNode.Name}」をルートフォルダへ移動しました");
+                }
+                return;
+            }
+
+            // Case 3: Drop AD Card (Assign permissions)
+            if (e.Data.GetData(typeof(AdPrincipalItem)) is AdPrincipalItem principal)
+            {
+                var effectiveTarget = target ?? _selectedSimNode ?? _simRootFolders.FirstOrDefault();
+                if (effectiveTarget != null)
+                {
+                    AssignAdPrincipal(effectiveTarget, principal);
+                }
+                return;
             }
         }
 
@@ -1837,6 +2064,7 @@ namespace AstraSize
             }
             else if (e.Data.GetData("FolderMorpherSimNode") is SimFolderNode movingNode)
             {
+                _simNodeDroppedInTree = true;
                 SimMockTreeView_Drop(sender, e);
             }
         }
@@ -1856,6 +2084,13 @@ namespace AstraSize
                 (e.Data.GetData(typeof(string)) is string s && _selectedSimNode.MappedSourcePaths.Contains(s)))
             {
                 _droppedInSelfContainer = true;
+                return;
+            }
+
+            if (e.Data.GetData("FolderMorpherSimNode") is SimFolderNode movingSimNode)
+            {
+                _simNodeDroppedInTree = true;
+                SimMockTreeView_Drop(sender, e);
                 return;
             }
 
@@ -3385,6 +3620,7 @@ namespace AstraSize
             // 言語切り替えボタン自体の表示（次に切り替わる言語を提示）
             LanguageToggleButton.Content = isJa ? "🌐 EN" : "🌐 JA";
             LanguageToggleButton.ToolTip = isJa ? "英語に切り替え / Switch to English" : "日本語に切り替え / Switch to Japanese";
+            LanguageToggleButtonMini.ToolTip = LanguageToggleButton.ToolTip;
 
             // サイドバー タブ名
             NavTabStorage.Content = isJa ? "容量分析 & 監視" : "Storage Explorer";
@@ -3527,8 +3763,7 @@ namespace AstraSize
             SimMockTreeSubText.Text = isJa ? "N:1 統合・階層再編成・新設計ACLを直感的にデザイン。右クリックでフォルダ追加/削除" : "Intuitive N:1 consolidation, restructuring & ACL design. Right-click to add/remove";
             SimSelectedFolderPrefixText.Text = isJa ? "選択中: " : "Target: ";
             SimSubfolderDropHintText.Text = isJa ? "➕ 左の現行サーバーまたはエクスプローラーからフォルダをドロップして追加" : "➕ Drop folders from source server or Explorer to add subfolders";
-            SimMappingTitleText.Text = isJa ? "移行元マッピング (このフォルダーへ統合・コピーする現行パス)" : "Source Mappings (Existing paths to consolidate/copy into here)";
-            SimMappingSubText.Text = isJa ? "左ツリーからドラッグ＆ドロップで複数フォルダを登録可能（N:1マッピング）。枠外ドロップで解除" : "Drag & drop from source tree to register multiple paths (N:1). Drop outside to remove";
+            SimMappingTitleText.Text = isJa ? "🔗 移行元マッピング (データ移行元 / N:1統合)" : "🔗 Source Mappings (Data Sources / N:1 Consolidation)";
             SimAclTitleText.Text = isJa ? "新設計 アクセス権エントリ (ACE)" : "Target Access Control Entries (ACEs)";
             SimAdHeaderTitle.Text = isJa ? "Active Directory / ローカル候補" : "Active Directory / Local Principals";
             SimAdHeaderSubText.Text = isJa ? "中央の権限エリアへドラッグ＆ドロップして付与" : "Drag & drop to center permissions area to grant";

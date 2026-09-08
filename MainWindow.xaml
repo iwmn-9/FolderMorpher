@@ -73,19 +73,28 @@
                 </StackPanel>
 
                 <!-- Sidebar Footer -->
-                <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="14,10">
+                <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0">
                     <Grid>
-                        <StackPanel x:Name="SidebarFooterPanel" VerticalAlignment="Center">
-                            <TextBlock Text="FolderMorpher v1.4.6" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
-                            <TextBlock Text="Storage &amp; Migration Studio" FontSize="10.5" Foreground="#94A3B8" Margin="0,1,0,0"/>
+                        <!-- Expanded Footer (2-tier layout: Brand on top, Controls below) -->
+                        <StackPanel x:Name="SidebarFooterExpandedPanel" Margin="14,8,14,10">
+                            <StackPanel Margin="0,0,0,8">
+                                <TextBlock Text="FolderMorpher v1.4.7" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#94A3B8" Margin="0,1,0,0"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="SettingsButton" Content="⚙️" Height="24" Width="28" FontSize="11" Margin="0,0,6,0" Padding="0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="SettingsButton_Click" ToolTip="環境設定 / Settings"/>
+                                <Button x:Name="LanguageToggleButton" Content="🌐 EN" Height="24" FontSize="11" FontWeight="Bold" Foreground="#2563EB" Padding="8,2"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="LanguageToggleButton_Click" ToolTip="言語切り替え / Switch Language (JA / EN)"/>
+                            </StackPanel>
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                            <Button x:Name="SettingsButton" Content="⚙️" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                    Padding="5,2" Height="24" FontSize="11" Margin="0,0,4,0"
+
+                        <!-- Collapsed Footer (Mini Vertical Stack) -->
+                        <StackPanel x:Name="SidebarFooterCollapsedPanel" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,6,0,10">
+                            <Button x:Name="SettingsButtonMini" Content="⚙️" Width="34" Height="26" FontSize="11" Margin="0,0,0,4"
                                     Style="{StaticResource FluentButtonSecondary}" Click="SettingsButton_Click" ToolTip="環境設定 / Settings"/>
-                            <Button x:Name="LanguageToggleButton" Content="🌐 EN" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                    Padding="6,2" Height="24" FontSize="11" FontWeight="Bold" Foreground="#2563EB"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="LanguageToggleButton_Click" ToolTip="言語切り替え / Switch Language (JA / EN)"/>
+                            <Button x:Name="LanguageToggleButtonMini" Content="🌐" Width="34" Height="26" FontSize="11" FontWeight="Bold" Foreground="#2563EB"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="LanguageToggleButton_Click" ToolTip="言語切り替え / Switch Language"/>
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -1005,29 +1014,34 @@
                                 <TextBlock x:Name="SimSourceSubText" Text="サブフォルダを掴んで中央のモックツリーへ直接ドロップ" FontSize="10" Foreground="#64748B"/>
                             </StackPanel>
 
-                            <!-- Path & Load -->
+                            <!-- Path, Browse & Load -->
                             <Grid Grid.Row="1" Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="4" Height="28" Padding="6,0">
                                     <TextBox x:Name="SimSourcePathTextBox" BorderThickness="0" Background="Transparent"
                                              VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"/>
                                 </Border>
-                                <Button x:Name="SimSourceLoadButton" Grid.Column="1" Content="読込" Height="28" Margin="6,0,0,0"
+                                <Button x:Name="SimSourceBrowseButton" Grid.Column="1" Content="参照..." Height="28" Margin="6,0,0,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Padding="8,2" Click="SimSourceBrowseButton_Click" ToolTip="現行フォルダ（UNCまたはローカル）を参照選択"/>
+                                <Button x:Name="SimSourceLoadButton" Grid.Column="2" Content="読込" Height="28" Margin="4,0,0,0"
                                         Style="{StaticResource FluentButtonSecondary}" Padding="10,2" Click="SimSourceLoadButton_Click"/>
                             </Grid>
 
-                            <!-- Source TreeView (Draggable) -->
+                            <!-- Source TreeView (Draggable, Smooth Scroll & Lazy Loading) -->
                             <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="1" CornerRadius="4" Background="#F8FAFC">
                                 <TreeView x:Name="SimSourceTreeView" BorderThickness="0" Background="Transparent"
+                                          ScrollViewer.CanContentScroll="False"
                                           SelectedItemChanged="SimSourceTreeView_SelectedItemChanged"
                                           PreviewMouseMove="SimSourceTreeView_PreviewMouseMove">
                                     <TreeView.ItemContainerStyle>
                                         <Style TargetType="{x:Type TreeViewItem}">
                                             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
                                             <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                                            <EventSetter Event="Expanded" Handler="SimSourceTreeViewItem_Expanded"/>
                                         </Style>
                                     </TreeView.ItemContainerStyle>
                                     <TreeView.ItemTemplate>
@@ -1076,13 +1090,15 @@
                                 </StackPanel>
                             </Grid>
 
-                            <!-- Mock TreeView with Drop & ContextMenu -->
+                            <!-- Mock TreeView with Drop & ContextMenu (Smooth Scroll & Smooth Drag) -->
                             <Border Grid.Row="1" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Background="#FFFFFF">
                                 <TreeView x:Name="SimMockTreeView" BorderThickness="0" Background="Transparent"
+                                          ScrollViewer.CanContentScroll="False"
                                           SelectedItemChanged="SimMockTreeView_SelectedItemChanged"
                                           AllowDrop="True"
                                           Drop="SimMockTreeView_Drop"
                                           DragOver="SimMockTreeView_DragOver"
+                                          PreviewMouseLeftButtonDown="SimMockTreeView_PreviewMouseLeftButtonDown"
                                           PreviewMouseMove="SimMockTreeView_PreviewMouseMove">
                                     <TreeView.ItemContainerStyle>
                                         <Style TargetType="{x:Type TreeViewItem}">
@@ -1175,8 +1191,7 @@
                                                 Drop="SimMappingDropZone_Drop" DragOver="SimGenericDragOver">
                                             <StackPanel>
                                                 <Grid Margin="0,0,0,4">
-                                                    <TextBlock x:Name="SimMappingTitleText" Text="🔗 現行サーバーとの紐づけ (データ移行元 / N対1統合)" FontSize="11.5" FontWeight="Bold" Foreground="#7E22CE"/>
-                                                    <TextBlock x:Name="SimMappingSubText" Text="ここに現行フォルダをドロップして追加統合" FontSize="11" Foreground="#A855F7" HorizontalAlignment="Right"/>
+                                                    <TextBlock x:Name="SimMappingTitleText" Text="🔗 移行元マッピング (データ移行元 / N:1統合)" FontSize="11.5" FontWeight="Bold" Foreground="#7E22CE"/>
                                                 </Grid>
                                                 <!-- List of mapped sources -->
                                                 <ItemsControl x:Name="SimMappedSourcesItemsControl">
@@ -2211,7 +2226,7 @@
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v1.4.6 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.4.7 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>

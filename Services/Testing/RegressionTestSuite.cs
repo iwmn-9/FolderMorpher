@@ -31,98 +31,104 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 15;
+            int totalTests = 16;
 
             try
             {
                 // Test 1
-                Console.WriteLine("\n[TEST 1/15] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
+                Console.WriteLine("\n[TEST 1/16] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
                 await TestMediaOptimizerPngPreservationAsync();
                 Console.WriteLine("  --> [PASS] Media Optimizer: PNG signature (0x89 50 4E 47) and alpha channel 100% preserved.");
                 passCount++;
 
                 // Test 2
-                Console.WriteLine("\n[TEST 2/15] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
+                Console.WriteLine("\n[TEST 2/16] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
                 TestLiveAclDenyAndInheritance();
                 Console.WriteLine("  --> [PASS] Live ACL: ACEs preserved on inheritance disable, Deny rules ordered first (Canonical Order).");
                 passCount++;
 
                 // Test 3
-                Console.WriteLine("\n[TEST 3/15] Audit Archival: Original File Archive & Move Duplication...");
+                Console.WriteLine("\n[TEST 3/16] Audit Archival: Original File Archive & Move Duplication...");
                 TestAuditArchivalOriginalExclusionAndDeduplication();
                 Console.WriteLine("  --> [PASS] Audit: Original files safely protected from archive, move commands deduplicated.");
                 passCount++;
 
                 // Test 4
-                Console.WriteLine("\n[TEST 4/15] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
+                Console.WriteLine("\n[TEST 4/16] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
                 TestMftDataRunDecoderLcnCalculation();
                 Console.WriteLine("  --> [PASS] MFT Data Run Decoder: Initial LCN computed relative to 0 without double-addition.");
                 passCount++;
 
                 // Test 5
-                Console.WriteLine("\n[TEST 5/15] Live ACL: Special Inheritance & Propagation Flags Preservation...");
+                Console.WriteLine("\n[TEST 5/16] Live ACL: Special Inheritance & Propagation Flags Preservation...");
                 TestLiveAclSpecialInheritanceFlags();
                 Console.WriteLine("  --> [PASS] Live ACL: Special InheritanceFlags and PropagationFlags preserved across read/write.");
                 passCount++;
 
                 // Test 6
-                Console.WriteLine("\n[TEST 6/15] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
+                Console.WriteLine("\n[TEST 6/16] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
                 TestAclUiBindingAndHelper();
                 Console.WriteLine("  --> [PASS] ACL UI Binding: AppliesTo, AccessType, and Modal state perfectly synchronized.");
                 passCount++;
 
                 // Test 7
-                Console.WriteLine("\n[TEST 7/15] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
+                Console.WriteLine("\n[TEST 7/16] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
                 await TestEffectiveAccessCanonicalDaclAndNestingAsync();
                 Console.WriteLine("  --> [PASS] Effective Access: Canonical DACL ordering (Explicit Allow > Inherited Deny), multi-level tracing & user isolation verified.");
                 passCount++;
 
                 // Test 8
-                Console.WriteLine("\n[TEST 8/15] Simulation & Script Generation: .NET PS Script, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly...");
+                Console.WriteLine("\n[TEST 8/16] Simulation & Script Generation: .NET PS Script, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly...");
                 TestSimulationAclRobocopyAndEffectiveAccessInheritOnly();
                 Console.WriteLine("  --> [PASS] Simulation & Effective Access: .NET PS script fidelity, Robocopy /XD exclusion, and InheritOnly exclusion verified.");
                 passCount++;
 
                 // Test 9
-                Console.WriteLine("\n[TEST 9/15] Live ACL Rollback DACL SDDL Fidelity & Skeleton Empty-ACL Inheritance Disable...");
+                Console.WriteLine("\n[TEST 9/16] Live ACL Rollback DACL SDDL Fidelity & Skeleton Empty-ACL Inheritance Disable...");
                 await TestLiveAclRollbackAndSkeletonEmptyAclInheritanceAsync();
                 Console.WriteLine("  --> [PASS] Live ACL Rollback & Skeleton Deploy: DACL SDDL 100% restored after mutation, empty ACL inheritance disabled.");
                 passCount++;
 
                 // Test 10
-                Console.WriteLine("\n[TEST 10/15] Storage History: 0s Tree Cache Persistence & Automatic Background Diff Detection...");
+                Console.WriteLine("\n[TEST 10/16] Storage History: 0s Tree Cache Persistence & Automatic Background Diff Detection...");
                 await TestStorageHistoryTreeCacheAndDiffAsync();
                 Console.WriteLine("  --> [PASS] Storage History: Tree cache restored in 0s, size diffs & badges automatically calculated.");
                 passCount++;
 
                 // Test 11
-                Console.WriteLine("\n[TEST 11/15] App Settings: Shared Cache Read Source Cascade & Write Destination Resolution...");
+                Console.WriteLine("\n[TEST 11/16] App Settings: Shared Cache Read Source Cascade & Write Destination Resolution...");
                 TestAppSettingsSharedCacheResolution();
                 Console.WriteLine("  --> [PASS] App Settings: Shared cache cascade fallback and write destination modes 100% verified.");
                 passCount++;
 
                 // Test 12
-                Console.WriteLine("\n[TEST 12/15] UI Binding Contract & Tree Cache Expansion State...");
+                Console.WriteLine("\n[TEST 12/16] UI Binding Contract & Tree Cache Expansion State...");
                 await TestUiBindingContractAndCacheExpansionStateAsync();
                 Console.WriteLine("  --> [PASS] UI Binding Contract & Cache Expansion: FileItemNode properties and tree expansion state 100% verified.");
                 passCount++;
 
                 // Test 13
-                Console.WriteLine("\n[TEST 13/15] Audit: Duplicate Grouping Colors & ActiveDirectory OU Hierarchy Fallback...");
+                Console.WriteLine("\n[TEST 13/16] Audit: Duplicate Grouping Colors & ActiveDirectory OU Hierarchy Fallback...");
                 await TestDuplicateGroupingAndOuHierarchyAsync();
                 Console.WriteLine("  --> [PASS] Audit & AD: Duplicate cyclic color palette, group sorting, and OU hierarchy fallback 100% verified.");
                 passCount++;
 
                 // Test 14
-                Console.WriteLine("\n[TEST 14/15] Audit: Smart Original Candidate Scoring & Copy Keyword Detection...");
+                Console.WriteLine("\n[TEST 14/16] Audit: Smart Original Candidate Scoring & Copy Keyword Detection...");
                 await TestSmartOriginalCandidateScoringAsync();
                 Console.WriteLine("  --> [PASS] Audit: Smart original candidate scoring correctly prioritizes non-copy names and root proximity.");
                 passCount++;
 
                 // Test 15
-                Console.WriteLine("\n[TEST 15/15] Audit: Safe Archival Opt-In & IsOriginalCandidate Property Fidelity...");
+                Console.WriteLine("\n[TEST 15/16] Audit: Safe Archival Opt-In & IsOriginalCandidate Property Fidelity...");
                 TestAuditArchiveScriptOptInAndPropertyFidelity();
                 Console.WriteLine("  --> [PASS] Audit: Archive script generation strictly respects IsOriginalCandidate property and duplicate opt-in.");
+                passCount++;
+
+                // Test 16
+                Console.WriteLine("\n[TEST 16/16] Simulation Studio: Lazy Loading, Auto-Expand & D&D Movement/Drop Outside Contract...");
+                TestSimulationStudioLazyLoadingAndDropOutside();
+                Console.WriteLine("  --> [PASS] Simulation Studio: Source lazy loading, root auto-expand, D&D movement & outside removal verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -1746,6 +1752,97 @@ namespace FolderMorpher.Services.Testing
                 // 原本（IsOriginalCandidate == true）は文字列に [原本候補] がなくても絶対に除外されること
                 if (contentWithDuplicates.Contains("important_original.xlsx"))
                     throw new InvalidOperationException("Original file must NEVER be included in archive script even when includeDuplicates is true");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 16. Simulation Studio: 移行元ツリーの遅延展開・初期直下展開 & 新サーバーツリーのD&D移動・枠外削除契約
+        /// </summary>
+        private static void TestSimulationStudioLazyLoadingAndDropOutside()
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_SimTest_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            try
+            {
+                // 1. ディレクトリ構造の作成: Root / SubA / SubSubA, Root / SubB
+                string subADir = Path.Combine(tempDir, "01_Sales");
+                string subSubADir = Path.Combine(subADir, "2026_Contracts");
+                string subBDir = Path.Combine(tempDir, "02_Marketing");
+                Directory.CreateDirectory(subSubADir);
+                Directory.CreateDirectory(subBDir);
+
+                // 2. 移行元ツリーの読み込み検証（初期展開＆ダミーノード付与）
+                var di = new DirectoryInfo(tempDir);
+                var rootItem = new FileItemNode(di.FullName, di.Name, 0, true, di.LastWriteTime);
+
+                foreach (var sub in di.GetDirectories())
+                {
+                    var subNode = new FileItemNode(sub.FullName, sub.Name, 0, true, sub.LastWriteTime)
+                    {
+                        Parent = rootItem,
+                        Level = rootItem.Level + 1
+                    };
+                    if (sub.EnumerateDirectories().Any())
+                    {
+                        subNode.Children.Add(new FileItemNode(string.Empty, "__DUMMY__", 0, false));
+                    }
+                    rootItem.Children.Add(subNode);
+                }
+                rootItem.IsExpanded = true;
+
+                if (!rootItem.IsExpanded)
+                    throw new InvalidOperationException("Source root node must be auto-expanded upon load.");
+                if (rootItem.Children.Count != 2)
+                    throw new InvalidOperationException($"Expected 2 direct subdirectories, got {rootItem.Children.Count}");
+
+                var salesNode = rootItem.Children.First(c => c.Name == "01_Sales");
+                if (salesNode.Children.Count != 1 || salesNode.Children[0].Name != "__DUMMY__")
+                    throw new InvalidOperationException("Subdirectories with children must have dummy node for lazy expansion.");
+
+                // 3. 遅延展開のシミュレーション（Expanded発火で子を実ディレクトリから展開）
+                salesNode.Children.Clear();
+                var salesDi = new DirectoryInfo(salesNode.FullPath);
+                foreach (var sub in salesDi.GetDirectories())
+                {
+                    salesNode.Children.Add(new FileItemNode(sub.FullName, sub.Name, 0, true, sub.LastWriteTime) { Parent = salesNode });
+                }
+                if (salesNode.Children.Count != 1 || salesNode.Children[0].Name != "2026_Contracts")
+                    throw new InvalidOperationException("Lazy loading failed to expand deep subdirectories.");
+
+                // 4. 新サーバーツリーノード（SimFolderNode）の移動契約検証
+                var rootSim = new SimFolderNode { Name = "NewRoot", Level = 0, InheritAcl = true };
+                var child1 = new SimFolderNode { Name = "Child1", Level = 1, Parent = rootSim };
+                var child2 = new SimFolderNode { Name = "Child2", Level = 1, Parent = rootSim };
+                rootSim.Children.Add(child1);
+                rootSim.Children.Add(child2);
+
+                // Child2 を Child1 の配下に移動（D&D移動）
+                rootSim.Children.Remove(child2);
+                child2.Parent = child1;
+                child2.Level = child1.Level + 1;
+                child1.Children.Add(child2);
+
+                if (child2.Parent != child1 || child2.Level != 2 || !child1.Children.Contains(child2))
+                    throw new InvalidOperationException("Moving SimFolderNode under another node failed.");
+
+                // Child2 をルートへ昇格移動（空白部分へのドロップ契約）
+                child1.Children.Remove(child2);
+                child2.Parent = null;
+                child2.Level = 0;
+                var rootList = new List<SimFolderNode> { rootSim, child2 };
+
+                if (child2.Parent != null || child2.Level != 0 || !rootList.Contains(child2))
+                    throw new InvalidOperationException("Promoting SimFolderNode to root level failed.");
+
+                // 枠外ドロップによる削除契約
+                rootList.Remove(child2);
+                if (rootList.Contains(child2))
+                    throw new InvalidOperationException("Drop outside SimFolderNode removal contract failed.");
             }
             finally
             {

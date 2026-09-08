@@ -196,6 +196,19 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
       - `_auditVisibleItems.Clear()` + `Add()` のループを撤廃し、`DataGrid.ItemsSource = resultList;` による一括代入に切り替え。数十万件の課題でも瞬時に表示が切り替わる高スケーラビリティを確保。
     - **メディア最適化の正確な仕様表記**:
       - 不可逆リサイズ（長辺2560px超の縮小）を伴う処理に対し、誤解を招く「ロスレス」表現を撤廃。「画像最適化（長辺2560px超は縮小・画質85%・Exif日時完全保持）」と正確に明記。
+29. **移行スタジオ（Simulation Studio）の階層オンデマンド走査・D&D枠外削除・スムーススクロール・2段フッター規約**:
+    - **現行サーバー移行元の遅延展開（On-Demand Expansion）＆ 初期直下展開**:
+      - `OpenFolderDialog` によるエクスプローラー風UNC参照ボタンを新設。
+      - 読込直後にルートフォルダを自動展開（`rootItem.IsExpanded = true`）し、直下の全フォルダを即座に一覧表示。
+      - 子フォルダはダミーノード方式による遅延読み込み（`Expanded` イベント発火時に安全走査）を採用し、何階層でも安全に配下を深掘り可能。
+    - **新サーバーツリー（SimMockTreeView）のD&D移動・昇格・枠外ドロップ削除**:
+      - ドラッグ開始にしきい値（`MinimumHorizontalDragDistance` / `MinimumVerticalDragDistance`）を導入し、クリック選択の誤ドラッグを根絶。
+      - 別ノードドロップ時はサブフォルダ移動、ツリー下部余白ドロップ時は「ルートフォルダへ昇格移動」、ツリー枠外ドロップ時は「ツリーから安全削除（ポイ捨て削除）」の三段直感D&Dを確立。
+    - **ピクセル単位スムーススクロール（ガタガタ解消）**:
+      - `SimSourceTreeView` および `SimMockTreeView` に `ScrollViewer.CanContentScroll="False"` を適用し、項目単位の飛び跳ねスクロールをピクセル単位の滑らかなスクロールへ最適化。
+    - **サイドバー2段フッター＆マッピング説明文適正化**:
+      - 狭小幅での文字・ボタン重なりを防止するため、サイドバーフッターを「上段：ブランド・バージョン / 下段：設定・言語ボタン」の2段構成に刷新。
+      - アコーディオンの「移行元マッピング」から不要な冗長サブテキストを撤去し、1行でスッキリ視認できるように統一。
 
 ---
 
@@ -215,7 +228,7 @@ Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe"
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 15/15 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 16/16 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```
