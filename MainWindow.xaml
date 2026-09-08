@@ -76,7 +76,7 @@
                 <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="14,10">
                     <Grid>
                         <StackPanel x:Name="SidebarFooterPanel" VerticalAlignment="Center">
-                            <TextBlock Text="FolderMorpher v1.4.3" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                            <TextBlock Text="FolderMorpher v1.4.5" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                             <TextBlock Text="Storage &amp; Migration Studio" FontSize="10.5" Foreground="#94A3B8" Margin="0,1,0,0"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
@@ -722,10 +722,12 @@
 
                             <ComboBox x:Name="RevDepthComboBox" Grid.Column="6" Height="32" Margin="0,0,14,0" FontSize="11" VerticalContentAlignment="Center" SelectedIndex="0">
                                 <ComboBoxItem Content="無制限 (推奨)" Tag="unlimited"/>
-                                <ComboBoxItem Content="3階層" Tag="3"/>
-                                <ComboBoxItem Content="5階層" Tag="5"/>
-                                <ComboBoxItem Content="8階層" Tag="8"/>
-                                <ComboBoxItem Content="10階層" Tag="10"/>
+                                <ComboBoxItem Content="第1階層 (直下のみ)" Tag="1"/>
+                                <ComboBoxItem Content="第2階層まで" Tag="2"/>
+                                <ComboBoxItem Content="第3階層まで" Tag="3"/>
+                                <ComboBoxItem Content="第5階層まで" Tag="5"/>
+                                <ComboBoxItem Content="第8階層まで" Tag="8"/>
+                                <ComboBoxItem Content="第10階層まで" Tag="10"/>
                             </ComboBox>
 
                             <StackPanel Grid.Column="7" Orientation="Horizontal">
@@ -1526,9 +1528,43 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock x:Name="AuditTableTitleText" Grid.Row="0" Text="検出された課題・断捨離候補一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
+                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="AuditTableTitleText" Grid.Column="0" Text="検出された課題・断捨離候補一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock x:Name="AuditFilterLabel" Text="絞り込み:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox x:Name="AuditCategoryFilterComboBox" Width="135" Height="28" FontSize="11.5" Margin="0,0,10,0" SelectionChanged="AuditFilter_Changed">
+                                    <ComboBoxItem Content="すべて表示" IsSelected="True" Tag="All"/>
+                                    <ComboBoxItem Content="重複ファイルのみ" Tag="Duplicate"/>
+                                    <ComboBoxItem Content="休眠ファイルのみ" Tag="Dormant"/>
+                                    <ComboBoxItem Content="パス長・禁則のみ" Tag="PathLimit"/>
+                                </ComboBox>
+                                <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="28" Width="180" Padding="6,0">
+                                    <Grid>
+                                        <TextBox x:Name="AuditSearchFilterTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11.5" TextChanged="AuditFilter_Changed"/>
+                                        <TextBlock x:Name="AuditSearchPlaceholder" Text="🔍 ファイル名/パス検索..." FontSize="11" Foreground="#94A3B8" VerticalAlignment="Center" IsHitTestVisible="False">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Text, ElementName=AuditSearchFilterTextBox}" Value="">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
                         <DataGrid x:Name="AuditItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
-                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="30" HeadersVisibility="Column" RowHeaderWidth="0">
+                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="30" HeadersVisibility="Column" RowHeaderWidth="0"
+                                  MouseDoubleClick="AuditItemsDataGrid_MouseDoubleClick">
                             <DataGrid.RowStyle>
                                 <Style TargetType="DataGridRow">
                                     <Setter Property="Background" Value="{Binding RowBackgroundHex}"/>
@@ -1705,7 +1741,8 @@
                         </Grid.RowDefinitions>
                         <TextBlock x:Name="MediaTableTitleText" Grid.Row="0" Text="メディア一覧（画像 ＆ 巨大動画）" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
                         <DataGrid x:Name="MediaItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
-                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="28" HeadersVisibility="Column" RowHeaderWidth="0">
+                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="28" HeadersVisibility="Column" RowHeaderWidth="0"
+                                  MouseDoubleClick="MediaItemsDataGrid_MouseDoubleClick">
                             <DataGrid.Columns>
                                 <DataGridTextColumn x:Name="ColMediaType" Header="種別" Binding="{Binding Extension}" Width="80" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                 <DataGridTextColumn x:Name="ColMediaFileName" Header="ファイル名" Binding="{Binding FileName}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
@@ -2174,7 +2211,7 @@
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v1.4.4 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.4.5 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>

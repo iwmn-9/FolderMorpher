@@ -31,86 +31,92 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 13;
+            int totalTests = 14;
 
             try
             {
                 // Test 1
-                Console.WriteLine("\n[TEST 1/10] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
+                Console.WriteLine("\n[TEST 1/14] Media Optimizer: PNG Corruption & Alpha Channel Preservation...");
                 await TestMediaOptimizerPngPreservationAsync();
                 Console.WriteLine("  --> [PASS] Media Optimizer: PNG signature (0x89 50 4E 47) and alpha channel 100% preserved.");
                 passCount++;
 
                 // Test 2
-                Console.WriteLine("\n[TEST 2/10] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
+                Console.WriteLine("\n[TEST 2/14] Live ACL: Deny Loss & Inheritance Disabling ACE Loss (Canonical ACL Ordering)...");
                 TestLiveAclDenyAndInheritance();
                 Console.WriteLine("  --> [PASS] Live ACL: ACEs preserved on inheritance disable, Deny rules ordered first (Canonical Order).");
                 passCount++;
 
                 // Test 3
-                Console.WriteLine("\n[TEST 3/10] Audit Archival: Original File Archive & Move Duplication...");
+                Console.WriteLine("\n[TEST 3/14] Audit Archival: Original File Archive & Move Duplication...");
                 TestAuditArchivalOriginalExclusionAndDeduplication();
                 Console.WriteLine("  --> [PASS] Audit: Original files safely protected from archive, move commands deduplicated.");
                 passCount++;
 
                 // Test 4
-                Console.WriteLine("\n[TEST 4/10] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
+                Console.WriteLine("\n[TEST 4/14] MFT Data Run Decoder: Initial LCN Double-Addition Bug...");
                 TestMftDataRunDecoderLcnCalculation();
                 Console.WriteLine("  --> [PASS] MFT Data Run Decoder: Initial LCN computed relative to 0 without double-addition.");
                 passCount++;
 
                 // Test 5
-                Console.WriteLine("\n[TEST 5/10] Live ACL: Special Inheritance & Propagation Flags Preservation...");
+                Console.WriteLine("\n[TEST 5/14] Live ACL: Special Inheritance & Propagation Flags Preservation...");
                 TestLiveAclSpecialInheritanceFlags();
                 Console.WriteLine("  --> [PASS] Live ACL: Special InheritanceFlags and PropagationFlags preserved across read/write.");
                 passCount++;
 
                 // Test 6
-                Console.WriteLine("\n[TEST 6/10] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
+                Console.WriteLine("\n[TEST 6/14] ACL UI Binding & Helper: Bidirectional Mapping & Modal State Sync...");
                 TestAclUiBindingAndHelper();
                 Console.WriteLine("  --> [PASS] ACL UI Binding: AppliesTo, AccessType, and Modal state perfectly synchronized.");
                 passCount++;
 
                 // Test 7
-                Console.WriteLine("\n[TEST 7/10] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
+                Console.WriteLine("\n[TEST 7/14] Effective Access: Canonical DACL Evaluation & Multi-Level Group Permission Tracing...");
                 await TestEffectiveAccessCanonicalDaclAndNestingAsync();
                 Console.WriteLine("  --> [PASS] Effective Access: Canonical DACL ordering (Explicit Allow > Inherited Deny), multi-level tracing & user isolation verified.");
                 passCount++;
 
                 // Test 8
-                Console.WriteLine("\n[TEST 8/10] Simulation & Script Generation: .NET PS Script, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly...");
+                Console.WriteLine("\n[TEST 8/14] Simulation & Script Generation: .NET PS Script, Robocopy /XD Subtree Exclusion, and Effective Access InheritOnly...");
                 TestSimulationAclRobocopyAndEffectiveAccessInheritOnly();
                 Console.WriteLine("  --> [PASS] Simulation & Effective Access: .NET PS script fidelity, Robocopy /XD exclusion, and InheritOnly exclusion verified.");
                 passCount++;
 
                 // Test 9
-                Console.WriteLine("\n[TEST 9/10] Live ACL Rollback DACL SDDL Fidelity & Skeleton Empty-ACL Inheritance Disable...");
+                Console.WriteLine("\n[TEST 9/14] Live ACL Rollback DACL SDDL Fidelity & Skeleton Empty-ACL Inheritance Disable...");
                 await TestLiveAclRollbackAndSkeletonEmptyAclInheritanceAsync();
                 Console.WriteLine("  --> [PASS] Live ACL Rollback & Skeleton Deploy: DACL SDDL 100% restored after mutation, empty ACL inheritance disabled.");
                 passCount++;
 
                 // Test 10
-                Console.WriteLine("\n[TEST 10/11] Storage History: 0s Tree Cache Persistence & Automatic Background Diff Detection...");
+                Console.WriteLine("\n[TEST 10/14] Storage History: 0s Tree Cache Persistence & Automatic Background Diff Detection...");
                 await TestStorageHistoryTreeCacheAndDiffAsync();
                 Console.WriteLine("  --> [PASS] Storage History: Tree cache restored in 0s, size diffs & badges automatically calculated.");
                 passCount++;
 
                 // Test 11
-                Console.WriteLine("\n[TEST 11/12] App Settings: Shared Cache Read Source Cascade & Write Destination Resolution...");
+                Console.WriteLine("\n[TEST 11/14] App Settings: Shared Cache Read Source Cascade & Write Destination Resolution...");
                 TestAppSettingsSharedCacheResolution();
                 Console.WriteLine("  --> [PASS] App Settings: Shared cache cascade fallback and write destination modes 100% verified.");
                 passCount++;
 
                 // Test 12
-                Console.WriteLine("\n[TEST 12/13] UI Binding Contract & Tree Cache Expansion State...");
+                Console.WriteLine("\n[TEST 12/14] UI Binding Contract & Tree Cache Expansion State...");
                 await TestUiBindingContractAndCacheExpansionStateAsync();
                 Console.WriteLine("  --> [PASS] UI Binding Contract & Cache Expansion: FileItemNode properties and tree expansion state 100% verified.");
                 passCount++;
 
                 // Test 13
-                Console.WriteLine("\n[TEST 13/13] Audit: Duplicate Grouping Colors & ActiveDirectory OU Hierarchy Fallback...");
+                Console.WriteLine("\n[TEST 13/14] Audit: Duplicate Grouping Colors & ActiveDirectory OU Hierarchy Fallback...");
                 await TestDuplicateGroupingAndOuHierarchyAsync();
                 Console.WriteLine("  --> [PASS] Audit & AD: Duplicate cyclic color palette, group sorting, and OU hierarchy fallback 100% verified.");
+                passCount++;
+
+                // Test 14
+                Console.WriteLine("\n[TEST 14/14] Audit: Smart Original Candidate Scoring & Copy Keyword Detection...");
+                await TestSmartOriginalCandidateScoringAsync();
+                Console.WriteLine("  --> [PASS] Audit: Smart original candidate scoring correctly prioritizes non-copy names and root proximity.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -1584,6 +1590,71 @@ namespace FolderMorpher.Services.Testing
                 var principals = await adService.GetPrincipalsInOuAsync(firstChild.DistinguishedName);
                 if (principals == null)
                     throw new InvalidOperationException("GetPrincipalsInOuAsync returned null");
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 14. Audit: インテリジェント原本選定スコアリング（コピーキーワード除外・浅い階層優先）の検証
+        /// </summary>
+        public static async Task TestSmartOriginalCandidateScoringAsync()
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), "fm_test_smart_orig_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+            try
+            {
+                string subDir = Path.Combine(tempDir, "sub");
+                Directory.CreateDirectory(subDir);
+
+                byte[] dummyContent = new byte[120 * 1024];
+                new Random(42).NextBytes(dummyContent);
+
+                // 4つの同一ファイルを意図的に異なる名前・階層で作成
+                // 1. root / report - コピー.txt (コピーキーワードあり)
+                // 2. sub / report.txt (コピーキーワードなしだが階層が深い)
+                // 3. root / report (1).txt (コピーキーワードあり)
+                // 4. root / report.txt (原本の本命: キーワードなし & ルート直下で最浅)
+                File.WriteAllBytes(Path.Combine(tempDir, "report - コピー.txt"), dummyContent);
+                File.WriteAllBytes(Path.Combine(subDir, "report.txt"), dummyContent);
+                File.WriteAllBytes(Path.Combine(tempDir, "report (1).txt"), dummyContent);
+                File.WriteAllBytes(Path.Combine(tempDir, "report.txt"), dummyContent);
+
+                var auditService = new AuditReportService();
+                var options = new AuditOptions
+                {
+                    TargetDirectory = tempDir,
+                    CheckDuplicates = true,
+                    CheckDormant = false,
+                    CheckPathLimits = false,
+                    MinFileSizeBytes = 10 * 1024
+                };
+
+                var (summary, items) = await auditService.RunAuditAsync(options, null, CancellationToken.None);
+                var dupItems = items.Where(i => i.IssueType == AuditIssueType.Duplicate).ToList();
+
+                if (dupItems.Count != 4)
+                    throw new InvalidOperationException($"Expected 4 duplicate items, but found {dupItems.Count}");
+
+                var original = dupItems.FirstOrDefault(i => i.IsOriginalCandidate);
+                if (original == null)
+                    throw new InvalidOperationException("No original candidate was selected in duplicate group");
+
+                // 原本は root/report.txt であるべき
+                string expectedOriginal = Path.Combine(tempDir, "report.txt");
+                if (!string.Equals(original.FullPath, expectedOriginal, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException($"Original candidate mismatch. Expected: {expectedOriginal}, Actual: {original.FullPath}");
+                }
+
+                // ほかの3件は IsOriginalCandidate == false であるべき
+                int originalCount = dupItems.Count(i => i.IsOriginalCandidate);
+                if (originalCount != 1)
+                {
+                    throw new InvalidOperationException($"Expected exactly 1 original candidate, but found {originalCount}");
+                }
             }
             finally
             {

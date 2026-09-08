@@ -153,7 +153,19 @@ namespace FolderMorpher.Services
                     {
                         var groupNum = dupGroupIndex++;
                         var groupId = $"DUP-{groupNum:D4}";
-                        var fileList = kvp.Value;
+                        // 原本候補を賢く選定（スコアリングソート）
+                        // 1. ファイル名に「コピー」「copy」「(1)」「_backup」等が含まれていないもの優先
+                        // 2. ディレクトリ階層が浅い（パス区切り文字が少ない＝ルートに近い）もの優先
+                        // 3. パス文字列長が短いもの優先
+                        // 4. 作成日時が古いもの優先
+                        // 5. 更新日時が古いもの優先
+                        var fileList = kvp.Value
+                            .OrderBy(f => HasCopyKeywords(f.Name) ? 1 : 0)
+                            .ThenBy(f => f.FullName.Count(c => c == '\\' || c == '/'))
+                            .ThenBy(f => f.FullName.Length)
+                            .ThenBy(f => f.CreationTimeUtc)
+                            .ThenBy(f => f.LastWriteTimeUtc)
+                            .ToList();
 
                         // 最初以外のファイルを「重複による無駄（Wasted）」として集計
                         for (int i = 0; i < fileList.Count; i++)
@@ -337,6 +349,18 @@ namespace FolderMorpher.Services
             sb.AppendLine("pause");
 
             File.WriteAllText(scriptPath, sb.ToString(), Encoding.UTF8);
+        }
+
+        private static readonly string[] CopyKeywords = {
+            "コピー", "copy", "複写", "バックアップ", "backup", "bak", "複製", "復元", "restore", "最新", "old", "new", "編集"
+        };
+
+        private static bool HasCopyKeywords(string fileName)
+        {
+            var name = fileName.ToLowerInvariant();
+            if (CopyKeywords.Any(k => name.Contains(k, StringComparison.OrdinalIgnoreCase))) return true;
+            if (System.Text.RegularExpressions.Regex.IsMatch(name, @"[\(_\- ]\d+[\)]")) return true;
+            return false;
         }
 
         private static string EscapeCsv(string s) => s.Replace("\"", "\"\"");

@@ -44,6 +44,7 @@ namespace AstraSize
         // State for Audit & Media
         private AuditSummary? _lastAuditSummary;
         private List<AuditItem> _lastAuditItems = new();
+        private readonly ObservableCollection<AuditItem> _auditVisibleItems = new();
         private MediaOptimizeSummary? _lastMediaSummary;
         private List<MediaItem> _lastMediaImages = new();
         private List<MediaItem> _lastMediaVideos = new();
@@ -111,6 +112,7 @@ namespace AstraSize
             InitializeComponent();
             PickerOuTreeView.ItemsSource = _pickerOuRoots;
             PickerPrincipalsDataGrid.ItemsSource = _pickerPrincipals;
+            AuditItemsDataGrid.ItemsSource = _auditVisibleItems;
             Loaded += MainWindow_Loaded;
         }
 
@@ -2891,8 +2893,7 @@ namespace AstraSize
                 var (summary, items) = await _auditService.RunAuditAsync(options, progress, _auditCts.Token);
                 _lastAuditSummary = summary;
                 _lastAuditItems = items;
-
-                AuditItemsDataGrid.ItemsSource = items;
+                ApplyAuditFilters();
 
                 // Update KPI Cards
                 AuditKpiTotalFiles.Text = $"{summary.TotalFilesScanned:N0} 件";
@@ -3014,6 +3015,82 @@ namespace AstraSize
                 {
                     MessageBox.Show($"バッチ生成エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
+            }
+        }
+
+        private void AuditFilter_Changed(object sender, RoutedEventArgs e)
+        {
+            ApplyAuditFilters();
+        }
+
+        private void ApplyAuditFilters()
+        {
+            if (AuditCategoryFilterComboBox == null || AuditSearchFilterTextBox == null || AuditItemsDataGrid == null)
+                return;
+
+            string selectedTag = (AuditCategoryFilterComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "All";
+            string query = AuditSearchFilterTextBox.Text.Trim();
+
+            var filtered = _lastAuditItems.AsEnumerable();
+
+            if (selectedTag == "Duplicate")
+            {
+                filtered = filtered.Where(x => x.IssueType == AuditIssueType.Duplicate);
+            }
+            else if (selectedTag == "Dormant")
+            {
+                filtered = filtered.Where(x => x.IssueType == AuditIssueType.Dormant);
+            }
+            else if (selectedTag == "PathLimit")
+            {
+                filtered = filtered.Where(x => x.IssueType == AuditIssueType.PathTooLong || x.IssueType == AuditIssueType.InvalidChar);
+            }
+
+            if (!string.IsNullOrEmpty(query))
+            {
+                filtered = filtered.Where(x =>
+                    (x.FileName?.Contains(query, StringComparison.OrdinalIgnoreCase) == true) ||
+                    (x.FullPath?.Contains(query, StringComparison.OrdinalIgnoreCase) == true) ||
+                    (x.Detail?.Contains(query, StringComparison.OrdinalIgnoreCase) == true));
+            }
+
+            var resultList = filtered.ToList();
+            _auditVisibleItems.Clear();
+            foreach (var item in resultList)
+            {
+                _auditVisibleItems.Add(item);
+            }
+
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+            string baseTitle = isJa ? "検出された課題・断捨離候補一覧" : "Detected Issues & Cleanup Candidates";
+            if (_lastAuditItems.Count > 0)
+            {
+                AuditTableTitleText.Text = $"{baseTitle} ({_auditVisibleItems.Count:N0} / {_lastAuditItems.Count:N0} 件)";
+            }
+            else
+            {
+                AuditTableTitleText.Text = baseTitle;
+            }
+        }
+
+        private void AuditItemsDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (AuditItemsDataGrid.SelectedItem is not AuditItem item) return;
+
+            try
+            {
+                if (File.Exists(item.FullPath))
+                {
+                    Process.Start("explorer.exe", $"/select,\"{item.FullPath}\"");
+                }
+                else if (Directory.Exists(item.DirectoryPath))
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe", $"\"{item.DirectoryPath}\"") { UseShellExecute = true });
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to open explorer for audit item: {ex.Message}");
             }
         }
         #endregion
@@ -3228,6 +3305,31 @@ namespace AstraSize
                 }
             }
         }
+
+        private void MediaItemsDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (MediaItemsDataGrid.SelectedItem is not MediaItem item) return;
+
+            try
+            {
+                if (File.Exists(item.FullPath))
+                {
+                    Process.Start("explorer.exe", $"/select,\"{item.FullPath}\"");
+                }
+                else
+                {
+                    var dir = Path.GetDirectoryName(item.FullPath);
+                    if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                    {
+                        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to open explorer for media item: {ex.Message}");
+            }
+        }
         #endregion
 
         #region Localization (i18n)
@@ -3434,8 +3536,22 @@ namespace AstraSize
             AuditKpiTotalFilesTitle.Text = isJa ? "総走査ファイル数" : "Total Files Scanned";
             AuditKpiDupWastedTitle.Text = isJa ? "重複ファイルによる無駄" : "Wasted by Duplicates";
             AuditKpiDormantSizeTitle.Text = isJa ? "休眠ファイル容量 (3年超)" : "Dormant Capacity (3+ Yrs)";
-            AuditKpiPathLimitsTitle.Text = isJa ? "パス長超過 / 禁則文字" : "Path Limits / Invalid Chars";
-            AuditTableTitleText.Text = isJa ? "検出された課題・断捨離候補一覧" : "Detected Issues & Cleanup Candidates";
+            string auditBaseTitle = isJa ? "検出された課題・断捨離候補一覧" : "Detected Issues & Cleanup Candidates";
+            AuditTableTitleText.Text = _lastAuditItems.Count > 0
+                ? $"{auditBaseTitle} ({_auditVisibleItems.Count:N0} / {_lastAuditItems.Count:N0} 件)"
+                : auditBaseTitle;
+            if (AuditFilterLabel != null) AuditFilterLabel.Text = isJa ? "絞り込み:" : "Filter:";
+            if (AuditCategoryFilterComboBox?.Items.Count >= 4)
+            {
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[0]).Content = isJa ? "すべて表示" : "Show All";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[1]).Content = isJa ? "重複ファイルのみ" : "Duplicates Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[2]).Content = isJa ? "休眠ファイルのみ" : "Dormant Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[3]).Content = isJa ? "パス長・禁則のみ" : "Path / Invalid Only";
+            }
+            if (AuditSearchPlaceholder != null)
+            {
+                AuditSearchPlaceholder.Text = isJa ? "🔍 ファイル名/パス検索..." : "🔍 Search file/path...";
+            }
 
             AuditStartButton.Content = isJa ? "🔍 監査スキャン開始" : "🔍 Start Audit Scan";
             AuditExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
