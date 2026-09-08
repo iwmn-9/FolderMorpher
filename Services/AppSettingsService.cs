@@ -27,6 +27,10 @@ namespace FolderMorpher.Services
 
         // 言語設定 ("ja" or "en")
         public string Language { get; set; } = "ja";
+
+        // 容量分析（Storage Explorer）のマルチタブ・セッション復元
+        public List<string> StorageTabPaths { get; set; } = new();
+        public int ActiveStorageTabIndex { get; set; } = 0;
     }
 
     public class AppSettingsService

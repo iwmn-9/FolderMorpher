@@ -150,6 +150,12 @@ namespace AstraSize
             }
         }
 
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            SaveStorageTabSession();
+            base.OnClosing(e);
+        }
+
         #region Toast Notification Helper
         private void ShowToast(string message)
         {
@@ -260,18 +266,111 @@ namespace AstraSize
         #endregion
 
         #region Tab 1: Storage Explorer & Multi-Tab Management
-        private void InitializeStorageTabs()
+        private bool _isInitializingTabs = false;
+
+        private async void InitializeStorageTabs()
         {
             StorageTabsItemsControl.ItemsSource = StorageTabs;
+            _isInitializingTabs = true;
 
-            var initialTab = new ScanTabModel
+            try
             {
-                TabTitle = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "新規スキャン" : "New Scan",
-                TargetPath = string.Empty,
-                IsSelected = true
-            };
-            StorageTabs.Add(initialTab);
-            SelectTab(initialTab);
+                var savedPaths = AppSettingsService.Instance.Current.StorageTabPaths;
+                int savedActiveIndex = AppSettingsService.Instance.Current.ActiveStorageTabIndex;
+
+                if (savedPaths != null && savedPaths.Count > 0)
+                {
+                    ScanTabModel? targetActiveTab = null;
+                    for (int i = 0; i < savedPaths.Count; i++)
+                    {
+                        var path = savedPaths[i];
+                        var tab = new ScanTabModel
+                        {
+                            TargetPath = path,
+                            TabTitle = Path.GetFileName(path.TrimEnd('\\', '/'))
+                        };
+                        if (string.IsNullOrEmpty(tab.TabTitle)) tab.TabTitle = path;
+
+                        StorageTabs.Add(tab);
+                        await RestoreTabFromCacheAsync(tab, path);
+
+                        if (i == savedActiveIndex)
+                        {
+                            targetActiveTab = tab;
+                        }
+                    }
+
+                    if (targetActiveTab == null && StorageTabs.Count > 0)
+                    {
+                        targetActiveTab = StorageTabs[0];
+                    }
+
+                    if (targetActiveTab != null)
+                    {
+                        SelectTab(targetActiveTab);
+                    }
+                }
+                else
+                {
+                    var initialTab = new ScanTabModel
+                    {
+                        TabTitle = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "新規スキャン" : "New Scan",
+                        TargetPath = string.Empty,
+                        IsSelected = true
+                    };
+                    StorageTabs.Add(initialTab);
+                    SelectTab(initialTab);
+                }
+            }
+            finally
+            {
+                _isInitializingTabs = false;
+            }
+        }
+
+        private async Task RestoreTabFromCacheAsync(ScanTabModel tab, string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                var cachedRoot = await _historyService.LoadTreeCacheAsync(path);
+                if (cachedRoot != null)
+                {
+                    cachedRoot.IsExpanded = true;
+                    tab.RootNode = cachedRoot;
+                    tab.FlattenTree();
+                    tab.AggregateExtensions();
+                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                    tab.StatusMessage = isJa ? "⚡ 前回のキャッシュを表示中" : "⚡ Displaying previous cache";
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"RestoreTabFromCacheAsync Error for {path}: {ex}");
+            }
+        }
+
+        private void SaveStorageTabSession()
+        {
+            if (_isInitializingTabs) return;
+            try
+            {
+                var paths = StorageTabs
+                    .Select(t => t.TargetPath?.Trim() ?? string.Empty)
+                    .Where(p => !string.IsNullOrEmpty(p))
+                    .ToList();
+
+                var settings = AppSettingsService.Instance.Current;
+                settings.StorageTabPaths = paths;
+                int activeIdx = _currentTab != null ? StorageTabs.IndexOf(_currentTab) : 0;
+                settings.ActiveStorageTabIndex = Math.Max(0, activeIdx);
+                AppSettingsService.Instance.Save();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"SaveStorageTabSession Error: {ex}");
+            }
         }
 
         private void SelectTab(ScanTabModel tab)
@@ -296,6 +395,8 @@ namespace AstraSize
             StatusTextBlock.Text = string.IsNullOrEmpty(tab.StatusMessage) 
                 ? (LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "準備完了" : "Ready") 
                 : tab.StatusMessage;
+
+            SaveStorageTabSession();
         }
 
         private void StorageTabItem_MouseDown(object sender, MouseButtonEventArgs e)
@@ -316,6 +417,7 @@ namespace AstraSize
             };
             StorageTabs.Add(newTab);
             SelectTab(newTab);
+            SaveStorageTabSession();
         }
 
         private void CloseStorageTabButton_Click(object sender, RoutedEventArgs e)
@@ -336,6 +438,7 @@ namespace AstraSize
                     int nextIdx = Math.Min(idx, StorageTabs.Count - 1);
                     SelectTab(StorageTabs[nextIdx]);
                 }
+                SaveStorageTabSession();
             }
         }
 
@@ -451,6 +554,7 @@ namespace AstraSize
                 // キャッシュ＆スナップショットをバックグラウンド自動保存
                 _ = _historyService.SaveTreeCacheAsync(root);
                 _ = _historyService.SaveSnapshotAsync(root);
+                SaveStorageTabSession();
 
                 string diffInfo = hadDiff && !string.IsNullOrEmpty(root.DiffFormatted) ? $" [差分: {root.DiffFormatted}]" : "";
                 StatusTextBlock.Text = summary.IsMftBoosted
@@ -3366,22 +3470,32 @@ namespace AstraSize
             string sortProp = e.Column.SortMemberPath;
             if (string.IsNullOrEmpty(sortProp)) return;
 
-            // ソート方向のトグル
-            System.ComponentModel.ListSortDirection newDirection = (e.Column.SortDirection != System.ComponentModel.ListSortDirection.Ascending)
-                ? System.ComponentModel.ListSortDirection.Ascending
-                : System.ComponentModel.ListSortDirection.Descending;
+            // ソート方向のトグル（内部状態を正本とする）
+            bool newDescending;
+            if (_auditSortProperty == sortProp)
+            {
+                // 同一列の再クリック時は昇順/降順を反転
+                newDescending = !_auditSortDescending;
+            }
+            else
+            {
+                // 列切り替え時: 容量はデフォルト降順(大->小)、それ以外は昇順
+                newDescending = (sortProp == "Size");
+            }
 
-            // 全列のインジケーターをクリアして対象列に設定
+            _auditSortProperty = sortProp;
+            _auditSortDescending = newDescending;
+
+            ApplyAuditFilters();
+
+            // ItemsSource再代入でクリアされたカラムのインジケーターを再適用
             foreach (var col in AuditItemsDataGrid.Columns)
             {
                 col.SortDirection = null;
             }
-            e.Column.SortDirection = newDirection;
-
-            _auditSortProperty = sortProp;
-            _auditSortDescending = (newDirection == System.ComponentModel.ListSortDirection.Descending);
-
-            ApplyAuditFilters();
+            e.Column.SortDirection = newDescending
+                ? System.ComponentModel.ListSortDirection.Descending
+                : System.ComponentModel.ListSortDirection.Ascending;
         }
 
         private void AuditItemsDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)

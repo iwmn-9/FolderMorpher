@@ -303,6 +303,17 @@ namespace FolderMorpher.Services
                         ? list.OrderByDescending(x => x.FullPath, StringComparer.OrdinalIgnoreCase).ToList()
                         : list.OrderBy(x => x.FullPath, StringComparer.OrdinalIgnoreCase).ToList();
 
+                case "Detail":
+                    return descending
+                        ? list.OrderByDescending(x => x.Detail, StringComparer.OrdinalIgnoreCase)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList()
+                        : list.OrderBy(x => x.Detail, StringComparer.OrdinalIgnoreCase)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList();
+
                 default:
                     // デフォルト表示（重複グループ優先、グループ順、原本先頭）
                     return list
