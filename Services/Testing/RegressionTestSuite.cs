@@ -84,43 +84,43 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 9
-                Console.WriteLine("\n[TEST 9/16] Live ACL Rollback DACL SDDL Fidelity & Skeleton Empty-ACL Inheritance Disable...");
+                Console.WriteLine("\n[TEST 9/17] Live ACL Rollback DACL SDDL Fidelity & Skeleton Empty-ACL Inheritance Disable...");
                 await TestLiveAclRollbackAndSkeletonEmptyAclInheritanceAsync();
                 Console.WriteLine("  --> [PASS] Live ACL Rollback & Skeleton Deploy: DACL SDDL 100% restored after mutation, empty ACL inheritance disabled.");
                 passCount++;
 
                 // Test 10
-                Console.WriteLine("\n[TEST 10/16] Storage History: 0s Tree Cache Persistence & Automatic Background Diff Detection...");
+                Console.WriteLine("\n[TEST 10/17] Storage History: 0s Tree Cache Persistence & Automatic Background Diff Detection...");
                 await TestStorageHistoryTreeCacheAndDiffAsync();
                 Console.WriteLine("  --> [PASS] Storage History: Tree cache restored in 0s, size diffs & badges automatically calculated.");
                 passCount++;
 
                 // Test 11
-                Console.WriteLine("\n[TEST 11/16] App Settings: Shared Cache Read Source Cascade & Write Destination Resolution...");
+                Console.WriteLine("\n[TEST 11/17] App Settings: Shared Cache Read Source Cascade & Write Destination Resolution...");
                 TestAppSettingsSharedCacheResolution();
                 Console.WriteLine("  --> [PASS] App Settings: Shared cache cascade fallback and write destination modes 100% verified.");
                 passCount++;
 
                 // Test 12
-                Console.WriteLine("\n[TEST 12/16] UI Binding Contract & Tree Cache Expansion State...");
+                Console.WriteLine("\n[TEST 12/17] UI Binding Contract & Tree Cache Expansion State...");
                 await TestUiBindingContractAndCacheExpansionStateAsync();
                 Console.WriteLine("  --> [PASS] UI Binding Contract & Cache Expansion: FileItemNode properties and tree expansion state 100% verified.");
                 passCount++;
 
                 // Test 13
-                Console.WriteLine("\n[TEST 13/16] Audit: Duplicate Grouping Colors & ActiveDirectory OU Hierarchy Fallback...");
+                Console.WriteLine("\n[TEST 13/17] Audit: Duplicate Grouping Colors & ActiveDirectory OU Hierarchy Fallback...");
                 await TestDuplicateGroupingAndOuHierarchyAsync();
                 Console.WriteLine("  --> [PASS] Audit & AD: Duplicate cyclic color palette, group sorting, and OU hierarchy fallback 100% verified.");
                 passCount++;
 
                 // Test 14
-                Console.WriteLine("\n[TEST 14/16] Audit: Smart Original Candidate Scoring & Copy Keyword Detection...");
+                Console.WriteLine("\n[TEST 14/17] Audit: Smart Original Candidate Scoring & Copy Keyword Detection...");
                 await TestSmartOriginalCandidateScoringAsync();
                 Console.WriteLine("  --> [PASS] Audit: Smart original candidate scoring correctly prioritizes non-copy names and root proximity.");
                 passCount++;
 
                 // Test 15
-                Console.WriteLine("\n[TEST 15/16] Audit: Safe Archival Opt-In & IsOriginalCandidate Property Fidelity...");
+                Console.WriteLine("\n[TEST 15/17] Audit: Safe Archival Opt-In & IsOriginalCandidate Property Fidelity...");
                 TestAuditArchiveScriptOptInAndPropertyFidelity();
                 Console.WriteLine("  --> [PASS] Audit: Archive script generation strictly respects IsOriginalCandidate property and duplicate opt-in.");
                 passCount++;
@@ -1940,63 +1940,106 @@ namespace FolderMorpher.Services.Testing
                 if (items.Any(i => i.IsChecked))
                     throw new InvalidOperationException("ClearAll must uncheck all items.");
 
-                // 3. 原本保護ガード契約
-                items[0].IsChecked = true; // 原本をあえてチェック
-                items[1].IsChecked = true; // コピーもチェック
-                var checkedItems = items.Where(i => i.IsChecked).ToList();
-                var originalWarnings = checkedItems.Where(i => i.IsOriginalCandidate).ToList();
-                if (originalWarnings.Count != 1 || originalWarnings[0].FullPath != items[0].FullPath)
-                    throw new InvalidOperationException("Original candidate protection guard failed to detect checked original item.");
+                // 3. 🔴 High検証: 原本候補が「休眠ファイル経由」で選択された場合の原本保護契約
+                // 同一ファイル "dormant_and_orig.xlsx" が Dormant 行と Duplicate(原本) 行の2行を持つ
+                string multiRolePath = Path.Combine(tempDir, "dormant_and_orig.xlsx");
+                var multiRoleDormant = new AuditItem
+                {
+                    FullPath = multiRolePath,
+                    FileName = "dormant_and_orig.xlsx",
+                    IssueType = AuditIssueType.Dormant,
+                    LastWriteTime = now.AddYears(-6),
+                    IsOriginalCandidate = false, // Dormant側はfalse
+                    Size = 5000
+                };
+                var multiRoleDuplicate = new AuditItem
+                {
+                    FullPath = multiRolePath,
+                    FileName = "dormant_and_orig.xlsx",
+                    IssueType = AuditIssueType.Duplicate,
+                    LastWriteTime = now.AddYears(-6),
+                    IsOriginalCandidate = true, // Duplicate側で原本候補
+                    Size = 5000
+                };
+                var auditItems = new List<AuditItem> { multiRoleDormant, multiRoleDuplicate };
+
+                // ユーザーが「5年超休眠を一括選択」を実施（Dormant行のみがチェックされる）
+                multiRoleDormant.IsChecked = true;
+                multiRoleDuplicate.IsChecked = false;
+
+                // AuditCleanupService.BuildPlan による実行計画立案
+                var plans = AuditCleanupService.BuildPlan(auditItems);
+                if (plans.Count != 1)
+                    throw new InvalidOperationException($"Expected 1 unique plan for same FullPath, got {plans.Count}");
+
+                // 休眠行経由の選択であっても、全監査正本から原本候補（IsOriginalCandidate == true）と判定されなければならない！
+                if (!plans[0].IsOriginalCandidate)
+                    throw new InvalidOperationException("HIGH BUG REPRODUCED: Dormant item selection bypassed IsOriginalCandidate protection!");
 
                 // 原本除外アクションシミュレーション
-                foreach (var orig in originalWarnings)
+                if (plans[0].IsOriginalCandidate)
                 {
-                    orig.IsChecked = false;
-                }
-                checkedItems = items.Where(i => i.IsChecked).ToList();
-                if (checkedItems.Any(i => i.IsOriginalCandidate))
-                    throw new InvalidOperationException("Excluding originals must leave no original candidates checked.");
-                if (checkedItems.Count != 1 || checkedItems[0].FullPath != items[1].FullPath)
-                    throw new InvalidOperationException("After excluding originals, only valid non-original items must remain checked.");
-
-                // 4. 実ファイル削除 & 読み取り専用属性自動解除契約検証
-                string normalFile = Path.Combine(tempDir, "to_delete_normal.dat");
-                string readOnlyFile = Path.Combine(tempDir, "to_delete_readonly.dat");
-                File.WriteAllBytes(normalFile, new byte[1024]);
-                File.WriteAllBytes(readOnlyFile, new byte[2048]);
-
-                // 読み取り専用属性を設定
-                File.SetAttributes(readOnlyFile, File.GetAttributes(readOnlyFile) | FileAttributes.ReadOnly);
-                if (!new FileInfo(readOnlyFile).IsReadOnly)
-                    throw new InvalidOperationException("Failed to set read-only attribute on test file.");
-
-                var deleteTargets = new List<string> { normalFile, readOnlyFile };
-                foreach (var path in deleteTargets)
-                {
-                    if (File.Exists(path))
+                    foreach (var ai in plans[0].AssociatedItems)
                     {
-                        var fi = new FileInfo(path);
-                        if (fi.IsReadOnly)
-                        {
-                            fi.IsReadOnly = false; // 読み取り専用解除
-                        }
-                        File.Delete(path);
+                        ai.IsChecked = false;
                     }
+                    plans.RemoveAll(p => p.IsOriginalCandidate);
+                }
+                if (plans.Count != 0 || multiRoleDormant.IsChecked || multiRoleDuplicate.IsChecked)
+                    throw new InvalidOperationException("Excluding original candidate must uncheck associated dormant item and clear plans.");
+
+                // 4. 🟠 Medium-High検証: 同一 FullPath の複数行選択時の多重加算防止 & 全関連行の一括除去契約
+                string multiRowCopyPath = Path.Combine(tempDir, "multi_row_copy.dat");
+                File.WriteAllBytes(multiRowCopyPath, new byte[4096]);
+                var copyDormant = new AuditItem { FullPath = multiRowCopyPath, FileName = "multi_row_copy.dat", IssueType = AuditIssueType.Dormant, Size = 4096, IsOriginalCandidate = false, IsChecked = true };
+                var copyDuplicate = new AuditItem { FullPath = multiRowCopyPath, FileName = "multi_row_copy.dat", IssueType = AuditIssueType.Duplicate, Size = 4096, IsOriginalCandidate = false, IsChecked = true };
+                var copyPathLimit = new AuditItem { FullPath = multiRowCopyPath, FileName = "multi_row_copy.dat", IssueType = AuditIssueType.PathTooLong, Size = 4096, IsOriginalCandidate = false, IsChecked = false };
+
+                var multiRowList = new List<AuditItem> { copyDormant, copyDuplicate, copyPathLimit };
+                var multiPlans = AuditCleanupService.BuildPlan(multiRowList);
+
+                if (multiPlans.Count != 1)
+                    throw new InvalidOperationException($"Multiple checked items with same FullPath must be grouped into 1 plan, got {multiPlans.Count}");
+                if (multiPlans[0].Size != 4096 || multiPlans.Sum(p => p.Size) != 4096)
+                    throw new InvalidOperationException("Duplicate rows must not double-count freed size in execution plan.");
+
+                var execResult = AuditCleanupService.ExecutePlan(multiPlans);
+                if (execResult.SuccessCount != 1 || execResult.FreedBytes != 4096)
+                    throw new InvalidOperationException($"Execution plan must execute 1 delete and report 4096 bytes freed. Got {execResult.SuccessCount} deletes, {execResult.FreedBytes} bytes.");
+                if (File.Exists(multiRowCopyPath))
+                    throw new InvalidOperationException("File must be deleted after ExecutePlan.");
+
+                // 全関連行（Dormant, Duplicate, 未チェックのPathTooLongすべて）が FullPath 一致で除去されること
+                multiRowList.RemoveAll(x => execResult.DeletedPaths.Contains(x.FullPath));
+                if (multiRowList.Count != 0)
+                    throw new InvalidOperationException($"All associated AuditItems for deleted FullPath must be removed from list. Remaining: {multiRowList.Count}");
+
+                // 5. 🟡 Medium検証: ReadOnly属性の解除 & 削除失敗時の属性復元ロールバック契約
+                string lockedReadOnlyFile = Path.Combine(tempDir, "locked_readonly.dat");
+                File.WriteAllBytes(lockedReadOnlyFile, new byte[1024]);
+                File.SetAttributes(lockedReadOnlyFile, File.GetAttributes(lockedReadOnlyFile) | FileAttributes.ReadOnly);
+
+                // 排他ロックをかけて削除を強制失敗させる
+                using (var fs = new FileStream(lockedReadOnlyFile, FileMode.Open, FileAccess.Read, FileShare.None))
+                {
+                    var lockedItem = new AuditItem { FullPath = lockedReadOnlyFile, FileName = "locked_readonly.dat", Size = 1024, IsChecked = true };
+                    var failPlans = AuditCleanupService.BuildPlan(new[] { lockedItem });
+                    var failResult = AuditCleanupService.ExecutePlan(failPlans);
+
+                    if (failResult.Errors.Count != 1)
+                        throw new InvalidOperationException("Expected 1 failure error on locked file.");
                 }
 
-                if (File.Exists(normalFile) || File.Exists(readOnlyFile))
-                    throw new InvalidOperationException("Permanent deletion failed: file still exists after deletion.");
+                // ロック解放後、削除失敗したファイルの ReadOnly 属性が安全に復元されていることを検証
+                var attrsAfterFail = File.GetAttributes(lockedReadOnlyFile);
+                if ((attrsAfterFail & FileAttributes.ReadOnly) == 0)
+                    throw new InvalidOperationException("MEDIUM BUG: FileAttributes.ReadOnly was not restored after deletion failure!");
 
-                // 5. 削除後の一覧除外 & 容量再計算契約
-                var initialWaste = items.Where(i => i.IssueType == AuditIssueType.Duplicate && !i.IsOriginalCandidate).Sum(i => i.Size);
-                if (initialWaste != 2000)
-                    throw new InvalidOperationException($"Initial duplicate waste expected 2000, got {initialWaste}");
-
-                // copy1 を削除
-                items.Remove(items[1]);
-                var remainingWaste = items.Where(i => i.IssueType == AuditIssueType.Duplicate && !i.IsOriginalCandidate).Sum(i => i.Size);
-                if (remainingWaste != 1000)
-                    throw new InvalidOperationException($"Remaining duplicate waste expected 1000, got {remainingWaste}");
+                // ロック解放後に通常削除できることを検証
+                var finalPlans = AuditCleanupService.BuildPlan(new[] { new AuditItem { FullPath = lockedReadOnlyFile, FileName = "locked_readonly.dat", Size = 1024, IsChecked = true } });
+                var finalResult = AuditCleanupService.ExecutePlan(finalPlans);
+                if (finalResult.SuccessCount != 1 || File.Exists(lockedReadOnlyFile))
+                    throw new InvalidOperationException("Final cleanup of unlocked file failed.");
             }
             finally
             {

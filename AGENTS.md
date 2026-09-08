@@ -225,6 +225,18 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
     - **削除後の動的KPI再計算 ＆ 一覧即座更新**:
       - 削除成功アイテムを正本リスト（`_lastAuditItems`）から即座に除去し、表示フィルターを再適用。
       - 重複容量、休眠容量、総ファイル数の各KPIカードをリアルタイムに再集計・更新。
+31. **物理削除の正本一本化（FullPath実行計画） ＆ 休眠横断原本保護 ＆ 属性復元ロールバック (v1.4.9)**:
+    - **「監査行」と「物理ファイル」の境界整線 (`AuditCleanupService`)**:
+      - 監査結果（`AuditItem`）は1ファイルに複数行（DormantとDuplicate等）存在し得るが、物理削除の正本は **一意の `FullPath`** である。
+      - `AuditCleanupService.BuildPlan()` により、チェックされた行を FullPath 単位でグループ化し、1ファイルにつき1回のみの削除・容量集計を行う実行計画（`AuditCleanupPlan`）を生成。
+    - **全監査横断の原本保護聖域（休眠選択すり抜け防止）**:
+      - 原本候補のパスセット（`originalPaths`）を全監査アイテム（`_lastAuditItems`）から構築。
+      - ユーザーが「休眠ファイル（3年/5年）」経由でチェックを入れた場合でも、その FullPath が原本候補であれば IssueType に関係なく確実に原本警告モーダルが発動。
+      - 原本除外選択時は、そのファイルに関連付けられたすべての監査行（Dormant行もDuplicate行も）のチェックを一括OFF。
+    - **削除成功時の全関連行一括除去**:
+      - 削除成功した `DeletedPaths` を用いて、`_lastAuditItems.RemoveAll(x => DeletedPaths.Contains(x.FullPath))` を実行。実ファイルが消えたのに別カテゴリの行が画面に残る幽霊行バグを完全根絶。
+    - **ReadOnly属性の一時解除と安全ロールバック**:
+      - 削除前にファイルの元の属性を退避し、万が一ファイルロックや権限不足で削除に失敗した場合は元の属性を自動復元。
 
 ---
 

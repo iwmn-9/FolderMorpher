@@ -3469,19 +3469,20 @@ namespace AstraSize
                 return;
             }
 
-            var selectedItems = _lastAuditItems.Where(x => x.IsChecked).ToList();
-            if (selectedItems.Count == 0)
+            // 1. 全監査アイテムから物理ファイル（FullPath）単位の実行計画を作成（正本の整線）
+            var plans = AuditCleanupService.BuildPlan(_lastAuditItems);
+            if (plans.Count == 0)
             {
                 MessageBox.Show("削除するファイルが選択されていません。チェックボックスでファイルを選択してから実行してください。", "案内", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
-            // 1. 原本候補保護の安全ガード
-            var originalCandidates = selectedItems.Where(x => x.IssueType == AuditIssueType.Duplicate && x.IsOriginalCandidate).ToList();
-            if (originalCandidates.Count > 0)
+            // 2. 原本候補保護の安全ガード（IssueTypeに関係なく、原本候補のFullPathが含まれていれば必ず発動）
+            var originalPlans = plans.Where(p => p.IsOriginalCandidate).ToList();
+            if (originalPlans.Count > 0)
             {
                 var origResult = MessageBox.Show(
-                    $"⚠️ 警告: 選択項目の中に、重複グループの【原本候補】が {originalCandidates.Count:N0} 件含まれています！\n\n" +
+                    $"⚠️ 警告: 選択項目の中に、重複グループの【原本候補】が {originalPlans.Count:N0} 件含まれています！\n\n" +
                     "原本を削除すると、そのグループの全データが消失する恐れがあります。\n\n" +
                     "・[はい (Yes)] : 原本候補を除外して、重複コピーのみ削除する（推奨・安全）\n" +
                     "・[いいえ (No)] : 原本候補も含め、選択された全ファイルを削除する\n" +
@@ -3494,12 +3495,16 @@ namespace AstraSize
 
                 if (origResult == MessageBoxResult.Yes)
                 {
-                    foreach (var orig in originalCandidates)
+                    // 原本候補の全関連行（Dormant/Duplicate問わず）のチェックを外す
+                    foreach (var op in originalPlans)
                     {
-                        orig.IsChecked = false;
+                        foreach (var ai in op.AssociatedItems)
+                        {
+                            ai.IsChecked = false;
+                        }
                     }
-                    selectedItems = selectedItems.Where(x => !(x.IssueType == AuditIssueType.Duplicate && x.IsOriginalCandidate)).ToList();
-                    if (selectedItems.Count == 0)
+                    plans.RemoveAll(p => p.IsOriginalCandidate);
+                    if (plans.Count == 0)
                     {
                         ShowToast("原本候補を除外した結果、削除対象が0件になりました");
                         return;
@@ -3507,11 +3512,11 @@ namespace AstraSize
                 }
             }
 
-            // 2. 完全削除の最終確認ダイアログ
-            long totalBytes = selectedItems.Sum(x => x.Size);
+            // 3. 完全削除の最終確認ダイアログ（物理ファイル単位で正確な件数・容量を表示）
+            long totalBytes = plans.Sum(x => x.Size);
             string sizeFormatted = FileItemNode.FormatBytes(totalBytes);
             var confirm = MessageBox.Show(
-                $"選択された {selectedItems.Count:N0} 件（合計 {sizeFormatted}）のファイルを【完全に削除】します。\n\n" +
+                $"選択された {plans.Count:N0} 件（合計 {sizeFormatted}）のファイルを【完全に削除】します。\n\n" +
                 "⚠️ 注意:\n" +
                 "・ファイルはごみ箱に入らず完全に削除され、アプリ側から復元することはできません。\n" +
                 "・本当に削除を実行してもよろしいですか？",
@@ -3521,66 +3526,37 @@ namespace AstraSize
 
             if (confirm != MessageBoxResult.OK) return;
 
-            // 3. バックグラウンド削除処理
+            // 4. バックグラウンド削除処理（AuditCleanupService により物理1回削除＆属性復元）
             AuditDeleteSelectedButton.IsEnabled = false;
             AuditStartButton.IsEnabled = false;
             GlobalProgressBar.Visibility = Visibility.Visible;
             AuditStatusText.Text = "ファイル削除中...";
 
-            int successCount = 0;
-            long freedBytes = 0;
-            var errorList = new List<string>();
-            var deletedItems = new List<AuditItem>();
+            var result = await Task.Run(() => AuditCleanupService.ExecutePlan(plans));
 
-            await Task.Run(() =>
-            {
-                foreach (var item in selectedItems)
-                {
-                    try
-                    {
-                        if (File.Exists(item.FullPath))
-                        {
-                            var fi = new FileInfo(item.FullPath);
-                            if (fi.IsReadOnly) fi.IsReadOnly = false;
-                            fi.Delete();
-                        }
-                        successCount++;
-                        freedBytes += item.Size;
-                        deletedItems.Add(item);
-                    }
-                    catch (Exception ex)
-                    {
-                        errorList.Add($"{item.FileName}: {ex.Message}");
-                    }
-                }
-            });
-
-            // 4. データ・UIの最新化
-            foreach (var item in deletedItems)
-            {
-                _lastAuditItems.Remove(item);
-            }
+            // 5. データ・UIの最新化（削除されたFullPathを持つ全関連AuditItemを一括除去）
+            _lastAuditItems.RemoveAll(x => result.DeletedPaths.Contains(x.FullPath));
             ApplyAuditFilters();
             UpdateAuditKpiAfterDeletion();
 
             GlobalProgressBar.Visibility = Visibility.Collapsed;
             AuditDeleteSelectedButton.IsEnabled = true;
             AuditStartButton.IsEnabled = true;
-            AuditStatusText.Text = $"削除完了: {successCount:N0} 件削除 ({FileItemNode.FormatBytes(freedBytes)} 削減)";
+            AuditStatusText.Text = $"削除完了: {result.SuccessCount:N0} 件削除 ({FileItemNode.FormatBytes(result.FreedBytes)} 削減)";
 
-            if (errorList.Count > 0)
+            if (result.Errors.Count > 0)
             {
                 MessageBox.Show(
-                    $"{successCount:N0} 件のファイルを削除しました（{FileItemNode.FormatBytes(freedBytes)} 削減）。\n\n" +
-                    $"以下の {errorList.Count:N0} 件でエラーが発生しました:\n" +
-                    string.Join("\n", errorList.Take(5)) + (errorList.Count > 5 ? $"\n...他 {errorList.Count - 5} 件" : ""),
+                    $"{result.SuccessCount:N0} 件のファイルを削除しました（{FileItemNode.FormatBytes(result.FreedBytes)} 削減）。\n\n" +
+                    $"以下の {result.Errors.Count:N0} 件でエラーが発生しました:\n" +
+                    string.Join("\n", result.Errors.Take(5)) + (result.Errors.Count > 5 ? $"\n...他 {result.Errors.Count - 5} 件" : ""),
                     "削除完了（一部エラー）",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }
             else
             {
-                ShowToast($"🗑️ {successCount:N0} 件のファイルを完全削除しました（{FileItemNode.FormatBytes(freedBytes)} 削減）");
+                ShowToast($"🗑️ {result.SuccessCount:N0} 件のファイルを完全削除しました（{FileItemNode.FormatBytes(result.FreedBytes)} 削減）");
             }
         }
 
