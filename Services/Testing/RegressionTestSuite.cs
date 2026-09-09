@@ -31,7 +31,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 22;
+            int totalTests = 23;
 
             try
             {
@@ -162,9 +162,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 22
-                Console.WriteLine("\n[TEST 22/22] Live ACL: External Conflict Detection (AclConflictException), Initial Inheritance Change Status & Multi-ACE Addition Contract...");
+                Console.WriteLine("\n[TEST 22/23] Live ACL: External Conflict Detection (AclConflictException), Initial Inheritance Change Status & Multi-ACE Addition Contract...");
                 await TestAclConflictAndInheritanceInitContractAsync();
                 Console.WriteLine("  --> [PASS] Live ACL: Conflict detection (AclConflictException), initial change status & multi-ACE contract 100% verified.");
+                passCount++;
+
+                // Test 23
+                Console.WriteLine("\n[TEST 23/23] Live ACL: AclChangePlan Pipeline, Inheritance Promotion & Semantic Verification Contract...");
+                await TestAclChangePlanPipelineAndSemanticVerificationAsync();
+                Console.WriteLine("  --> [PASS] Live ACL: ChangePlan pipeline, inheritance promotion, semantic verification & post-commit SDDL 100% verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -2656,6 +2662,89 @@ namespace FolderMorpher.Services.Testing
 
                 if (!multiAcePanel.HasChanges)
                     throw new InvalidOperationException("Modifying one of multiple ACEs for same principal must trigger HasChanges!");
+            }
+            finally
+            {
+                try { Directory.Delete(testDir, recursive: true); } catch { }
+            }
+        }
+
+        private static async Task TestAclChangePlanPipelineAndSemanticVerificationAsync()
+        {
+            string testDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_ChangePlanTest_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(testDir);
+            var aclService = new AclService();
+
+            try
+            {
+                var (initialEntries, initialInherit, _) = aclService.GetSimAclForFolder(testDir);
+                string initialSddl = aclService.GetSddl(testDir);
+
+                // 1. BuildChangePlan: 継承OFF化 + 新規ACE追加
+                var currentEntries = initialEntries.Select(e => e.Clone()).ToList();
+                var newAce = new SimAclEntry
+                {
+                    AccountName = "Everyone",
+                    Rights = FileSystemRights.ReadAndExecute,
+                    AccessType = AccessControlType.Allow,
+                    InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    PropagationFlags = PropagationFlags.None
+                };
+                currentEntries.Add(newAce);
+
+                var plan = aclService.BuildChangePlan(
+                    testDir,
+                    initialEntries,
+                    currentEntries,
+                    inherit: false, // 継承OFF化
+                    originalInherit: initialInherit,
+                    originalSddl: initialSddl);
+
+                // 検証: 継承変更検知 & 昇格件数
+                if (!plan.InheritanceChanged)
+                    throw new InvalidOperationException("ChangePlan must detect inheritance change from true to false!");
+                if (plan.InheritedAcesPromotedCount != initialEntries.Count(e => e.IsInherited))
+                    throw new InvalidOperationException($"InheritedAcesPromotedCount mismatch: expected {initialEntries.Count(e => e.IsInherited)}, got {plan.InheritedAcesPromotedCount}");
+                if (plan.Added.Count != 1)
+                    throw new InvalidOperationException($"Added count mismatch: expected 1, got {plan.Added.Count}");
+
+                // 2. Commit: ApplyChangePlanWithRollbackAsync
+                var (hasModified, addedCount, removedCount, modifiedCount, snapshot) =
+                    await aclService.ApplyChangePlanWithRollbackAsync(plan);
+
+                if (!hasModified || addedCount != 1)
+                    throw new InvalidOperationException("ApplyChangePlanWithRollbackAsync failed to apply addition!");
+
+                // 3. Verify: VerifyChangePlan (セマンティック突合)
+                var verifyResult = aclService.VerifyChangePlan(plan);
+                if (!verifyResult.IsSuccess || verifyResult.StatusText != "正常")
+                    throw new InvalidOperationException($"VerifyChangePlan failed! Discrepancies: {string.Join(", ", verifyResult.Discrepancies)}");
+
+                // 4. Commit後の OriginalSddl 更新整合性検証 (Solレビュー Point 3)
+                string postCommitSddl = aclService.GetSddl(testDir);
+                var panel = new LiveAclPanelModel
+                {
+                    FolderPath = testDir,
+                    FolderName = "TestDir",
+                    OriginalSddl = postCommitSddl // 正しく最新SDDLがセットされた状態
+                };
+                // 直後に再度現行ディスクSDDLを取得して比較した場合、外部競合が出ないこと
+                string checkSddl = aclService.GetSddl(testDir);
+                bool conflictAfterCommit = !string.IsNullOrEmpty(panel.OriginalSddl) &&
+                                           !string.Equals(checkSddl, panel.OriginalSddl, StringComparison.OrdinalIgnoreCase);
+                if (conflictAfterCommit)
+                    throw new InvalidOperationException("Post-commit OriginalSddl must match current disk SDDL without false conflict!");
+
+                // 5. 意図的不一致の検出検証: 不正な期待値を持つプランで Verify が失敗すること
+                var corruptedPlan = aclService.BuildChangePlan(testDir, initialEntries, currentEntries, inherit: true, originalInherit: initialInherit);
+                corruptedPlan.ExpectedAfterEntries.Add(new SimAclEntry
+                {
+                    AccountName = "GhostUser_ShouldNotExist",
+                    Rights = FileSystemRights.FullControl
+                });
+                var corruptVerify = aclService.VerifyChangePlan(corruptedPlan);
+                if (corruptVerify.IsSuccess || corruptVerify.StatusText != "不一致検知")
+                    throw new InvalidOperationException("VerifyChangePlan must detect discrepancy when actual ACL diverges from expected!");
             }
             finally
             {

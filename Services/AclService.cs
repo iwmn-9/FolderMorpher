@@ -289,9 +289,214 @@ namespace AstraSize.Services
         }
 
         /// <summary>
-        /// 差分適用 (Delta Apply): 読み取り時からの変化点（Added / Removed / Modified）のみをピンポイントで適用する。
+        /// Live ACL 実行計画 (Change Plan) の構築。
+        /// 差分計算（Added / Removed / Modified / Untouched）、継承設定の変更、および期待される変更後ACEセットを同一インスタンスに集約する。
         /// 【安全原則】変更されていない既存ACEにはOS上・メモリ上ともに1ビットも触れない（ノータッチ）。
-        /// 変更が0件の場合はSetAccessControl自体をスキップする。
+        /// </summary>
+        public AclChangePlan BuildChangePlan(
+            string path,
+            IEnumerable<SimAclEntry> originalEntries,
+            IEnumerable<SimAclEntry> currentEntries,
+            bool inherit,
+            bool originalInherit,
+            string? originalSddl = null)
+        {
+            var plan = new AclChangePlan
+            {
+                FolderPath = path,
+                FolderName = Path.GetFileName(path.TrimEnd('\\', '/')),
+                OriginalSddl = originalSddl ?? string.Empty,
+                InheritanceBefore = originalInherit,
+                InheritanceAfter = inherit
+            };
+            if (string.IsNullOrEmpty(plan.FolderName)) plan.FolderName = path;
+
+            bool inheritChanged = plan.InheritanceChanged;
+
+            // 継承OFF切替時: 親からの継承ACEが明示ACEに変換・昇格される件数を集計
+            if (inheritChanged && !inherit)
+            {
+                plan.InheritedAcesPromotedCount = originalEntries.Count(e => e.IsInherited);
+            }
+
+            // High 1: 継承OFFへの切替時は、旧継承ACEも明示ACEに変換されるため全ルールを突合対象とする
+            var origList = (inheritChanged && !inherit)
+                ? originalEntries.Select(e => { var clone = e.Clone(); clone.IsInherited = false; return clone; }).ToList()
+                : originalEntries.Where(e => !e.IsInherited).ToList();
+            var curList = (inheritChanged && !inherit)
+                ? currentEntries.Select(e => { var clone = e.Clone(); clone.IsInherited = false; return clone; }).ToList()
+                : currentEntries.Where(e => !e.IsInherited).ToList();
+
+            var remainingOrig = new List<SimAclEntry>(origList);
+            var remainingCur = new List<SimAclEntry>(curList);
+
+            // 1. 完全一致 (MatchesExact) ペアの除外 (ノータッチ維持)
+            for (int i = remainingCur.Count - 1; i >= 0; i--)
+            {
+                var cur = remainingCur[i];
+                var matchedOrig = remainingOrig.FirstOrDefault(o => o.MatchesExact(cur));
+                if (matchedOrig != null)
+                {
+                    plan.Untouched.Add(cur);
+                    plan.DiffItems.Add(new LiveAclDiffItem
+                    {
+                        DiffType = LiveAclDiffType.Untouched,
+                        AccountName = cur.AccountName,
+                        DisplayName = cur.DisplayName,
+                        IconGlyph = cur.IconGlyph,
+                        BeforeRights = matchedOrig.FormattedRights,
+                        AfterRights = cur.FormattedRights,
+                        AppliesTo = cur.AppliesTo,
+                        IsInherited = cur.IsInherited
+                    });
+                    remainingCur.RemoveAt(i);
+                    remainingOrig.Remove(matchedOrig);
+                }
+            }
+
+            // 2. キー一致 (MatchesKey) ペアの抽出 (権限変更 -> Modified)
+            for (int i = remainingCur.Count - 1; i >= 0; i--)
+            {
+                var cur = remainingCur[i];
+                var matchedOrig = remainingOrig.FirstOrDefault(o => o.MatchesKey(cur));
+                if (matchedOrig != null)
+                {
+                    plan.Modified.Add((matchedOrig, cur));
+                    plan.DiffItems.Add(new LiveAclDiffItem
+                    {
+                        DiffType = LiveAclDiffType.Modified,
+                        AccountName = cur.AccountName,
+                        DisplayName = cur.DisplayName,
+                        IconGlyph = cur.IconGlyph,
+                        BeforeRights = matchedOrig.FormattedRights,
+                        AfterRights = cur.FormattedRights,
+                        AppliesTo = cur.AppliesTo,
+                        IsInherited = cur.IsInherited
+                    });
+                    remainingCur.RemoveAt(i);
+                    remainingOrig.Remove(matchedOrig);
+                }
+            }
+
+            // 3. 残余の削除 (Removed)
+            foreach (var rem in remainingOrig)
+            {
+                plan.Removed.Add(rem);
+                plan.DiffItems.Add(new LiveAclDiffItem
+                {
+                    DiffType = LiveAclDiffType.Removed,
+                    AccountName = rem.AccountName,
+                    DisplayName = rem.DisplayName,
+                    IconGlyph = rem.IconGlyph,
+                    BeforeRights = rem.FormattedRights,
+                    AfterRights = "（削除）",
+                    AppliesTo = rem.AppliesTo,
+                    IsInherited = rem.IsInherited
+                });
+            }
+
+            // 4. 残余の追加 (Added)
+            foreach (var add in remainingCur)
+            {
+                plan.Added.Add(add);
+                plan.DiffItems.Add(new LiveAclDiffItem
+                {
+                    DiffType = LiveAclDiffType.Added,
+                    AccountName = add.AccountName,
+                    DisplayName = add.DisplayName,
+                    IconGlyph = add.IconGlyph,
+                    BeforeRights = "―",
+                    AfterRights = add.FormattedRights,
+                    AppliesTo = add.AppliesTo,
+                    IsInherited = add.IsInherited
+                });
+            }
+
+            // 期待される変更後ACE一覧 (Verify用 ExpectedAfterEntries)
+            plan.ExpectedAfterEntries.AddRange(plan.Untouched.Select(x => x.Clone()));
+            plan.ExpectedAfterEntries.AddRange(plan.Modified.Select(m => m.NewEntry.Clone()));
+            plan.ExpectedAfterEntries.AddRange(plan.Added.Select(x => x.Clone()));
+
+            return plan;
+        }
+
+        /// <summary>
+        /// Change Plan を受け取り、ピンポイントで本番適用 (Commit) する。
+        /// </summary>
+        public async Task<(bool hasModified, int addedCount, int removedCount, int modifiedCount, AclSnapshot? snapshot)> ApplyChangePlanWithRollbackAsync(
+            AclChangePlan plan,
+            bool forceIfConflict = false)
+        {
+            var dirInfo = new DirectoryInfo(plan.FolderPath);
+            if (!dirInfo.Exists) throw new DirectoryNotFoundException($"指定フォルダが存在しません: {plan.FolderPath}");
+
+            if (!plan.HasChanges)
+            {
+                // 変更が全くない場合はAPI呼び出しを行わず即座に正常終了
+                return (false, 0, 0, 0, null);
+            }
+
+            var sec = dirInfo.GetAccessControl(AccessControlSections.Access);
+
+            // Medium: 外部ACL変更との競合検出
+            if (!string.IsNullOrEmpty(plan.OriginalSddl) && !forceIfConflict)
+            {
+                string currentSddl = sec.GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+                if (!string.Equals(currentSddl, plan.OriginalSddl, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new AclConflictException(plan.FolderPath, currentSddl, plan.OriginalSddl);
+                }
+            }
+
+            // 変更前の完全DACLをバックアップ（ロールバック用）
+            var snapshot = await CreateSnapshotAsync(plan.FolderPath, $"差分変更前バックアップ (変更: +{plan.Added.Count}, -{plan.Removed.Count}, ~{plan.Modified.Count})");
+
+            if (plan.InheritanceChanged)
+            {
+                // High 1: 継承無効化時は既存の継承ACEを明示ACEとして確実に保持する (preserveInheritance: true)
+                sec.SetAccessRuleProtection(!plan.InheritanceAfter, preserveInheritance: true);
+            }
+
+            // 変更ACEの旧ルール削除
+            foreach (var (oldEntry, _) in plan.Modified)
+            {
+                var identity = new NTAccount(oldEntry.AccountName);
+                var rule = new FileSystemAccessRule(identity, oldEntry.Rights, oldEntry.InheritanceFlags, oldEntry.PropagationFlags, oldEntry.AccessType);
+                sec.RemoveAccessRuleSpecific(rule);
+            }
+
+            // 削除ACEのピンポイント削除
+            foreach (var entry in plan.Removed)
+            {
+                var identity = new NTAccount(entry.AccountName);
+                var rule = new FileSystemAccessRule(identity, entry.Rights, entry.InheritanceFlags, entry.PropagationFlags, entry.AccessType);
+                sec.RemoveAccessRuleSpecific(rule);
+            }
+
+            // 変更ACEの新ルール追加 (アカウント名は完全修飾名を持つ方を優先)
+            foreach (var (oldEntry, newEntry) in plan.Modified)
+            {
+                var accName = oldEntry.AccountName.Contains('\\') ? oldEntry.AccountName : newEntry.AccountName;
+                var identity = new NTAccount(accName);
+                var rule = new FileSystemAccessRule(identity, newEntry.Rights, newEntry.InheritanceFlags, newEntry.PropagationFlags, newEntry.AccessType);
+                sec.AddAccessRule(rule);
+            }
+
+            // 追加ACEのピンポイント追加
+            foreach (var entry in plan.Added)
+            {
+                var identity = new NTAccount(entry.AccountName);
+                var rule = new FileSystemAccessRule(identity, entry.Rights, entry.InheritanceFlags, entry.PropagationFlags, entry.AccessType);
+                sec.AddAccessRule(rule);
+            }
+
+            dirInfo.SetAccessControl(sec);
+
+            return (true, plan.Added.Count, plan.Removed.Count, plan.Modified.Count, snapshot);
+        }
+
+        /// <summary>
+        /// 差分適用 (Delta Apply): 既存互換用ラッパー。BuildChangePlan -> ApplyChangePlanWithRollbackAsync を呼び出す。
         /// </summary>
         public async Task<(bool hasModified, int addedCount, int removedCount, int modifiedCount, AclSnapshot? snapshot)> ApplyLiveAclDeltaWithRollbackAsync(
             string path,
@@ -302,119 +507,62 @@ namespace AstraSize.Services
             string? expectedOriginalSddl = null,
             bool forceIfConflict = false)
         {
-            var dirInfo = new DirectoryInfo(path);
-            if (!dirInfo.Exists) throw new DirectoryNotFoundException($"指定フォルダが存在しません: {path}");
+            var plan = BuildChangePlan(path, originalEntries, currentEntries, inherit, originalInherit, expectedOriginalSddl);
+            return await ApplyChangePlanWithRollbackAsync(plan, forceIfConflict);
+        }
 
-            bool inheritChanged = (inherit != originalInherit);
-
-            // High 1: 継承OFFへの切替時は、旧継承ACEも明示ACEに変換されるため全ルールを突合対象とする
-            var origList = (inheritChanged && !inherit)
-                ? originalEntries.Select(e => { var clone = e.Clone(); clone.IsInherited = false; return clone; }).ToList()
-                : originalEntries.Where(e => !e.IsInherited).ToList();
-            var curList = currentEntries.Where(e => !e.IsInherited).ToList();
-
-            var toRemove = new List<SimAclEntry>();
-            var toModify = new List<(SimAclEntry oldEntry, SimAclEntry newEntry)>();
-            var toAdd = new List<SimAclEntry>();
-
-            var remainingOrig = new List<SimAclEntry>(origList);
-            var remainingCur = new List<SimAclEntry>(curList);
-
-            // High 2: 1. 完全一致（MatchesExact）ペアの除外（ノータッチ原則）
-            for (int i = remainingCur.Count - 1; i >= 0; i--)
+        /// <summary>
+        /// 適用後の正常性検証 (Verify):
+        /// 予定していた ExpectedAfterEntries および InheritanceAfter と、OSから再取得した実態をセマンティック比較する。
+        /// </summary>
+        public AclVerificationResult VerifyChangePlan(AclChangePlan plan)
+        {
+            var result = new AclVerificationResult();
+            var dirInfo = new DirectoryInfo(plan.FolderPath);
+            if (!dirInfo.Exists)
             {
-                var cur = remainingCur[i];
-                var matchedOrig = remainingOrig.FirstOrDefault(o => o.MatchesExact(cur));
-                if (matchedOrig != null)
+                result.IsSuccess = false;
+                result.StatusText = "対象不在";
+                result.Discrepancies.Add($"フォルダが存在しません: {plan.FolderPath}");
+                return result;
+            }
+
+            var (actualEntries, actualInherit, _) = GetSimAclForFolder(plan.FolderPath);
+
+            // 1. 継承フラグの一致確認
+            if (actualInherit != plan.InheritanceAfter)
+            {
+                result.IsSuccess = false;
+                result.Discrepancies.Add($"継承設定不一致 (予定: {plan.InheritanceAfter}, 実態: {actualInherit})");
+            }
+
+            // 2. 明示ACEの突合 (ExpectedAfterEntries vs actualEntries の明示ルール)
+            var actualExplicit = actualEntries.Where(e => !e.IsInherited).ToList();
+            var expectedExplicit = plan.ExpectedAfterEntries.Where(e => !e.IsInherited).ToList();
+
+            var remainingActual = new List<SimAclEntry>(actualExplicit);
+            foreach (var exp in expectedExplicit)
+            {
+                var matched = remainingActual.FirstOrDefault(a => a.MatchesExact(exp));
+                if (matched != null)
                 {
-                    remainingCur.RemoveAt(i);
-                    remainingOrig.Remove(matchedOrig);
+                    remainingActual.Remove(matched);
+                }
+                else
+                {
+                    result.IsSuccess = false;
+                    result.Discrepancies.Add($"未反映ACE: {exp.DisplayName} ({exp.FormattedRights})");
                 }
             }
 
-            // High 2: 2. キー一致（MatchesKey）ペアの抽出（権限変更 -> toModify）
-            for (int i = remainingCur.Count - 1; i >= 0; i--)
+            foreach (var extra in remainingActual)
             {
-                var cur = remainingCur[i];
-                var matchedOrig = remainingOrig.FirstOrDefault(o => o.MatchesKey(cur));
-                if (matchedOrig != null)
-                {
-                    toModify.Add((matchedOrig, cur));
-                    remainingCur.RemoveAt(i);
-                    remainingOrig.Remove(matchedOrig);
-                }
+                result.IsSuccess = false;
+                result.Discrepancies.Add($"予期せぬACE: {extra.DisplayName} ({extra.FormattedRights})");
             }
 
-            // High 2: 3. 残余の追加・削除
-            toRemove.AddRange(remainingOrig);
-            toAdd.AddRange(remainingCur);
-
-            bool hasModified = inheritChanged || toRemove.Count > 0 || toAdd.Count > 0 || toModify.Count > 0;
-
-            if (!hasModified)
-            {
-                // 変更が全くない場合はAPI呼び出しを行わず即座に正常終了
-                return (false, 0, 0, 0, null);
-            }
-
-            var sec = dirInfo.GetAccessControl(AccessControlSections.Access);
-
-            // Medium: 外部ACL変更との競合検出
-            if (!string.IsNullOrEmpty(expectedOriginalSddl) && !forceIfConflict)
-            {
-                string currentSddl = sec.GetSecurityDescriptorSddlForm(AccessControlSections.Access);
-                if (!string.Equals(currentSddl, expectedOriginalSddl, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new AclConflictException(path, currentSddl, expectedOriginalSddl);
-                }
-            }
-
-            // 変更前の完全DACLをバックアップ（ロールバック用）
-            var snapshot = await CreateSnapshotAsync(path, $"差分変更前バックアップ (変更: +{toAdd.Count}, -{toRemove.Count}, ~{toModify.Count})");
-
-            if (inheritChanged)
-            {
-                // High 1: 継承無効化時は既存の継承ACEを明示ACEとして確実に保持する (preserveInheritance: true)
-                // ロックアウト事故を100%防止
-                sec.SetAccessRuleProtection(!inherit, preserveInheritance: true);
-            }
-
-            // 変更ACEの旧ルール削除
-            foreach (var (oldEntry, _) in toModify)
-            {
-                var identity = new NTAccount(oldEntry.AccountName);
-                var rule = new FileSystemAccessRule(identity, oldEntry.Rights, oldEntry.InheritanceFlags, oldEntry.PropagationFlags, oldEntry.AccessType);
-                sec.RemoveAccessRuleSpecific(rule);
-            }
-
-            // 削除ACEのピンポイント削除
-            foreach (var entry in toRemove)
-            {
-                var identity = new NTAccount(entry.AccountName);
-                var rule = new FileSystemAccessRule(identity, entry.Rights, entry.InheritanceFlags, entry.PropagationFlags, entry.AccessType);
-                sec.RemoveAccessRuleSpecific(rule);
-            }
-
-            // 変更ACEの新ルール追加 (アカウント名は完全修飾名を持つ方を優先)
-            foreach (var (oldEntry, newEntry) in toModify)
-            {
-                var accName = oldEntry.AccountName.Contains('\\') ? oldEntry.AccountName : newEntry.AccountName;
-                var identity = new NTAccount(accName);
-                var rule = new FileSystemAccessRule(identity, newEntry.Rights, newEntry.InheritanceFlags, newEntry.PropagationFlags, newEntry.AccessType);
-                sec.AddAccessRule(rule);
-            }
-
-            // 追加ACEのピンポイント追加
-            foreach (var entry in toAdd)
-            {
-                var identity = new NTAccount(entry.AccountName);
-                var rule = new FileSystemAccessRule(identity, entry.Rights, entry.InheritanceFlags, entry.PropagationFlags, entry.AccessType);
-                sec.AddAccessRule(rule);
-            }
-
-            dirInfo.SetAccessControl(sec);
-
-            return (true, toAdd.Count, toRemove.Count, toModify.Count, snapshot);
+            result.StatusText = result.IsSuccess ? "正常" : "不一致検知";
+            return result;
         }
 
         public void RollbackToSnapshot(string path, AclSnapshot snapshot)

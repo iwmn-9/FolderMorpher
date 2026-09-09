@@ -61,6 +61,7 @@ namespace AstraSize.Views
 
         // Dry-Run 差分プレビュー状態
         private LiveAclPanelModel? _pendingDiffPanel;
+        private AclChangePlan? _currentChangePlan;
         private readonly ObservableCollection<LiveAclDiffItem> _diffItems = new();
 
         public string CurrentPath => LiveAclPathTextBox.Text;
@@ -466,98 +467,48 @@ namespace AstraSize.Views
         {
             if (_aclService == null) return;
             _pendingDiffPanel = panel;
+            _diffItems.Clear();
+
+            // 1. Change Plan の単一構築 (BuildChangePlan)
+            _currentChangePlan = _aclService.BuildChangePlan(
+                panel.FolderPath,
+                panel.OriginalAclEntries,
+                panel.CurrentAclEntries.ToList(),
+                panel.InheritAcl,
+                panel.OriginalInheritAcl,
+                panel.OriginalSddl);
 
             LiveAclDiffTargetText.Text = $" - 対象: {panel.FolderName} ({panel.FolderPath})";
 
-            // 差分計算
-            _diffItems.Clear();
-
-            var origList = panel.InheritAcl != panel.OriginalInheritAcl && !panel.InheritAcl
-                ? panel.OriginalAclEntries.Select(e => { var c = e.Clone(); c.IsInherited = false; return c; }).ToList()
-                : panel.OriginalAclEntries.Where(e => !e.IsInherited).ToList();
-            var curList = panel.CurrentAclEntries.Where(e => !e.IsInherited).ToList();
-
-            var remainingOrig = new List<SimAclEntry>(origList);
-            var remainingCur = new List<SimAclEntry>(curList);
-
-            // 1. 完全一致 (Untouched)
-            int untouchedCount = 0;
-            for (int i = remainingCur.Count - 1; i >= 0; i--)
+            // 2. プレビューリストへのバインド
+            foreach (var item in _currentChangePlan.DiffItems)
             {
-                var cur = remainingCur[i];
-                var matched = remainingOrig.FirstOrDefault(o => o.MatchesExact(cur));
-                if (matched != null)
+                _diffItems.Add(item);
+            }
+
+            // 3. 継承変更バナーの表示/非表示と文言
+            if (_currentChangePlan.InheritanceChanged)
+            {
+                LiveAclInheritanceChangeBanner.Visibility = Visibility.Visible;
+                if (!_currentChangePlan.InheritanceAfter)
                 {
-                    untouchedCount++;
-                    remainingCur.RemoveAt(i);
-                    remainingOrig.Remove(matched);
+                    LiveAclInheritanceChangeText.Text = $"🛡️ 継承: 有効 ➔ 無効 (親からの継承ACE {_currentChangePlan.InheritedAcesPromotedCount}件を明示ACEへ昇格・保持)";
+                }
+                else
+                {
+                    LiveAclInheritanceChangeText.Text = "🛡️ 継承: 無効 ➔ 有効 (親フォルダーからの権限を再継承)";
                 }
             }
-
-            // 2. 権限変更 (Modified)
-            int modifiedCount = 0;
-            for (int i = remainingCur.Count - 1; i >= 0; i--)
+            else
             {
-                var cur = remainingCur[i];
-                var matched = remainingOrig.FirstOrDefault(o => o.MatchesKey(cur));
-                if (matched != null)
-                {
-                    modifiedCount++;
-                    _diffItems.Add(new LiveAclDiffItem
-                    {
-                        DiffType = LiveAclDiffType.Modified,
-                        AccountName = cur.AccountName,
-                        DisplayName = cur.DisplayName,
-                        IconGlyph = cur.IconGlyph,
-                        BeforeRights = matched.FormattedRights,
-                        AfterRights = cur.FormattedRights,
-                        AppliesTo = cur.AppliesTo,
-                        IsInherited = cur.IsInherited
-                    });
-                    remainingCur.RemoveAt(i);
-                    remainingOrig.Remove(matched);
-                }
+                LiveAclInheritanceChangeBanner.Visibility = Visibility.Collapsed;
             }
 
-            // 3. 削除 (Removed)
-            int removedCount = remainingOrig.Count;
-            foreach (var rem in remainingOrig)
-            {
-                _diffItems.Add(new LiveAclDiffItem
-                {
-                    DiffType = LiveAclDiffType.Removed,
-                    AccountName = rem.AccountName,
-                    DisplayName = rem.DisplayName,
-                    IconGlyph = rem.IconGlyph,
-                    BeforeRights = rem.FormattedRights,
-                    AfterRights = "（削除）",
-                    AppliesTo = rem.AppliesTo,
-                    IsInherited = rem.IsInherited
-                });
-            }
+            // 4. サマリーテキスト更新
+            LiveAclDiffSummaryText.Text = $"📊 予定: +{_currentChangePlan.Added.Count}件, -{_currentChangePlan.Removed.Count}件, ~{_currentChangePlan.Modified.Count}件";
+            LiveAclDiffUntouchedText.Text = $" (🛡️ 維持: {_currentChangePlan.Untouched.Count}件)";
 
-            // 4. 追加 (Added)
-            int addedCount = remainingCur.Count;
-            foreach (var add in remainingCur)
-            {
-                _diffItems.Add(new LiveAclDiffItem
-                {
-                    DiffType = LiveAclDiffType.Added,
-                    AccountName = add.AccountName,
-                    DisplayName = add.DisplayName,
-                    IconGlyph = add.IconGlyph,
-                    BeforeRights = "―",
-                    AfterRights = add.FormattedRights,
-                    AppliesTo = add.AppliesTo,
-                    IsInherited = add.IsInherited
-                });
-            }
-
-            // サマリーテキスト更新
-            LiveAclDiffSummaryText.Text = $"📊 変更予定: +{addedCount}件, -{removedCount}件, ~{modifiedCount}件";
-            LiveAclDiffUntouchedText.Text = $" (🛡️ 既存ノータッチ: {untouchedCount}件)";
-
-            // 外部競合チェック
+            // 5. 外部競合チェック (✅ 正常 / ⚠️ 外部競合)
             string currentSddl = _aclService.GetSddl(panel.FolderPath);
             bool hasConflict = !string.IsNullOrEmpty(panel.OriginalSddl) &&
                                !string.IsNullOrEmpty(currentSddl) &&
@@ -568,14 +519,14 @@ namespace AstraSize.Views
                 LiveAclConflictBadge.Background = new SolidColorBrush(Color.FromRgb(0xFE, 0xE2, 0xE2));
                 LiveAclConflictBadge.BorderBrush = new SolidColorBrush(Color.FromRgb(0xFE, 0xCA, 0xCA));
                 LiveAclConflictBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));
-                LiveAclConflictBadgeText.Text = "⚠️ 外部変更を検知 (警告)";
+                LiveAclConflictBadgeText.Text = "⚠️ 外部競合";
             }
             else
             {
                 LiveAclConflictBadge.Background = new SolidColorBrush(Color.FromRgb(0xDC, 0xFC, 0xE7));
                 LiveAclConflictBadge.BorderBrush = new SolidColorBrush(Color.FromRgb(0xBB, 0xF7, 0xD0));
                 LiveAclConflictBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0x15, 0x80, 0x3D));
-                LiveAclConflictBadgeText.Text = "✅ 外部競合なし (安全)";
+                LiveAclConflictBadgeText.Text = "✅ 正常";
             }
 
             LiveAclDiffModalOverlay.Visibility = Visibility.Visible;
@@ -585,12 +536,14 @@ namespace AstraSize.Views
         {
             LiveAclDiffModalOverlay.Visibility = Visibility.Collapsed;
             _pendingDiffPanel = null;
+            _currentChangePlan = null;
         }
 
         private async void LiveAclDiffModalExecute_Click(object sender, RoutedEventArgs e)
         {
-            if (_pendingDiffPanel == null || _aclService == null) return;
+            if (_pendingDiffPanel == null || _currentChangePlan == null || _aclService == null) return;
             var panel = _pendingDiffPanel;
+            var plan = _currentChangePlan;
 
             // 競合がある場合の最終確認
             string currentSddl = _aclService.GetSddl(panel.FolderPath);
@@ -602,8 +555,8 @@ namespace AstraSize.Views
             if (hasConflict)
             {
                 var conflictRes = MessageBox.Show(
-                    $"⚠️ 外部ACL変更の競合が検知されています。\n\n外部の変更を上書きして本番適用を強制続行しますか？",
-                    "外部ACL競合の強制適用確認",
+                    $"⚠️ 外部ACL変更の競合が検知されています。\n\n外部の変更を上書きして適用を強制続行しますか？",
+                    "外部ACL競合",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning);
                 if (conflictRes != MessageBoxResult.Yes) return;
@@ -612,23 +565,18 @@ namespace AstraSize.Views
 
             LiveAclDiffModalOverlay.Visibility = Visibility.Collapsed;
             panel.IsApplying = true;
-            panel.StatusMessage = "本番適用中...";
+            panel.StatusMessage = "適用中...";
 
             try
             {
-                var result = await _aclService.ApplyLiveAclDeltaWithRollbackAsync(
-                    panel.FolderPath,
-                    panel.OriginalAclEntries,
-                    panel.CurrentAclEntries.ToList(),
-                    panel.InheritAcl,
-                    panel.OriginalInheritAcl,
-                    panel.OriginalSddl,
-                    forceApply);
-
+                // 1. Commit (Change Plan をそのまま適用)
+                var result = await _aclService.ApplyChangePlanWithRollbackAsync(plan, forceApply);
                 int appliedDeltaCount = result.addedCount + result.removedCount + result.modifiedCount;
-                string backupSddl = result.snapshot?.Sddl ?? string.Empty;
 
-                // OS実態再読込 (Verify)
+                // 2. Verify (OS実態と ExpectedAfter のセマンティック突合)
+                var verifyResult = _aclService.VerifyChangePlan(plan);
+
+                // 3. OS実態再読込
                 var (refreshedEntries, refreshedInherit, _) = _aclService.GetSimAclForFolder(panel.FolderPath);
                 panel.OriginalAclEntries.Clear();
                 panel.CurrentAclEntries.Clear();
@@ -639,16 +587,25 @@ namespace AstraSize.Views
                 }
                 panel.OriginalInheritAcl = refreshedInherit;
                 panel.InheritAcl = refreshedInherit;
-                panel.OriginalSddl = backupSddl;
-                panel.UpdateChangeStatus();
-                panel.StatusMessage = $"適用完了: {DateTime.Now:HH:mm:ss} ({appliedDeltaCount} 差分反映)";
 
-                ShowToast($"✅ 差分適用完了 (Verify成功): {panel.FolderName} ({appliedDeltaCount} 変更反映, 既存ノータッチ)");
-                MessageBox.Show($"アクセス権の差分適用が完了しました！\n\n反映件数: {appliedDeltaCount} 件\n既存ルール: ノータッチ維持\n自動バックアップ: 保存済み（ロールバック可能）", "本番適用完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                // 重要 (Solレビュー対応): Commit成功後はディスクの最新SDDLをOriginalSddlにセット
+                panel.OriginalSddl = _aclService.GetSddl(panel.FolderPath);
+                panel.UpdateChangeStatus();
+
+                if (verifyResult.IsSuccess)
+                {
+                    panel.StatusMessage = $"正常 ({DateTime.Now:HH:mm:ss})";
+                    ShowToast($"✅ 適用完了 (正常): {panel.FolderName} ({appliedDeltaCount}件反映)");
+                }
+                else
+                {
+                    panel.StatusMessage = "検証不一致";
+                    ShowToast($"⚠️ 適用結果に不一致を検知: {panel.FolderName}");
+                }
             }
             catch (AclConflictException)
             {
-                panel.StatusMessage = "外部競合を検出";
+                panel.StatusMessage = "外部競合";
                 var res = MessageBox.Show(
                     $"適用直前に外部変更（競合）が検出されたため処理を中断しました。\n最新のACLを再読込しますか？",
                     "外部ACL競合",
@@ -657,18 +614,19 @@ namespace AstraSize.Views
                 if (res == MessageBoxResult.Yes)
                 {
                     ReloadPanel(panel);
-                    ShowToast($"🔄 最新のACLを再読込しました: {panel.FolderName}");
+                    ShowToast($"🔄 最新ACLを再読込: {panel.FolderName}");
                 }
             }
             catch (Exception ex)
             {
                 panel.StatusMessage = "適用失敗";
-                MessageBox.Show($"差分適用エラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"適用エラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
                 panel.IsApplying = false;
                 _pendingDiffPanel = null;
+                _currentChangePlan = null;
             }
         }
 
@@ -1245,7 +1203,7 @@ namespace AstraSize.Views
             LiveAclModeFolderRadio.Content = isJa ? "📁 フォルダ別 権限エディタ" : "📁 Folder ACL Editor";
             LiveAclModeReverseRadio.Content = isJa ? "🔍 ユーザー/グループ 逆引き監査 (Effective Access)" : "🔍 Effective Access (Reverse Lookup)";
             LiveAclBrowseButton.Content = isJa ? "参照" : "Browse";
-            LiveAclExportMatrixButton.Content = isJa ? "📋 台帳CSV出力" : "📋 Export Matrix CSV";
+            LiveAclExportMatrixButton.Content = isJa ? "📋 CSV出力" : "📋 Export CSV";
 
             LiveAclPrincipalsHeaderTitle.Text = isJa ? "👥 Active Directory / ローカル" : "👥 Active Directory / Local";
             LiveAclLocalPcTitle.Text = isJa ? "⚠️ ローカルPC環境" : "⚠️ Local PC Environment";
@@ -1253,9 +1211,9 @@ namespace AstraSize.Views
 
             // Reverse Lookup (Effective Access)
             RevBrowseRootButton.Content = isJa ? "参照..." : "Browse...";
-            RevStartScanButton.Content = isJa ? "🔍 逆引き調査開始" : "🔍 Start Audit";
+            RevStartScanButton.Content = isJa ? "🔍 調査開始" : "🔍 Start Scan";
             RevCancelScanButton.Content = isJa ? "⏹️ 中止" : "⏹️ Cancel";
-            RevExportExcelButton.Content = isJa ? "📋 監査台帳 Excel" : "📋 Export Audit Excel";
+            RevExportExcelButton.Content = isJa ? "📋 Excel出力" : "📋 Export Excel";
 
             RevTargetAccountLabel.Text = isJa ? "調査対象 ユーザー / グループ (sAMAccountName または 表示名)" : "Target User / Group (sAMAccountName or Display Name)";
             RevRootPathLabel.Text = isJa ? "調査ルートディレクトリ (UNC / ローカル)" : "Root Directory (UNC / Local)";
@@ -1288,9 +1246,9 @@ namespace AstraSize.Views
             RevBrowseUserButton.Content = isJa ? "👥 参照..." : "👥 Browse...";
 
             // Live ACL Diff Modal (Dry-Run)
-            LiveAclDiffTitleText.Text = isJa ? "⚖️ NTFS アクセス権 差分チェック (Dry-Run)" : "⚖️ NTFS Permission Diff Review (Dry-Run)";
+            LiveAclDiffTitleText.Text = isJa ? "⚖️ 差分チェック" : "⚖️ Diff Review";
             LiveAclDiffModalCancelButton.Content = isJa ? "キャンセル" : "Cancel";
-            LiveAclDiffModalExecuteButton.Content = isJa ? "⚡ 差分を本番適用 (Commit)" : "⚡ Commit Changes";
+            LiveAclDiffModalExecuteButton.Content = isJa ? "⚡ 適用" : "⚡ Apply";
         }
         #endregion
     }

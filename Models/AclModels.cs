@@ -281,4 +281,46 @@ namespace AstraSize.Models
         public string AppliesTo { get; set; } = "このフォルダー、サブフォルダーおよびファイル";
         public bool IsInherited { get; set; } = false;
     }
+
+    /// <summary>
+    /// Live ACL 実行計画 (Change Plan)
+    /// Dry-Run (Check) から本番適用 (Commit)、OS実態検証 (Verify) まで同一インスタンスで貫通する正本
+    /// </summary>
+    public class AclChangePlan
+    {
+        public string FolderPath { get; set; } = string.Empty;
+        public string FolderName { get; set; } = string.Empty;
+        public string OriginalSddl { get; set; } = string.Empty;
+
+        // 継承変更
+        public bool InheritanceBefore { get; set; }
+        public bool InheritanceAfter { get; set; }
+        public bool InheritanceChanged => InheritanceBefore != InheritanceAfter;
+        public int InheritedAcesPromotedCount { get; set; }
+
+        // 差分分類 (ピンポイント適用用)
+        public List<SimAclEntry> Added { get; set; } = new();
+        public List<SimAclEntry> Removed { get; set; } = new();
+        public List<(SimAclEntry OldEntry, SimAclEntry NewEntry)> Modified { get; set; } = new();
+        public List<SimAclEntry> Untouched { get; set; } = new();
+
+        // プレビュー表示用アイテム
+        public List<LiveAclDiffItem> DiffItems { get; set; } = new();
+
+        // 期待される変更後ACE一覧 (Verify突合用)
+        public List<SimAclEntry> ExpectedAfterEntries { get; set; } = new();
+
+        public bool HasChanges => InheritanceChanged || Added.Count > 0 || Removed.Count > 0 || Modified.Count > 0;
+        public int TotalMutations => Added.Count + Removed.Count + Modified.Count;
+    }
+
+    /// <summary>
+    /// Live ACL 適用後の正常性検証 (Verify) 結果
+    /// </summary>
+    public class AclVerificationResult
+    {
+        public bool IsSuccess { get; set; } = true;
+        public string StatusText { get; set; } = "正常";
+        public List<string> Discrepancies { get; set; } = new();
+    }
 }

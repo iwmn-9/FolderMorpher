@@ -13,7 +13,7 @@
 > だからといって美観のためだけに既存の配線を全部引き抜く（不要な大規模リファクタ）ことも禁止する。  
 > **「正本は1つ。機能間の配線は最小限。UI固有状態はMainWindowにあってよい。文字列を信号線にするな。美観のために配線を全部抜くな。ただし絡まった配線は局所的に整線せよ。」**
 
-後続のAIメンテナは、いかなる機能追加・修正においても以下の5大基準を厳守しなければならない。
+後続のAIメンテナは、いかなる機能追加・修正においても以下の6大基準を厳守しなければならない。
 
 1. **正本の単一性（信号線の出どころを1つにする）**:
    - 同一の概念・状態・判定・走査ロジックを複数箇所に分散・二重実装してはならない。
@@ -33,6 +33,11 @@
 5. **構造美だけを目的とした全面リファクタリングの禁止（床を理由なく剥がさない）**:
    - MVVM化、新規フレームワーク刷新、ファイルの大規模分割などを、一般論・コード行数・形式美だけを理由に行ってはならない。
    - 具体的な不具合、正本の分裂、保守不能なスパゲッティ結合が存在する場合は、**まず局所修正（整線）** を検討する。局所修正より再設計・再実装の方が明確に安全・低リスクな場合のみ、理由・影響範囲・代替案を評価した上で最小限のスコープで実施する。
+6. **実行計画先行と観測・介入の二元論（Plan First & 3段ロケット原則）**:
+   - **観測系（Read-Only）**: 容量スキャン、ツリー参照、逆引き監査などの「覗く」行為はノーガード・即時実行。管理者の探索テンポを一切阻害しない。
+   - **介入系（State-Mutating）**: アクセス権変更、スケルトン展開、リンク修復、写真最適化などの書き込み処理はすべて **Plan First（実行計画先行）**。
+   - **「① Check (Dry-Run差分確認) ➔ ② Commit (本番適用) ➔ ③ Verify (実態検証)」** の3段ロケットに統一する。
+   - **プレビュー用と本番用の差分判定ロジックを二重実装してはならない**。必ず単一の `ChangePlan` インスタンスをパイプラインで貫通させること。
 
 ---
 
@@ -49,13 +54,13 @@
 
 ## 2. システム鳥瞰マップ（機能とソースコードの対応表）
 
-UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジックは `Services` と `Models` に完全に分離されている。
+UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネント `Views/LiveAclStudio.xaml` / `LiveAclStudio.xaml.cs` で構成され、内部ロジックは `Services` と `Models` に完全に分離されている。
 
-| 機能領域 / タブ | XAML (MainWindow.xaml) | C# コードビハインド (MainWindow.xaml.cs) | 関連 Service / Model | 責務と概要 |
+| 機能領域 / タブ | XAML (MainWindow / View) | C# コードビハインド | 関連 Service / Model | 責務と概要 |
 | :--- | :--- | :--- | :--- | :--- |
 | **全体共通 / 左サイドバー** | `SidebarBorder`, `SidebarToggleButton` (L22-75) | `SidebarToggleButton_Click`<br>`NavTab_Checked` | `Converters/ValueConverters.cs` | 収縮対応ナビゲーション（幅220px ⇄ 58px）、グローバルステータスバー、通知トースト |
 | **Tab 1: 容量分析 & 監視**<br>(Storage Explorer) | `StorageTabPanel` (L82-410) | `ScanButton_Click`<br>`StorageTreeView_SelectedItemChanged`<br>`SubfolderShareGrid_MouseDoubleClick` | `DiskScanService.cs`<br>`DriveInfoService.cs`<br>`StorageHistoryService.cs`<br>`ScanTabModel.cs`<br>`FileItemNode.cs` | 複数タブスキャン、ドライブ空き容量メーター、全体占有率メーター（案A）、容量上位Top10（Explorer起動連動）、直下シェア内訳（Wクリックツリー連動） |
-| **Tab 2: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `LiveAclTabPanel`, `LiveAclFolderView`, `LiveAclReverseView` (L413-750) | `LiveAclReloadButton_Click`<br>`LiveAclApplyButton_Click`<br>`LiveAclReverseScanButton_Click`<br>`LiveAclReverseExportExcelButton_Click` | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACLの可視化・直接編集、SDDLロールバック、**ADユーザー/グループ逆引き権限監査（多重入れ子・ネスト所属グループ完全展開、アクセス可能フォルダ抽出、エクスプローラー直行ハイパーリンク付きExcel監査台帳出力）** |
+| **Tab 2: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `Views/LiveAclStudio.xaml`<br>(`LiveAclFolderView`, `LiveAclReverseView`, `LiveAclDiffModalOverlay`) | `Views/LiveAclStudio.xaml.cs`<br>(`LiveAclPanelApplyDeltaButton_Click`<br>`LiveAclDiffModalExecute_Click`<br>`RevStartScan_Click`) | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACL可視化・編集、**Dry-Run差分チェックモーダル（AclChangePlan貫通・継承変更警告・セマンティックVerify・SDDLロールバック）**、AD逆引き権限監査（ネスト全展開・ハイパーリンク付きExcel出力） |
 | **Tab 3: 移行スタジオ**<br>(Simulation Studio) | `SimulationTabPanel` (L608-995) | `SimSourceLoadButton_Click`<br>`SimMockTreeView_Drop`<br>`SimDiffReviewButton_Click`<br>`SimDeploySkeletonButton_Click` | `SimulationProjectService.cs`<br>`MigrationService.cs`<br>`SimModels.cs` | 現行ファイルサーバーから新環境への仮想ツリー設計（N:1マッピング）、ACL引き継ぎ設計、Diffインスペクター、ガワ先行作成（空フォルダ+ACL一括展開）、Robocopy生成 |
 | **Tab 4: リンク一括修復**<br>(LinkFixer) | `LinkFixTabPanel` (L998-1094) | `LinkScanButton_Click`<br>`LinkFixExecuteButton_Click`<br>`LinkGenerateGpoButton_Click` | `LinkFixService.cs`<br>`OfficeLinkFixService.cs` | サーバー移行後の切断ショートカット（.lnk）およびOffice内部リンク（.xlsx/.xlsm）一括検出・修復、全社配布用GPOログオンスクリプト（.ps1）生成 |
 | **Tab 5: 断捨離・健全化**<br>(Audit & Hygiene) | `AuditTabPanel` (L1097-1240) | `AuditStartButton_Click`<br>`AuditExportExcelButton_Click`<br>`AuditExportCsvButton_Click`<br>`AuditGenArchiveScriptButton_Click` | `AuditReportService.cs`<br>`ExcelReportService.cs`<br>`AuditModels.cs` | GDMS完全代替。重複ファイル（SHA256）、休眠ファイル（3年超）、パス長260文字超・禁則文字検出。ハイパーリンク付きExcelレポート出力、安全退避バッチ生成 |
@@ -316,6 +321,26 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
       - 旧コード名・他社製品名（`GDMS` 等）を排除し、「衛生監査・容量削減」へと品位向上。
       - 「ガワ作成」「ガワ先行作成」を「スケルトン作成」「スケルトン先行展開」へ全面統一。長すぎる補足説明文もスリム化。
 
+38. **AclChangePlan 実行計画一本化 ＆ 継承変更警告バナー ＆ セマンティック正常性検証 (Verify) ＆ UI文言徹底簡潔化 (v1.6.4)**:
+    - **AclChangePlan による実行計画の単一化（PreviewとCommitの二重計算完全排除）**:
+      - `AclService.BuildChangePlan()` により、読み取り時からの差分（Added/Removed/Modified/Untouched）、継承設定の推移、および適用後に期待される完全なACEセット（`ExpectedAfterEntries`）を1つの構造体に構築。
+      - Dry-Runプレビュー表示（`_diffItems`）と本番適用（`ApplyChangePlanWithRollbackAsync`）で同一インスタンスを貫通させ、ロジックの乖離余地を物理的に排除。
+    - **継承変更の可視化バナー（High寄り課題の解消）**:
+      - 継承設定が変更された場合、モーダル最上部に専用警告バナー（`LiveAclInheritanceChangeBanner`）を自動展開。
+      - 継承OFF時（有効➔無効）は、親から明示ACEへ昇格・保持されるACE件数を明示し、重大なアクセス権波及の切断事故を事前警告。
+    - **セマンティック正常性検証 (True Semantic Verify)**:
+      - 本番適用後、OSから再取得した最新ACLと `ExpectedAfterEntries` をセマンティック突合（`VerifyChangePlan`）。
+      - 単なる再読込ではなく、期待されるACEと実際のACEが100%合致しているかを厳密検証（`✅ 正常`）。意図しないACEの混入や脱落があれば即座に不一致を警告。
+    - **OriginalSddl 更新バグの完全修正（直後自己操作の競合誤爆根絶）**:
+      - Commit成功後は、直前の旧バックアップSDDLではなく、ディスクに書き込まれた最新の実態SDDL（`_aclService.GetSddl(panel.FolderPath)`）を `panel.OriginalSddl` に再代入。
+      - 続けて次の変更を行う際に、自分自身の直前変更を「⚠️ 外部競合」と誤判定するバグを根絶。
+    - **UI文言の徹底簡潔化（プロ用ツールの品位向上）**:
+      - パネルボタン: `⚡ 差分適用` ➔ `🔍 チェック`
+      - モーダルタイトル: `⚖️ NTFS アクセス権 差分チェック (Dry-Run)` ➔ `⚖️ 差分チェック`
+      - モーダル確定ボタン: `⚡ 差分を本番適用 (Commit)` ➔ `⚡ 適用`
+      - バッジ・ステータス: `● 未適用の変更あり` ➔ `● 未適用`、`✅ 外部競合なし (安全)` ➔ `✅ 正常`、`⚠️ 外部変更を検知 (警告)` ➔ `⚠️ 外部競合`
+      - ツールバー/逆引き: `✕ パネルを全解除` ➔ `✕ 全て閉じる`、`📋 台帳CSV出力` ➔ `📋 CSV出力`、`🔍 逆引き調査開始` ➔ `🔍 調査開始`、`📋 監査台帳 Excel` ➔ `📋 Excel出力`
+
 ---
 
 ## 4. ビルド・実行・検証コマンド
@@ -332,7 +357,7 @@ Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe"
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 22/22 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 23/23 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

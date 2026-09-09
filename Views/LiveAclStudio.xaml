@@ -53,14 +53,14 @@
 
                             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="🛡️" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                <TextBlock x:Name="LiveAclTargetFolderLabel" Text="マルチフォルダ 権限エディタ (最小差分適用)" FontWeight="Bold" FontSize="13" Foreground="#0F172A" VerticalAlignment="Center"/>
-                                <TextBlock Text="💡 左のツリーからフォルダをダブルクリックまたは中央へD&amp;Dして開く（最大6フォルダまで同時比較）" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                                <TextBlock x:Name="LiveAclTargetFolderLabel" Text="マルチフォルダ 権限エディタ" FontWeight="Bold" FontSize="13" Foreground="#0F172A" VerticalAlignment="Center"/>
+                                <TextBlock Text="💡 ツリーからフォルダーを開いて権限を編集（最大6つ同時表示）" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="14,0,0,0"/>
                             </StackPanel>
 
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Button x:Name="LiveAclCloseAllPanelsButton" Content="✕ パネルを全解除" Height="30" Margin="0,0,8,0"
+                                <Button x:Name="LiveAclCloseAllPanelsButton" Content="✕ 全て閉じる" Height="30" Margin="0,0,8,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="LiveAclCloseAllPanelsButton_Click" ToolTip="開いているパネルをすべて閉じます"/>
-                                <Button x:Name="LiveAclExportMatrixButton" Content="📋 台帳CSV出力" Height="30"
+                                <Button x:Name="LiveAclExportMatrixButton" Content="📋 CSV出力" Height="30"
                                         Style="{StaticResource FluentButtonSecondary}" Click="LiveAclExportMatrixButton_Click"/>
                             </StackPanel>
                         </Grid>
@@ -196,14 +196,14 @@
                                                                       FontSize="11" FontWeight="Medium" Foreground="#334155" VerticalAlignment="Center"/>
                                                             <Border HorizontalAlignment="Right" Background="#FEF3C7" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="4" Padding="6,1"
                                                                     Visibility="{Binding HasChanges, Converter={StaticResource BoolToVis}}">
-                                                                <TextBlock Text="● 未適用の変更あり" FontSize="10" FontWeight="SemiBold" Foreground="#B45309"/>
+                                                                <TextBlock Text="● 未適用" FontSize="10" FontWeight="SemiBold" Foreground="#B45309"/>
                                                             </Border>
                                                         </Grid>
 
                                                         <!-- Row 2: Drop Zone -->
                                                         <Border Grid.Row="2" Background="#F0F9FF" BorderBrush="#BAE6FD" BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,8"
                                                                 AllowDrop="True" Drop="LiveAclPanelDropZone_Drop" DragOver="LiveAclGenericDragOver" Tag="{Binding}">
-                                                            <TextBlock Text="📥 右のADアカウントをここにドロップして権限追加" FontSize="10.5" FontWeight="SemiBold" Foreground="#0284C7" HorizontalAlignment="Center"/>
+                                                            <TextBlock Text="📥 アカウントをドロップして追加" FontSize="10.5" FontWeight="SemiBold" Foreground="#0284C7" HorizontalAlignment="Center"/>
                                                         </Border>
 
                                                         <!-- Row 3: Cards List -->
@@ -279,8 +279,8 @@
                                                             <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" FontSize="10.5" Foreground="#64748B" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                                             <Button Grid.Column="1" Content="↩️ ロールバック" Height="28" Margin="0,0,6,0" Padding="8,2" FontSize="11"
                                                                     Style="{StaticResource FluentButtonSecondary}" Click="LiveAclPanelRollbackButton_Click" Tag="{Binding}" ToolTip="このフォルダを直前のバックアップから復元"/>
-                                                            <Button Grid.Column="2" Content="⚡ 差分適用" Height="28" Padding="12,2" FontSize="11.5"
-                                                                    Style="{StaticResource FluentButtonPrimary}" Click="LiveAclPanelApplyDeltaButton_Click" Tag="{Binding}" ToolTip="変更分だけをピンポイント適用"/>
+                                                            <Button Grid.Column="2" Content="🔍 チェック" Height="28" Padding="10,2" FontSize="11.5"
+                                                                    Style="{StaticResource FluentButtonPrimary}" Click="LiveAclPanelApplyDeltaButton_Click" Tag="{Binding}" ToolTip="変更内容をチェック (Dry-Run)"/>
                                                         </Grid>
                                                     </Grid>
                                                 </Border>
@@ -429,11 +429,11 @@
                                 </ComboBox>
 
                                 <StackPanel Grid.Column="7" Orientation="Horizontal">
-                                    <Button x:Name="RevStartScanButton" Content="🔍 逆引き調査開始" Height="32" Margin="0,0,8,0"
+                                    <Button x:Name="RevStartScanButton" Content="🔍 調査開始" Height="32" Margin="0,0,8,0"
                                             Style="{StaticResource FluentButtonPrimary}" Click="RevStartScan_Click"/>
                                     <Button x:Name="RevCancelScanButton" Content="⏹️ 中止" Height="32" Margin="0,0,8,0"
                                             Style="{StaticResource FluentButtonSecondary}" Click="RevCancelScan_Click" Visibility="Collapsed"/>
-                                    <Button x:Name="RevExportExcelButton" Content="📋 監査台帳 Excel" Height="32"
+                                    <Button x:Name="RevExportExcelButton" Content="📋 Excel出力" Height="32"
                                             Style="{StaticResource FluentButtonSecondary}" Click="RevExportExcel_Click" IsEnabled="False"/>
                                 </StackPanel>
                             </Grid>
@@ -750,6 +750,7 @@
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/> <!-- Header -->
+                        <RowDefinition Height="Auto"/> <!-- Inheritance Banner -->
                         <RowDefinition Height="Auto"/> <!-- Summary Strip -->
                         <RowDefinition Height="*"/>    <!-- Diff Table -->
                         <RowDefinition Height="Auto"/> <!-- Footer Actions -->
@@ -758,32 +759,44 @@
                     <!-- Row 0: Header -->
                     <Grid Grid.Row="0" Margin="0,0,0,12">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock x:Name="LiveAclDiffTitleText" Text="⚖️ NTFS アクセス権 差分チェック (Dry-Run)" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
+                            <TextBlock x:Name="LiveAclDiffTitleText" Text="⚖️ 差分チェック" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
                             <TextBlock x:Name="LiveAclDiffTargetText" Text=" - 対象フォルダー" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="8,0,0,0" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                         <Button Content="✕" Width="24" Height="24" Background="Transparent" BorderThickness="0"
                                 FontSize="12" Foreground="#64748B" HorizontalAlignment="Right" Click="LiveAclDiffModalClose_Click"/>
                     </Grid>
 
-                    <!-- Row 1: Summary Stats Strip -->
-                    <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,12">
+                    <!-- Row 1: Inheritance Change Banner -->
+                    <Border x:Name="LiveAclInheritanceChangeBanner" Grid.Row="1" Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="6" Padding="12,7" Margin="0,0,0,10" Visibility="Collapsed">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="🛡️" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="LiveAclInheritanceChangeText" Grid.Column="1" Text="継承設定の変更" FontWeight="SemiBold" FontSize="11.5" Foreground="#1D4ED8" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Row 2: Summary Stats Strip -->
+                    <Border Grid.Row="2" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,12">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock x:Name="LiveAclDiffSummaryText" Text="📊 変更予定: +0件, -0件, ~0件" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="LiveAclDiffUntouchedText" Text=" (🛡️ 既存ノータッチ: 0件)" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                <TextBlock x:Name="LiveAclDiffSummaryText" Text="📊 予定: +0件, -0件, ~0件" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="LiveAclDiffUntouchedText" Text=" (🛡️ 維持: 0件)" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="6,0,0,0"/>
                             </StackPanel>
                             <Border x:Name="LiveAclConflictBadge" Grid.Column="1" Background="#DCFCE7" BorderBrush="#BBF7D0" BorderThickness="1" CornerRadius="4" Padding="6,2">
-                                <TextBlock x:Name="LiveAclConflictBadgeText" Text="✅ 外部競合なし (安全)" FontSize="10.5" FontWeight="SemiBold" Foreground="#15803D"/>
+                                <TextBlock x:Name="LiveAclConflictBadgeText" Text="✅ 正常" FontSize="10.5" FontWeight="SemiBold" Foreground="#15803D"/>
                             </Border>
                         </Grid>
                     </Border>
 
-                    <!-- Row 2: Diff Table -->
-                    <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="2" Margin="0,0,0,12">
+                    <!-- Row 3: Diff Table -->
+                    <Border Grid.Row="3" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="2" Margin="0,0,0,12">
                         <DataGrid x:Name="LiveAclDiffDataGrid" AutoGenerateColumns="False" IsReadOnly="True"
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="36"
                                   SelectionMode="Single">
@@ -819,19 +832,19 @@
                         </DataGrid>
                     </Border>
 
-                    <!-- Row 3: Footer Actions -->
-                    <Grid Grid.Row="3">
+                    <!-- Row 4: Footer Actions -->
+                    <Grid Grid.Row="4">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="🛡️ 適用直前の状態はSDDLバックアップとして自動保存され、いつでもロールバック可能です" FontSize="10.5" Foreground="#64748B"/>
+                            <TextBlock Text="🛡️ 適用直前の状態は自動保存され、いつでもロールバック可能です" FontSize="10.5" Foreground="#64748B"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
                             <Button x:Name="LiveAclDiffModalCancelButton" Content="キャンセル" Height="32" Width="90" Margin="0,0,8,0"
                                     Style="{StaticResource FluentButtonSecondary}" Click="LiveAclDiffModalClose_Click"/>
-                            <Button x:Name="LiveAclDiffModalExecuteButton" Content="⚡ 差分を本番適用 (Commit)" Height="32" Padding="14,4"
+                            <Button x:Name="LiveAclDiffModalExecuteButton" Content="⚡ 適用" Height="32" Padding="18,4"
                                     Style="{StaticResource FluentButtonPrimary}" Click="LiveAclDiffModalExecute_Click"/>
                         </StackPanel>
                     </Grid>
