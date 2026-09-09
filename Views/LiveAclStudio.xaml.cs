@@ -1246,7 +1246,7 @@ namespace AstraSize.Views
             RevBrowseUserButton.Content = isJa ? "👥 参照..." : "👥 Browse...";
 
             // Live ACL Diff Modal (Dry-Run)
-            LiveAclDiffTitleText.Text = isJa ? "⚖️ 差分チェック" : "⚖️ Diff Review";
+            LiveAclDiffTitleText.Text = isJa ? "⚖️ 変更点" : "⚖️ Changes";
             LiveAclDiffModalCancelButton.Content = isJa ? "キャンセル" : "Cancel";
             LiveAclDiffModalExecuteButton.Content = isJa ? "⚡ 適用" : "⚡ Apply";
         }

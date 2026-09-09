@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -2128,14 +2128,63 @@ namespace AstraSize
         #region Difference Review (Diff Inspector)
         private void SimDiffReviewButton_Click(object sender, RoutedEventArgs e)
         {
+            var targetRoot = SimTargetRootTextBox.Text.Trim();
             var diffs = _simService.GenerateDiffReview(_currentTab?.RootNode, _simRootFolders);
             DiffReviewDataGrid.ItemsSource = diffs;
+            DiffSummaryStatsText.Text = string.IsNullOrWhiteSpace(targetRoot)
+                ? $"📊 差分項目: {diffs.Count}件"
+                : $"📊 差分項目: {diffs.Count}件 (展開先: {targetRoot})";
             DiffModalOverlay.Visibility = Visibility.Visible;
         }
 
         private void DiffModalClose_Click(object sender, RoutedEventArgs e)
         {
             DiffModalOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private async void DiffModalApply_Click(object sender, RoutedEventArgs e)
+        {
+            var targetRoot = SimTargetRootTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(targetRoot))
+            {
+                MessageBox.Show("移行先ルートフォルダを入力してください。", "通知", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            GlobalProgressBar.Visibility = Visibility.Visible;
+            GlobalProgressBar.IsIndeterminate = true;
+
+            var progress = new Progress<(string Status, int Count)>(p =>
+            {
+                StatusTextBlock.Text = $"{p.Status} ({p.Count} 作成済)";
+            });
+
+            try
+            {
+                using var cts = new CancellationTokenSource();
+                var (count, logs) = await _simService.DeploySkeletonAsync(_simRootFolders, targetRoot, progress, cts.Token);
+
+                // Verify: 展開先ディレクトリの実在検証
+                bool verified = Directory.Exists(targetRoot);
+                DiffModalOverlay.Visibility = Visibility.Collapsed;
+
+                if (verified)
+                {
+                    ShowToast($"✅ スケルトン作成完了 (検証済): {count} 個のフォルダを作成・展開しました");
+                }
+                else
+                {
+                    ShowToast($"⚠️ スケルトン作成警告: 展開先フォルダの存在を確認できませんでした");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"スケルトン作成失敗: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                GlobalProgressBar.Visibility = Visibility.Collapsed;
+            }
         }
 
         private void DiffExportExcel_Click(object sender, RoutedEventArgs e)
@@ -2246,7 +2295,7 @@ namespace AstraSize
             }
         }
 
-        private async void SimDeploySkeletonButton_Click(object sender, RoutedEventArgs e)
+        private void SimDeploySkeletonButton_Click(object sender, RoutedEventArgs e)
         {
             var targetRoot = SimTargetRootTextBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(targetRoot))
@@ -2255,35 +2304,11 @@ namespace AstraSize
                 return;
             }
 
-            if (MessageBox.Show($"以下の場所に仮想モックのスケルトン（空ディレクトリ階層と設計済みNTFSアクセス権）を作成します:\n\n{targetRoot}\n\n続行しますか？",
-                "スケルトン先行展開の確認", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
-            {
-                return;
-            }
-
-            GlobalProgressBar.Visibility = Visibility.Visible;
-            GlobalProgressBar.IsIndeterminate = true;
-
-            var progress = new Progress<(string Status, int Count)>(p =>
-            {
-                StatusTextBlock.Text = $"{p.Status} ({p.Count} 作成済)";
-            });
-
-            try
-            {
-                using var cts = new CancellationTokenSource();
-                var (count, logs) = await _simService.DeploySkeletonAsync(_simRootFolders, targetRoot, progress, cts.Token);
-                ShowToast($"スケルトン作成完了: {count} 個のフォルダを作成しました");
-                MessageBox.Show($"スケルトン作成が完了しました。\n作成フォルダ数: {count}\n\n対象: {targetRoot}", "完了", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"スケルトン作成失敗: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-            finally
-            {
-                GlobalProgressBar.Visibility = Visibility.Collapsed;
-            }
+            // 差分（実行計画）を計算して「変更点」モーダルを表示
+            var diffs = _simService.GenerateDiffReview(_currentTab?.RootNode, _simRootFolders);
+            DiffReviewDataGrid.ItemsSource = diffs;
+            DiffSummaryStatsText.Text = $"📊 差分項目: {diffs.Count}件 (展開先: {targetRoot})";
+            DiffModalOverlay.Visibility = Visibility.Visible;
         }
 
         private void SimExportScriptsButton_Click(object sender, RoutedEventArgs e)
@@ -2404,12 +2429,14 @@ namespace AstraSize
             }
         }
 
-        private async void LinkFixExecuteButton_Click(object sender, RoutedEventArgs e)
+        private List<LinkFixItem> _lastLinkFixTargets = new();
+
+        private void LinkFixExecuteButton_Click(object sender, RoutedEventArgs e)
         {
             var items = LinkItemsDataGrid.ItemsSource as List<LinkFixItem>;
             if (items == null || items.Count == 0)
             {
-                MessageBox.Show("修復対象のショートカットがありません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("修復対象のショートカットがありません。先に切断リンク検出スキャンを実行してください。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -2420,8 +2447,22 @@ namespace AstraSize
                 return;
             }
 
-            if (MessageBox.Show($"{targets.Count} 件のショートカットを書き換えます（.bak バックアップ自動生成）。\n実行しますか？", "確認", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            _lastLinkFixTargets = targets;
+            LinkFixDiffDataGrid.ItemsSource = targets;
+            LinkFixDiffSummaryText.Text = $"📊 修復対象: {targets.Count}件 (各ファイル .bak 自動バックアップ生成)";
+            LinkFixDiffModalOverlay.Visibility = Visibility.Visible;
+        }
+
+        private void LinkFixDiffModalClose_Click(object sender, RoutedEventArgs e)
+        {
+            LinkFixDiffModalOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private async void LinkFixDiffModalApply_Click(object sender, RoutedEventArgs e)
+        {
+            if (_lastLinkFixTargets == null || _lastLinkFixTargets.Count == 0)
             {
+                LinkFixDiffModalOverlay.Visibility = Visibility.Collapsed;
                 return;
             }
 
@@ -2436,9 +2477,19 @@ namespace AstraSize
             try
             {
                 using var cts = new CancellationTokenSource();
-                var successCount = await _linkFixService.ExecuteFixAsync(targets, progress, cts.Token);
+                var successCount = await _linkFixService.ExecuteFixAsync(_lastLinkFixTargets, progress, cts.Token);
                 LinkItemsDataGrid.Items.Refresh();
-                ShowToast($"ショートカット修復完了: {successCount} / {targets.Count} 件");
+                LinkFixDiffModalOverlay.Visibility = Visibility.Collapsed;
+
+                // Verify: 処理結果の検証
+                if (successCount == _lastLinkFixTargets.Count)
+                {
+                    ShowToast($"✅ ショートカット修復完了 (検証済): {successCount} / {_lastLinkFixTargets.Count} 件 全て修復");
+                }
+                else
+                {
+                    ShowToast($"⚠️ ショートカット修復完了 (一部失敗): {successCount} / {_lastLinkFixTargets.Count} 件");
+                }
             }
             catch (Exception ex)
             {
@@ -3164,7 +3215,9 @@ namespace AstraSize
             }
         }
 
-        private async void MediaOptimizeButton_Click(object sender, RoutedEventArgs e)
+        private List<MediaItem> _lastMediaTargets = new();
+
+        private void MediaOptimizeButton_Click(object sender, RoutedEventArgs e)
         {
             if (_lastMediaImages == null || _lastMediaImages.Count == 0)
             {
@@ -3179,9 +3232,26 @@ namespace AstraSize
                 return;
             }
 
-            if (MessageBox.Show($"{targets.Count} 枚の写真・画像を最適化（長辺2560px超は縮小/85%品質/Exif・日時完全保持）で上書き軽量化します。\n聖域保護されたフォルダやRAWデータは保護されます。\n\n実行しますか？",
-                                "写真・画像の最適化確認", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            int maxDim = int.TryParse(MediaMaxDimTextBox.Text, out var md) ? md : 2560;
+            int quality = int.TryParse(MediaQualityTextBox.Text, out var q) ? q : 85;
+            int excludedCount = _lastMediaImages.Count(i => i.IsExcluded);
+
+            _lastMediaTargets = targets;
+            MediaDiffDataGrid.ItemsSource = targets;
+            MediaDiffSummaryText.Text = $"📊 対象: {targets.Count}枚 / 設定: 長辺 {maxDim}px超・品質 {quality}% (🛡️ 聖域保護: {excludedCount}枚スキップ)";
+            MediaDiffModalOverlay.Visibility = Visibility.Visible;
+        }
+
+        private void MediaDiffModalClose_Click(object sender, RoutedEventArgs e)
+        {
+            MediaDiffModalOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private async void MediaDiffModalApply_Click(object sender, RoutedEventArgs e)
+        {
+            if (_lastMediaTargets == null || _lastMediaTargets.Count == 0)
             {
+                MediaDiffModalOverlay.Visibility = Visibility.Collapsed;
                 return;
             }
 
@@ -3206,7 +3276,7 @@ namespace AstraSize
             try
             {
                 using var cts = new CancellationTokenSource();
-                var summary = await _mediaService.OptimizeImagesAsync(targets, options, progress, cts.Token);
+                var summary = await _mediaService.OptimizeImagesAsync(_lastMediaTargets, options, progress, cts.Token);
                 _lastMediaSummary = summary;
 
                 MediaItemsDataGrid.Items.Refresh();
@@ -3215,7 +3285,18 @@ namespace AstraSize
                 MediaKpiSavedSize.Text = summary.TotalSavedSizeFormatted;
 
                 MediaStatusText.Text = $"最適化完了: {summary.TotalSavedSizeFormatted} の空き容量を解放しました";
-                ShowToast($"写真軽量化完了: {summary.TotalSavedSizeFormatted} 削減");
+                MediaDiffModalOverlay.Visibility = Visibility.Collapsed;
+
+                // Verify: 処理結果の検証
+                int failed = _lastMediaTargets.Count - summary.OptimizedImagesCount;
+                if (failed <= 0)
+                {
+                    ShowToast($"✅ 写真軽量化完了 (検証済): {summary.TotalSavedSizeFormatted} 削減 ({summary.OptimizedImagesCount} 枚)");
+                }
+                else
+                {
+                    ShowToast($"⚠️ 写真軽量化完了 (一部スキップ/エラー): {summary.TotalSavedSizeFormatted} 削減 (成功 {summary.OptimizedImagesCount}枚, 未処理 {failed}枚)");
+                }
             }
             catch (Exception ex)
             {
@@ -3547,9 +3628,10 @@ namespace AstraSize
             MediaTableTitleText.Text = isJa ? "メディア一覧（画像 ＆ 巨大動画）" : "Media List (Images & Large Videos)";
 
             MediaScanButton.Content = isJa ? "🔍 メディア走査" : "🔍 Scan Media";
-            MediaOptimizeButton.Content = isJa ? "⚡ 写真を軽量化 (直接上書き/日時維持)" : "⚡ Optimize Photos (In-Place)";
+            MediaOptimizeButton.Content = isJa ? "🔍 チェック" : "🔍 Check";
             MediaGenVideoBatchButton.Content = isJa ? "🎬 巨大動画 夜間圧縮バッチ出力 (.bat)" : "🎬 Export Nightly Video Batch (.bat)";
             MediaExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
+            LinkFixExecuteButton.Content = isJa ? "🔍 チェック" : "🔍 Check";
 
             ColMediaType.Header = isJa ? "種別" : "Type";
             ColMediaFileName.Header = isJa ? "ファイル名" : "File Name";
@@ -3598,16 +3680,33 @@ namespace AstraSize
             SecModalApplyButton.Content = isJa ? "変更を保存" : "Save Changes";
 
             // ==========================================
-            // Diff Modal
+            // Diff Modal (変更点 - スケルトン展開)
             // ==========================================
-            DiffModalTitleText.Text = isJa ? "⚖️ 移行前後 変化点差分レビュー (Diff)" : "⚖️ Migration Diff & Integrity Review (Diff)";
-            DiffModalSubTitleText.Text = isJa ? " - Before ➔ After 全体整合性インスペクター" : " - Before ➔ After Migration Inspector";
+            DiffModalTitleText.Text = isJa ? "⚖️ 変更点" : "⚖️ Changes";
+            DiffModalSubTitleText.Text = isJa ? " - 移行設計差分" : " - Migration Architecture Diffs";
             ColDiffType.Header = isJa ? "変化の種別" : "Diff Type";
             ColDiffSource.Header = isJa ? "現行サーバー (Before)" : "Source Server (Before)";
             ColDiffTarget.Header = isJa ? "新環境設計 (After)" : "Target Architecture (After)";
             ColDiffAcl.Header = isJa ? "権限 (ACL) 差分詳細" : "ACL Diff Details";
             DiffModalCloseButton.Content = isJa ? "閉じる" : "Close";
-            DiffExportExcelButton.Content = isJa ? "📊 差分レポートをExcel出力" : "📊 Export Diffs (Excel)";
+            DiffExportExcelButton.Content = isJa ? "📊 Excel出力" : "📊 Export Excel";
+            DiffModalApplyButton.Content = isJa ? "⚡ 適用" : "⚡ Apply";
+
+            // ==========================================
+            // LinkFix Diff Modal (変更点 - ショートカット修復)
+            // ==========================================
+            LinkFixDiffTitleText.Text = isJa ? "⚖️ 変更点" : "⚖️ Changes";
+            LinkFixDiffSubTitleText.Text = isJa ? " - ショートカット一括修復" : " - Batch Shortcut Repair";
+            LinkFixDiffModalCloseButton.Content = isJa ? "閉じる" : "Close";
+            LinkFixDiffModalApplyButton.Content = isJa ? "⚡ 適用" : "⚡ Apply";
+
+            // ==========================================
+            // Media Diff Modal (変更点 - 写真軽量化)
+            // ==========================================
+            MediaDiffTitleText.Text = isJa ? "⚖️ 変更点" : "⚖️ Changes";
+            MediaDiffSubTitleText.Text = isJa ? " - 写真・画像軽量化 (上書き縮小)" : " - Image Optimization (In-Place)";
+            MediaDiffModalCloseButton.Content = isJa ? "閉じる" : "Close";
+            MediaDiffModalApplyButton.Content = isJa ? "⚡ 適用" : "⚡ Apply";
 
             // Settings Modal
             SettingsButton.ToolTip = isJa ? "環境設定 / Settings" : "Settings";

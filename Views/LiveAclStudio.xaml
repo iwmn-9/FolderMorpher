@@ -759,7 +759,7 @@
                     <!-- Row 0: Header -->
                     <Grid Grid.Row="0" Margin="0,0,0,12">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock x:Name="LiveAclDiffTitleText" Text="⚖️ 差分チェック" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
+                            <TextBlock x:Name="LiveAclDiffTitleText" Text="⚖️ 変更点" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
                             <TextBlock x:Name="LiveAclDiffTargetText" Text=" - 対象フォルダー" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="8,0,0,0" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                         <Button Content="✕" Width="24" Height="24" Background="Transparent" BorderThickness="0"

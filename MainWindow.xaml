@@ -484,7 +484,7 @@
                                     Style="{StaticResource FluentButtonSecondary}" Click="SimSaveProjectButton_Click" ToolTip="プロジェクト保存 (.fmorph)"/>
                             <Button x:Name="SimLoadProjectButton" Content="📂 読込" Height="32" Margin="0,0,5,0" Padding="8,4" FontSize="11"
                                     Style="{StaticResource FluentButtonSecondary}" Click="SimLoadProjectButton_Click" ToolTip="プロジェクト読込"/>
-                            <Button x:Name="SimDiffReviewButton" Content="⚖️ 差分 (Diff)" Height="32" Margin="0,0,5,0" Padding="10,4" FontSize="11"
+                            <Button x:Name="SimDiffReviewButton" Content="🔍 チェック" Height="32" Margin="0,0,5,0" Padding="10,4" FontSize="11"
                                     Background="#4F46E5" Foreground="#FFFFFF" FontWeight="Bold" BorderThickness="0"
                                     Style="{StaticResource FluentButtonPrimary}" Click="SimDiffReviewButton_Click" ToolTip="変化点差分インスペクター"/>
                             <Button x:Name="SimDeploySkeletonButton" Content="🚀 スケルトン作成" Height="32" Margin="0,0,5,0" Padding="10,4" FontSize="11"
@@ -949,8 +949,9 @@
                                         Style="{StaticResource FluentButtonSecondary}" Click="LinkGenerateGpoButton_Click" ToolTip="全社PCのデスクトップ/マイドキュメント等のショートカットを自動修復するスクリプトを出力"/>
                                 <Button x:Name="LinkScanButton" Content="切断リンク検出スキャン" Height="32" Margin="0,0,8,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="LinkScanButton_Click"/>
-                                <Button x:Name="LinkFixExecuteButton" Content="⚡ 一括修復を実行 (バックアップ付)" Height="32"
-                                        Style="{StaticResource FluentButtonPrimary}" Click="LinkFixExecuteButton_Click"/>
+                                <Button x:Name="LinkFixExecuteButton" Content="🔍 チェック" Height="32"
+                                        Style="{StaticResource FluentButtonPrimary}" Click="LinkFixExecuteButton_Click"
+                                        ToolTip="修復対象のショートカット一覧と置換差分をチェック"/>
                             </StackPanel>
                         </Grid>
                     </Grid>
@@ -1291,8 +1292,9 @@
                                         Style="{StaticResource FluentButtonSecondary}" Click="MediaGenVideoBatchButton_Click" ToolTip="GPUハードウェアエンコード (H.265) で動画を一括軽量化するスクリプトを出力"/>
                                 <Button x:Name="MediaScanButton" Content="🔍 メディア走査" Height="32" Margin="0,0,8,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="MediaScanButton_Click"/>
-                                <Button x:Name="MediaOptimizeButton" Content="⚡ 写真を軽量化 (直接上書き/日時維持)" Height="32"
-                                        Style="{StaticResource FluentButtonPrimary}" Click="MediaOptimizeButton_Click"/>
+                                <Button x:Name="MediaOptimizeButton" Content="🔍 チェック" Height="32"
+                                        Style="{StaticResource FluentButtonPrimary}" Click="MediaOptimizeButton_Click"
+                                        ToolTip="軽量化対象の写真一覧と設定差分をチェック"/>
                             </StackPanel>
                         </Grid>
                     </Grid>
@@ -1502,8 +1504,8 @@
 
                     <Grid Grid.Row="0" Margin="0,0,0,12">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock x:Name="DiffModalTitleText" Text="⚖️ 移行前後 変化点差分レビュー (Diff)" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
-                            <TextBlock x:Name="DiffModalSubTitleText" Text=" - Before ➔ After 全体整合性インスペクター" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                            <TextBlock x:Name="DiffModalTitleText" Text="⚖️ 変更点" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
+                            <TextBlock x:Name="DiffModalSubTitleText" Text=" - 移行設計差分" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="6,0,0,0"/>
                         </StackPanel>
                         <Button Content="✕" Width="24" Height="24" Background="Transparent" BorderThickness="0"
                                 FontSize="12" Foreground="#64748B" HorizontalAlignment="Right" Click="DiffModalClose_Click"/>
@@ -1564,7 +1566,135 @@
 
                     <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
                         <Button x:Name="DiffModalCloseButton" Content="閉じる" Height="32" Width="80" Margin="0,0,8,0" Style="{StaticResource FluentButtonSecondary}" Click="DiffModalClose_Click"/>
-                        <Button x:Name="DiffExportExcelButton" Content="📊 差分レポートをExcel出力" Height="32" Style="{StaticResource FluentButtonPrimary}" Click="DiffExportExcel_Click"/>
+                        <Button x:Name="DiffExportExcelButton" Content="📊 Excel出力" Height="32" Margin="0,0,8,0" Style="{StaticResource FluentButtonSecondary}" Click="DiffExportExcel_Click"/>
+                        <Button x:Name="DiffModalApplyButton" Content="⚡ 適用" Height="32" Style="{StaticResource FluentButtonPrimary}" Click="DiffModalApply_Click"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ======================================================== -->
+        <!-- MODAL: LINK FIX DRY-RUN DIFF MODAL                       -->
+        <!-- ======================================================== -->
+        <Grid x:Name="LinkFixDiffModalOverlay" Grid.RowSpan="3" Background="#80000000" Visibility="Collapsed">
+            <Border Background="#FFFFFF" Width="920" Height="560" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    CornerRadius="10" BorderBrush="#CBD5E1" BorderThickness="1" Padding="20">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="24" ShadowDepth="6" Direction="270" Color="#000000" Opacity="0.3"/>
+                </Border.Effect>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/> <!-- Header -->
+                        <RowDefinition Height="Auto"/> <!-- Summary Strip -->
+                        <RowDefinition Height="*"/>    <!-- Diff Table -->
+                        <RowDefinition Height="Auto"/> <!-- Footer -->
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="LinkFixDiffTitleText" Text="⚖️ 変更点" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
+                            <TextBlock x:Name="LinkFixDiffSubTitleText" Text=" - ショートカット一括修復" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                        </StackPanel>
+                        <Button Content="✕" Width="24" Height="24" Background="Transparent" BorderThickness="0"
+                                FontSize="12" Foreground="#64748B" HorizontalAlignment="Right" Click="LinkFixDiffModalClose_Click"/>
+                    </Grid>
+
+                    <!-- Summary Stats Strip -->
+                    <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="LinkFixDiffSummaryText" Text="📊 修復対象: 0件 (各ファイル .bak 自動バックアップ生成)" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Diff DataGrid -->
+                    <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="2">
+                        <DataGrid x:Name="LinkFixDiffDataGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="30"
+                                  SelectionMode="Single">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="ファイル名" Binding="{Binding FileName}" Width="200"/>
+                                <DataGridTemplateColumn Header="置換前ターゲット (Before)" Width="320">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding OldTarget}" FontSize="11" Foreground="#64748B" TextTrimming="CharacterEllipsis" ToolTip="{Binding OldTarget}" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="置換後ターゲット (After)" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding NewTarget}" FontWeight="SemiBold" FontSize="11" Foreground="#0284C7" TextTrimming="CharacterEllipsis" ToolTip="{Binding NewTarget}" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                        <Button x:Name="LinkFixDiffModalCloseButton" Content="閉じる" Height="32" Width="80" Margin="0,0,8,0" Style="{StaticResource FluentButtonSecondary}" Click="LinkFixDiffModalClose_Click"/>
+                        <Button x:Name="LinkFixDiffModalApplyButton" Content="⚡ 適用" Height="32" Style="{StaticResource FluentButtonPrimary}" Click="LinkFixDiffModalApply_Click"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ======================================================== -->
+        <!-- MODAL: MEDIA OPTIMIZER DRY-RUN DIFF MODAL                -->
+        <!-- ======================================================== -->
+        <Grid x:Name="MediaDiffModalOverlay" Grid.RowSpan="3" Background="#80000000" Visibility="Collapsed">
+            <Border Background="#FFFFFF" Width="920" Height="560" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    CornerRadius="10" BorderBrush="#CBD5E1" BorderThickness="1" Padding="20">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="24" ShadowDepth="6" Direction="270" Color="#000000" Opacity="0.3"/>
+                </Border.Effect>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/> <!-- Header -->
+                        <RowDefinition Height="Auto"/> <!-- Summary Strip -->
+                        <RowDefinition Height="*"/>    <!-- Diff Table -->
+                        <RowDefinition Height="Auto"/> <!-- Footer -->
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="MediaDiffTitleText" Text="⚖️ 変更点" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
+                            <TextBlock x:Name="MediaDiffSubTitleText" Text=" - 写真・画像軽量化 (上書き縮小)" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                        </StackPanel>
+                        <Button Content="✕" Width="24" Height="24" Background="Transparent" BorderThickness="0"
+                                FontSize="12" Foreground="#64748B" HorizontalAlignment="Right" Click="MediaDiffModalClose_Click"/>
+                    </Grid>
+
+                    <!-- Summary Stats Strip -->
+                    <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="MediaDiffSummaryText" Text="📊 対象: 0枚 / 設定: 長辺 2560px・品質 85% (🛡️ 聖域保護除外済)" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Diff DataGrid -->
+                    <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="2">
+                        <DataGrid x:Name="MediaDiffDataGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="30"
+                                  SelectionMode="Single">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="ファイル名" Binding="{Binding FileName}" Width="200"/>
+                                <DataGridTextColumn Header="元容量" Binding="{Binding OriginalSizeFormatted}" Width="110"/>
+                                <DataGridTextColumn Header="現在の解像度" Binding="{Binding DimensionsFormatted}" Width="130"/>
+                                <DataGridTemplateColumn Header="完全パス" Width="*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding FullPath}" FontSize="11" Foreground="#64748B" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullPath}" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                        <Button x:Name="MediaDiffModalCloseButton" Content="閉じる" Height="32" Width="80" Margin="0,0,8,0" Style="{StaticResource FluentButtonSecondary}" Click="MediaDiffModalClose_Click"/>
+                        <Button x:Name="MediaDiffModalApplyButton" Content="⚡ 適用" Height="32" Style="{StaticResource FluentButtonPrimary}" Click="MediaDiffModalApply_Click"/>
                     </StackPanel>
                 </Grid>
             </Border>

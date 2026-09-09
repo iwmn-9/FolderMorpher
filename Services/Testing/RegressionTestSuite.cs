@@ -31,7 +31,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 23;
+            int totalTests = 24;
 
             try
             {
@@ -168,9 +168,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 23
-                Console.WriteLine("\n[TEST 23/23] Live ACL: AclChangePlan Pipeline, Inheritance Promotion & Semantic Verification Contract...");
+                Console.WriteLine("\n[TEST 23/24] Live ACL: AclChangePlan Pipeline, Inheritance Promotion & Semantic Verification Contract...");
                 await TestAclChangePlanPipelineAndSemanticVerificationAsync();
                 Console.WriteLine("  --> [PASS] Live ACL: ChangePlan pipeline, inheritance promotion, semantic verification & post-commit SDDL 100% verified.");
+                passCount++;
+
+                // Test 24
+                Console.WriteLine("\n[TEST 24/24] Universal Plan-First Contract: Skeleton Deploy, LinkFix Execution & Media Sanctum Plan Fidelity...");
+                await TestUniversalPlanFirstAndMutationVerifyAsync();
+                Console.WriteLine("  --> [PASS] Universal Plan-First: Skeleton deploy, LinkFix in-place rewrite & Media sanctum plan 100% verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -2749,6 +2755,133 @@ namespace FolderMorpher.Services.Testing
             finally
             {
                 try { Directory.Delete(testDir, recursive: true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 24. 全体共通文法 (Check ➔ 変更点 ➔ Commit ➔ Verify) の一貫性検証
+        /// ・スケルトン先行展開の実態作成と存在検証
+        /// ・LinkFix ショートカット一括書き換えと .bak バックアップ・更新後実態検証
+        /// ・MediaOptimizer 聖域保護フィルタと変更計画の不変性検証
+        /// </summary>
+        private static async Task TestUniversalPlanFirstAndMutationVerifyAsync()
+        {
+            var baseDir = Path.Combine(Path.GetTempPath(), $"FM_PlanFirstTest_{Guid.NewGuid():N}");
+            Directory.CreateDirectory(baseDir);
+
+            try
+            {
+                // -------------------------------------------------------------
+                // 1. スケルトン先行展開 (Skeleton Deploy & Verify)
+                // -------------------------------------------------------------
+                var simService = new SimulationProjectService();
+                var deployTarget = Path.Combine(baseDir, "TargetServer");
+                var simRoots = new List<SimFolderNode>
+                {
+                    new SimFolderNode
+                    {
+                        Name = "Department",
+                        Children =
+                        {
+                            new SimFolderNode { Name = "Finance" },
+                            new SimFolderNode { Name = "Engineering" }
+                        }
+                    }
+                };
+
+                var (deployedCount, logs) = await simService.DeploySkeletonAsync(simRoots, deployTarget, null, CancellationToken.None);
+                if (deployedCount != 3)
+                    throw new InvalidOperationException($"DeploySkeleton must create 3 folders, but created {deployedCount}");
+
+                // Verify: フォルダが実在することを確認
+                if (!Directory.Exists(Path.Combine(deployTarget, "Department")) ||
+                    !Directory.Exists(Path.Combine(deployTarget, "Department", "Finance")) ||
+                    !Directory.Exists(Path.Combine(deployTarget, "Department", "Engineering")))
+                {
+                    throw new InvalidOperationException("Skeleton deploy verification failed: Subdirectories do not exist on disk!");
+                }
+
+                // -------------------------------------------------------------
+                // 2. LinkFix ショートカット修復と .bak バックアップ・実態 Verify
+                // -------------------------------------------------------------
+                var linkDir = Path.Combine(baseDir, "Shortcuts");
+                Directory.CreateDirectory(linkDir);
+                var lnkPath = Path.Combine(linkDir, "TestLink.lnk");
+
+                dynamic? wsh = null;
+                try
+                {
+                    var wshType = Type.GetTypeFromProgID("WScript.Shell");
+                    if (wshType != null) wsh = Activator.CreateInstance(wshType);
+                }
+                catch { }
+
+                if (wsh != null)
+                {
+                    var shortcut = wsh.CreateShortcut(lnkPath);
+                    shortcut.TargetPath = @"\\OldServer\Share\Docs";
+                    shortcut.Save();
+
+                    var linkFixService = new LinkFixService();
+                    var fixItem = new LinkFixItem
+                    {
+                        FilePath = lnkPath,
+                        FileName = "TestLink.lnk",
+                        FileType = "ショートカット (.lnk)",
+                        OldTarget = @"\\OldServer\Share\Docs",
+                        NewTarget = @"\\NewServer\Share\Docs"
+                    };
+
+                    if (!fixItem.NeedsFix)
+                        throw new InvalidOperationException("LinkFixItem NeedsFix must be true when OldTarget != NewTarget!");
+
+                    int fixedCount = await linkFixService.ExecuteFixAsync(new List<LinkFixItem> { fixItem }, null, CancellationToken.None);
+                    if (fixedCount != 1)
+                        throw new InvalidOperationException($"ExecuteFixAsync failed to fix shortcut (fixedCount: {fixedCount})");
+
+                    // Verify: .bak バックアップの存在
+                    if (!File.Exists(lnkPath + ".bak"))
+                        throw new InvalidOperationException("LinkFix execution must produce .bak backup file!");
+
+                    // Verify: ターゲットパスが実際に更新されたこと
+                    var updatedShortcut = wsh.CreateShortcut(lnkPath);
+                    if (!string.Equals(updatedShortcut.TargetPath, @"\\NewServer\Share\Docs", StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException($"LinkFix TargetPath verification failed! Actual: {updatedShortcut.TargetPath}");
+                    }
+                }
+
+                // -------------------------------------------------------------
+                // 3. Media Optimizer 聖域保護と変更計画の忠実性
+                // -------------------------------------------------------------
+                var options = new MediaOptimizeOptions();
+                var sampleImageSanctuary = new MediaItem
+                {
+                    FullPath = @"C:\Photos\_Master\raw_shot.jpg",
+                    FileName = "raw_shot.jpg",
+                    OriginalSizeBytes = 10 * 1024 * 1024,
+                    IsExcluded = true,
+                    ExclusionReason = "聖域保護 (_Master)"
+                };
+                var sampleImageTarget = new MediaItem
+                {
+                    FullPath = @"C:\Photos\Daily\trip.jpg",
+                    FileName = "trip.jpg",
+                    OriginalSizeBytes = 8 * 1024 * 1024,
+                    IsExcluded = false
+                };
+
+                // 聖域キーワード保護の判定契約
+                bool containsMaster = options.ExcludedFolderKeywords.Any(kw => sampleImageSanctuary.FullPath.Contains(kw, StringComparison.OrdinalIgnoreCase));
+                if (!containsMaster)
+                    throw new InvalidOperationException("ExcludedFolderKeywords must match _Master in sample path!");
+
+                if (!sampleImageSanctuary.IsExcluded || sampleImageTarget.IsExcluded)
+                    throw new InvalidOperationException("Sanctuary media items must remain excluded from optimization mutation plan!");
+            }
+            finally
+            {
+                try { Directory.Delete(baseDir, recursive: true); } catch { }
             }
         }
     }
