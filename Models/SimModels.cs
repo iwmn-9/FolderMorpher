@@ -452,6 +452,26 @@ namespace AstraSize.Models
             return (r1 & ~FileSystemRights.Synchronize) == (r2 & ~FileSystemRights.Synchronize);
         }
 
+        /// <summary>
+        /// ACEの適用先・権限主体のキー（アカウント、種別、継承・伝播フラグ）が一致するか判定
+        /// </summary>
+        public bool MatchesKey(SimAclEntry other)
+        {
+            if (other == null) return false;
+            return IsSameAccount(this.AccountName, other.AccountName) &&
+                   this.AccessType == other.AccessType &&
+                   this.InheritanceFlags == other.InheritanceFlags &&
+                   this.PropagationFlags == other.PropagationFlags;
+        }
+
+        /// <summary>
+        /// 権限ビットまで含めて完全に同一のACEルールか判定（Synchronizeビットは正規化）
+        /// </summary>
+        public bool MatchesExact(SimAclEntry other)
+        {
+            return MatchesKey(other) && IsSameRights(this.Rights, other.Rights);
+        }
+
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? prop = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(prop));

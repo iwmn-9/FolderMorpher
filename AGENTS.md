@@ -1,4 +1,4 @@
-# FolderMorpher — AI Agent & Developer Architecture Guide
+﻿# FolderMorpher — AI Agent & Developer Architecture Guide
 
 > **【AIメンテナ・自律継続規約】**  
 > 本プロジェクトは「自律完遂（自ら調査・修正・検証まで行い、完成状態で返す）」を基本方針とする。  
@@ -274,6 +274,19 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
       - パス長チェックの閾値を 260文字 から 240文字以上（危険域 / 移行先長大化リスク）に変更。
       - 日常記号（`# % & { } ~`）の過剰警告を抑止し、末尾スペース、末尾ドット、制御文字、NTFS不正文字を真の地雷として検出。
 
+35. **Live ACL 安全保障（継承保持・マルチセット差分・継承ReadOnly化）＆ LiveAclStudio コンポーネント分離 (v1.6.1)**:
+    - **Live ACL 安全ロジック改修 (Red Team レビュー対応)**:
+      - **継承切断時のロックアウト防止**: 継承OFF時（inherit: false）は SetAccessRuleProtection(isProtected: true, preserveInheritance: true) を使用し、親からの既存ACEを明示的ACEに安全変換してから差分適用。管理者の意図せぬアクセス遮断・完全ロックアウトを根絶。
+      - **マルチセット・ペアリング差分適用**: 同一アカウントに複数ACEが存在する場合（例: Allow Read と Allow Write）、単一 FirstOrDefault での突き合わせによるACE消失・誤削除を防ぎ、マッチ済みを追跡するマルチセット完全突き合わせアルゴリズムを導入。
+      - **継承ACEの保護・ReadOnly化**: 継承ACE（IsInherited == true）は直接編集・削除不可とし、UI上に「🔒 継承」バッジを表示。親フォルダで管理すべきACEの実環境誤破壊を防止。
+      - **適用後のOS実態再読込**: 差分適用後はメモリキャッシュを即時反映するだけでなく、OSのNTFS実態（GetAccessControl）から完全再読込を行い、Windowsカーネル付与フラグとの完全一致を保証。
+      - **Audit原本保護 & 一括選択バッチ化**: 重複ファイルの原本候補（IsOriginalCandidate == true）は一括選択時にも安全に保護され、誤退避・誤削除を100%防止。
+    - **LiveAclStudio への独立コンポーネント分離 (MainWindowの大規模整線)**:
+      - フォルダ別権限エディタ、中央マルチパネル、ADパレット、D&D配線、Effective Access 逆引き監査、および OU階層ピッカーモーダルを独立した Views/LiveAclStudio.xaml / LiveAclStudio.xaml.cs (UserControl) へ完全分離。
+      - MainWindow.xaml (-694行) および MainWindow.xaml.cs (-1400行) から約2100行の配線を削ぎ落とし、責務を明確化。
+      - Windows 14ビット詳細権限モーダル (SecModalOverlay) は MainWindow に共通配置のまま残し、LiveAclStudio からは EditSecurityRequested イベント（コールバック付き）で連携することで、移行スタジオ（Tab 2）との二重化を完全防止。
+      - 全自動回帰テスト 21/21 100% PASS を維持。
+
 ---
 
 ## 4. ビルド・実行・検証コマンド
@@ -290,7 +303,7 @@ Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe"
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 20/20 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 21/21 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

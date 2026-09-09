@@ -117,6 +117,29 @@ namespace AstraSize.Models
                 if (_inheritAcl != value)
                 {
                     _inheritAcl = value;
+                    if (!_inheritAcl)
+                    {
+                        // High 1: 継承OFF時、既存の継承ACEを明示ACEへ自動変換・昇格（ロックアウト防止・編集可能化）
+                        foreach (var entry in CurrentAclEntries)
+                        {
+                            if (entry.IsInherited)
+                            {
+                                entry.IsInherited = false;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 継承ON復元時: Originalで継承だったルールはIsInheritedを復元
+                        foreach (var cur in CurrentAclEntries)
+                        {
+                            var orig = OriginalAclEntries.FirstOrDefault(o => o.MatchesKey(cur));
+                            if (orig != null && orig.IsInherited)
+                            {
+                                cur.IsInherited = true;
+                            }
+                        }
+                    }
                     OnPropertyChanged();
                     UpdateChangeStatus();
                 }
@@ -168,25 +191,23 @@ namespace AstraSize.Models
                 return;
             }
 
-            // ルール単位の等価性チェック
-            for (int i = 0; i < CurrentAclEntries.Count; i++)
+            // High 2: マルチセット（多重集合）ペアリングによる完全一致チェック
+            var remainingOrig = new List<SimAclEntry>(OriginalAclEntries);
+            foreach (var cur in CurrentAclEntries)
             {
-                var cur = CurrentAclEntries[i];
-                var orig = OriginalAclEntries.Find(o => 
-                    SimAclEntry.IsSameAccount(o.AccountName, cur.AccountName) &&
-                    o.AccessType == cur.AccessType);
-
-                if (orig == null ||
-                    !SimAclEntry.IsSameRights(orig.Rights, cur.Rights) ||
-                    orig.InheritanceFlags != cur.InheritanceFlags ||
-                    orig.PropagationFlags != cur.PropagationFlags)
+                var matchedIndex = remainingOrig.FindIndex(o => o.MatchesExact(cur) && o.IsInherited == cur.IsInherited);
+                if (matchedIndex >= 0)
+                {
+                    remainingOrig.RemoveAt(matchedIndex);
+                }
+                else
                 {
                     HasChanges = true;
                     return;
                 }
             }
 
-            HasChanges = false;
+            HasChanges = (remainingOrig.Count > 0);
         }
 
         public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;

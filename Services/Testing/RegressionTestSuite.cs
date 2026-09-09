@@ -31,7 +31,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 20;
+            int totalTests = 21;
 
             try
             {
@@ -153,6 +153,12 @@ namespace FolderMorpher.Services.Testing
                 Console.WriteLine("\n[TEST 20/20] Live ACL Delta Apply (No-Touch Rule), Path Danger Zone (240+) & Real-Time Reduction Calculation...");
                 await TestLiveAclDeltaApplyAndAuditHygieneThresholdsAsync();
                 Console.WriteLine("  --> [PASS] Live ACL Delta Apply (non-mutated ACEs untouched), Path Length 240+ risk & dynamic reduction calculation verified.");
+                passCount++;
+
+                // Test 21
+                Console.WriteLine("\n[TEST 21/21] Live ACL: Multiset Multiple ACEs Matching, Inheritance Disable Explicit Conversion & Audit Sanctum...");
+                await TestAclMultisetDeltaAndInheritancePreservationAsync();
+                Console.WriteLine("  --> [PASS] Live ACL: Multiset pairing, inheritance disable explicit conversion & Audit sanctum 100% verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -2328,6 +2334,178 @@ namespace FolderMorpher.Services.Testing
                     throw new InvalidOperationException($"Expected 25MB reduction, got {totalReduced / (1024 * 1024)}MB");
                 if (calculatedItems.Count != 3)
                     throw new InvalidOperationException($"Expected 3 reduced items, got {calculatedItems.Count}");
+            }
+            finally
+            {
+                try { Directory.Delete(testDir, recursive: true); } catch { }
+            }
+        }
+
+        private static async Task TestAclMultisetDeltaAndInheritancePreservationAsync()
+        {
+            var aclService = new AclService();
+            string testDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_Regression_Test21_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(testDir);
+
+            try
+            {
+                // 1. High 2: 同一ユーザー複数ACEのマルチセット差分適用の検証
+                // ACE 1: Users, ReadAndExecute, ContainerInherit | ObjectInherit, None (このフォルダー、サブフォルダーおよびファイル)
+                // ACE 2: Users, Modify, ContainerInherit, InheritOnly (サブフォルダーのみ)
+                var initialAcl = new List<SimAclEntry>
+                {
+                    new SimAclEntry
+                    {
+                        AccountName = Environment.UserName,
+                        DisplayName = Environment.UserName,
+                        Rights = FileSystemRights.FullControl,
+                        AccessType = AccessControlType.Allow,
+                        InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                        PropagationFlags = PropagationFlags.None
+                    },
+                    new SimAclEntry
+                    {
+                        AccountName = "Users",
+                        DisplayName = "Users",
+                        Rights = FileSystemRights.ReadAndExecute,
+                        AccessType = AccessControlType.Allow,
+                        InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                        PropagationFlags = PropagationFlags.None
+                    },
+                    new SimAclEntry
+                    {
+                        AccountName = "Users",
+                        DisplayName = "Users",
+                        Rights = FileSystemRights.Modify,
+                        AccessType = AccessControlType.Allow,
+                        InheritanceFlags = InheritanceFlags.ContainerInherit,
+                        PropagationFlags = PropagationFlags.InheritOnly
+                    }
+                };
+
+                aclService.ApplySimAclEntries(testDir, initialAcl, inherit: false);
+                var (currentEntries, isInherited, _) = aclService.GetSimAclForFolder(testDir);
+
+                if (currentEntries.Count != 3)
+                    throw new InvalidOperationException($"Expected 3 initial ACEs (User + 2 Users rules), got {currentEntries.Count}");
+
+                // ACE 2 の権限のみを Modify -> FullControl に変更
+                var updatedAcl = new List<SimAclEntry>
+                {
+                    new SimAclEntry
+                    {
+                        AccountName = Environment.UserName,
+                        DisplayName = Environment.UserName,
+                        Rights = FileSystemRights.FullControl,
+                        AccessType = AccessControlType.Allow,
+                        InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                        PropagationFlags = PropagationFlags.None
+                    },
+                    new SimAclEntry
+                    {
+                        AccountName = "Users",
+                        DisplayName = "Users",
+                        Rights = FileSystemRights.ReadAndExecute,
+                        AccessType = AccessControlType.Allow,
+                        InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                        PropagationFlags = PropagationFlags.None
+                    },
+                    new SimAclEntry
+                    {
+                        AccountName = "Users",
+                        DisplayName = "Users",
+                        Rights = FileSystemRights.FullControl,
+                        AccessType = AccessControlType.Allow,
+                        InheritanceFlags = InheritanceFlags.ContainerInherit,
+                        PropagationFlags = PropagationFlags.InheritOnly
+                    }
+                };
+
+                // Delta Apply 実行
+                var deltaResult = await aclService.ApplyLiveAclDeltaWithRollbackAsync(
+                    testDir,
+                    currentEntries,
+                    updatedAcl,
+                    inherit: false,
+                    originalInherit: isInherited);
+
+                // 差分は ACE 2 の変更 (modified=1) のみであるべき
+                if (deltaResult.addedCount != 0 || deltaResult.removedCount != 0 || deltaResult.modifiedCount != 1)
+                    throw new InvalidOperationException($"Expected exactly 1 modified rule for multiset ACE, got added={deltaResult.addedCount}, removed={deltaResult.removedCount}, modified={deltaResult.modifiedCount}");
+
+                var (afterEntries, _, _) = aclService.GetSimAclForFolder(testDir);
+                var ace1 = afterEntries.FirstOrDefault(e => e.PropagationFlags == PropagationFlags.None);
+                var ace2 = afterEntries.FirstOrDefault(e => e.PropagationFlags == PropagationFlags.InheritOnly);
+
+                if (ace1 == null || !SimAclEntry.IsSameRights(ace1.Rights, FileSystemRights.ReadAndExecute))
+                    throw new InvalidOperationException("Untouched multiset ACE 1 was modified or lost.");
+                if (ace2 == null || !SimAclEntry.IsSameRights(ace2.Rights, FileSystemRights.FullControl))
+                    throw new InvalidOperationException("Modified multiset ACE 2 did not receive FullControl.");
+
+                // 2. High 1: 継承無効化（OFF）時の明示ACE自動保持（ロックアウト防止）の検証
+                // 親からの継承が有効なサブフォルダを作成
+                string subDir = Path.Combine(testDir, "SubProtected");
+                Directory.CreateDirectory(subDir);
+
+                var (subInitialEntries, subIsInherited, _) = aclService.GetSimAclForFolder(subDir);
+                if (!subIsInherited)
+                    throw new InvalidOperationException("Subfolder should initially have inheritance enabled.");
+
+                int inheritedCountBefore = subInitialEntries.Count;
+                if (inheritedCountBefore == 0)
+                    throw new InvalidOperationException("Subfolder should inherit at least 1 ACE from parent.");
+
+                // 継承を無効化 (inherit: false, originalInherit: true)
+                var inheritOffResult = await aclService.ApplyLiveAclDeltaWithRollbackAsync(
+                    subDir,
+                    subInitialEntries,
+                    subInitialEntries.Select(e => { var c = e.Clone(); c.IsInherited = false; return c; }).ToList(),
+                    inherit: false,
+                    originalInherit: true);
+
+                var (subAfterEntries, subAfterInherited, _) = aclService.GetSimAclForFolder(subDir);
+                if (subAfterInherited)
+                    throw new InvalidOperationException("Subfolder inheritance should now be disabled (protected).");
+                if (subAfterEntries.Count != inheritedCountBefore)
+                    throw new InvalidOperationException($"All inherited ACEs must be preserved as explicit rules! Expected {inheritedCountBefore}, got {subAfterEntries.Count}");
+                if (subAfterEntries.Any(e => e.IsInherited))
+                    throw new InvalidOperationException("All preserved ACEs must now be marked as explicit (IsInherited == false).");
+
+                // 3. Medium 1: Auditリアルタイム集計での原本聖域すり抜け防止の検証
+                // 同一 FullPath のファイルが休眠（Dormant）と重複原本（Duplicate）として登録されている場合
+                string sharedPath = @"C:\Sanctum\CompanyMaster.xlsx";
+                var mockAuditItems = new List<AuditItem>
+                {
+                    // 行1: 休眠ファイルとして検出 (IsOriginalCandidate = false, チェックON)
+                    new AuditItem
+                    {
+                        FullPath = sharedPath,
+                        FileName = "CompanyMaster.xlsx",
+                        DirectoryPath = @"C:\Sanctum",
+                        Size = 50 * 1024 * 1024, // 50MB
+                        IssueType = AuditIssueType.Dormant,
+                        IsOriginalCandidate = false,
+                        IsChecked = true
+                    },
+                    // 行2: 重複グループの原本候補として検出 (IsOriginalCandidate = true, チェックOFF)
+                    new AuditItem
+                    {
+                        FullPath = sharedPath,
+                        FileName = "CompanyMaster.xlsx",
+                        DirectoryPath = @"C:\Sanctum",
+                        Size = 50 * 1024 * 1024,
+                        IssueType = AuditIssueType.Duplicate,
+                        IsOriginalCandidate = true,
+                        IsChecked = false
+                    }
+                };
+
+                // AuditCleanupService.BuildPlan を通した正本集計
+                var plans = AuditCleanupService.BuildPlan(mockAuditItems);
+                var validPlans = plans.Where(p => !p.IsOriginalCandidate).ToList();
+
+                if (validPlans.Count != 0)
+                    throw new InvalidOperationException($"Original candidate must be strictly protected across all audit types! Expected 0 valid deletion plans, got {validPlans.Count}");
             }
             finally
             {

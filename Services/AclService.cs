@@ -303,50 +303,50 @@ namespace AstraSize.Services
             var dirInfo = new DirectoryInfo(path);
             if (!dirInfo.Exists) throw new DirectoryNotFoundException($"指定フォルダが存在しません: {path}");
 
-            var origList = originalEntries.Where(e => !e.IsInherited).ToList();
+            bool inheritChanged = (inherit != originalInherit);
+
+            // High 1: 継承OFFへの切替時は、旧継承ACEも明示ACEに変換されるため全ルールを突合対象とする
+            var origList = (inheritChanged && !inherit)
+                ? originalEntries.Select(e => { var clone = e.Clone(); clone.IsInherited = false; return clone; }).ToList()
+                : originalEntries.Where(e => !e.IsInherited).ToList();
             var curList = currentEntries.Where(e => !e.IsInherited).ToList();
 
-            // 1. 削除対象の特定 (元にあって現在ないもの)
             var toRemove = new List<SimAclEntry>();
-            foreach (var orig in origList)
-            {
-                var matchingCur = curList.FirstOrDefault(c =>
-                    SimAclEntry.IsSameAccount(c.AccountName, orig.AccountName) &&
-                    c.AccessType == orig.AccessType);
-
-                if (matchingCur == null)
-                {
-                    toRemove.Add(orig);
-                }
-            }
-
-            // 2. 追加対象の特定 (現在あって元にないもの)
-            var toAdd = new List<SimAclEntry>();
             var toModify = new List<(SimAclEntry oldEntry, SimAclEntry newEntry)>();
+            var toAdd = new List<SimAclEntry>();
 
-            foreach (var cur in curList)
+            var remainingOrig = new List<SimAclEntry>(origList);
+            var remainingCur = new List<SimAclEntry>(curList);
+
+            // High 2: 1. 完全一致（MatchesExact）ペアの除外（ノータッチ原則）
+            for (int i = remainingCur.Count - 1; i >= 0; i--)
             {
-                var matchingOrig = origList.FirstOrDefault(o =>
-                    SimAclEntry.IsSameAccount(o.AccountName, cur.AccountName) &&
-                    o.AccessType == cur.AccessType);
-
-                if (matchingOrig == null)
+                var cur = remainingCur[i];
+                var matchedOrig = remainingOrig.FirstOrDefault(o => o.MatchesExact(cur));
+                if (matchedOrig != null)
                 {
-                    toAdd.Add(cur);
-                }
-                else
-                {
-                    // 権限ビットまたは継承・伝播フラグに変更があるか
-                    if (!SimAclEntry.IsSameRights(matchingOrig.Rights, cur.Rights) ||
-                        matchingOrig.InheritanceFlags != cur.InheritanceFlags ||
-                        matchingOrig.PropagationFlags != cur.PropagationFlags)
-                    {
-                        toModify.Add((matchingOrig, cur));
-                    }
+                    remainingCur.RemoveAt(i);
+                    remainingOrig.Remove(matchedOrig);
                 }
             }
 
-            bool inheritChanged = (inherit != originalInherit);
+            // High 2: 2. キー一致（MatchesKey）ペアの抽出（権限変更 -> toModify）
+            for (int i = remainingCur.Count - 1; i >= 0; i--)
+            {
+                var cur = remainingCur[i];
+                var matchedOrig = remainingOrig.FirstOrDefault(o => o.MatchesKey(cur));
+                if (matchedOrig != null)
+                {
+                    toModify.Add((matchedOrig, cur));
+                    remainingCur.RemoveAt(i);
+                    remainingOrig.Remove(matchedOrig);
+                }
+            }
+
+            // High 2: 3. 残余は追加・削除
+            toRemove.AddRange(remainingOrig);
+            toAdd.AddRange(remainingCur);
+
             bool hasModified = inheritChanged || toRemove.Count > 0 || toAdd.Count > 0 || toModify.Count > 0;
 
             if (!hasModified)
@@ -362,8 +362,9 @@ namespace AstraSize.Services
 
             if (inheritChanged)
             {
-                // 継承変更: preserveInheritanceRules=false (不要なWell-Known重複防止)
-                sec.SetAccessRuleProtection(!inherit, false);
+                // High 1: 継承無効化時は既存の継承ACEを明示ACEとして確実に保持する (preserveInheritance: true)
+                // ロックアウト事故を100%防止
+                sec.SetAccessRuleProtection(!inherit, preserveInheritance: true);
             }
 
             // 変更ACEの旧ルール削除
