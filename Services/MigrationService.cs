@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -55,7 +55,7 @@ namespace AstraSize.Services
                     {
                         CurrentItem = dst.FullName,
                         FoldersCreated = count,
-                        StatusMessage = $"ガワ作成 & 権限流し込み中: {dst.Name}"
+                        StatusMessage = $"スケルトン展開 & 権限流し込み中: {dst.Name}"
                     });
 
                     DirectoryInfo[] subDirs;

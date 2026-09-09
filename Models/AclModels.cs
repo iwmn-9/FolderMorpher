@@ -232,4 +232,53 @@ namespace AstraSize.Models
             ExpectedSddl = expectedSddl;
         }
     }
+
+    public enum LiveAclDiffType
+    {
+        Added,
+        Removed,
+        Modified,
+        Untouched
+    }
+
+    /// <summary>
+    /// Live ACL Dry-Run 差分プレビュー用アイテム
+    /// </summary>
+    public class LiveAclDiffItem
+    {
+        public LiveAclDiffType DiffType { get; set; } = LiveAclDiffType.Added;
+
+        public string DiffTypeDisplay => DiffType switch
+        {
+            LiveAclDiffType.Added => "＋ 追加",
+            LiveAclDiffType.Removed => "ー 削除",
+            LiveAclDiffType.Modified => "〜 変更",
+            LiveAclDiffType.Untouched => "＝ 維持",
+            _ => "変更"
+        };
+
+        public string BadgeBackground => DiffType switch
+        {
+            LiveAclDiffType.Added => "#DCFCE7",
+            LiveAclDiffType.Removed => "#FEE2E2",
+            LiveAclDiffType.Modified => "#DBEAFE",
+            _ => "#F1F5F9"
+        };
+
+        public string BadgeForeground => DiffType switch
+        {
+            LiveAclDiffType.Added => "#15803D",
+            LiveAclDiffType.Removed => "#B91C1C",
+            LiveAclDiffType.Modified => "#1D4ED8",
+            _ => "#64748B"
+        };
+
+        public string AccountName { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string IconGlyph { get; set; } = "👤";
+        public string BeforeRights { get; set; } = "―";
+        public string AfterRights { get; set; } = "―";
+        public string AppliesTo { get; set; } = "このフォルダー、サブフォルダーおよびファイル";
+        public bool IsInherited { get; set; } = false;
+    }
 }

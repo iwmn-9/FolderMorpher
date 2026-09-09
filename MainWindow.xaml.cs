@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -214,7 +214,7 @@ namespace AstraSize
             else if (NavTabAudit.IsChecked == true)
             {
                 AuditTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: ファイルサーバー健全化 ＆ 断捨離 (GDMS代替・衛生監査)" : "Mode: Audit & Hygiene";
+                StatusTextBlock.Text = isJa ? "モード: ファイルサーバー健全化 ＆ 断捨離 (衛生監査・容量削減)" : "Mode: Audit & Hygiene";
                 if (string.IsNullOrWhiteSpace(AuditPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     AuditPathTextBox.Text = PathTextBox.Text;
@@ -2255,8 +2255,8 @@ namespace AstraSize
                 return;
             }
 
-            if (MessageBox.Show($"以下の場所に仮想モックのガワ（ディレクトリ階層と権限）を作成します:\n\n{targetRoot}\n\n続行しますか？",
-                "ガワ先行作成の確認", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (MessageBox.Show($"以下の場所に仮想モックのスケルトン（空ディレクトリ階層と設計済みNTFSアクセス権）を作成します:\n\n{targetRoot}\n\n続行しますか？",
+                "スケルトン先行展開の確認", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
             {
                 return;
             }
@@ -2273,12 +2273,12 @@ namespace AstraSize
             {
                 using var cts = new CancellationTokenSource();
                 var (count, logs) = await _simService.DeploySkeletonAsync(_simRootFolders, targetRoot, progress, cts.Token);
-                ShowToast($"ガワ先行作成完了: {count} 個のフォルダを作成しました");
-                MessageBox.Show($"ガワ先行作成が完了しました。\n作成フォルダ数: {count}\n\n対象: {targetRoot}", "完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowToast($"スケルトン作成完了: {count} 個のフォルダを作成しました");
+                MessageBox.Show($"スケルトン作成が完了しました。\n作成フォルダ数: {count}\n\n対象: {targetRoot}", "完了", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"ガワ作成失敗: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"スケルトン作成失敗: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -3407,7 +3407,7 @@ namespace AstraSize
             SimSaveProjectButton.Content = isJa ? "💾 保存" : "💾 Save";
             SimLoadProjectButton.Content = isJa ? "📂 読込" : "📂 Load";
             SimDiffReviewButton.Content = isJa ? "⚖️ 差分 (Diff)" : "⚖️ Review Diffs";
-            SimDeploySkeletonButton.Content = isJa ? "🚀 ガワ先行作成" : "🚀 Deploy Skeleton";
+            SimDeploySkeletonButton.Content = isJa ? "🚀 スケルトン作成" : "🚀 Deploy Skeleton";
             SimExportScriptsButton.Content = isJa ? "⚙️ 移行スクリプト" : "⚙️ Export Scripts";
             SimExportExcelButton.Content = isJa ? "📊 Excel設計書" : "📊 Export Excel";
             SimInheritCheckBox.Content = isJa ? "親からの権限継承を含める" : "Inherit from parent";
@@ -3475,7 +3475,7 @@ namespace AstraSize
             {
                 AuditKpiPathLimits.Text = isJa ? "0 件" : "0 Items";
             }
-            AuditHeaderTitle.Text = isJa ? "🧹 ファイルサーバー健全化 ＆ 断捨離（GDMS代替・衛生監査）" : "🧹 File Server Hygiene & Cleanup (GDMS Alternative)";
+            AuditHeaderTitle.Text = isJa ? "🧹 ファイルサーバー健全化 ＆ 断捨離（衛生監査・容量削減）" : "🧹 File Server Hygiene & Cleanup";
             AuditHeaderDesc.Text = isJa ? "重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長260文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳や退避スクリプトを生成します。" : "Batch detects duplicates (SHA256), dormant files (3+ years), paths > 260 chars, and migration-invalid characters. Generates safe audit ledgers and archive batches.";
             AuditTargetFolderLabel.Text = isJa ? "監査対象ディレクトリ (UNC / ローカル)" : "Target Audit Directory (UNC / Local)";
             AuditKpiTotalFilesTitle.Text = isJa ? "総走査ファイル数" : "Total Files Scanned";

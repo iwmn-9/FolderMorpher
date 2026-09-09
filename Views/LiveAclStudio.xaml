@@ -218,34 +218,50 @@
                                                                 <ItemsControl.ItemTemplate>
                                                                     <DataTemplate DataType="{x:Type models:SimAclEntry}">
                                                                         <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6"
-                                                                                Padding="10,8" Margin="0,0,0,6" Cursor="Hand"
+                                                                                Padding="10,7" Margin="0,0,0,6" Cursor="Hand"
                                                                                 MouseDown="LiveAclCard_MouseDown"
                                                                                 PreviewMouseMove="LiveAclCard_PreviewMouseMove" Tag="{Binding}">
                                                                             <Grid>
-                                                                                <Grid.ColumnDefinitions>
-                                                                                    <ColumnDefinition Width="*"/>
-                                                                                    <ColumnDefinition Width="Auto"/>
-                                                                                    <ColumnDefinition Width="Auto"/>
-                                                                                    <ColumnDefinition Width="Auto"/>
-                                                                                </Grid.ColumnDefinitions>
-                                                                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                                                                    <TextBlock Text="{Binding IconGlyph}" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                                                                    <StackPanel VerticalAlignment="Center">
-                                                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="11.5" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
-                                                                                        <TextBlock Text="{Binding Identity}" FontSize="10" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
+                                                                                <Grid.RowDefinitions>
+                                                                                    <RowDefinition Height="Auto"/>
+                                                                                    <RowDefinition Height="Auto"/>
+                                                                                </Grid.RowDefinitions>
+
+                                                                                <!-- Row 0: アイコン ＋ 表示名（横幅100%活用で長い名前も切れない） -->
+                                                                                <Grid Grid.Row="0" Margin="0,0,0,4">
+                                                                                    <Grid.ColumnDefinitions>
+                                                                                        <ColumnDefinition Width="Auto"/>
+                                                                                        <ColumnDefinition Width="*"/>
+                                                                                    </Grid.ColumnDefinitions>
+                                                                                    <TextBlock Grid.Column="0" Text="{Binding IconGlyph}" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                                                    <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontWeight="Bold" FontSize="11.5" Foreground="#0F172A"
+                                                                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}"/>
+                                                                                </Grid>
+
+                                                                                <!-- Row 1: アカウントID ＋ 各種バッジ群（継承・権限・適用先） -->
+                                                                                <Grid Grid.Row="1">
+                                                                                    <Grid.ColumnDefinitions>
+                                                                                        <ColumnDefinition Width="*"/>
+                                                                                        <ColumnDefinition Width="Auto"/>
+                                                                                    </Grid.ColumnDefinitions>
+                                                                                    <TextBlock Grid.Column="0" Text="{Binding Identity}" FontSize="10" Foreground="#64748B"
+                                                                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Identity}"/>
+                                                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                                        <!-- 🔒 継承バッジ -->
+                                                                                        <Border Background="#F1F5F9" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="4" Padding="5,1.5" Margin="3,0,0,0"
+                                                                                                Visibility="{Binding IsInherited, Converter={StaticResource BoolToVis}}" ToolTip="親フォルダーから継承されているアクセス許可（直接編集不可）">
+                                                                                            <TextBlock Text="🔒 継承" FontSize="9.5" FontWeight="SemiBold" Foreground="#64748B"/>
+                                                                                        </Border>
+                                                                                        <!-- 権限バッジ -->
+                                                                                        <Border Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="4" Padding="5,1.5" Margin="3,0,0,0">
+                                                                                            <TextBlock Text="{Binding FormattedRights}" FontSize="10" FontWeight="SemiBold" Foreground="#1D4ED8"/>
+                                                                                        </Border>
+                                                                                        <!-- 適用先バッジ -->
+                                                                                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="5,1.5" Margin="3,0,0,0">
+                                                                                            <TextBlock Text="{Binding AppliesTo}" FontSize="9.5" Foreground="#475569"/>
+                                                                                        </Border>
                                                                                     </StackPanel>
-                                                                                </StackPanel>
-                                                                                <!-- Col 1: 🔒 継承バッジ -->
-                                                                                <Border Grid.Column="1" Background="#F1F5F9" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="4" Padding="5,2" Margin="4,0" VerticalAlignment="Center"
-                                                                                        Visibility="{Binding IsInherited, Converter={StaticResource BoolToVis}}" ToolTip="親フォルダーから継承されているアクセス許可（直接編集不可）">
-                                                                                    <TextBlock Text="🔒 継承" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                                                                                </Border>
-                                                                                <Border Grid.Column="2" Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="4,0" VerticalAlignment="Center">
-                                                                                    <TextBlock Text="{Binding FormattedRights}" FontSize="10.5" FontWeight="SemiBold" Foreground="#1D4ED8"/>
-                                                                                </Border>
-                                                                                <Border Grid.Column="3" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-                                                                                    <TextBlock Text="{Binding AppliesTo}" FontSize="10" Foreground="#475569"/>
-                                                                                </Border>
+                                                                                </Grid>
                                                                             </Grid>
                                                                         </Border>
                                                                     </DataTemplate>
@@ -298,19 +314,34 @@
                                          PreviewMouseMove="LiveAclPrincipalsListBox_PreviewMouseMove">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:AdPrincipalItem}">
-                                            <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,2" Cursor="Hand">
+                                            <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="8,5" Margin="0,2" Cursor="Hand">
                                                 <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0">
-                                                        <TextBlock Text="{Binding IconGlyph}" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                                    </StackPanel>
-                                                    <Border Grid.Column="1" Background="{Binding TypeBadgeBg}" CornerRadius="3" Padding="4,1" VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding TypeBadgeText}" FontSize="9.5" Foreground="{Binding TypeBadgeFg}"/>
-                                                    </Border>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                    </Grid.RowDefinitions>
+                                                    <!-- Row 0: アイコン ＋ 表示名 (横幅いっぱい) -->
+                                                    <Grid Grid.Row="0" Margin="0,0,0,2">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding IconGlyph}" FontSize="12.5" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11.5" Foreground="#1E293B" 
+                                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}"/>
+                                                    </Grid>
+                                                    <!-- Row 1: アカウント名 (sAMAccountName) ＋ 種別バッジ -->
+                                                    <Grid Grid.Row="1">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding AccountName}" FontSize="10" Foreground="#64748B" 
+                                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding AccountName}" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Background="{Binding TypeBadgeBg}" CornerRadius="3" Padding="4,1" VerticalAlignment="Center" Margin="4,0,0,0">
+                                                            <TextBlock Text="{Binding TypeBadgeText}" FontSize="9.5" Foreground="{Binding TypeBadgeFg}"/>
+                                                        </Border>
+                                                    </Grid>
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>
@@ -701,6 +732,107 @@
                                     Style="{StaticResource FluentButtonSecondary}" Click="PickerCancelButton_Click"/>
                             <Button x:Name="PickerApplyButton" Content="決定" Width="90" Height="32"
                                     Style="{StaticResource FluentButtonPrimary}" Click="PickerApplyButton_Click" IsEnabled="False"/>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ======================================================== -->
+        <!-- MODAL: LIVE ACL DRY-RUN DIFF PREVIEW MODAL               -->
+        <!-- ======================================================== -->
+        <Grid x:Name="LiveAclDiffModalOverlay" Grid.RowSpan="2" Background="#80000000" Visibility="Collapsed">
+            <Border Background="#FFFFFF" Width="920" Height="600" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    CornerRadius="12" BorderBrush="#CBD5E1" BorderThickness="1" Padding="20">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="24" ShadowDepth="6" Direction="270" Color="#000000" Opacity="0.3"/>
+                </Border.Effect>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/> <!-- Header -->
+                        <RowDefinition Height="Auto"/> <!-- Summary Strip -->
+                        <RowDefinition Height="*"/>    <!-- Diff Table -->
+                        <RowDefinition Height="Auto"/> <!-- Footer Actions -->
+                    </Grid.RowDefinitions>
+
+                    <!-- Row 0: Header -->
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="LiveAclDiffTitleText" Text="⚖️ NTFS アクセス権 差分チェック (Dry-Run)" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
+                            <TextBlock x:Name="LiveAclDiffTargetText" Text=" - 対象フォルダー" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="8,0,0,0" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <Button Content="✕" Width="24" Height="24" Background="Transparent" BorderThickness="0"
+                                FontSize="12" Foreground="#64748B" HorizontalAlignment="Right" Click="LiveAclDiffModalClose_Click"/>
+                    </Grid>
+
+                    <!-- Row 1: Summary Stats Strip -->
+                    <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock x:Name="LiveAclDiffSummaryText" Text="📊 変更予定: +0件, -0件, ~0件" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="LiveAclDiffUntouchedText" Text=" (🛡️ 既存ノータッチ: 0件)" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                            </StackPanel>
+                            <Border x:Name="LiveAclConflictBadge" Grid.Column="1" Background="#DCFCE7" BorderBrush="#BBF7D0" BorderThickness="1" CornerRadius="4" Padding="6,2">
+                                <TextBlock x:Name="LiveAclConflictBadgeText" Text="✅ 外部競合なし (安全)" FontSize="10.5" FontWeight="SemiBold" Foreground="#15803D"/>
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- Row 2: Diff Table -->
+                    <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="2" Margin="0,0,0,12">
+                        <DataGrid x:Name="LiveAclDiffDataGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="36"
+                                  SelectionMode="Single">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="種別" Width="85">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="{x:Type models:LiveAclDiffItem}">
+                                            <Border Background="{Binding BadgeBackground}" CornerRadius="4" Padding="6,2" HorizontalAlignment="Center">
+                                                <TextBlock Text="{Binding DiffTypeDisplay}" FontWeight="Bold" FontSize="10" Foreground="{Binding BadgeForeground}"/>
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTemplateColumn Header="アカウント / プリンシパル" Width="260">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="{x:Type models:LiveAclDiffItem}">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0">
+                                                <TextBlock Text="{Binding IconGlyph}" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11.5" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding AccountName}" FontSize="10" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTextColumn Header="変更前の権限 (Before)" Binding="{Binding BeforeRights}" Width="160" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn Header="変更後の権限 (After)" Binding="{Binding AfterRights}" Width="160" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn Header="適用先 (AppliesTo)" Binding="{Binding AppliesTo}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+
+                    <!-- Row 3: Footer Actions -->
+                    <Grid Grid.Row="3">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="🛡️ 適用直前の状態はSDDLバックアップとして自動保存され、いつでもロールバック可能です" FontSize="10.5" Foreground="#64748B"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button x:Name="LiveAclDiffModalCancelButton" Content="キャンセル" Height="32" Width="90" Margin="0,0,8,0"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="LiveAclDiffModalClose_Click"/>
+                            <Button x:Name="LiveAclDiffModalExecuteButton" Content="⚡ 差分を本番適用 (Commit)" Height="32" Padding="14,4"
+                                    Style="{StaticResource FluentButtonPrimary}" Click="LiveAclDiffModalExecute_Click"/>
                         </StackPanel>
                     </Grid>
                 </Grid>

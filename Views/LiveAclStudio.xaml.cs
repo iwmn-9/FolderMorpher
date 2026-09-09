@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using AstraSize.Models;
 using AstraSize.Services;
 using FolderMorpher.Models;
@@ -58,6 +59,10 @@ namespace AstraSize.Views
         private AdOuNode? _pickerSelectedOu;
         private AdPrincipalItem? _pickerSelectedPrincipal;
 
+        // Dry-Run 差分プレビュー状態
+        private LiveAclPanelModel? _pendingDiffPanel;
+        private readonly ObservableCollection<LiveAclDiffItem> _diffItems = new();
+
         public string CurrentPath => LiveAclPathTextBox.Text;
 
         public LiveAclStudio()
@@ -73,6 +78,8 @@ namespace AstraSize.Views
 
             PickerOuTreeView.ItemsSource = _pickerOuRoots;
             PickerPrincipalsDataGrid.ItemsSource = _pickerPrincipals;
+
+            LiveAclDiffDataGrid.ItemsSource = _diffItems;
 
             _liveAclPanels.CollectionChanged += (s, e) => UpdateLiveAclPanelsBanner();
 
@@ -442,7 +449,7 @@ namespace AstraSize.Views
             panel.UpdateChangeStatus();
         }
 
-        private async void LiveAclPanelApplyDeltaButton_Click(object sender, RoutedEventArgs e)
+        private void LiveAclPanelApplyDeltaButton_Click(object sender, RoutedEventArgs e)
         {
             if (sender is not FrameworkElement fe || fe.Tag is not LiveAclPanelModel panel || _aclService == null) return;
 
@@ -452,48 +459,161 @@ namespace AstraSize.Views
                 return;
             }
 
-            // Medium: 適用直前の外部変更（競合）検出
-            bool forceApply = false;
-            if (!string.IsNullOrEmpty(panel.OriginalSddl))
-            {
-                string currentSddl = _aclService.GetSddl(panel.FolderPath);
-                if (!string.IsNullOrEmpty(currentSddl) && !string.Equals(currentSddl, panel.OriginalSddl, StringComparison.OrdinalIgnoreCase))
-                {
-                    var conflictResult = MessageBox.Show(
-                        $"⚠️ 外部ACL変更の競合を検出しました\n\n" +
-                        $"対象: {panel.FolderPath}\n\n" +
-                        $"このフォルダーのアクセス権（NTFS ACL）は、本画面で読み込んだ後に外部（他の管理者または別ツール）によって変更されています。\n\n" +
-                        $"[はい]：最新のACLを再読込して画面を更新します（推奨・安全）\n" +
-                        $"[いいえ]：外部変更を上書きし、現在の編集内容で強制適用します\n" +
-                        $"[キャンセル]：処理を中止します",
-                        "外部ACL競合警告",
-                        MessageBoxButton.YesNoCancel,
-                        MessageBoxImage.Warning);
+            ShowDiffModal(panel);
+        }
 
-                    if (conflictResult == MessageBoxResult.Yes)
-                    {
-                        ReloadPanel(panel);
-                        ShowToast($"🔄 最新のACLを再読込しました: {panel.FolderName}");
-                        return;
-                    }
-                    else if (conflictResult == MessageBoxResult.Cancel)
-                    {
-                        return;
-                    }
-                    forceApply = true;
+        private void ShowDiffModal(LiveAclPanelModel panel)
+        {
+            if (_aclService == null) return;
+            _pendingDiffPanel = panel;
+
+            LiveAclDiffTargetText.Text = $" - 対象: {panel.FolderName} ({panel.FolderPath})";
+
+            // 差分計算
+            _diffItems.Clear();
+
+            var origList = panel.InheritAcl != panel.OriginalInheritAcl && !panel.InheritAcl
+                ? panel.OriginalAclEntries.Select(e => { var c = e.Clone(); c.IsInherited = false; return c; }).ToList()
+                : panel.OriginalAclEntries.Where(e => !e.IsInherited).ToList();
+            var curList = panel.CurrentAclEntries.Where(e => !e.IsInherited).ToList();
+
+            var remainingOrig = new List<SimAclEntry>(origList);
+            var remainingCur = new List<SimAclEntry>(curList);
+
+            // 1. 完全一致 (Untouched)
+            int untouchedCount = 0;
+            for (int i = remainingCur.Count - 1; i >= 0; i--)
+            {
+                var cur = remainingCur[i];
+                var matched = remainingOrig.FirstOrDefault(o => o.MatchesExact(cur));
+                if (matched != null)
+                {
+                    untouchedCount++;
+                    remainingCur.RemoveAt(i);
+                    remainingOrig.Remove(matched);
                 }
             }
 
-            var confirm = MessageBox.Show(
-                $"【実環境 NTFS アクセス権 差分適用】\n\n対象: {panel.FolderPath}\n\n※変更されたルールのみをピンポイントで追加/削除します。\n変更していない既存の権限には一切触れません（ノータッチ原則）。\n適用直前の状態は自動保存され、ロールバック可能です。\n\n実ファイルサーバーへ直ちに差分適用しますか？",
-                "アクセス権 差分適用確認",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
+            // 2. 権限変更 (Modified)
+            int modifiedCount = 0;
+            for (int i = remainingCur.Count - 1; i >= 0; i--)
+            {
+                var cur = remainingCur[i];
+                var matched = remainingOrig.FirstOrDefault(o => o.MatchesKey(cur));
+                if (matched != null)
+                {
+                    modifiedCount++;
+                    _diffItems.Add(new LiveAclDiffItem
+                    {
+                        DiffType = LiveAclDiffType.Modified,
+                        AccountName = cur.AccountName,
+                        DisplayName = cur.DisplayName,
+                        IconGlyph = cur.IconGlyph,
+                        BeforeRights = matched.FormattedRights,
+                        AfterRights = cur.FormattedRights,
+                        AppliesTo = cur.AppliesTo,
+                        IsInherited = cur.IsInherited
+                    });
+                    remainingCur.RemoveAt(i);
+                    remainingOrig.Remove(matched);
+                }
+            }
 
-            if (confirm != MessageBoxResult.Yes) return;
+            // 3. 削除 (Removed)
+            int removedCount = remainingOrig.Count;
+            foreach (var rem in remainingOrig)
+            {
+                _diffItems.Add(new LiveAclDiffItem
+                {
+                    DiffType = LiveAclDiffType.Removed,
+                    AccountName = rem.AccountName,
+                    DisplayName = rem.DisplayName,
+                    IconGlyph = rem.IconGlyph,
+                    BeforeRights = rem.FormattedRights,
+                    AfterRights = "（削除）",
+                    AppliesTo = rem.AppliesTo,
+                    IsInherited = rem.IsInherited
+                });
+            }
 
+            // 4. 追加 (Added)
+            int addedCount = remainingCur.Count;
+            foreach (var add in remainingCur)
+            {
+                _diffItems.Add(new LiveAclDiffItem
+                {
+                    DiffType = LiveAclDiffType.Added,
+                    AccountName = add.AccountName,
+                    DisplayName = add.DisplayName,
+                    IconGlyph = add.IconGlyph,
+                    BeforeRights = "―",
+                    AfterRights = add.FormattedRights,
+                    AppliesTo = add.AppliesTo,
+                    IsInherited = add.IsInherited
+                });
+            }
+
+            // サマリーテキスト更新
+            LiveAclDiffSummaryText.Text = $"📊 変更予定: +{addedCount}件, -{removedCount}件, ~{modifiedCount}件";
+            LiveAclDiffUntouchedText.Text = $" (🛡️ 既存ノータッチ: {untouchedCount}件)";
+
+            // 外部競合チェック
+            string currentSddl = _aclService.GetSddl(panel.FolderPath);
+            bool hasConflict = !string.IsNullOrEmpty(panel.OriginalSddl) &&
+                               !string.IsNullOrEmpty(currentSddl) &&
+                               !string.Equals(currentSddl, panel.OriginalSddl, StringComparison.OrdinalIgnoreCase);
+
+            if (hasConflict)
+            {
+                LiveAclConflictBadge.Background = new SolidColorBrush(Color.FromRgb(0xFE, 0xE2, 0xE2));
+                LiveAclConflictBadge.BorderBrush = new SolidColorBrush(Color.FromRgb(0xFE, 0xCA, 0xCA));
+                LiveAclConflictBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));
+                LiveAclConflictBadgeText.Text = "⚠️ 外部変更を検知 (警告)";
+            }
+            else
+            {
+                LiveAclConflictBadge.Background = new SolidColorBrush(Color.FromRgb(0xDC, 0xFC, 0xE7));
+                LiveAclConflictBadge.BorderBrush = new SolidColorBrush(Color.FromRgb(0xBB, 0xF7, 0xD0));
+                LiveAclConflictBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0x15, 0x80, 0x3D));
+                LiveAclConflictBadgeText.Text = "✅ 外部競合なし (安全)";
+            }
+
+            LiveAclDiffModalOverlay.Visibility = Visibility.Visible;
+        }
+
+        private void LiveAclDiffModalClose_Click(object sender, RoutedEventArgs e)
+        {
+            LiveAclDiffModalOverlay.Visibility = Visibility.Collapsed;
+            _pendingDiffPanel = null;
+        }
+
+        private async void LiveAclDiffModalExecute_Click(object sender, RoutedEventArgs e)
+        {
+            if (_pendingDiffPanel == null || _aclService == null) return;
+            var panel = _pendingDiffPanel;
+
+            // 競合がある場合の最終確認
+            string currentSddl = _aclService.GetSddl(panel.FolderPath);
+            bool hasConflict = !string.IsNullOrEmpty(panel.OriginalSddl) &&
+                               !string.IsNullOrEmpty(currentSddl) &&
+                               !string.Equals(currentSddl, panel.OriginalSddl, StringComparison.OrdinalIgnoreCase);
+
+            bool forceApply = false;
+            if (hasConflict)
+            {
+                var conflictRes = MessageBox.Show(
+                    $"⚠️ 外部ACL変更の競合が検知されています。\n\n外部の変更を上書きして本番適用を強制続行しますか？",
+                    "外部ACL競合の強制適用確認",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (conflictRes != MessageBoxResult.Yes) return;
+                forceApply = true;
+            }
+
+            LiveAclDiffModalOverlay.Visibility = Visibility.Collapsed;
             panel.IsApplying = true;
-            panel.StatusMessage = "差分適用中...";
+            panel.StatusMessage = "本番適用中...";
+
             try
             {
                 var result = await _aclService.ApplyLiveAclDeltaWithRollbackAsync(
@@ -508,7 +628,7 @@ namespace AstraSize.Views
                 int appliedDeltaCount = result.addedCount + result.removedCount + result.modifiedCount;
                 string backupSddl = result.snapshot?.Sddl ?? string.Empty;
 
-                // Medium 3: 適用成功後、OSから実態を直接再読込して画面と100%同期
+                // OS実態再読込 (Verify)
                 var (refreshedEntries, refreshedInherit, _) = _aclService.GetSimAclForFolder(panel.FolderPath);
                 panel.OriginalAclEntries.Clear();
                 panel.CurrentAclEntries.Clear();
@@ -523,8 +643,8 @@ namespace AstraSize.Views
                 panel.UpdateChangeStatus();
                 panel.StatusMessage = $"適用完了: {DateTime.Now:HH:mm:ss} ({appliedDeltaCount} 差分反映)";
 
-                ShowToast($"✅ 差分適用完了: {panel.FolderName} ({appliedDeltaCount} 変更反映, 既存ノータッチ)");
-                MessageBox.Show($"アクセス権の差分適用が完了しました！\n\n反映件数: {appliedDeltaCount} 件\n既存ルール: ノータッチ維持\n自動バックアップ: 保存済み（ロールバック可能）", "適用完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowToast($"✅ 差分適用完了 (Verify成功): {panel.FolderName} ({appliedDeltaCount} 変更反映, 既存ノータッチ)");
+                MessageBox.Show($"アクセス権の差分適用が完了しました！\n\n反映件数: {appliedDeltaCount} 件\n既存ルール: ノータッチ維持\n自動バックアップ: 保存済み（ロールバック可能）", "本番適用完了", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (AclConflictException)
             {
@@ -548,6 +668,7 @@ namespace AstraSize.Views
             finally
             {
                 panel.IsApplying = false;
+                _pendingDiffPanel = null;
             }
         }
 
@@ -1165,6 +1286,11 @@ namespace AstraSize.Views
             PickerCancelButton.Content = isJa ? "キャンセル" : "Cancel";
             PickerApplyButton.Content = isJa ? "決定" : "Select";
             RevBrowseUserButton.Content = isJa ? "👥 参照..." : "👥 Browse...";
+
+            // Live ACL Diff Modal (Dry-Run)
+            LiveAclDiffTitleText.Text = isJa ? "⚖️ NTFS アクセス権 差分チェック (Dry-Run)" : "⚖️ NTFS Permission Diff Review (Dry-Run)";
+            LiveAclDiffModalCancelButton.Content = isJa ? "キャンセル" : "Cancel";
+            LiveAclDiffModalExecuteButton.Content = isJa ? "⚡ 差分を本番適用 (Commit)" : "⚡ Commit Changes";
         }
         #endregion
     }
