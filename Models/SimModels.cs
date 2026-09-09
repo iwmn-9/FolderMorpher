@@ -403,6 +403,55 @@ namespace AstraSize.Models
             OnPropertyChanged(nameof(AdvSynchronize));
         }
 
+        public SimAclEntry Clone()
+        {
+            return new SimAclEntry
+            {
+                AccountName = this.AccountName,
+                DisplayName = this.DisplayName,
+                PrincipalType = this.PrincipalType,
+                Rights = this.Rights,
+                AccessType = this.AccessType,
+                IsInherited = this.IsInherited,
+                InheritanceFlags = this.InheritanceFlags,
+                PropagationFlags = this.PropagationFlags,
+                AppliesTo = this.AppliesTo
+            };
+        }
+
+        /// <summary>
+        /// ドメイン修飾の有無（DOMAIN\User と User）を考慮して同一アカウントかを安全に判定する
+        /// </summary>
+        public static bool IsSameAccount(string? a, string? b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b))
+                return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+            if (string.Equals(a, b, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            bool hasDomainA = a.Contains('\\');
+            bool hasDomainB = b.Contains('\\');
+
+            // 両方にドメインがあり、かつ完全一致しなかった場合は別アカウント
+            if (hasDomainA && hasDomainB)
+                return false;
+
+            // 片方にのみドメインがある場合、アカウント名部分を比較
+            var nameA = hasDomainA ? a.Substring(a.IndexOf('\\') + 1) : a;
+            var nameB = hasDomainB ? b.Substring(b.IndexOf('\\') + 1) : b;
+            return string.Equals(nameA, nameB, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Windowsカーネルが自動付与する Synchronize ビットを吸収し、実質的な権限ビットが同一か判定する
+        /// </summary>
+        public static bool IsSameRights(FileSystemRights r1, FileSystemRights r2)
+        {
+            if (r1 == r2) return true;
+            return (r1 & ~FileSystemRights.Synchronize) == (r2 & ~FileSystemRights.Synchronize);
+        }
+
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? prop = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(prop));

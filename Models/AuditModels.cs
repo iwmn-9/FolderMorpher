@@ -14,6 +14,8 @@ namespace FolderMorpher.Models
 
     public class AuditItem : System.ComponentModel.INotifyPropertyChanged
     {
+        public static Action<AuditItem>? GlobalCheckedChanged;
+
         private bool _isChecked;
         public bool IsChecked
         {
@@ -24,6 +26,7 @@ namespace FolderMorpher.Models
                 {
                     _isChecked = value;
                     OnPropertyChanged(nameof(IsChecked));
+                    GlobalCheckedChanged?.Invoke(this);
                 }
             }
         }
@@ -40,8 +43,8 @@ namespace FolderMorpher.Models
         {
             AuditIssueType.Duplicate => "重複ファイル",
             AuditIssueType.Dormant => "休眠ファイル",
-            AuditIssueType.PathTooLong => "パス長超過 (260字超)",
-            AuditIssueType.InvalidChar => "禁則文字",
+            AuditIssueType.PathTooLong => "パス長危険域 (240字超)",
+            AuditIssueType.InvalidChar => "地雷文字",
             _ => "その他"
         };
         public string Detail { get; set; } = string.Empty;

@@ -159,6 +159,13 @@ namespace AstraSize.Services
             return sb.ToString();
         }
 
+        public string GetSddl(string path)
+        {
+            var dir = new DirectoryInfo(path);
+            var sec = dir.GetAccessControl(AccessControlSections.Access);
+            return sec.GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+        }
+
         // Snapshot & Rollback
         public async Task<AclSnapshot> CreateSnapshotAsync(string path, string note = "変更前のバックアップ")
         {
@@ -279,6 +286,122 @@ namespace AstraSize.Services
             }
 
             dirInfo.SetAccessControl(sec);
+        }
+
+        /// <summary>
+        /// 差分適用 (Delta Apply): 読み取り時からの変化点（Added / Removed / Modified）のみをピンポイントで適用する。
+        /// 【安全原則】変更されていない既存ACEにはOS上・メモリ上ともに1ビットも触れない（ノータッチ）。
+        /// 変更が0件の場合はSetAccessControl自体をスキップする。
+        /// </summary>
+        public async Task<(bool hasModified, int addedCount, int removedCount, int modifiedCount, AclSnapshot? snapshot)> ApplyLiveAclDeltaWithRollbackAsync(
+            string path,
+            IEnumerable<SimAclEntry> originalEntries,
+            IEnumerable<SimAclEntry> currentEntries,
+            bool inherit,
+            bool originalInherit)
+        {
+            var dirInfo = new DirectoryInfo(path);
+            if (!dirInfo.Exists) throw new DirectoryNotFoundException($"指定フォルダが存在しません: {path}");
+
+            var origList = originalEntries.Where(e => !e.IsInherited).ToList();
+            var curList = currentEntries.Where(e => !e.IsInherited).ToList();
+
+            // 1. 削除対象の特定 (元にあって現在ないもの)
+            var toRemove = new List<SimAclEntry>();
+            foreach (var orig in origList)
+            {
+                var matchingCur = curList.FirstOrDefault(c =>
+                    SimAclEntry.IsSameAccount(c.AccountName, orig.AccountName) &&
+                    c.AccessType == orig.AccessType);
+
+                if (matchingCur == null)
+                {
+                    toRemove.Add(orig);
+                }
+            }
+
+            // 2. 追加対象の特定 (現在あって元にないもの)
+            var toAdd = new List<SimAclEntry>();
+            var toModify = new List<(SimAclEntry oldEntry, SimAclEntry newEntry)>();
+
+            foreach (var cur in curList)
+            {
+                var matchingOrig = origList.FirstOrDefault(o =>
+                    SimAclEntry.IsSameAccount(o.AccountName, cur.AccountName) &&
+                    o.AccessType == cur.AccessType);
+
+                if (matchingOrig == null)
+                {
+                    toAdd.Add(cur);
+                }
+                else
+                {
+                    // 権限ビットまたは継承・伝播フラグに変更があるか
+                    if (!SimAclEntry.IsSameRights(matchingOrig.Rights, cur.Rights) ||
+                        matchingOrig.InheritanceFlags != cur.InheritanceFlags ||
+                        matchingOrig.PropagationFlags != cur.PropagationFlags)
+                    {
+                        toModify.Add((matchingOrig, cur));
+                    }
+                }
+            }
+
+            bool inheritChanged = (inherit != originalInherit);
+            bool hasModified = inheritChanged || toRemove.Count > 0 || toAdd.Count > 0 || toModify.Count > 0;
+
+            if (!hasModified)
+            {
+                // 変更が全くない場合はAPI呼び出しを行わず即座に正常終了
+                return (false, 0, 0, 0, null);
+            }
+
+            // 変更前の完全DACLをバックアップ（ロールバック用）
+            var snapshot = await CreateSnapshotAsync(path, $"差分変更前バックアップ (変更: +{toAdd.Count}, -{toRemove.Count}, ~{toModify.Count})");
+
+            var sec = dirInfo.GetAccessControl(AccessControlSections.Access);
+
+            if (inheritChanged)
+            {
+                // 継承変更: preserveInheritanceRules=false (不要なWell-Known重複防止)
+                sec.SetAccessRuleProtection(!inherit, false);
+            }
+
+            // 変更ACEの旧ルール削除
+            foreach (var (oldEntry, _) in toModify)
+            {
+                var identity = new NTAccount(oldEntry.AccountName);
+                var rule = new FileSystemAccessRule(identity, oldEntry.Rights, oldEntry.InheritanceFlags, oldEntry.PropagationFlags, oldEntry.AccessType);
+                sec.RemoveAccessRuleSpecific(rule);
+            }
+
+            // 削除ACEのピンポイント削除
+            foreach (var entry in toRemove)
+            {
+                var identity = new NTAccount(entry.AccountName);
+                var rule = new FileSystemAccessRule(identity, entry.Rights, entry.InheritanceFlags, entry.PropagationFlags, entry.AccessType);
+                sec.RemoveAccessRuleSpecific(rule);
+            }
+
+            // 変更ACEの新ルール追加 (アカウント名は完全修飾名を持つ方を優先)
+            foreach (var (oldEntry, newEntry) in toModify)
+            {
+                var accName = oldEntry.AccountName.Contains('\\') ? oldEntry.AccountName : newEntry.AccountName;
+                var identity = new NTAccount(accName);
+                var rule = new FileSystemAccessRule(identity, newEntry.Rights, newEntry.InheritanceFlags, newEntry.PropagationFlags, newEntry.AccessType);
+                sec.AddAccessRule(rule);
+            }
+
+            // 追加ACEのピンポイント追加
+            foreach (var entry in toAdd)
+            {
+                var identity = new NTAccount(entry.AccountName);
+                var rule = new FileSystemAccessRule(identity, entry.Rights, entry.InheritanceFlags, entry.PropagationFlags, entry.AccessType);
+                sec.AddAccessRule(rule);
+            }
+
+            dirInfo.SetAccessControl(sec);
+
+            return (true, toAdd.Count, toRemove.Count, toModify.Count, snapshot);
         }
 
         public void RollbackToSnapshot(string path, AclSnapshot snapshot)

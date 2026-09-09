@@ -62,10 +62,13 @@ namespace AstraSize
         private SimFolderNode? _selectedSimNode;
         private SimAclEntry? _currentEditingAcl;
 
-        // Live ACL Management State
+        // Live ACL Management State (Multi-Panel Studio, max 6 folders)
+        private readonly ObservableCollection<LiveAclPanelModel> _liveAclPanels = new();
+        private readonly ObservableCollection<FileItemNode> _liveAclFolderTreeRoots = new();
         private readonly ObservableCollection<SimAclEntry> _liveAclEntries = new();
         private readonly ObservableCollection<AdPrincipalItem> _liveAclPrincipals = new();
         private bool _isLiveAclEditing = false;
+        private LiveAclPanelModel? _currentEditingPanel;
 
         // Effective Access (Reverse Lookup) State
         private readonly EffectiveAccessService _effectiveAccessService = new();
@@ -129,6 +132,7 @@ namespace AstraSize
             PickerOuTreeView.ItemsSource = _pickerOuRoots;
             PickerPrincipalsDataGrid.ItemsSource = _pickerPrincipals;
             AuditItemsDataGrid.ItemsSource = _auditVisibleItems;
+            AuditItem.GlobalCheckedChanged += (item) => UpdateLiveSelectedReduction();
             Loaded += MainWindow_Loaded;
         }
 
@@ -200,7 +204,8 @@ namespace AstraSize
                 if (string.IsNullOrWhiteSpace(LiveAclPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     LiveAclPathTextBox.Text = PathTextBox.Text;
-                    LoadLiveAclForPath(PathTextBox.Text);
+                    LoadLiveAclFolderTree(PathTextBox.Text);
+                    AddLiveAclPanel(PathTextBox.Text);
                 }
             }
             else if (NavTabSimulation.IsChecked == true)
@@ -832,7 +837,8 @@ namespace AstraSize
             {
                 LiveAclPathTextBox.Text = item.FullPath;
                 NavTabLiveAcl.IsChecked = true;
-                LoadLiveAclForPath(item.FullPath);
+                LoadLiveAclFolderTree(item.FullPath);
+                AddLiveAclPanel(item.FullPath);
                 ShowToast($"実環境 権限コントロールを開きました: {item.Name}");
             }
         }
@@ -964,7 +970,8 @@ namespace AstraSize
         #region Tab 2: Live ACL Control (実環境 権限マネージャー)
         private void InitializeLiveAcl()
         {
-            LiveAclCardsItemsControl.ItemsSource = _liveAclEntries;
+            LiveAclMultiPanelsItemsControl.ItemsSource = _liveAclPanels;
+            LiveAclFolderTreeView.ItemsSource = _liveAclFolderTreeRoots;
             LiveAclPrincipalsListBox.ItemsSource = _liveAclPrincipals;
 
             RevGroupsListBox.ItemsSource = _revGroups;
@@ -977,7 +984,18 @@ namespace AstraSize
                 UpdateLiveAclNoticeState();
             };
 
+            _liveAclPanels.CollectionChanged += (s, e) => UpdateLiveAclPanelsBanner();
+
             UpdateLiveAclNoticeState();
+            UpdateLiveAclPanelsBanner();
+        }
+
+        private void UpdateLiveAclPanelsBanner()
+        {
+            if (LiveAclNoPanelsBanner != null)
+            {
+                LiveAclNoPanelsBanner.Visibility = _liveAclPanels.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
         }
 
         private void LiveAclMode_Checked(object sender, RoutedEventArgs e)
@@ -1020,7 +1038,8 @@ namespace AstraSize
             if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.FolderName))
             {
                 LiveAclPathTextBox.Text = dialog.FolderName;
-                LoadLiveAclForPath(dialog.FolderName);
+                LoadLiveAclFolderTree(dialog.FolderName);
+                AddLiveAclPanel(dialog.FolderName);
             }
         }
 
@@ -1029,7 +1048,11 @@ namespace AstraSize
             var path = LiveAclPathTextBox.Text.Trim();
             if (!string.IsNullOrWhiteSpace(path))
             {
-                LoadLiveAclForPath(path);
+                LoadLiveAclFolderTree(path);
+                if (_liveAclPanels.Count == 0 && Directory.Exists(path))
+                {
+                    AddLiveAclPanel(path);
+                }
             }
         }
 
@@ -1040,35 +1063,161 @@ namespace AstraSize
                 var path = LiveAclPathTextBox.Text.Trim();
                 if (!string.IsNullOrWhiteSpace(path))
                 {
-                    LoadLiveAclForPath(path);
+                    LoadLiveAclFolderTree(path);
+                    if (_liveAclPanels.Count == 0 && Directory.Exists(path))
+                    {
+                        AddLiveAclPanel(path);
+                    }
                 }
             }
         }
 
-        private void LoadLiveAclForPath(string path)
+        private void LoadLiveAclFolderTree(string rootPath)
+        {
+            if (!Directory.Exists(rootPath))
+            {
+                MessageBox.Show($"指定フォルダが存在しません:\n{rootPath}", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                _liveAclFolderTreeRoots.Clear();
+                var rootDir = new DirectoryInfo(rootPath);
+                var rootNode = new FileItemNode
+                {
+                    Name = rootDir.Name.Length > 0 ? rootDir.Name : rootDir.FullName,
+                    FullPath = rootDir.FullName,
+                    IsDirectory = true,
+                    IsExpanded = true
+                };
+
+                PopulateFolderTreeChildren(rootNode, maxDepth: 2);
+                _liveAclFolderTreeRoots.Add(rootNode);
+                ShowToast($"📁 フォルダツリーを展開しました: {rootNode.Name}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"ツリー読み込みエラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void PopulateFolderTreeChildren(FileItemNode parentNode, int maxDepth, int currentDepth = 0)
+        {
+            if (currentDepth >= maxDepth) return;
+            try
+            {
+                var dir = new DirectoryInfo(parentNode.FullPath);
+                foreach (var subDir in dir.EnumerateDirectories())
+                {
+                    if ((subDir.Attributes & FileAttributes.Hidden) != 0 || (subDir.Attributes & FileAttributes.System) != 0)
+                        continue;
+
+                    var childNode = new FileItemNode
+                    {
+                        Name = subDir.Name,
+                        FullPath = subDir.FullName,
+                        IsDirectory = true
+                    };
+
+                    PopulateFolderTreeChildren(childNode, maxDepth, currentDepth + 1);
+                    parentNode.Children.Add(childNode);
+                }
+            }
+            catch (UnauthorizedAccessException) { /* アクセス拒否は安全にスキップ */ }
+            catch (Exception) { }
+        }
+
+        private void LiveAclFolderTreeView_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (LiveAclFolderTreeView.SelectedItem is FileItemNode node && node.IsDirectory)
+            {
+                AddLiveAclPanel(node.FullPath);
+            }
+        }
+
+        private Point _liveAclFolderDragStart;
+
+        private void LiveAclFolderTreeView_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            _liveAclFolderDragStart = e.GetPosition(null);
+        }
+
+        private void LiveAclFolderTreeView_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (e.LeftButton != MouseButtonState.Pressed) return;
+            if (LiveAclFolderTreeView.SelectedItem is not FileItemNode node) return;
+
+            Point currentPoint = e.GetPosition(null);
+            Vector diff = _liveAclFolderDragStart - currentPoint;
+            if (Math.Abs(diff.X) > SystemParameters.MinimumHorizontalDragDistance ||
+                Math.Abs(diff.Y) > SystemParameters.MinimumVerticalDragDistance)
+            {
+                DragDrop.DoDragDrop(LiveAclFolderTreeView, new DataObject("FolderMorpherLiveAclFolder", node.FullPath), DragDropEffects.Copy);
+            }
+        }
+
+        private void LiveAclMultiPanelArea_Drop(object sender, DragEventArgs e)
+        {
+            if (e.Data.GetData("FolderMorpherLiveAclFolder") is string path)
+            {
+                AddLiveAclPanel(path);
+            }
+        }
+
+        private void AddLiveAclPanel(string path)
         {
             if (!Directory.Exists(path))
             {
-                MessageBox.Show($"指定フォルダが存在しません:\n{path}", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"フォルダが存在しません:\n{path}", "案内", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var existing = _liveAclPanels.FirstOrDefault(p => p.FolderPath.Equals(path, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
+            {
+                ShowToast($"⚠️ すでにパネルが開かれています: {existing.FolderName}");
+                return;
+            }
+
+            if (_liveAclPanels.Count >= 6)
+            {
+                MessageBox.Show("同時に操作可能なパネルは最大6フォルダです。\n不要なパネルを閉じてから追加してください。", "パネル上限", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             try
             {
                 var (entries, isInherited, owner) = _aclService.GetSimAclForFolder(path);
-                _liveAclEntries.Clear();
+                string sddl = _aclService.GetSddl(path);
+
+                var panel = new LiveAclPanelModel
+                {
+                    FolderPath = path,
+                    FolderName = Path.GetFileName(path.TrimEnd('\\', '/')),
+                    InheritAcl = isInherited,
+                    OriginalInheritAcl = isInherited,
+                    OriginalSddl = sddl,
+                    StatusMessage = $"所有者: {owner}"
+                };
+                if (string.IsNullOrEmpty(panel.FolderName)) panel.FolderName = path;
+
                 foreach (var entry in entries)
                 {
-                    _liveAclEntries.Add(entry);
+                    panel.OriginalAclEntries.Add(entry.Clone());
+                    panel.CurrentAclEntries.Add(entry.Clone());
                 }
 
-                var folderName = Path.GetFileName(path.TrimEnd('\\', '/'));
-                if (string.IsNullOrEmpty(folderName)) folderName = path;
-                LiveAclFolderNameText.Text = folderName;
-                LiveAclOwnerText.Text = $"所有者: {owner}";
-                LiveAclInheritCheckBox.IsChecked = isInherited;
+                panel.CurrentAclEntries.CollectionChanged += (s, e) => panel.UpdateChangeStatus();
+                panel.PropertyChanged += (s, e) =>
+                {
+                    if (e.PropertyName == nameof(LiveAclPanelModel.InheritAcl))
+                        panel.UpdateChangeStatus();
+                };
 
-                ShowToast($"実環境の権限を読み込みました: {folderName} ({entries.Count} 件)");
+                _liveAclPanels.Add(panel);
+                UpdateLiveAclPanelsBanner();
+                ShowToast($"🛡️ 権限パネルを追加しました: {panel.FolderName} (計 {_liveAclPanels.Count}/6)");
             }
             catch (Exception ex)
             {
@@ -1076,50 +1225,99 @@ namespace AstraSize
             }
         }
 
-        private void LiveAclInheritCheckBox_Changed(object sender, RoutedEventArgs e)
+        private void LiveAclPanelCloseButton_Click(object sender, RoutedEventArgs e)
         {
-            // 継承変更
+            if (sender is FrameworkElement fe && fe.Tag is LiveAclPanelModel panel)
+            {
+                if (panel.HasChanges)
+                {
+                    var res = MessageBox.Show($"「{panel.FolderName}」には未適用の変更があります。閉じてもよろしいですか？", "未適用変更の確認", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    if (res != MessageBoxResult.Yes) return;
+                }
+                _liveAclPanels.Remove(panel);
+                UpdateLiveAclPanelsBanner();
+                ShowToast($"パネルを閉じました: {panel.FolderName}");
+            }
         }
 
-        private async void LiveAclApplyButton_Click(object sender, RoutedEventArgs e)
+        private void LiveAclCloseAllPanelsButton_Click(object sender, RoutedEventArgs e)
         {
-            var path = LiveAclPathTextBox.Text.Trim();
-            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            if (_liveAclPanels.Count == 0) return;
+            bool hasAnyChanges = _liveAclPanels.Any(p => p.HasChanges);
+            if (hasAnyChanges)
             {
-                MessageBox.Show("有効なフォルダパスを指定してください。", "案内", MessageBoxButton.OK, MessageBoxImage.Warning);
+                var res = MessageBox.Show("未適用の変更があるパネルが含まれています。すべて閉じてもよろしいですか？", "全パネル閉じる確認", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (res != MessageBoxResult.Yes) return;
+            }
+            _liveAclPanels.Clear();
+            UpdateLiveAclPanelsBanner();
+            ShowToast("全パネルを閉じました");
+        }
+
+        private async void LiveAclPanelApplyDeltaButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not FrameworkElement fe || fe.Tag is not LiveAclPanelModel panel) return;
+
+            if (!panel.HasChanges)
+            {
+                ShowToast($"未適用の変更はありません: {panel.FolderName}");
                 return;
             }
 
             var confirm = MessageBox.Show(
-                $"【注意: 実環境のアクセス権変更】\n\n対象: {path}\n付与ルール数: {_liveAclEntries.Count} 件\n継承設定: {(LiveAclInheritCheckBox.IsChecked == true ? "親から継承" : "固有設定 (継承無効)")}\n\n※実行直前にSDDLバックアップが自動保存され、いつでも復元できます。\n\n実ファイルサーバーへ直ちに適用しますか？",
-                "実環境アクセス権の即時適用確認",
+                $"【実環境 NTFS アクセス権 差分適用】\n\n対象: {panel.FolderPath}\n\n※変更されたルールのみをピンポイントで追加/削除します。\n変更していない既存の権限には一切触れません（ノータッチ原則）。\n適用直前の状態は自動保存され、ロールバック可能です。\n\n実ファイルサーバーへ直ちに差分適用しますか？",
+                "アクセス権 差分適用確認",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
 
             if (confirm != MessageBoxResult.Yes) return;
 
+            panel.IsApplying = true;
+            panel.StatusMessage = "差分適用中...";
             try
             {
-                await _aclService.CreateSnapshotAsync(path, "LiveACL 即時適用前の自動バックアップ");
-                _aclService.ApplySimAclEntries(path, _liveAclEntries, LiveAclInheritCheckBox.IsChecked == true);
+                var result = await _aclService.ApplyLiveAclDeltaWithRollbackAsync(
+                    panel.FolderPath,
+                    panel.OriginalAclEntries,
+                    panel.CurrentAclEntries.ToList(),
+                    panel.InheritAcl,
+                    panel.OriginalInheritAcl);
 
-                ShowToast($"⚡ 実環境へNTFSアクセス権を即時適用しました: {Path.GetFileName(path)}");
-                MessageBox.Show("実サーバーへのアクセス権適用が完了しました！\n（必要に応じて直前のバックアップから復元可能です）", "適用完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                int appliedDeltaCount = result.addedCount + result.removedCount + result.modifiedCount;
+                string backupSddl = result.snapshot?.Sddl ?? string.Empty;
+
+                // 成功したら Original を現在の状態で更新して同期
+                panel.OriginalAclEntries.Clear();
+                foreach (var item in panel.CurrentAclEntries)
+                {
+                    panel.OriginalAclEntries.Add(item.Clone());
+                }
+                panel.OriginalInheritAcl = panel.InheritAcl;
+                panel.OriginalSddl = backupSddl;
+                panel.UpdateChangeStatus();
+                panel.StatusMessage = $"適用完了: {DateTime.Now:HH:mm:ss} ({appliedDeltaCount} 差分反映)";
+
+                ShowToast($"⚡ 差分適用完了: {panel.FolderName} ({appliedDeltaCount} 変更反映, 既存ノータッチ)");
+                MessageBox.Show($"アクセス権の差分適用が完了しました！\n\n反映件数: {appliedDeltaCount} 件\n既存ルール: ノータッチ維持\n自動バックアップ: 保存済み（ロールバック可能）", "適用完了", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"権限適用エラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                panel.StatusMessage = "適用失敗";
+                MessageBox.Show($"差分適用エラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                panel.IsApplying = false;
             }
         }
 
-        private async void LiveAclRollbackButton_Click(object sender, RoutedEventArgs e)
+        private async void LiveAclPanelRollbackButton_Click(object sender, RoutedEventArgs e)
         {
-            var path = LiveAclPathTextBox.Text.Trim();
-            if (string.IsNullOrWhiteSpace(path)) return;
+            if (sender is not FrameworkElement fe || fe.Tag is not LiveAclPanelModel panel) return;
 
             try
             {
-                var snapshots = await _aclService.GetSnapshotsAsync(path);
+                var snapshots = await _aclService.GetSnapshotsAsync(panel.FolderPath);
                 if (snapshots.Count == 0)
                 {
                     MessageBox.Show("このフォルダの保存済みバックアップはありません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -1128,16 +1326,31 @@ namespace AstraSize
 
                 var latest = snapshots[0];
                 var confirm = MessageBox.Show(
-                    $"最新のバックアップ（{latest.Timestamp:yyyy/MM/dd HH:mm:ss} 保存）へ復元しますか？\n\n対象: {path}",
+                    $"最新のバックアップ（{latest.Timestamp:yyyy/MM/dd HH:mm:ss} 保存）へ復元しますか？\n\n対象: {panel.FolderPath}",
                     "バックアップ復元確認",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Question);
 
                 if (confirm == MessageBoxResult.Yes)
                 {
-                    _aclService.RollbackToSnapshot(path, latest);
-                    LoadLiveAclForPath(path);
-                    ShowToast("↩️ 直前のバックアップから権限を復元しました");
+                    _aclService.RollbackToSnapshot(panel.FolderPath, latest);
+
+                    // パネルの状態を最新にリロード
+                    var (entries, isInherited, owner) = _aclService.GetSimAclForFolder(panel.FolderPath);
+                    panel.OriginalAclEntries.Clear();
+                    panel.CurrentAclEntries.Clear();
+                    foreach (var ent in entries)
+                    {
+                        panel.OriginalAclEntries.Add(ent.Clone());
+                        panel.CurrentAclEntries.Add(ent.Clone());
+                    }
+                    panel.InheritAcl = isInherited;
+                    panel.OriginalInheritAcl = isInherited;
+                    panel.OriginalSddl = latest.Sddl;
+                    panel.UpdateChangeStatus();
+                    panel.StatusMessage = $"復元完了 ({latest.Timestamp:HH:mm:ss})";
+
+                    ShowToast($"↩️ バックアップから復元しました: {panel.FolderName}");
                 }
             }
             catch (Exception ex)
@@ -1178,13 +1391,43 @@ namespace AstraSize
             }
         }
 
-        private void LiveAclAddPrincipal(AdPrincipalItem p)
+        private void LiveAclPanelDropZone_Drop(object sender, DragEventArgs e)
         {
-            if (_liveAclEntries.Any(a => a.AccountName.Equals(p.AccountName, StringComparison.OrdinalIgnoreCase)))
+            if (sender is not FrameworkElement fe || fe.Tag is not LiveAclPanelModel panel) return;
+
+            if (e.Data.GetData(typeof(SimAclEntry)) is SimAclEntry)
             {
-                ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
-                    ? $"⚠️ すでに割り当て済みです: {p.DisplayName}"
-                    : $"⚠️ Already assigned: {p.DisplayName}");
+                _droppedInSelfContainer = true;
+                return;
+            }
+
+            if (e.Data.GetData(typeof(AdPrincipalItem)) is AdPrincipalItem p)
+            {
+                AddPrincipalToPanel(panel, p);
+            }
+        }
+
+        private void LiveAclCardsContainer_Drop(object sender, DragEventArgs e)
+        {
+            if (sender is not FrameworkElement fe || fe.Tag is not LiveAclPanelModel panel) return;
+
+            if (e.Data.GetData(typeof(SimAclEntry)) is SimAclEntry)
+            {
+                _droppedInSelfContainer = true;
+                return;
+            }
+
+            if (e.Data.GetData(typeof(AdPrincipalItem)) is AdPrincipalItem p)
+            {
+                AddPrincipalToPanel(panel, p);
+            }
+        }
+
+        private void AddPrincipalToPanel(LiveAclPanelModel panel, AdPrincipalItem p)
+        {
+            if (panel.CurrentAclEntries.Any(a => a.AccountName.Equals(p.AccountName, StringComparison.OrdinalIgnoreCase)))
+            {
+                ShowToast($"⚠️ すでに「{panel.FolderName}」に割り当て済みです: {p.DisplayName}");
                 return;
             }
 
@@ -1195,39 +1438,9 @@ namespace AstraSize
                 PrincipalType = p.PrincipalType,
                 Rights = FileSystemRights.ReadAndExecute
             };
-            _liveAclEntries.Add(entry);
-            ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
-                ? $"🛡️ アクセス権カードを追加: {p.DisplayName}"
-                : $"🛡️ Added ACL card: {p.DisplayName}");
-        }
-
-        private void LiveAclDropZone_Drop(object sender, DragEventArgs e)
-        {
-            if (e.Data.GetData(typeof(SimAclEntry)) is SimAclEntry)
-            {
-                _droppedInSelfContainer = true;
-                return;
-            }
-
-            if (e.Data.GetData(typeof(AdPrincipalItem)) is AdPrincipalItem p)
-            {
-                LiveAclAddPrincipal(p);
-            }
-        }
-
-        private void LiveAclCardsContainer_Drop(object sender, DragEventArgs e)
-        {
-            if (e.Data.GetData(typeof(SimAclEntry)) is SimAclEntry)
-            {
-                _droppedInSelfContainer = true;
-                return;
-            }
-
-            // 広域ドロップ受容: カード一覧エリア全体でADプリンシパルのドロップを受け付け
-            if (e.Data.GetData(typeof(AdPrincipalItem)) is AdPrincipalItem p)
-            {
-                LiveAclAddPrincipal(p);
-            }
+            panel.CurrentAclEntries.Add(entry);
+            panel.UpdateChangeStatus();
+            ShowToast($"🛡️ 「{panel.FolderName}」に権限カードを追加: {p.DisplayName}");
         }
 
         private void LiveAclCard_MouseDown(object sender, MouseButtonEventArgs e)
@@ -1241,8 +1454,10 @@ namespace AstraSize
             {
                 _isLiveAclEditing = true;
                 _currentEditingAcl = acl;
-                SecModalTargetNameText.Text = LiveAclFolderNameText.Text;
-                SecModalFullPathText.Text = LiveAclPathTextBox.Text;
+                _currentEditingPanel = _liveAclPanels.FirstOrDefault(p => p.CurrentAclEntries.Contains(acl));
+
+                SecModalTargetNameText.Text = _currentEditingPanel?.FolderName ?? string.Empty;
+                SecModalFullPathText.Text = _currentEditingPanel?.FolderPath ?? LiveAclPathTextBox.Text;
                 SecPrincipalInput.Text = acl.DisplayName;
                 SyncCheckboxesFromAcl(acl);
                 SecModalOverlay.Visibility = Visibility.Visible;
@@ -1263,6 +1478,7 @@ namespace AstraSize
                 {
                     _droppedInSelfContainer = false;
                     _dragCancelled = false;
+                    var parentPanel = _liveAclPanels.FirstOrDefault(p => p.CurrentAclEntries.Contains(acl));
                     try
                     {
                         DragDrop.AddQueryContinueDragHandler(fe, OnCardQueryContinueDrag);
@@ -1272,49 +1488,14 @@ namespace AstraSize
                     {
                         DragDrop.RemoveQueryContinueDragHandler(fe, OnCardQueryContinueDrag);
                         // Escキャンセルされた場合は削除しない。マウスドロップで枠外に落ちた場合のみ解除
-                        if (!_dragCancelled && !_droppedInSelfContainer)
+                        if (!_dragCancelled && !_droppedInSelfContainer && parentPanel != null)
                         {
-                            _liveAclEntries.Remove(acl);
-                            ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
-                                ? $"🗑️ アクセス権カードを枠外ドロップで解除しました: {acl.DisplayName}"
-                                : $"🗑️ Removed ACL card by dropping outside: {acl.DisplayName}");
+                            parentPanel.CurrentAclEntries.Remove(acl);
+                            parentPanel.UpdateChangeStatus();
+                            ShowToast($"🗑️ 枠外ドロップで権限カードを解除しました: {acl.DisplayName}");
                         }
                     }
                 }
-            }
-        }
-
-        private void LiveAclOpenSecModalButton_Click(object sender, RoutedEventArgs e)
-        {
-            var acl = _liveAclEntries.FirstOrDefault();
-            if (acl == null)
-            {
-                if (string.IsNullOrWhiteSpace(LiveAclPathTextBox.Text)) return;
-                acl = new SimAclEntry
-                {
-                    AccountName = "Authenticated Users",
-                    DisplayName = "Authenticated Users",
-                    PrincipalType = AdPrincipalType.Group,
-                    Rights = FileSystemRights.ReadAndExecute
-                };
-                _liveAclEntries.Add(acl);
-            }
-
-            _isLiveAclEditing = true;
-            _currentEditingAcl = acl;
-            SecModalTargetNameText.Text = LiveAclFolderNameText.Text;
-            SecModalFullPathText.Text = LiveAclPathTextBox.Text;
-            SecPrincipalInput.Text = acl.DisplayName;
-            SyncCheckboxesFromAcl(acl);
-            SecModalOverlay.Visibility = Visibility.Visible;
-        }
-
-        private void LiveAclDeleteEntryButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is FrameworkElement fe && fe.Tag is SimAclEntry acl)
-            {
-                _liveAclEntries.Remove(acl);
-                ShowToast($"アクセス権カードを削除しました: {acl.DisplayName}");
             }
         }
 
@@ -2122,19 +2303,28 @@ namespace AstraSize
                     target.IsExpanded = true;
                     ShowToast($"📁 「{movingNode.Name}」を「{target.Name}」の配下に移動しました");
                 }
-                // 2-B: ツリーの余白部分（下部空白）にドロップされた場合 ➔ 第1階層（ルート）へ昇格移動！
+                // 2-B: ツリーの余白部分（下部空白または意図的な左端ずらし）にドロップされた場合 ➔ 第1階層（ルート）へ昇格移動
                 else
                 {
-                    if (movingNode.Parent == null)
-                    {
-                        return;
-                    }
+                    Point mousePos = e.GetPosition(SimMockTreeView);
+                    // 遊び幅: 明らかな左端マージン（X < 50px）またはツリー全体の最下部余白の場合のみルート昇格とみなす
+                    bool isIntentionalRoot = mousePos.X < 50 || (_simRootFolders.Count > 0 && mousePos.Y > _simRootFolders.Count * 36);
 
-                    movingNode.Parent.Children.Remove(movingNode);
-                    movingNode.Parent = null;
-                    UpdateDescendantLevels(movingNode, 0);
-                    _simRootFolders.Add(movingNode);
-                    ShowToast($"📁 「{movingNode.Name}」をルートフォルダへ移動しました");
+                    if (isIntentionalRoot)
+                    {
+                        if (movingNode.Parent == null) return;
+
+                        movingNode.Parent.Children.Remove(movingNode);
+                        movingNode.Parent = null;
+                        UpdateDescendantLevels(movingNode, 0);
+                        _simRootFolders.Add(movingNode);
+                        ShowToast($"⏮ 「{movingNode.Name}」を第1階層（ルート）へ昇格しました");
+                    }
+                    else
+                    {
+                        // 水平のブレによる不意なルート昇格を防止し、現在の親・階層を保護
+                        ShowToast("⚠️ フォルダ行の上にドロップしてください（階層を保護しました）");
+                    }
                 }
                 return;
             }
@@ -2521,6 +2711,19 @@ namespace AstraSize
                 var treeItem = FindVisualParent<TreeViewItem>(d);
                 if (treeItem?.DataContext is SimFolderNode n) return n;
             }
+
+            // 水平オフセットの遊び: マウスが右側余白へブレてもY軸ライン上のアイテムを探索
+            if (e.Source is TreeView tv)
+            {
+                Point pos = e.GetPosition(tv);
+                Point testPoint = new Point(Math.Clamp(pos.X, 60, Math.Max(60, tv.ActualWidth - 60)), pos.Y);
+                System.Windows.Media.HitTestResult result = System.Windows.Media.VisualTreeHelper.HitTest(tv, testPoint);
+                if (result?.VisualHit != null)
+                {
+                    var treeItem = FindVisualParent<TreeViewItem>(result.VisualHit);
+                    if (treeItem?.DataContext is SimFolderNode n) return n;
+                }
+            }
             return null;
         }
 
@@ -2815,8 +3018,9 @@ namespace AstraSize
                 _selectedSimNode?.NotifyAclChanged();
                 if (_isLiveAclEditing)
                 {
-                    LiveAclCardsItemsControl.Items.Refresh();
+                    _currentEditingPanel?.UpdateChangeStatus();
                     _isLiveAclEditing = false;
+                    _currentEditingPanel = null;
                 }
                 ShowToast($"🛡️ 「{_currentEditingAcl.DisplayName}」のアクセス権設定を反映しました");
             }
@@ -3242,6 +3446,7 @@ namespace AstraSize
                     foreach (var col in AuditItemsDataGrid.Columns) col.SortDirection = null;
                 }
                 ApplyAuditFilters();
+                UpdateLiveSelectedReduction();
 
                 // Update KPI Cards
                 AuditKpiTotalFiles.Text = summary.InaccessibleDirectoriesCount > 0
@@ -3591,6 +3796,8 @@ namespace AstraSize
                     break;
             }
 
+            UpdateLiveSelectedReduction();
+
             // 次回も同じプリセットを選択できるように初期インデックスへリセット
             Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -3609,6 +3816,36 @@ namespace AstraSize
                     item.IsChecked = check;
                 }
             }
+            UpdateLiveSelectedReduction();
+        }
+
+        private void UpdateLiveSelectedReduction()
+        {
+            if (AuditLiveSelectedReductionText == null) return;
+
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(UpdateLiveSelectedReduction));
+                return;
+            }
+
+            if (_lastAuditItems == null || _lastAuditItems.Count == 0)
+            {
+                AuditLiveSelectedReductionText.Text = "0 B (0 件)";
+                return;
+            }
+
+            // チェックされている項目のうち、原本候補を除外したユニークなファイル（同一FullPath重複排除）のサイズを集計
+            var checkedItems = _lastAuditItems
+                .Where(x => x.IsChecked && !x.IsOriginalCandidate)
+                .GroupBy(x => x.FullPath, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+
+            long totalBytes = checkedItems.Sum(x => x.Size);
+            int count = checkedItems.Count;
+
+            AuditLiveSelectedReductionText.Text = $"{FileItemNode.FormatBytes(totalBytes)} ({count:N0} 件)";
         }
 
         private async void AuditDeleteSelectedButton_Click(object sender, RoutedEventArgs e)
@@ -4052,25 +4289,12 @@ namespace AstraSize
             LiveAclHeaderTitle.Text = isJa ? "🛡️ 権限コントロール" : "🛡️ Permission Control";
             LiveAclModeFolderRadio.Content = isJa ? "📁 フォルダ別 権限エディタ" : "📁 Folder ACL Editor";
             LiveAclModeReverseRadio.Content = isJa ? "🔍 ユーザー/グループ 逆引き監査 (Effective Access)" : "🔍 Effective Access (Reverse Lookup)";
-            LiveAclBrowseButton.Content = isJa ? "参照..." : "Browse...";
-            LiveAclReloadButton.Content = isJa ? "🔄 権限読込" : "🔄 Reload ACL";
-            LiveAclApplyButton.Content = isJa ? "⚡ 実環境へ即時適用" : "⚡ Apply to NTFS";
-            LiveAclRollbackButton.Content = isJa ? "↩️ バックアップ復元" : "↩️ Rollback Backup";
+            LiveAclBrowseButton.Content = isJa ? "参照" : "Browse";
             LiveAclExportMatrixButton.Content = isJa ? "📋 台帳CSV出力" : "📋 Export Matrix CSV";
-            LiveAclInheritCheckBox.Content = isJa ? "親フォルダからの権限継承を含める" : "Include inherited permissions";
-            LiveAclOpenSecModalButton.Content = isJa ? "⚙️ 詳細権限を直接編集" : "⚙️ Advanced Permissions";
 
-            LiveAclTargetFolderLabel.Text = isJa ? "対象フォルダー (UNC / ローカル)" : "Target Folder (UNC / Local)";
-            LiveAclSelectedFolderPrefixText.Text = isJa ? "選択中: " : "Target: ";
-            if (LiveAclFolderNameText.Text == "(未読込)" || LiveAclFolderNameText.Text == "(Not Loaded)")
-            {
-                LiveAclFolderNameText.Text = isJa ? "(未読込)" : "(Not Loaded)";
-            }
-            LiveAclDropZoneHintText.Text = isJa ? "➕ 右側の Active Directory 候補からユーザーまたはグループをここにドラッグ＆ドロップして権限を追加" : "➕ Drag & drop Users or Groups from directory list on the right to grant permissions";
-            LiveAclCardsTitleText.Text = isJa ? "現在のアクセス権エントリ (ACE)" : "Current Access Control Entries (ACEs)";
-            LiveAclPrincipalsHeaderTitle.Text = isJa ? "Active Directory / ローカル候補" : "Active Directory / Local Principals";
-            LiveAclLocalPcTitle.Text = isJa ? "⚠️ ローカルPC環境 (ワークグループ)" : "⚠️ Local PC Environment (Workgroup)";
-            LiveAclLocalPcDesc.Text = isJa ? "本PCはActive Directoryドメインに参加していません。ローカルアカウントのみ表示しています。" : "This machine is not joined to an Active Directory domain. Only local accounts are displayed.";
+            LiveAclPrincipalsHeaderTitle.Text = isJa ? "👥 Active Directory / ローカル" : "👥 Active Directory / Local";
+            LiveAclLocalPcTitle.Text = isJa ? "⚠️ ローカルPC環境" : "⚠️ Local PC Environment";
+            LiveAclLocalPcDesc.Text = isJa ? "※ローカルPC環境のためADプリンシパルは未接続です\n（上部の入力欄から直接アカウント名を入力して追加可能）" : "※Not connected to Active Directory in local PC environment.\n(Direct account name input is available)";
 
             // Tab 1 - Reverse Lookup (Effective Access)
             RevBrowseRootButton.Content = isJa ? "参照..." : "Browse...";

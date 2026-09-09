@@ -12,8 +12,8 @@ namespace FolderMorpher.Services
 {
     public class AuditReportService
     {
-        // クラウド（SharePoint/Box）およびNTFSで問題になる禁則文字
-        private static readonly char[] InvalidChars = new[] { '*', ':', '<', '>', '?', '/', '\\', '|', '"', '#', '%', '{', '}', '~', '&' };
+        // NTFS/Windowsで実際に問題になる地雷文字 (日常記号 # % & { } ~ は過剰警告防止のため除外)
+        private static readonly char[] NtfsInvalidChars = new[] { '*', ':', '<', '>', '?', '/', '\\', '|', '"' };
 
         public async Task<(AuditSummary Summary, List<AuditItem> Items)> RunAuditAsync(
             AuditOptions options,
@@ -65,8 +65,8 @@ namespace FolderMorpher.Services
                 ct.ThrowIfCancellationRequested();
                 processedCount++;
 
-                // パス長チェック (>= 260)
-                if (options.CheckPathLimits && fi.FullName.Length >= 260)
+                // パス長チェック (移行先での長大化＆Excel保存不能リスクを未然に防ぐため >= 240 を危険域とする)
+                if (options.CheckPathLimits && fi.FullName.Length >= 240)
                 {
                     summary.PathTooLongCount++;
                     items.Add(new AuditItem
@@ -78,15 +78,27 @@ namespace FolderMorpher.Services
                         LastWriteTime = fi.LastWriteTime,
                         LastAccessTime = fi.LastAccessTime,
                         IssueType = AuditIssueType.PathTooLong,
-                        Detail = $"文字数: {fi.FullName.Length} 文字 (上限260文字)"
+                        Detail = $"文字数: {fi.FullName.Length} 文字 (移行危険域: 240文字以上)"
                     });
                 }
 
-                // 禁則文字チェック
+                // 禁則文字・地雷文字チェック (末尾空白・末尾ドット・制御文字・NTFS不正文字)
                 if (options.CheckPathLimits)
                 {
-                    var invalidInName = fi.Name.Where(c => InvalidChars.Contains(c)).Distinct().ToArray();
+                    var reasons = new List<string>();
+
+                    if (fi.Name.EndsWith(' '))
+                        reasons.Add("末尾スペース (Windowsで開けない・削除不能地雷)");
+                    if (fi.Name.EndsWith('.'))
+                        reasons.Add("末尾ピリオド (Windowsで開けない・削除不能地雷)");
+                    if (fi.Name.Any(c => c < 32))
+                        reasons.Add("制御文字(改行等)を含む");
+
+                    var invalidInName = fi.Name.Where(c => NtfsInvalidChars.Contains(c)).Distinct().ToArray();
                     if (invalidInName.Length > 0)
+                        reasons.Add($"NTFS不正文字: {string.Join(" ", invalidInName)}");
+
+                    if (reasons.Count > 0)
                     {
                         summary.InvalidCharCount++;
                         items.Add(new AuditItem
@@ -98,7 +110,7 @@ namespace FolderMorpher.Services
                             LastWriteTime = fi.LastWriteTime,
                             LastAccessTime = fi.LastAccessTime,
                             IssueType = AuditIssueType.InvalidChar,
-                            Detail = $"移行禁則文字を含む: {string.Join(" ", invalidInName)}"
+                            Detail = string.Join(" / ", reasons)
                         });
                     }
                 }

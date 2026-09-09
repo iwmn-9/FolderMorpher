@@ -79,4 +79,118 @@ namespace AstraSize.Models
         public string Sddl { get; set; } = string.Empty;
         public string FormattedDate => Timestamp.ToString("yyyy/MM/dd HH:mm:ss");
     }
+
+    public class LiveAclPanelModel : System.ComponentModel.INotifyPropertyChanged
+    {
+        private string _folderPath = string.Empty;
+        private string _folderName = string.Empty;
+        private bool _inheritAcl = true;
+        private bool _hasChanges = false;
+        private string _statusMessage = string.Empty;
+        private bool _isApplying = false;
+
+        public string PanelId { get; set; } = Guid.NewGuid().ToString("N");
+
+        public string FolderPath
+        {
+            get => _folderPath;
+            set
+            {
+                _folderPath = value;
+                FolderName = System.IO.Path.GetFileName(value.TrimEnd('\\', '/'));
+                if (string.IsNullOrEmpty(FolderName)) FolderName = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public string FolderName
+        {
+            get => _folderName;
+            set { _folderName = value; OnPropertyChanged(); }
+        }
+
+        public bool InheritAcl
+        {
+            get => _inheritAcl;
+            set
+            {
+                if (_inheritAcl != value)
+                {
+                    _inheritAcl = value;
+                    OnPropertyChanged();
+                    UpdateChangeStatus();
+                }
+            }
+        }
+
+        public bool HasChanges
+        {
+            get => _hasChanges;
+            set { _hasChanges = value; OnPropertyChanged(); }
+        }
+
+        public string StatusMessage
+        {
+            get => _statusMessage;
+            set { _statusMessage = value; OnPropertyChanged(); }
+        }
+
+        public bool IsApplying
+        {
+            get => _isApplying;
+            set { _isApplying = value; OnPropertyChanged(); }
+        }
+
+        public string OriginalSddl { get; set; } = string.Empty;
+        public bool OriginalInheritAcl { get; set; } = true;
+
+        /// <summary>
+        /// 初回読み込み時の明示ACEスナップショット（不変）
+        /// </summary>
+        public List<SimAclEntry> OriginalAclEntries { get; set; } = new();
+
+        /// <summary>
+        /// 現在UIで編集中の明示ACEコレクション
+        /// </summary>
+        public System.Collections.ObjectModel.ObservableCollection<SimAclEntry> CurrentAclEntries { get; set; } = new();
+
+        public void UpdateChangeStatus()
+        {
+            if (InheritAcl != OriginalInheritAcl)
+            {
+                HasChanges = true;
+                return;
+            }
+
+            if (CurrentAclEntries.Count != OriginalAclEntries.Count)
+            {
+                HasChanges = true;
+                return;
+            }
+
+            // ルール単位の等価性チェック
+            for (int i = 0; i < CurrentAclEntries.Count; i++)
+            {
+                var cur = CurrentAclEntries[i];
+                var orig = OriginalAclEntries.Find(o => 
+                    SimAclEntry.IsSameAccount(o.AccountName, cur.AccountName) &&
+                    o.AccessType == cur.AccessType);
+
+                if (orig == null ||
+                    !SimAclEntry.IsSameRights(orig.Rights, cur.Rights) ||
+                    orig.InheritanceFlags != cur.InheritanceFlags ||
+                    orig.PropagationFlags != cur.PropagationFlags)
+                {
+                    HasChanges = true;
+                    return;
+                }
+            }
+
+            HasChanges = false;
+        }
+
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? prop = null)
+            => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(prop));
+    }
 }

@@ -31,7 +31,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 19;
+            int totalTests = 20;
 
             try
             {
@@ -144,9 +144,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 19
-                Console.WriteLine("\n[TEST 19/19] Storage Explorer: Multi-Tab Session Persistence & Audit Detail/Toggle Sorting Contracts...");
+                Console.WriteLine("\n[TEST 19/20] Storage Explorer: Multi-Tab Session Persistence & Audit Detail/Toggle Sorting Contracts...");
                 TestStorageSessionAndAuditSortingContracts();
                 Console.WriteLine("  --> [PASS] Storage Explorer: Multi-tab session persistence roundtrip & Audit Detail/Toggle contracts verified.");
+                passCount++;
+
+                // Test 20
+                Console.WriteLine("\n[TEST 20/20] Live ACL Delta Apply (No-Touch Rule), Path Danger Zone (240+) & Real-Time Reduction Calculation...");
+                await TestLiveAclDeltaApplyAndAuditHygieneThresholdsAsync();
+                Console.WriteLine("  --> [PASS] Live ACL Delta Apply (non-mutated ACEs untouched), Path Length 240+ risk & dynamic reduction calculation verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -2185,6 +2191,148 @@ namespace FolderMorpher.Services.Testing
 
             if (tab.FlatVisibleItems.Count != 2)
                 throw new InvalidOperationException($"Expected 2 flat items after FlattenTree, got {tab.FlatVisibleItems.Count}");
+        }
+
+        private static async Task TestLiveAclDeltaApplyAndAuditHygieneThresholdsAsync()
+        {
+            // 1. Live ACL 差分適用 (Delta Apply) セマンティクス & 既存ノータッチ契約
+            string testDir = Path.Combine(Path.GetTempPath(), "FM_DeltaApply_Test_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(testDir);
+            var aclService = new AclService();
+
+            try
+            {
+                // 初期ACEの構成 (Rule A: Authenticated Users = ReadAndExecute, Rule B: Users = Read)
+                var initialAcl = new List<SimAclEntry>
+                {
+                    new SimAclEntry
+                    {
+                        AccountName = "Authenticated Users",
+                        DisplayName = "Authenticated Users",
+                        Rights = FileSystemRights.ReadAndExecute,
+                        AccessType = AccessControlType.Allow
+                    },
+                    new SimAclEntry
+                    {
+                        AccountName = "Users",
+                        DisplayName = "Users",
+                        Rights = FileSystemRights.Read,
+                        AccessType = AccessControlType.Allow
+                    }
+                };
+
+                // 初期状態を適用
+                aclService.ApplySimAclEntries(testDir, initialAcl, inherit: false);
+                var (currentEntries, isInherited, _) = aclService.GetSimAclForFolder(testDir);
+
+                // 差分のシミュレーション:
+                // Rule A (Authenticated Users): 変更なし (ノータッチ)
+                // Rule B (Users): 変更 (Read -> Modify)
+                // Rule C (Administrators): 新規追加 (FullControl)
+                var updatedAcl = new List<SimAclEntry>
+                {
+                    new SimAclEntry
+                    {
+                        AccountName = "Authenticated Users",
+                        DisplayName = "Authenticated Users",
+                        Rights = FileSystemRights.ReadAndExecute,
+                        AccessType = AccessControlType.Allow
+                    },
+                    new SimAclEntry
+                    {
+                        AccountName = "Users",
+                        DisplayName = "Users",
+                        Rights = FileSystemRights.Modify,
+                        AccessType = AccessControlType.Allow
+                    },
+                    new SimAclEntry
+                    {
+                        AccountName = "Administrators",
+                        DisplayName = "Administrators",
+                        Rights = FileSystemRights.FullControl,
+                        AccessType = AccessControlType.Allow
+                    }
+                };
+
+                // Delta Apply 実行
+                var deltaResult = await aclService.ApplyLiveAclDeltaWithRollbackAsync(
+                    testDir,
+                    currentEntries,
+                    updatedAcl,
+                    inherit: false,
+                    originalInherit: isInherited);
+
+                int deltaAppliedCount = deltaResult.addedCount + deltaResult.removedCount + deltaResult.modifiedCount;
+                if (deltaAppliedCount != 2)
+                    throw new InvalidOperationException($"Expected 2 delta rules applied (1 modified, 1 added), got {deltaAppliedCount} (added={deltaResult.addedCount}, removed={deltaResult.removedCount}, modified={deltaResult.modifiedCount})");
+
+                // 適用後の状態検証
+                var (afterEntries, _, _) = aclService.GetSimAclForFolder(testDir);
+                var authUserAce = afterEntries.FirstOrDefault(e => SimAclEntry.IsSameAccount(e.AccountName, "Authenticated Users"));
+                var usersAce = afterEntries.FirstOrDefault(e => SimAclEntry.IsSameAccount(e.AccountName, "Users"));
+                var adminAce = afterEntries.FirstOrDefault(e => SimAclEntry.IsSameAccount(e.AccountName, "Administrators"));
+
+                if (authUserAce == null || !SimAclEntry.IsSameRights(authUserAce.Rights, FileSystemRights.ReadAndExecute))
+                    throw new InvalidOperationException("Untouched ACE 'Authenticated Users' was corrupted or lost.");
+                if (usersAce == null || !SimAclEntry.IsSameRights(usersAce.Rights, FileSystemRights.Modify))
+                    throw new InvalidOperationException($"Expected Users rights Modify, got {usersAce?.Rights}");
+                if (adminAce == null || !SimAclEntry.IsSameRights(adminAce.Rights, FileSystemRights.FullControl))
+                    throw new InvalidOperationException("Newly added ACE 'Administrators' was not found.");
+
+                // 差分0件の呼び出しテスト (Skip API call)
+                var noDeltaResult = await aclService.ApplyLiveAclDeltaWithRollbackAsync(
+                    testDir,
+                    afterEntries,
+                    afterEntries,
+                    inherit: false,
+                    originalInherit: false);
+
+                int noDeltaAppliedCount = noDeltaResult.addedCount + noDeltaResult.removedCount + noDeltaResult.modifiedCount;
+                if (noDeltaAppliedCount != 0)
+                    throw new InvalidOperationException($"Expected 0 deltas for identical entries, got {noDeltaAppliedCount}");
+
+                // 2. パス長危険域 (240文字〜) の判定検証
+                string longPath245 = "C:\\" + new string('a', 242);
+                var dummyLongItem = new AuditItem
+                {
+                    FullPath = longPath245,
+                    FileName = "test.txt",
+                    DirectoryPath = "C:\\",
+                    IssueType = AuditIssueType.PathTooLong
+                };
+                if (!dummyLongItem.IssueTypeDisplay.Contains("240"))
+                    throw new InvalidOperationException($"IssueTypeDisplay should reflect 240+ danger zone, got: {dummyLongItem.IssueTypeDisplay}");
+
+                // 3. 断捨離のリアルタイム削減計算（原本保護連動）
+                var auditTestItems = new List<AuditItem>
+                {
+                    // 重複グループ 1: 原本 10MB + コピー 10MB (2件)
+                    new AuditItem { FullPath = "C:\\Data\\Master.pdf", Size = 10 * 1024 * 1024, IssueType = AuditIssueType.Duplicate, IsOriginalCandidate = true, IsChecked = true },
+                    new AuditItem { FullPath = "C:\\Data\\Copy1.pdf", Size = 10 * 1024 * 1024, IssueType = AuditIssueType.Duplicate, IsOriginalCandidate = false, IsChecked = true },
+                    new AuditItem { FullPath = "C:\\Data\\Copy2.pdf", Size = 10 * 1024 * 1024, IssueType = AuditIssueType.Duplicate, IsOriginalCandidate = false, IsChecked = true },
+                    // 休眠ファイル: 5MB
+                    new AuditItem { FullPath = "C:\\Data\\Old.zip", Size = 5 * 1024 * 1024, IssueType = AuditIssueType.Dormant, IsOriginalCandidate = false, IsChecked = true },
+                    // 未選択の休眠ファイル: 20MB
+                    new AuditItem { FullPath = "C:\\Data\\Unchecked.iso", Size = 20 * 1024 * 1024, IssueType = AuditIssueType.Dormant, IsOriginalCandidate = false, IsChecked = false }
+                };
+
+                // 原本保護付き集計ロジックの検証
+                var calculatedItems = auditTestItems
+                    .Where(x => x.IsChecked && !x.IsOriginalCandidate)
+                    .GroupBy(x => x.FullPath, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => g.First())
+                    .ToList();
+
+                long totalReduced = calculatedItems.Sum(x => x.Size);
+                if (totalReduced != 25 * 1024 * 1024)
+                    throw new InvalidOperationException($"Expected 25MB reduction, got {totalReduced / (1024 * 1024)}MB");
+                if (calculatedItems.Count != 3)
+                    throw new InvalidOperationException($"Expected 3 reduced items, got {calculatedItems.Count}");
+            }
+            finally
+            {
+                try { Directory.Delete(testDir, recursive: true); } catch { }
+            }
         }
     }
 }

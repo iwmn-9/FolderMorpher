@@ -78,7 +78,7 @@
                         <!-- Expanded Footer (2-tier layout: Brand on top, Controls below) -->
                         <StackPanel x:Name="SidebarFooterExpandedPanel" Margin="14,8,14,10">
                             <StackPanel Margin="0,0,0,8">
-                                <TextBlock Text="FolderMorpher v1.5.1" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock Text="FolderMorpher v1.6.0" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                                 <TextBlock Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#94A3B8" Margin="0,1,0,0"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal">
@@ -470,199 +470,286 @@
                         </Grid.RowDefinitions>
 
                         <!-- Toolbar -->
-                        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,12">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/> <!-- Label -->
-                            <ColumnDefinition Width="*"/>    <!-- Path Input -->
-                            <ColumnDefinition Width="Auto"/> <!-- Browse & Refresh -->
-                            <ColumnDefinition Width="Auto"/> <!-- Actions -->
-                        </Grid.ColumnDefinitions>
+                        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
 
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
-                            <TextBlock Text="🛡️" FontSize="16" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBlock x:Name="LiveAclTargetFolderLabel" Text="対象フォルダ:" FontWeight="SemiBold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
-                        </StackPanel>
-
-                        <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="34" Padding="10,0" Margin="0,0,10,0">
-                            <TextBox x:Name="LiveAclPathTextBox" BorderThickness="0" Background="Transparent"
-                                     VerticalAlignment="Center" FontSize="12" FontFamily="{StaticResource MonoFont}"
-                                     KeyDown="LiveAclPathTextBox_KeyDown"/>
-                        </Border>
-
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,16,0">
-                            <Button x:Name="LiveAclBrowseButton" Content="参照..." Height="32" Margin="0,0,6,0" Style="{StaticResource FluentButtonSecondary}" Click="LiveAclBrowseButton_Click"/>
-                            <Button x:Name="LiveAclReloadButton" Content="🔄 権限読込" Height="32" Style="{StaticResource FluentButtonSecondary}" Click="LiveAclReloadButton_Click"/>
-                        </StackPanel>
-
-                        <StackPanel Grid.Column="3" Orientation="Horizontal">
-                            <Button x:Name="LiveAclApplyButton" Content="⚡ 実環境へ即時適用" Height="32" Margin="0,0,8,0"
-                                     Style="{StaticResource FluentButtonPrimary}" Click="LiveAclApplyButton_Click"/>
-                            <Button x:Name="LiveAclRollbackButton" Content="↩️ バックアップ復元" Height="32" Margin="0,0,8,0"
-                                     Style="{StaticResource FluentButtonSecondary}" Click="LiveAclRollbackButton_Click" ToolTip="直前のSDDLスナップショットからロールバック"/>
-                            <Button x:Name="LiveAclExportMatrixButton" Content="📋 台帳CSV出力" Height="32"
-                                     Style="{StaticResource FluentButtonSecondary}" Click="LiveAclExportMatrixButton_Click"/>
-                        </StackPanel>
-                    </Grid>
-                </Border>
-
-                <!-- 2-Pane View -->
-                <Grid Grid.Row="1" Margin="20,16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="6.5*"/>
-                        <ColumnDefinition Width="14"/>
-                        <ColumnDefinition Width="3.5*"/>
-                    </Grid.ColumnDefinitions>
-
-                    <!-- Left: Current ACL Cards & Drop Zone -->
-                    <Border Grid.Column="0" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
-                            BorderThickness="1" CornerRadius="12" Padding="18">
-                        <Border.Effect>
-                            <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
-                        </Border.Effect>
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/> <!-- Folder Info & Inherit Header -->
-                                <RowDefinition Height="Auto"/> <!-- Drop Zone / Help Banner -->
-                                <RowDefinition Height="*"/>    <!-- Cards Area -->
-                            </Grid.RowDefinitions>
-
-                            <!-- Folder Header -->
-                            <Grid Grid.Row="0" Margin="0,0,0,14">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock x:Name="LiveAclSelectedFolderPrefixText" Text="📁 設定中のフォルダ: " FontWeight="SemiBold" FontSize="13" Foreground="#475569"/>
-                                    <TextBlock x:Name="LiveAclFolderNameText" Text="(未読込)" FontWeight="Bold" FontSize="13" Foreground="#0284C7"/>
-                                    <TextBlock x:Name="LiveAclOwnerText" Text="" FontSize="11" Foreground="#64748B" Margin="14,0,0,0" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="🛡️" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock x:Name="LiveAclTargetFolderLabel" Text="マルチフォルダ 権限エディタ (最小差分適用)" FontWeight="Bold" FontSize="13" Foreground="#0F172A" VerticalAlignment="Center"/>
+                                    <TextBlock Text="💡 左のツリーからフォルダをダブルクリックまたは中央へD&amp;Dして開く（最大6フォルダまで同時比較）" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="14,0,0,0"/>
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <CheckBox x:Name="LiveAclInheritCheckBox" Content="親フォルダからの権限継承を含める"
-                                              FontSize="11" FontWeight="Medium" Foreground="#334155" VerticalAlignment="Center"
-                                              Checked="LiveAclInheritCheckBox_Changed" Unchecked="LiveAclInheritCheckBox_Changed"/>
+
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Button x:Name="LiveAclCloseAllPanelsButton" Content="✕ パネルを全解除" Height="30" Margin="0,0,8,0"
+                                            Style="{StaticResource FluentButtonSecondary}" Click="LiveAclCloseAllPanelsButton_Click" ToolTip="開いているパネルをすべて閉じます"/>
+                                    <Button x:Name="LiveAclExportMatrixButton" Content="📋 台帳CSV出力" Height="30"
+                                            Style="{StaticResource FluentButtonSecondary}" Click="LiveAclExportMatrixButton_Click"/>
                                 </StackPanel>
                             </Grid>
+                        </Border>
 
-                            <!-- Drop Zone Banner (カード追加の受け皿) -->
-                            <Border Grid.Row="1" Background="#F0F9FF" BorderBrush="#BAE6FD" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,0,0,12"
-                                    AllowDrop="True" Drop="LiveAclDropZone_Drop" DragOver="SimGenericDragOver">
-                                <TextBlock x:Name="LiveAclDropZoneHintText" Text="📥 右のADプリンシパル（ユーザー・グループ）をここにドロップして権限を追加"
-                                           FontSize="11" FontWeight="SemiBold" Foreground="#0284C7" HorizontalAlignment="Center"/>
+                        <!-- 3-Pane Split View -->
+                        <Grid Grid.Row="1" Margin="20,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="260" MinWidth="200"/> <!-- Col 0: フォルダ参照ツリー -->
+                                <ColumnDefinition Width="12"/>                  <!-- Col 1: Splitter -->
+                                <ColumnDefinition Width="*" MinWidth="380"/>    <!-- Col 2: マルチ権限パネルエリア -->
+                                <ColumnDefinition Width="12"/>                  <!-- Col 3: Splitter -->
+                                <ColumnDefinition Width="280" MinWidth="220"/>  <!-- Col 4: ADプリンシパル -->
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Col 0: フォルダ参照ツリー -->
+                            <Border Grid.Column="0" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
+                                    BorderThickness="1" CornerRadius="12" Padding="14">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
+                                </Border.Effect>
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                                        <TextBlock Text="📁 フォルダ参照" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
+                                        <TextBlock Text="Wクリック または D&amp;Dでパネル追加" FontSize="10" Foreground="#64748B" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <!-- Search & Browse -->
+                                    <Grid Grid.Row="1" Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="28" Padding="6,0">
+                                            <TextBox x:Name="LiveAclPathTextBox" BorderThickness="0" Background="Transparent"
+                                                     VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"
+                                                     KeyDown="LiveAclPathTextBox_KeyDown"/>
+                                        </Border>
+                                        <Button x:Name="LiveAclBrowseButton" Grid.Column="1" Content="参照" Height="28" Margin="4,0,0,0"
+                                                Style="{StaticResource FluentButtonSecondary}" Padding="6,2" FontSize="10.5" Click="LiveAclBrowseButton_Click"/>
+                                        <Button x:Name="LiveAclReloadButton" Grid.Column="2" Content="🔄" Height="28" Margin="4,0,0,0"
+                                                Style="{StaticResource FluentButtonSecondary}" Padding="6,2" FontSize="11" Click="LiveAclReloadButton_Click" ToolTip="フォルダ階層を展開"/>
+                                    </Grid>
+                                    <!-- Folder Browser TreeView -->
+                                    <Border Grid.Row="2" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Background="#FFFFFF">
+                                        <TreeView x:Name="LiveAclFolderTreeView" BorderThickness="0" Background="Transparent"
+                                                  MouseDoubleClick="LiveAclFolderTreeView_MouseDoubleClick"
+                                                  PreviewMouseLeftButtonDown="LiveAclFolderTreeView_PreviewMouseLeftButtonDown"
+                                                  PreviewMouseMove="LiveAclFolderTreeView_PreviewMouseMove">
+                                            <TreeView.ItemContainerStyle>
+                                                <Style TargetType="{x:Type TreeViewItem}">
+                                                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                                                </Style>
+                                            </TreeView.ItemContainerStyle>
+                                            <TreeView.ItemTemplate>
+                                                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                                    <StackPanel Orientation="Horizontal" Margin="0,2" Cursor="Hand" Tag="{Binding}">
+                                                        <TextBlock Text="📁 " FontSize="11.5"/>
+                                                        <TextBlock Text="{Binding Name}" FontSize="11.5" FontWeight="Medium" Foreground="#1E293B"/>
+                                                    </StackPanel>
+                                                </HierarchicalDataTemplate>
+                                            </TreeView.ItemTemplate>
+                                        </TreeView>
+                                    </Border>
+                                </Grid>
                             </Border>
 
-                            <!-- ACL Cards Area -->
-                            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
-                                          AllowDrop="True" Drop="LiveAclCardsContainer_Drop" DragOver="SimGenericDragOver">
-                                <StackPanel>
-                                    <Grid Margin="0,0,0,10">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock x:Name="LiveAclCardsTitleText" Text="◐ 付与されているNTFSアクセス権 (カードWクリックでWindows詳細設定を編集)" FontWeight="SemiBold" FontSize="12" Foreground="#334155" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                        <Button x:Name="LiveAclOpenSecModalButton" Content="⚙️ 詳細権限を直接編集" FontSize="10" Height="24" Padding="10,2"
-                                                Style="{StaticResource FluentButtonSecondary}" HorizontalAlignment="Right" Click="LiveAclOpenSecModalButton_Click"/>
-                                    </Grid>
+                            <GridSplitter Grid.Column="1" Width="12" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
 
-                                    <ItemsControl x:Name="LiveAclCardsItemsControl">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <StackPanel Orientation="Vertical"/>
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate DataType="{x:Type models:SimAclEntry}">
-                                                <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8"
-                                                        Padding="14,10" Margin="0,0,0,8" Cursor="Hand"
-                                                        MouseDown="LiveAclCard_MouseDown"
-                                                        PreviewMouseMove="LiveAclCard_PreviewMouseMove">
-                                                    <Border.Effect>
-                                                        <DropShadowEffect BlurRadius="4" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.03"/>
-                                                    </Border.Effect>
+                            <!-- Col 2: マルチ権限パネルエリア (横スクロール対応、最大6フォルダ) -->
+                            <Border Grid.Column="2" Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="10"
+                                    AllowDrop="True" Drop="LiveAclMultiPanelArea_Drop" DragOver="SimGenericDragOver">
+                                <Grid>
+                                    <!-- Empty Banner -->
+                                    <Border x:Name="LiveAclNoPanelsBanner" Visibility="Collapsed" Background="#FFFFFF" BorderBrush="#CBD5E1"
+                                            BorderThickness="1" CornerRadius="10" Padding="30" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <TextBlock Text="🛡️" FontSize="36" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                                            <TextBlock Text="権限操作パネルが開かれていません" FontSize="14" FontWeight="Bold" Foreground="#334155" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="左のフォルダツリーからフォルダをダブルクリック、またはここにドラッグ＆ドロップしてください。" FontSize="11.5" Foreground="#64748B" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                            <TextBlock Text="※最大6つのフォルダを横並びで同時に比較・編集できます。" FontSize="11" Foreground="#0284C7" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Multi-Panels Horizontal ScrollViewer -->
+                                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                        <ItemsControl x:Name="LiveAclMultiPanelsItemsControl">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <StackPanel Orientation="Horizontal"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type models:LiveAclPanelModel}">
+                                                    <!-- Panel Card -->
+                                                    <Border Width="370" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Margin="0,0,12,0" Padding="14">
+                                                        <Border.Effect>
+                                                            <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
+                                                        </Border.Effect>
+                                                        <Grid>
+                                                            <Grid.RowDefinitions>
+                                                                <RowDefinition Height="Auto"/> <!-- Header: Name & Close -->
+                                                                <RowDefinition Height="Auto"/> <!-- Inherit & Status -->
+                                                                <RowDefinition Height="Auto"/> <!-- Drop Zone Banner -->
+                                                                <RowDefinition Height="*"/>    <!-- Cards List -->
+                                                                <RowDefinition Height="Auto"/> <!-- Footer: Apply & Rollback -->
+                                                            </Grid.RowDefinitions>
+
+                                                            <!-- Row 0: Header -->
+                                                            <Grid Grid.Row="0" Margin="0,0,0,6">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                                    <TextBlock Text="{Binding FolderName}" FontWeight="Bold" FontSize="13" Foreground="#0F172A" TextTrimming="CharacterEllipsis" ToolTip="{Binding FolderPath}"/>
+                                                                    <TextBlock Text="{Binding FolderPath}" FontSize="10" FontFamily="{StaticResource MonoFont}" Foreground="#64748B" TextTrimming="CharacterEllipsis" ToolTip="{Binding FolderPath}"/>
+                                                                </StackPanel>
+                                                                <Button Grid.Column="1" Content="✕" Width="24" Height="24" Padding="0" FontSize="11"
+                                                                        Style="{StaticResource FluentButtonSecondary}" Foreground="#64748B" BorderThickness="0" Background="#F1F5F9"
+                                                                        Click="LiveAclPanelCloseButton_Click" Tag="{Binding}" ToolTip="このパネルを閉じる"/>
+                                                            </Grid>
+
+                                                            <!-- Row 1: Inherit & Change Status -->
+                                                            <Grid Grid.Row="1" Margin="0,0,0,8">
+                                                                <CheckBox Content="親フォルダからの権限継承を含める" IsChecked="{Binding InheritAcl, Mode=TwoWay}"
+                                                                          FontSize="11" FontWeight="Medium" Foreground="#334155" VerticalAlignment="Center"/>
+                                                                <Border HorizontalAlignment="Right" Background="#FEF3C7" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="4" Padding="6,1"
+                                                                        Visibility="{Binding HasChanges, Converter={StaticResource BoolToVis}}">
+                                                                    <TextBlock Text="● 未適用の変更あり" FontSize="10" FontWeight="SemiBold" Foreground="#B45309"/>
+                                                                </Border>
+                                                            </Grid>
+
+                                                            <!-- Row 2: Drop Zone -->
+                                                            <Border Grid.Row="2" Background="#F0F9FF" BorderBrush="#BAE6FD" BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,8"
+                                                                    AllowDrop="True" Drop="LiveAclPanelDropZone_Drop" DragOver="SimGenericDragOver" Tag="{Binding}">
+                                                                <TextBlock Text="📥 右のADアカウントをここにドロップして権限追加" FontSize="10.5" FontWeight="SemiBold" Foreground="#0284C7" HorizontalAlignment="Center"/>
+                                                            </Border>
+
+                                                            <!-- Row 3: Cards List -->
+                                                            <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" Margin="0,0,0,8"
+                                                                          AllowDrop="True" Drop="LiveAclCardsContainer_Drop" DragOver="SimGenericDragOver" Tag="{Binding}">
+                                                                <ItemsControl ItemsSource="{Binding CurrentAclEntries}">
+                                                                    <ItemsControl.ItemsPanel>
+                                                                        <ItemsPanelTemplate>
+                                                                            <StackPanel Orientation="Vertical"/>
+                                                                        </ItemsPanelTemplate>
+                                                                    </ItemsControl.ItemsPanel>
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate DataType="{x:Type models:SimAclEntry}">
+                                                                            <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6"
+                                                                                    Padding="10,8" Margin="0,0,0,6" Cursor="Hand"
+                                                                                    MouseDown="LiveAclCard_MouseDown"
+                                                                                    PreviewMouseMove="LiveAclCard_PreviewMouseMove" Tag="{Binding}">
+                                                                                <Grid>
+                                                                                    <Grid.ColumnDefinitions>
+                                                                                        <ColumnDefinition Width="*"/>
+                                                                                        <ColumnDefinition Width="Auto"/>
+                                                                                        <ColumnDefinition Width="Auto"/>
+                                                                                    </Grid.ColumnDefinitions>
+                                                                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                                        <TextBlock Text="{Binding IconGlyph}" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                                                        <StackPanel VerticalAlignment="Center">
+                                                                                            <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="11.5" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
+                                                                                            <TextBlock Text="{Binding Identity}" FontSize="10" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
+                                                                                        </StackPanel>
+                                                                                    </StackPanel>
+                                                                                    <Border Grid.Column="1" Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="8,0" VerticalAlignment="Center">
+                                                                                        <TextBlock Text="{Binding FormattedRights}" FontSize="10.5" FontWeight="SemiBold" Foreground="#1D4ED8"/>
+                                                                                    </Border>
+                                                                                    <Border Grid.Column="2" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                                                                                        <TextBlock Text="{Binding AppliesTo}" FontSize="10" Foreground="#475569"/>
+                                                                                    </Border>
+                                                                                </Grid>
+                                                                            </Border>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
+                                                            </ScrollViewer>
+
+                                                            <!-- Row 4: Footer Actions -->
+                                                            <Grid Grid.Row="4" Margin="0,4,0,0">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" FontSize="10.5" Foreground="#64748B" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                                <Button Grid.Column="1" Content="↩️ ロールバック" Height="28" Margin="0,0,6,0" Padding="8,2" FontSize="11"
+                                                                        Style="{StaticResource FluentButtonSecondary}" Click="LiveAclPanelRollbackButton_Click" Tag="{Binding}" ToolTip="このフォルダを直前のバックアップから復元"/>
+                                                                <Button Grid.Column="2" Content="⚡ 差分適用" Height="28" Padding="12,2" FontSize="11.5"
+                                                                        Style="{StaticResource FluentButtonPrimary}" Click="LiveAclPanelApplyDeltaButton_Click" Tag="{Binding}" ToolTip="変更分だけをピンポイント適用"/>
+                                                            </Grid>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Border>
+
+                            <GridSplitter Grid.Column="3" Width="12" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
+
+                            <!-- Col 4: AD Principals Browser -->
+                            <Border Grid.Column="4" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
+                                    BorderThickness="1" CornerRadius="12" Padding="14">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock x:Name="LiveAclPrincipalsHeaderTitle" Grid.Row="0" Text="👥 Active Directory / ローカル" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,8"/>
+
+                                    <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Padding="8,0" Margin="0,0,0,8">
+                                        <TextBox x:Name="LiveAclPrincipalSearchTextBox" BorderThickness="0" Background="Transparent"
+                                                 VerticalAlignment="Center" FontSize="11" TextChanged="LiveAclPrincipalSearchTextBox_TextChanged"/>
+                                    </Border>
+
+                                    <ListBox x:Name="LiveAclPrincipalsListBox" Grid.Row="2" BorderThickness="0" Background="Transparent"
+                                             PreviewMouseMove="LiveAclPrincipalsListBox_PreviewMouseMove">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type models:AdPrincipalItem}">
+                                                <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,2" Cursor="Hand">
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*"/>
                                                             <ColumnDefinition Width="Auto"/>
-                                                            <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
-
-                                                        <!-- Col 0: Principal Info -->
-                                                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding IconGlyph}" FontSize="15" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                                            <StackPanel VerticalAlignment="Center">
-                                                                <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
-                                                                <TextBlock Text="{Binding Identity}" FontSize="11" Foreground="#64748B" Margin="0,1,0,0"/>
-                                                            </StackPanel>
+                                                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0">
+                                                            <TextBlock Text="{Binding IconGlyph}" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                                         </StackPanel>
-
-                                                        <!-- Col 1: Rights Badge -->
-                                                        <Border Grid.Column="1" Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="4" Padding="8,3" Margin="12,0" VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding FormattedRights}" FontSize="11.5" FontWeight="SemiBold" Foreground="#1D4ED8"/>
-                                                        </Border>
-
-                                                        <!-- Col 2: AppliesTo Badge -->
-                                                        <Border Grid.Column="2" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="8,3" VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding AppliesTo}" FontSize="11" Foreground="#475569"/>
+                                                        <Border Grid.Column="1" Background="{Binding TypeBadgeBg}" CornerRadius="3" Padding="4,1" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding TypeBadgeText}" FontSize="9.5" Foreground="{Binding TypeBadgeFg}"/>
                                                         </Border>
                                                     </Grid>
                                                 </Border>
                                             </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-                            </ScrollViewer>
-                        </Grid>
-                    </Border>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
 
-                    <GridSplitter Grid.Column="1" Width="14" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
-
-                    <!-- Right: AD Principals Browser -->
-                    <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
-                            BorderThickness="1" CornerRadius="12" Padding="16">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-
-                            <TextBlock x:Name="LiveAclPrincipalsHeaderTitle" Grid.Row="0" Text="👥 Active Directory / ローカルアカウント" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
-
-                            <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,0,10">
-                                <TextBox x:Name="LiveAclPrincipalSearchTextBox" BorderThickness="0" Background="Transparent"
-                                         VerticalAlignment="Center" FontSize="11" TextChanged="LiveAclPrincipalSearchTextBox_TextChanged"/>
-                            </Border>
-
-                            <ListBox x:Name="LiveAclPrincipalsListBox" Grid.Row="2" BorderThickness="0" Background="Transparent"
-                                     PreviewMouseMove="LiveAclPrincipalsListBox_PreviewMouseMove">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate DataType="{x:Type models:AdPrincipalItem}">
-                                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,2" Cursor="Hand">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0">
-                                                    <TextBlock Text="{Binding IconGlyph}" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                                </StackPanel>
-                                                <TextBlock Grid.Column="1" Text="ドラッグ付与 ➔" FontSize="11" Foreground="#94A3B8" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-
-                            <!-- Notice when not domain-joined or no AD accounts -->
-                            <Border x:Name="LiveAclEmptyNoticeBorder" Grid.Row="2" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1"
-                                    CornerRadius="6" Padding="16" Margin="0,4" VerticalAlignment="Center" Visibility="Collapsed">
-                                <StackPanel HorizontalAlignment="Center">
-                                    <TextBlock x:Name="LiveAclLocalPcTitle" Text="⚠️ ローカルPC環境" FontWeight="Bold" FontSize="12" Foreground="#D97706" HorizontalAlignment="Center" Margin="0,0,0,4"/>
-                                    <TextBlock x:Name="LiveAclLocalPcDesc" Text="※ローカルPC環境のためADプリンシパルは未接続です&#x0a;（上部の入力欄から直接アカウント名を入力して追加可能）"
-                                               FontSize="11" Foreground="#64748B" TextWrapping="Wrap" TextAlignment="Center" LineHeight="16"/>
-                                </StackPanel>
+                                    <!-- Notice when not domain-joined or no AD accounts -->
+                                    <Border x:Name="LiveAclEmptyNoticeBorder" Grid.Row="2" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1"
+                                            CornerRadius="6" Padding="16" Margin="0,4" VerticalAlignment="Center" Visibility="Collapsed">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock x:Name="LiveAclLocalPcTitle" Text="⚠️ ローカルPC環境" FontWeight="Bold" FontSize="12" Foreground="#D97706" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                                            <TextBlock x:Name="LiveAclLocalPcDesc" Text="※ローカルPC環境のためADプリンシパルは未接続です&#x0a;（上部の入力欄から直接アカウント名を入力して追加可能）"
+                                                       FontSize="11" Foreground="#64748B" TextWrapping="Wrap" TextAlignment="Center" LineHeight="16"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
                             </Border>
                         </Grid>
-                    </Border>
-                </Grid>
-            </Grid>
+                    </Grid>
 
             <!-- VIEW 2: ユーザー/グループ 逆引き監査 (LiveAclReverseView) -->
             <Grid x:Name="LiveAclReverseView" Visibility="Collapsed">
@@ -976,19 +1063,22 @@
                 </Border>
 
                 <!-- 3-Pane Split View -->
+                <!-- 4-Column Horizontal Workflow Layout -->
                 <Grid Grid.Row="1" Margin="20,16">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="2.8*"/> <!-- Pane 1: Source Explorer -->
-                        <ColumnDefinition Width="12"/>
-                        <ColumnDefinition Width="4.6*"/> <!-- Pane 2: Mock Tree & Interactive Panel -->
-                        <ColumnDefinition Width="12"/>
-                        <ColumnDefinition Width="2.6*"/> <!-- Pane 3: AD Palette -->
+                        <ColumnDefinition Width="2.3*" MinWidth="180"/> <!-- Col 0: Pane 1: Source Explorer -->
+                        <ColumnDefinition Width="10"/>                  <!-- Col 1: Splitter -->
+                        <ColumnDefinition Width="3.1*" MinWidth="220"/> <!-- Col 2: Pane 2: Mock TreeView -->
+                        <ColumnDefinition Width="10"/>                  <!-- Col 3: Splitter -->
+                        <ColumnDefinition Width="3.2*" MinWidth="240"/> <!-- Col 4: Pane 3: Folder Inspector -->
+                        <ColumnDefinition Width="10"/>                  <!-- Col 5: Splitter -->
+                        <ColumnDefinition Width="2.4*" MinWidth="180"/> <!-- Col 6: Pane 4: AD Palette -->
                     </Grid.ColumnDefinitions>
 
                     <!-- ============================================== -->
                     <!-- PANE 1: SOURCE SERVER EXPLORER                 -->
                     <!-- ============================================== -->
-                    <Border Grid.Column="0" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="12" Padding="16">
+                    <Border Grid.Column="0" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="12" Padding="14">
                         <Border.Effect>
                             <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
                         </Border.Effect>
@@ -1000,9 +1090,9 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <StackPanel Grid.Row="0" Margin="0,0,0,10">
-                                <TextBlock x:Name="SimSourceTitleText" Text="現行ファイルサーバー (移行元)" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
-                                <TextBlock x:Name="SimSourceSubText" Text="サブフォルダを掴んで中央のモックツリーへ直接ドロップ" FontSize="10" Foreground="#64748B"/>
+                            <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                                <TextBlock x:Name="SimSourceTitleText" Text="① 現行ファイルサーバー (移行元)" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
+                                <TextBlock x:Name="SimSourceSubText" Text="サブフォルダを掴んで新ツリーへ直接ドロップ" FontSize="10" Foreground="#64748B"/>
                             </StackPanel>
 
                             <!-- Path, Browse & Load -->
@@ -1048,36 +1138,34 @@
                             </Border>
 
                             <!-- Clone Button -->
-                            <Button Grid.Row="3" x:Name="SimCloneSelectedButton" Content="➡️ 選択フォルダを中央へ新設配置" Height="32" Margin="0,8,0,0"
-                                    Style="{StaticResource FluentButtonPrimary}" Click="SimCloneSelectedButton_Click"/>
+                            <Button Grid.Row="3" x:Name="SimCloneSelectedButton" Content="➡️ 選択フォルダを新設配置" Height="30" Margin="0,8,0,0"
+                                    Style="{StaticResource FluentButtonPrimary}" Click="SimCloneSelectedButton_Click" FontSize="11"/>
                         </Grid>
                     </Border>
 
                     <GridSplitter Grid.Column="1" Width="10" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
 
                     <!-- ============================================== -->
-                    <!-- PANE 2: MOCK TREE & INTERACTIVE FOLDER PANEL   -->
+                    <!-- PANE 2: MOCK TREE (新ツリー構造設計)             -->
                     <!-- ============================================== -->
-                    <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="12" Padding="16">
+                    <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="12" Padding="14">
                         <Border.Effect>
                             <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
                         </Border.Effect>
                         <Grid>
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/> <!-- Mock Header -->
-                                <RowDefinition Height="1.2*"/> <!-- Mock TreeView (Draggable, Indented) -->
-                                <RowDefinition Height="Auto"/> <!-- Divider -->
-                                <RowDefinition Height="1.1*"/> <!-- Selected Folder Accordion Panel -->
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
-                            <Grid Grid.Row="0" Margin="0,0,0,10">
+                            <Grid Grid.Row="0" Margin="0,0,0,8">
                                 <StackPanel>
-                                    <TextBlock x:Name="SimMockTreeTitleText" Text="新環境 仮想フォルダツリー設計" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
-                                    <TextBlock x:Name="SimMockTreeSubText" Text="💡 閉じたフォルダ行に直ドロップでサブ化 / クイックボタンや左ずらしで一気にルートへ昇格" FontSize="10" Foreground="#0284C7"/>
+                                    <TextBlock x:Name="SimMockTreeTitleText" Text="② 新環境 仮想フォルダツリー" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
+                                    <TextBlock x:Name="SimMockTreeSubText" Text="💡 フォルダ行にドロップでサブ化 / クイックボタンで階層変更" FontSize="10" Foreground="#0284C7"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button x:Name="SimAddRootFolderButton" Content="＋ ルートフォルダ新設" Height="26" Style="{StaticResource FluentButtonSecondary}"
-                                            FontSize="11" Padding="8,2" Click="SimAddRootFolderButton_Click"/>
+                                    <Button x:Name="SimAddRootFolderButton" Content="＋ ルート新設" Height="26" Style="{StaticResource FluentButtonSecondary}"
+                                            FontSize="10.5" Padding="6,2" Click="SimAddRootFolderButton_Click"/>
                                 </StackPanel>
                             </Grid>
 
@@ -1111,7 +1199,7 @@
                                     </TreeView.ContextMenu>
                                     <TreeView.ItemTemplate>
                                         <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                            <Border CornerRadius="4" Padding="6,3" Margin="0,1" Background="Transparent">
+                                            <Border CornerRadius="4" Padding="4,3" Margin="0,1" Background="Transparent">
                                                 <Grid Margin="{Binding IndentMargin}">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto"/> <!-- Icon & Name -->
@@ -1121,28 +1209,28 @@
                                                     </Grid.ColumnDefinitions>
 
                                                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                                        <TextBlock Text="📁 " FontSize="12.5" VerticalAlignment="Center"/>
-                                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="📁 " FontSize="12" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
                                                     </StackPanel>
 
-                                                    <Border Grid.Column="1" Margin="8,0,0,0" CornerRadius="3" Padding="5,1"
+                                                    <Border Grid.Column="1" Margin="6,0,0,0" CornerRadius="3" Padding="4,1"
                                                             Background="{Binding LevelPillBackground}" VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding LevelPillText}" FontSize="10.5" FontWeight="SemiBold"
+                                                        <TextBlock Text="{Binding LevelPillText}" FontSize="9.5" FontWeight="SemiBold"
                                                                    Foreground="{Binding LevelPillForeground}"/>
                                                     </Border>
 
-                                                    <Border Grid.Column="2" Margin="6,0,0,0" CornerRadius="3" Padding="5,1" Background="#FEF3C7" BorderBrush="#FDE68A" BorderThickness="1"
+                                                    <Border Grid.Column="2" Margin="4,0,0,0" CornerRadius="3" Padding="4,1" Background="#FEF3C7" BorderBrush="#FDE68A" BorderThickness="1"
                                                             VerticalAlignment="Center" Visibility="{Binding HasMapping, Converter={StaticResource BoolToVis}}">
-                                                        <TextBlock Text="{Binding MappingBadgeText}" FontSize="10.5" Foreground="#B45309"/>
+                                                        <TextBlock Text="{Binding MappingBadgeText}" FontSize="9.5" Foreground="#B45309"/>
                                                     </Border>
 
                                                     <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                        <Button Content="⏮" Width="20" Height="20" Padding="0" FontSize="10" ToolTip="第1階層(ルート)へ一気ジャンプ"
-                                                                Style="{StaticResource FluentButtonSecondary}" Margin="2,0" Click="SimQuickJumpRoot_Click" Tag="{Binding}"/>
-                                                        <Button Content="◀" Width="20" Height="20" Padding="0" FontSize="10" ToolTip="1階層昇格"
-                                                                Style="{StaticResource FluentButtonSecondary}" Margin="2,0" Click="SimQuickPromote_Click" Tag="{Binding}"/>
-                                                        <Button Content="▶" Width="20" Height="20" Padding="0" FontSize="10" ToolTip="1階層降格"
-                                                                Style="{StaticResource FluentButtonSecondary}" Margin="2,0" Click="SimQuickDemote_Click" Tag="{Binding}"/>
+                                                        <Button Content="⏮" Width="18" Height="18" Padding="0" FontSize="9" ToolTip="第1階層(ルート)へ一気ジャンプ"
+                                                                Style="{StaticResource FluentButtonSecondary}" Margin="1,0" Click="SimQuickJumpRoot_Click" Tag="{Binding}"/>
+                                                        <Button Content="◀" Width="18" Height="18" Padding="0" FontSize="9" ToolTip="1階層昇格"
+                                                                Style="{StaticResource FluentButtonSecondary}" Margin="1,0" Click="SimQuickPromote_Click" Tag="{Binding}"/>
+                                                        <Button Content="▶" Width="18" Height="18" Padding="0" FontSize="9" ToolTip="1階層降格"
+                                                                Style="{StaticResource FluentButtonSecondary}" Margin="1,0" Click="SimQuickDemote_Click" Tag="{Binding}"/>
                                                     </StackPanel>
                                                 </Grid>
                                             </Border>
@@ -1150,30 +1238,48 @@
                                     </TreeView.ItemTemplate>
                                 </TreeView>
                             </Border>
+                        </Grid>
+                    </Border>
 
-                            <Separator Grid.Row="2" Margin="0,8,0,8" Background="#E2E8F0"/>
+                    <GridSplitter Grid.Column="3" Width="10" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
 
-                            <!-- Accordion Panel for Selected Folder (広域ドロップ受容) -->
-                            <Border Grid.Row="3" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Padding="12"
+                    <!-- ============================================== -->
+                    <!-- PANE 3: FOLDER INSPECTOR (マッピング ＆ 権限)     -->
+                    <!-- ============================================== -->
+                    <Border Grid.Column="4" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="12" Padding="14">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
+                        </Border.Effect>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/> <!-- Selected Folder Info -->
+                                <RowDefinition Height="*"/>    <!-- Inspector Scrollable Area -->
+                            </Grid.RowDefinitions>
+
+                            <!-- Row 0: Selected Folder Header -->
+                            <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                                <TextBlock Text="③ フォルダ詳細 ＆ 権限設定" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
+                                <Grid Margin="0,4,0,0">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock x:Name="SimSelectedFolderPrefixText" Text="📁 " FontWeight="Bold" FontSize="12" Foreground="#334155"/>
+                                        <TextBlock x:Name="SimSelectedFolderNameText" Text="(未選択 - 左のフォルダをクリック)" FontWeight="Bold" FontSize="12" Foreground="#0284C7" TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="SimInheritCheckBox" Content="親の権限継承" HorizontalAlignment="Right"
+                                              FontSize="11" Checked="SimInheritCheckBox_Changed" Unchecked="SimInheritCheckBox_Changed"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <!-- Row 1: Inspector Scrollable Area (広域ドロップ受容) -->
+                            <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Padding="10"
                                     AllowDrop="True" Drop="SimAccordion_Drop" DragOver="SimGenericDragOver">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <StackPanel>
-                                        <!-- Selected Node Info -->
-                                        <Grid Margin="0,0,0,8">
-                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                <TextBlock x:Name="SimSelectedFolderPrefixText" Text="📁 選択中のフォルダ: " FontWeight="Bold" FontSize="12.5" Foreground="#334155"/>
-                                                <TextBlock x:Name="SimSelectedFolderNameText" Text="(未選択 - 上のフォルダをクリック)" FontWeight="Bold" FontSize="12.5" Foreground="#0284C7"/>
-                                            </StackPanel>
-                                            <CheckBox x:Name="SimInheritCheckBox" Content="親からの権限継承を含める" HorizontalAlignment="Right"
-                                                      FontSize="12" Checked="SimInheritCheckBox_Changed" Unchecked="SimInheritCheckBox_Changed"/>
-                                        </Grid>
-
                                         <!-- Drop Zone 1: Subfolder Maker -->
                                         <Border Background="#F1F5F9" BorderBrush="#94A3B8" BorderThickness="1"
-                                                CornerRadius="4" Padding="10,6" Margin="0,0,0,8" AllowDrop="True"
+                                                CornerRadius="4" Padding="8,5" Margin="0,0,0,8" AllowDrop="True"
                                                 Drop="SimSubfolderDropZone_Drop" DragOver="SimGenericDragOver">
-                                            <TextBlock x:Name="SimSubfolderDropHintText" Text="📥 左の現行フォルダをここにドロップすると、この直下にサブフォルダ化"
-                                                       FontSize="11.5" Foreground="#64748B" HorizontalAlignment="Center"/>
+                                            <TextBlock x:Name="SimSubfolderDropHintText" Text="📥 左の現行フォルダをここにドロップして直下にサブ化"
+                                                       FontSize="11" Foreground="#64748B" HorizontalAlignment="Center"/>
                                         </Border>
 
                                         <!-- Drop Zone 2: N:1 Source Mapping Area -->
@@ -1182,7 +1288,7 @@
                                                 Drop="SimMappingDropZone_Drop" DragOver="SimGenericDragOver">
                                             <StackPanel>
                                                 <Grid Margin="0,0,0,4">
-                                                    <TextBlock x:Name="SimMappingTitleText" Text="🔗 移行元マッピング (データ移行元 / N:1統合)" FontSize="11.5" FontWeight="Bold" Foreground="#7E22CE"/>
+                                                    <TextBlock x:Name="SimMappingTitleText" Text="🔗 移行元マッピング (データ移行元 / N:1統合)" FontSize="11" FontWeight="Bold" Foreground="#7E22CE"/>
                                                 </Grid>
                                                 <!-- List of mapped sources -->
                                                 <ItemsControl x:Name="SimMappedSourcesItemsControl">
@@ -1190,7 +1296,7 @@
                                                         <DataTemplate>
                                                             <Border Background="#FFFFFF" BorderBrush="#E9D5FF" BorderThickness="1" CornerRadius="4" Padding="6,3" Margin="0,2"
                                                                     Cursor="Hand" MouseDown="SimMappedSource_MouseDown" PreviewMouseMove="SimMappedSource_PreviewMouseMove">
-                                                                <TextBlock Text="{Binding StringFormat='🔗 {0}'}" FontSize="11" FontFamily="{StaticResource MonoFont}" Foreground="#4C1D95" VerticalAlignment="Center"/>
+                                                                <TextBlock Text="{Binding StringFormat='🔗 {0}'}" FontSize="10.5" FontFamily="{StaticResource MonoFont}" Foreground="#4C1D95" VerticalAlignment="Center"/>
                                                             </Border>
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
@@ -1204,31 +1310,41 @@
                                                 Drop="SimAclDropZone_Drop" DragOver="SimGenericDragOver">
                                             <StackPanel>
                                                 <Grid Margin="0,0,0,4">
-                                                    <TextBlock x:Name="SimAclTitleText" Text="🛡️ 割り当てられたADアクセス権 (カードWクリックで詳細編集)" FontSize="11.5" FontWeight="Bold" Foreground="#0369A1"/>
-                                                    <Button x:Name="SimOpenSecModalButton" Content="⚙️ セキュリティ詳細設定" FontSize="10.5" Height="22" Padding="6,1"
+                                                    <TextBlock x:Name="SimAclTitleText" Text="🛡️ 割り当てられたADアクセス権" FontSize="11" FontWeight="Bold" Foreground="#0369A1"/>
+                                                    <Button x:Name="SimOpenSecModalButton" Content="⚙️ 詳細設定" FontSize="10" Height="20" Padding="5,0"
                                                             Style="{StaticResource FluentButtonSecondary}" HorizontalAlignment="Right"
                                                             Click="SimOpenSecModalButton_Click"/>
                                                 </Grid>
-                                                <!-- Permissions Cards Grid -->
+                                                <!-- Permissions Cards Grid (縦リストで視認性向上) -->
                                                 <ItemsControl x:Name="SimAclCardsItemsControl">
                                                     <ItemsControl.ItemsPanel>
                                                         <ItemsPanelTemplate>
-                                                            <WrapPanel Orientation="Horizontal"/>
+                                                            <StackPanel Orientation="Vertical"/>
                                                         </ItemsPanelTemplate>
                                                     </ItemsControl.ItemsPanel>
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate DataType="{x:Type models:SimAclEntry}">
                                                             <Border Background="#FFFFFF" BorderBrush="#BAE6FD" BorderThickness="1" CornerRadius="4"
-                                                                    Padding="8,4" Margin="0,0,6,6" Cursor="Hand"
+                                                                    Padding="8,5" Margin="0,0,0,4" Cursor="Hand"
                                                                     MouseDown="SimAclCard_MouseDown"
                                                                     PreviewMouseMove="SimAclCard_PreviewMouseMove">
-                                                                <StackPanel Orientation="Horizontal">
-                                                                    <TextBlock Text="{Binding IconGlyph}" FontSize="12" Margin="0,0,4,0" VerticalAlignment="Center"/>
-                                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
-                                                                    <Border Background="#E0F2FE" CornerRadius="3" Padding="4,1" Margin="6,0,0,0" VerticalAlignment="Center">
-                                                                        <TextBlock Text="{Binding FormattedRights}" FontSize="10.5" Foreground="#0284C7"/>
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                        <TextBlock Text="{Binding IconGlyph}" FontSize="12" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                                                        <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" FontSize="11.5" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                                    </StackPanel>
+                                                                    <Border Grid.Column="1" Background="#E0F2FE" CornerRadius="3" Padding="4,1" Margin="6,0,0,0" VerticalAlignment="Center">
+                                                                        <TextBlock Text="{Binding FormattedRights}" FontSize="10" Foreground="#0284C7"/>
                                                                     </Border>
-                                                                </StackPanel>
+                                                                    <Border Grid.Column="2" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="3" Padding="4,1" Margin="4,0,0,0" VerticalAlignment="Center">
+                                                                        <TextBlock Text="{Binding AppliesTo}" FontSize="9.5" Foreground="#64748B"/>
+                                                                    </Border>
+                                                                </Grid>
                                                             </Border>
                                                         </DataTemplate>
                                                     </ItemsControl.ItemTemplate>
@@ -1241,12 +1357,12 @@
                         </Grid>
                     </Border>
 
-                    <GridSplitter Grid.Column="3" Width="10" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
+                    <GridSplitter Grid.Column="5" Width="10" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
 
                     <!-- ============================================== -->
-                    <!-- PANE 3: AD PALETTE (USERS & GROUPS)            -->
+                    <!-- PANE 4: AD PALETTE (USERS & GROUPS)            -->
                     <!-- ============================================== -->
-                    <Border Grid.Column="4" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="12" Padding="16">
+                    <Border Grid.Column="6" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="12" Padding="14">
                         <Border.Effect>
                             <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
                         </Border.Effect>
@@ -1257,25 +1373,25 @@
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
-                            <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                            <StackPanel Grid.Row="0" Margin="0,0,0,8">
                                 <Grid>
-                                    <TextBlock x:Name="SimAdHeaderTitle" Text="AD ユーザー &amp; グループ" FontWeight="Bold" FontSize="13.5" Foreground="#0F172A"/>
+                                    <TextBlock x:Name="SimAdHeaderTitle" Text="④ AD パレット" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
                                     <Border x:Name="DomainStatusBadge" Background="#DCFCE7" CornerRadius="4" Padding="6,1" HorizontalAlignment="Right">
-                                        <TextBlock x:Name="DomainStatusText" Text="🟢 CORP.LOCAL" FontSize="10.5" FontWeight="SemiBold" Foreground="#15803D"/>
+                                        <TextBlock x:Name="DomainStatusText" Text="🟢 CORP.LOCAL" FontSize="10" FontWeight="SemiBold" Foreground="#15803D"/>
                                     </Border>
                                 </Grid>
-                                <TextBlock x:Name="SimAdHeaderSubText" Text="カードを中央のフォルダへドラッグして権限付与" FontSize="11.5" Foreground="#64748B" Margin="0,2,0,0"/>
+                                <TextBlock x:Name="SimAdHeaderSubText" Text="カードを中央のフォルダまたは詳細へドラッグ" FontSize="10" Foreground="#64748B" Margin="0,2,0,0"/>
                             </StackPanel>
 
-                            <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="8,0" Margin="0,0,0,10">
+                            <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Padding="6,0" Margin="0,0,0,8">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="🔍 " FontSize="12" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                                    <TextBlock Text="🔍 " FontSize="11" Foreground="#94A3B8" VerticalAlignment="Center"/>
                                     <TextBox x:Name="AdSearchTextBox" Grid.Column="1" BorderThickness="0" Background="Transparent"
-                                             VerticalAlignment="Center" FontSize="12" TextChanged="AdSearchTextBox_TextChanged"/>
+                                             VerticalAlignment="Center" FontSize="11" TextChanged="AdSearchTextBox_TextChanged"/>
                                 </Grid>
                             </Border>
 
@@ -1285,17 +1401,17 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate DataType="{x:Type models:AdPrincipalItem}">
                                                 <Border Background="{Binding BadgeBackground}" BorderBrush="#E2E8F0" BorderThickness="1"
-                                                        CornerRadius="6" Padding="10,8" Margin="0,0,0,6" Cursor="Hand"
+                                                        CornerRadius="6" Padding="8,6" Margin="0,0,0,4" Cursor="Hand"
                                                         PreviewMouseMove="AdCard_PreviewMouseMove" Tag="{Binding}">
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="Auto"/>
                                                             <ColumnDefinition Width="*"/>
                                                         </Grid.ColumnDefinitions>
-                                                        <TextBlock Text="{Binding IconGlyph}" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                        <TextBlock Text="{Binding IconGlyph}" FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="12" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
-                                                            <TextBlock Text="{Binding Description}" FontSize="10.5" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11.5" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding Description}" FontSize="10" Foreground="#64748B" TextTrimming="CharacterEllipsis"/>
                                                         </StackPanel>
                                                     </Grid>
                                                 </Border>
@@ -1533,11 +1649,18 @@
                         <Grid Grid.Row="0" Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Name="AuditTableTitleText" Grid.Column="0" Text="検出された課題・断捨離候補一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
-                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Border Grid.Column="1" Background="#FEE2E2" BorderBrush="#FCA5A5" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="14,0,0,0" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock x:Name="AuditLiveReductionLabel" Text="選択中の削減見込み: " FontSize="11" Foreground="#991B1B" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="AuditLiveSelectedReductionText" Text="0 B (0 件)" FontSize="11" Foreground="#DC2626" FontWeight="Bold"/>
+                                </StackPanel>
+                            </Border>
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock x:Name="AuditSmartSelectLabel" Text="☑️ 一括選択:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                 <ComboBox x:Name="AuditSmartSelectComboBox" Width="170" Height="28" FontSize="11" Margin="0,0,12,0" SelectionChanged="AuditSmartSelectComboBox_SelectionChanged">
                                     <ComboBoxItem Content="選択プリセット..." IsSelected="True" Tag="None"/>
@@ -2235,7 +2358,7 @@
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="FolderMorpher v1.5.1 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
+                    <TextBlock Text="FolderMorpher v1.6.0 - Storage &amp; Migration Studio" FontSize="11.5" Foreground="{StaticResource TextSubtle}"/>
                 </StackPanel>
             </Grid>
         </Border>
