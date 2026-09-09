@@ -359,8 +359,8 @@ namespace AstraSize.Views
                 {
                     FolderPath = path,
                     FolderName = Path.GetFileName(path.TrimEnd('\\', '/')),
-                    InheritAcl = isInherited,
                     OriginalInheritAcl = isInherited,
+                    InheritAcl = isInherited,
                     OriginalSddl = sddl,
                     StatusMessage = $"所有者: {owner}"
                 };
@@ -379,6 +379,9 @@ namespace AstraSize.Views
                     if (e.PropertyName == nameof(LiveAclPanelModel.InheritAcl))
                         panel.UpdateChangeStatus();
                 };
+
+                // Low 1: 初期ロード完了時の変更フラグを確実にクリア（元から継承OFFのフォルダ等の誤検知防止）
+                panel.UpdateChangeStatus();
 
                 _liveAclPanels.Add(panel);
                 UpdateLiveAclPanelsBanner();
@@ -419,6 +422,26 @@ namespace AstraSize.Views
             ShowToast("全パネルを閉じました");
         }
 
+        private void ReloadPanel(LiveAclPanelModel panel)
+        {
+            if (_aclService == null || !Directory.Exists(panel.FolderPath)) return;
+            var (entries, isInherited, owner) = _aclService.GetSimAclForFolder(panel.FolderPath);
+            string currentSddl = _aclService.GetSddl(panel.FolderPath);
+
+            panel.OriginalAclEntries.Clear();
+            panel.CurrentAclEntries.Clear();
+            foreach (var item in entries)
+            {
+                panel.OriginalAclEntries.Add(item.Clone());
+                panel.CurrentAclEntries.Add(item.Clone());
+            }
+            panel.OriginalInheritAcl = isInherited;
+            panel.InheritAcl = isInherited;
+            panel.OriginalSddl = currentSddl;
+            panel.StatusMessage = $"最新読み込み完了: {DateTime.Now:HH:mm:ss}";
+            panel.UpdateChangeStatus();
+        }
+
         private async void LiveAclPanelApplyDeltaButton_Click(object sender, RoutedEventArgs e)
         {
             if (sender is not FrameworkElement fe || fe.Tag is not LiveAclPanelModel panel || _aclService == null) return;
@@ -427,6 +450,38 @@ namespace AstraSize.Views
             {
                 ShowToast($"未適用の変更はありません: {panel.FolderName}");
                 return;
+            }
+
+            // Medium: 適用直前の外部変更（競合）検出
+            bool forceApply = false;
+            if (!string.IsNullOrEmpty(panel.OriginalSddl))
+            {
+                string currentSddl = _aclService.GetSddl(panel.FolderPath);
+                if (!string.IsNullOrEmpty(currentSddl) && !string.Equals(currentSddl, panel.OriginalSddl, StringComparison.OrdinalIgnoreCase))
+                {
+                    var conflictResult = MessageBox.Show(
+                        $"⚠️ 外部ACL変更の競合を検出しました\n\n" +
+                        $"対象: {panel.FolderPath}\n\n" +
+                        $"このフォルダーのアクセス権（NTFS ACL）は、本画面で読み込んだ後に外部（他の管理者または別ツール）によって変更されています。\n\n" +
+                        $"[はい]：最新のACLを再読込して画面を更新します（推奨・安全）\n" +
+                        $"[いいえ]：外部変更を上書きし、現在の編集内容で強制適用します\n" +
+                        $"[キャンセル]：処理を中止します",
+                        "外部ACL競合警告",
+                        MessageBoxButton.YesNoCancel,
+                        MessageBoxImage.Warning);
+
+                    if (conflictResult == MessageBoxResult.Yes)
+                    {
+                        ReloadPanel(panel);
+                        ShowToast($"🔄 最新のACLを再読込しました: {panel.FolderName}");
+                        return;
+                    }
+                    else if (conflictResult == MessageBoxResult.Cancel)
+                    {
+                        return;
+                    }
+                    forceApply = true;
+                }
             }
 
             var confirm = MessageBox.Show(
@@ -446,7 +501,9 @@ namespace AstraSize.Views
                     panel.OriginalAclEntries,
                     panel.CurrentAclEntries.ToList(),
                     panel.InheritAcl,
-                    panel.OriginalInheritAcl);
+                    panel.OriginalInheritAcl,
+                    panel.OriginalSddl,
+                    forceApply);
 
                 int appliedDeltaCount = result.addedCount + result.removedCount + result.modifiedCount;
                 string backupSddl = result.snapshot?.Sddl ?? string.Empty;
@@ -460,14 +517,28 @@ namespace AstraSize.Views
                     panel.OriginalAclEntries.Add(item.Clone());
                     panel.CurrentAclEntries.Add(item.Clone());
                 }
-                panel.InheritAcl = refreshedInherit;
                 panel.OriginalInheritAcl = refreshedInherit;
+                panel.InheritAcl = refreshedInherit;
                 panel.OriginalSddl = backupSddl;
                 panel.UpdateChangeStatus();
                 panel.StatusMessage = $"適用完了: {DateTime.Now:HH:mm:ss} ({appliedDeltaCount} 差分反映)";
 
-                ShowToast($"⚡ 差分適用完了: {panel.FolderName} ({appliedDeltaCount} 変更反映, 既存ノータッチ)");
+                ShowToast($"✅ 差分適用完了: {panel.FolderName} ({appliedDeltaCount} 変更反映, 既存ノータッチ)");
                 MessageBox.Show($"アクセス権の差分適用が完了しました！\n\n反映件数: {appliedDeltaCount} 件\n既存ルール: ノータッチ維持\n自動バックアップ: 保存済み（ロールバック可能）", "適用完了", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (AclConflictException)
+            {
+                panel.StatusMessage = "外部競合を検出";
+                var res = MessageBox.Show(
+                    $"適用直前に外部変更（競合）が検出されたため処理を中断しました。\n最新のACLを再読込しますか？",
+                    "外部ACL競合",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (res == MessageBoxResult.Yes)
+                {
+                    ReloadPanel(panel);
+                    ShowToast($"🔄 最新のACLを再読込しました: {panel.FolderName}");
+                }
             }
             catch (Exception ex)
             {
@@ -513,8 +584,8 @@ namespace AstraSize.Views
                         panel.OriginalAclEntries.Add(ent.Clone());
                         panel.CurrentAclEntries.Add(ent.Clone());
                     }
-                    panel.InheritAcl = isInherited;
                     panel.OriginalInheritAcl = isInherited;
+                    panel.InheritAcl = isInherited;
                     panel.OriginalSddl = latest.Sddl;
                     panel.UpdateChangeStatus();
                     panel.StatusMessage = $"復元完了 ({latest.Timestamp:HH:mm:ss})";
@@ -594,11 +665,19 @@ namespace AstraSize.Views
 
         private void AddPrincipalToPanel(LiveAclPanelModel panel, AdPrincipalItem p)
         {
-            if (panel.CurrentAclEntries.Any(a => a.AccountName.Equals(p.AccountName, StringComparison.OrdinalIgnoreCase)))
+            // Low~Medium: 完全に同一のアクセス権ルール（アカウント・権限・適用先）が既に存在する場合は重複防止
+            if (panel.CurrentAclEntries.Any(a =>
+                a.AccountName.Equals(p.AccountName, StringComparison.OrdinalIgnoreCase) &&
+                a.Rights == FileSystemRights.ReadAndExecute &&
+                a.AccessType == AccessControlType.Allow &&
+                a.InheritanceFlags == (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit) &&
+                a.PropagationFlags == PropagationFlags.None))
             {
-                ShowToast($"⚠️ すでに「{panel.FolderName}」に割り当て済みです: {p.DisplayName}");
+                ShowToast($"⚠️ すでに同一のアクセス権ルールが存在します: {p.DisplayName}");
                 return;
             }
+
+            bool isAdditional = panel.CurrentAclEntries.Any(a => a.AccountName.Equals(p.AccountName, StringComparison.OrdinalIgnoreCase));
 
             var entry = new SimAclEntry
             {
@@ -609,7 +688,15 @@ namespace AstraSize.Views
             };
             panel.CurrentAclEntries.Add(entry);
             panel.UpdateChangeStatus();
-            ShowToast($"🛡️ 「{panel.FolderName}」に権限カードを追加: {p.DisplayName}");
+
+            if (isAdditional)
+            {
+                ShowToast($"👥 「{panel.FolderName}」に同一アカウントの追加ルールを作成しました: {p.DisplayName} (Wクリックで詳細設定)");
+            }
+            else
+            {
+                ShowToast($"🛡️ 「{panel.FolderName}」に権限カードを追加: {p.DisplayName}");
+            }
         }
 
         private void LiveAclCard_MouseDown(object sender, MouseButtonEventArgs e)

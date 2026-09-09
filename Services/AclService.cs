@@ -298,7 +298,9 @@ namespace AstraSize.Services
             IEnumerable<SimAclEntry> originalEntries,
             IEnumerable<SimAclEntry> currentEntries,
             bool inherit,
-            bool originalInherit)
+            bool originalInherit,
+            string? expectedOriginalSddl = null,
+            bool forceIfConflict = false)
         {
             var dirInfo = new DirectoryInfo(path);
             if (!dirInfo.Exists) throw new DirectoryNotFoundException($"指定フォルダが存在しません: {path}");
@@ -343,7 +345,7 @@ namespace AstraSize.Services
                 }
             }
 
-            // High 2: 3. 残余は追加・削除
+            // High 2: 3. 残余の追加・削除
             toRemove.AddRange(remainingOrig);
             toAdd.AddRange(remainingCur);
 
@@ -355,10 +357,20 @@ namespace AstraSize.Services
                 return (false, 0, 0, 0, null);
             }
 
+            var sec = dirInfo.GetAccessControl(AccessControlSections.Access);
+
+            // Medium: 外部ACL変更との競合検出
+            if (!string.IsNullOrEmpty(expectedOriginalSddl) && !forceIfConflict)
+            {
+                string currentSddl = sec.GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+                if (!string.Equals(currentSddl, expectedOriginalSddl, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new AclConflictException(path, currentSddl, expectedOriginalSddl);
+                }
+            }
+
             // 変更前の完全DACLをバックアップ（ロールバック用）
             var snapshot = await CreateSnapshotAsync(path, $"差分変更前バックアップ (変更: +{toAdd.Count}, -{toRemove.Count}, ~{toModify.Count})");
-
-            var sec = dirInfo.GetAccessControl(AccessControlSections.Access);
 
             if (inheritChanged)
             {

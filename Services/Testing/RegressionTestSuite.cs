@@ -31,7 +31,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 21;
+            int totalTests = 22;
 
             try
             {
@@ -156,9 +156,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 21
-                Console.WriteLine("\n[TEST 21/21] Live ACL: Multiset Multiple ACEs Matching, Inheritance Disable Explicit Conversion & Audit Sanctum...");
+                Console.WriteLine("\n[TEST 21/22] Live ACL: Multiset Multiple ACEs Matching, Inheritance Disable Explicit Conversion & Audit Sanctum...");
                 await TestAclMultisetDeltaAndInheritancePreservationAsync();
                 Console.WriteLine("  --> [PASS] Live ACL: Multiset pairing, inheritance disable explicit conversion & Audit sanctum 100% verified.");
+                passCount++;
+
+                // Test 22
+                Console.WriteLine("\n[TEST 22/22] Live ACL: External Conflict Detection (AclConflictException), Initial Inheritance Change Status & Multi-ACE Addition Contract...");
+                await TestAclConflictAndInheritanceInitContractAsync();
+                Console.WriteLine("  --> [PASS] Live ACL: Conflict detection (AclConflictException), initial change status & multi-ACE contract 100% verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -2506,6 +2512,150 @@ namespace FolderMorpher.Services.Testing
 
                 if (validPlans.Count != 0)
                     throw new InvalidOperationException($"Original candidate must be strictly protected across all audit types! Expected 0 valid deletion plans, got {validPlans.Count}");
+            }
+            finally
+            {
+                try { Directory.Delete(testDir, recursive: true); } catch { }
+            }
+        }
+
+        private static async Task TestAclConflictAndInheritanceInitContractAsync()
+        {
+            string testDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_Regression_Test22_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(testDir);
+
+            try
+            {
+                var aclService = new AclService();
+
+                // 1. Medium: 外部ACL変更との競合検出 (AclConflictException) の検証
+                var (initialEntries, isInherited, _) = aclService.GetSimAclForFolder(testDir);
+                string originalSddl = aclService.GetSddl(testDir);
+
+                if (string.IsNullOrEmpty(originalSddl))
+                    throw new InvalidOperationException("Initial SDDL must not be empty.");
+
+                // ケース A: 期待SDDLと一致している場合は正常終了
+                var newEntries = initialEntries.Select(e => e.Clone()).ToList();
+                newEntries.Add(new SimAclEntry
+                {
+                    AccountName = "Everyone",
+                    Rights = FileSystemRights.Read,
+                    AccessType = AccessControlType.Allow,
+                    InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    PropagationFlags = PropagationFlags.None
+                });
+
+                var applyResult = await aclService.ApplyLiveAclDeltaWithRollbackAsync(
+                    testDir,
+                    initialEntries,
+                    newEntries,
+                    isInherited,
+                    isInherited,
+                    expectedOriginalSddl: originalSddl,
+                    forceIfConflict: false);
+
+                if (!applyResult.hasModified || applyResult.addedCount != 1)
+                    throw new InvalidOperationException("Expected 1 added ACE without conflict.");
+
+                // ケース B: 外部でSDDLが変更された（古いoriginalSddlを期待値として渡す）場合、AclConflictException がスローされること
+                bool conflictDetected = false;
+                try
+                {
+                    var dummyEntries = newEntries.Select(e => e.Clone()).ToList();
+                    dummyEntries.Add(new SimAclEntry
+                    {
+                        AccountName = "SYSTEM",
+                        Rights = FileSystemRights.FullControl,
+                        AccessType = AccessControlType.Allow
+                    });
+
+                    // わざと古い originalSddl を渡す（すでにEveryoneが追加されているため実際のSDDLと異なる）
+                    await aclService.ApplyLiveAclDeltaWithRollbackAsync(
+                        testDir,
+                        newEntries,
+                        dummyEntries,
+                        isInherited,
+                        isInherited,
+                        expectedOriginalSddl: originalSddl,
+                        forceIfConflict: false);
+                }
+                catch (AclConflictException ex)
+                {
+                    conflictDetected = true;
+                    if (ex.FolderPath != testDir)
+                        throw new InvalidOperationException($"AclConflictException FolderPath mismatch: {ex.FolderPath}");
+                }
+
+                if (!conflictDetected)
+                    throw new InvalidOperationException("AclConflictException must be thrown when external SDDL differs from expected!");
+
+                // ケース C: forceIfConflict: true の場合は競合しても例外なく処理されること
+                var forceResult = await aclService.ApplyLiveAclDeltaWithRollbackAsync(
+                    testDir,
+                    newEntries,
+                    newEntries, // 変更なし
+                    isInherited,
+                    isInherited,
+                    expectedOriginalSddl: originalSddl,
+                    forceIfConflict: true);
+
+                // 2. Low 1: 継承OFFフォルダの初期読み込み時に HasChanges == false であることの検証
+                var nonInheritedPanel = new LiveAclPanelModel
+                {
+                    FolderPath = testDir,
+                    FolderName = "TestDir",
+                    OriginalInheritAcl = false,
+                    InheritAcl = false,
+                    OriginalSddl = originalSddl
+                };
+                nonInheritedPanel.OriginalAclEntries.Add(new SimAclEntry { AccountName = "TestUser", Rights = FileSystemRights.Read });
+                nonInheritedPanel.CurrentAclEntries.Add(new SimAclEntry { AccountName = "TestUser", Rights = FileSystemRights.Read });
+                nonInheritedPanel.UpdateChangeStatus();
+
+                if (nonInheritedPanel.HasChanges)
+                    throw new InvalidOperationException("LiveAclPanelModel for non-inherited folder must NOT have changes immediately upon loading!");
+
+                // 3. Low~Medium: 同一プリンシパルの複数ACEの独立認識と変更検知
+                var multiAcePanel = new LiveAclPanelModel
+                {
+                    FolderPath = testDir,
+                    FolderName = "TestDir",
+                    OriginalInheritAcl = true,
+                    InheritAcl = true
+                };
+
+                // 同一アカウントで異なる2つのルール
+                var ace1 = new SimAclEntry
+                {
+                    AccountName = "Sales_RW",
+                    Rights = FileSystemRights.Read,
+                    InheritanceFlags = InheritanceFlags.None,
+                    PropagationFlags = PropagationFlags.None
+                };
+                var ace2 = new SimAclEntry
+                {
+                    AccountName = "Sales_RW",
+                    Rights = FileSystemRights.Modify,
+                    InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    PropagationFlags = PropagationFlags.InheritOnly
+                };
+
+                multiAcePanel.OriginalAclEntries.Add(ace1.Clone());
+                multiAcePanel.OriginalAclEntries.Add(ace2.Clone());
+                multiAcePanel.CurrentAclEntries.Add(ace1.Clone());
+                multiAcePanel.CurrentAclEntries.Add(ace2.Clone());
+                multiAcePanel.UpdateChangeStatus();
+
+                if (multiAcePanel.HasChanges)
+                    throw new InvalidOperationException("Multi-ACE panel with matching rules must not report changes!");
+
+                // 片方だけ権限を変更すると HasChanges == true になること
+                multiAcePanel.CurrentAclEntries[0].Rights = FileSystemRights.FullControl;
+                multiAcePanel.UpdateChangeStatus();
+
+                if (!multiAcePanel.HasChanges)
+                    throw new InvalidOperationException("Modifying one of multiple ACEs for same principal must trigger HasChanges!");
             }
             finally
             {

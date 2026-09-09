@@ -214,4 +214,22 @@ namespace AstraSize.Models
         protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? prop = null)
             => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(prop));
     }
+
+    /// <summary>
+    /// 外部ACL変更との競合を検出した際にスローされる例外
+    /// </summary>
+    public class AclConflictException : InvalidOperationException
+    {
+        public string FolderPath { get; }
+        public string CurrentSddl { get; }
+        public string ExpectedSddl { get; }
+
+        public AclConflictException(string folderPath, string currentSddl, string expectedSddl)
+            : base($"フォルダー「{folderPath}」のACLは読み込み後に外部で変更されています。")
+        {
+            FolderPath = folderPath;
+            CurrentSddl = currentSddl;
+            ExpectedSddl = expectedSddl;
+        }
+    }
 }

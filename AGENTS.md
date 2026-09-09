@@ -287,6 +287,18 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` に集約され、内部ロジ
       - Windows 14ビット詳細権限モーダル (SecModalOverlay) は MainWindow に共通配置のまま残し、LiveAclStudio からは EditSecurityRequested イベント（コールバック付き）で連携することで、移行スタジオ（Tab 2）との二重化を完全防止。
       - 全自動回帰テスト 21/21 100% PASS を維持。
 
+36. **外部ACL変更との競合検出（AclConflictException）＆ 継承初期状態整合性 ＆ 同一アカウント複数ACE追加 (v1.6.2)**:
+    - **外部ACL変更の競合検出 (Medium)**:
+      - 画面で読み込んだ時点の OriginalSddl と、適用直前の現行ディスク上SDDLを比較。外部（別管理者・システム・他ツール）による権限変更を事前検知。
+      - 競合検知時は警告ダイアログ（再読込 / 強制適用 / キャンセル）を表示し、誤った旧差分による上書き破壊を防止。
+      - AclService.ApplyLiveAclDeltaWithRollbackAsync でも expectedOriginalSddl を検証し、不一致時は AclConflictException をスローする2重防護アーキテクチャ。
+    - **元から継承OFFフォルダの初期変更フラグ誤検知修正 (Low 1)**:
+      - LiveAclPanelModel 初期化時に OriginalInheritAcl = isInherited を InheritAcl = isInherited より先にセットし、初期ロード完了時に明示的に panel.UpdateChangeStatus() を呼び出し。元から継承OFFのフォルダを開いた直後に「未適用の変更あり」と誤判定される不具合を根絶。
+    - **同一アカウントに対する複数ACE作成の自由化 (Low〜Medium)**:
+      - 完全同一のデフォルトACEの重複追加は防ぎつつ、設定（権限・適用先）の異なる複数ACEの作成・保持・編集をUIから自由に実行可能に拡張。
+    - **アプリバージョン整合性の統一**:
+      - FolderMorpher.csproj（1.6.2）、MainWindow.xaml（v1.6.2）、アセンブリメタデータ、および GitHub Release / タグ（v1.6.2）の表記揺れを完全統一。
+
 ---
 
 ## 4. ビルド・実行・検証コマンド
@@ -303,7 +315,7 @@ Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe"
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 21/21 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 22/22 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```
