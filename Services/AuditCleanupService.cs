@@ -17,6 +17,11 @@ namespace FolderMorpher.Services
         public DateTime? ExpectedLastWriteTimeUtc { get; set; }
         public bool IsOriginalCandidate { get; set; }
         public List<AuditItem> AssociatedItems { get; set; } = new();
+
+        // H2完全防御: 重複グループにおける原本ファイルの生存・整合性検証用
+        public string? OriginalCandidatePath { get; set; }
+        public long? OriginalExpectedSize { get; set; }
+        public DateTime? OriginalExpectedLastWriteTimeUtc { get; set; }
     }
 
     /// <summary>
@@ -52,6 +57,12 @@ namespace FolderMorpher.Services
                         .Select(i => i.FullPath),
                 StringComparer.OrdinalIgnoreCase);
 
+            // 重複グループごとの原本アイテム逆引きマップを作成
+            var origByGroup = itemList
+                .Where(i => !string.IsNullOrEmpty(i.DuplicateGroupId) && (i.IsOriginalCandidate || (i.Detail != null && i.Detail.Contains("[原本候補]"))))
+                .GroupBy(i => i.DuplicateGroupId)
+                .ToDictionary(g => g.Key, g => g.First());
+
             // 2. チェックされているアイテムのみを抽出し、FullPath でグループ化
             var checkedItems = itemList.Where(i => i.IsChecked).ToList();
             var plans = checkedItems
@@ -59,6 +70,16 @@ namespace FolderMorpher.Services
                 .Select(g =>
                 {
                     var first = g.First();
+                    AuditItem? origItem = null;
+                    if (!string.IsNullOrEmpty(first.DuplicateGroupId) && origByGroup.TryGetValue(first.DuplicateGroupId, out var oi))
+                    {
+                        // 自身が原本候補でない場合のみ原本参照を設定
+                        if (!string.Equals(oi.FullPath, g.Key, StringComparison.OrdinalIgnoreCase))
+                        {
+                            origItem = oi;
+                        }
+                    }
+
                     return new AuditCleanupPlan
                     {
                         FullPath = g.Key,
@@ -66,7 +87,10 @@ namespace FolderMorpher.Services
                         Size = first.Size,
                         ExpectedLastWriteTimeUtc = first.LastWriteTime != default ? first.LastWriteTime.ToUniversalTime() : null,
                         IsOriginalCandidate = originalPaths.Contains(g.Key),
-                        AssociatedItems = g.ToList()
+                        AssociatedItems = g.ToList(),
+                        OriginalCandidatePath = origItem?.FullPath,
+                        OriginalExpectedSize = origItem?.Size,
+                        OriginalExpectedLastWriteTimeUtc = origItem != null && origItem.LastWriteTime != default ? origItem.LastWriteTime.ToUniversalTime() : null
                     };
                 })
                 .ToList();
@@ -92,6 +116,33 @@ namespace FolderMorpher.Services
                         // M4対策: ファイルが存在しない場合は成功カウントせず、警告として記録
                         result.Errors.Add($"{plan.FileName}: ファイルが存在しません（既に移動または削除されています）");
                         continue;
+                    }
+
+                    // H2完全防御: 重複ファイル削除時は、原本が現在も正常に存在しているか必ず検証
+                    if (!string.IsNullOrEmpty(plan.OriginalCandidatePath))
+                    {
+                        if (!File.Exists(plan.OriginalCandidatePath))
+                        {
+                            result.Errors.Add($"{plan.FileName}: 重複原本（{Path.GetFileName(plan.OriginalCandidatePath)}）が存在しません。原本全滅防止のため削除を中止しました。");
+                            continue;
+                        }
+
+                        var origFi = new FileInfo(plan.OriginalCandidatePath);
+                        if (plan.OriginalExpectedSize.HasValue && origFi.Length != plan.OriginalExpectedSize.Value)
+                        {
+                            result.Errors.Add($"{plan.FileName}: 重複原本（{Path.GetFileName(plan.OriginalCandidatePath)}）のサイズがスキャン後変更されています。安全のため削除をスキップしました。");
+                            continue;
+                        }
+
+                        if (plan.OriginalExpectedLastWriteTimeUtc.HasValue)
+                        {
+                            var diff = Math.Abs((origFi.LastWriteTimeUtc - plan.OriginalExpectedLastWriteTimeUtc.Value).TotalSeconds);
+                            if (diff > 2)
+                            {
+                                result.Errors.Add($"{plan.FileName}: 重複原本（{Path.GetFileName(plan.OriginalCandidatePath)}）の更新日時がスキャン後変更されています。安全のため削除をスキップしました。");
+                                continue;
+                            }
+                        }
                     }
 
                     var fi = new FileInfo(plan.FullPath);

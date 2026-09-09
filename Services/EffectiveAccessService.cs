@@ -283,8 +283,12 @@ namespace FolderMorpher.Services
                     groupMap[g.GroupName] = g;
                     if (!string.IsNullOrEmpty(g.DisplayName)) groupMap[g.DisplayName] = g;
                     if (!string.IsNullOrEmpty(g.Sid)) groupMap[g.Sid] = g;
-                    var cleanG = g.GroupName.Contains('\\') ? g.GroupName.Split('\\')[1] : g.GroupName;
-                    if (!groupMap.ContainsKey(cleanG)) groupMap[cleanG] = g;
+                    // ドメイン修飾がない場合のみクリーン名をキーに追加（同名ローカルグループとの誤爆防止）
+                    if (!g.GroupName.Contains('\\'))
+                    {
+                        var cleanG = g.GroupName.Contains('\\') ? g.GroupName.Split('\\')[1] : g.GroupName;
+                        if (!groupMap.ContainsKey(cleanG)) groupMap[cleanG] = g;
+                    }
                 }
 
                 int scannedCount = 0;

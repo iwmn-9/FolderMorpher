@@ -363,6 +363,7 @@ namespace AstraSize.Services
                 if (matchedOrig != null)
                 {
                     plan.Modified.Add((matchedOrig, cur));
+                    var diffDetail = CalculateRightsDiff(matchedOrig.Rights, cur.Rights);
                     plan.DiffItems.Add(new LiveAclDiffItem
                     {
                         DiffType = LiveAclDiffType.Modified,
@@ -372,6 +373,7 @@ namespace AstraSize.Services
                         AccessType = cur.AccessType,
                         BeforeRights = matchedOrig.FormattedRights,
                         AfterRights = cur.FormattedRights,
+                        Details = diffDetail,
                         AppliesTo = cur.AppliesTo,
                         IsInherited = cur.IsInherited
                     });
@@ -393,6 +395,7 @@ namespace AstraSize.Services
                     AccessType = rem.AccessType,
                     BeforeRights = rem.FormattedRights,
                     AfterRights = "（削除）",
+                    Details = $"-{rem.FormattedRights}",
                     AppliesTo = rem.AppliesTo,
                     IsInherited = rem.IsInherited
                 });
@@ -411,6 +414,7 @@ namespace AstraSize.Services
                     AccessType = add.AccessType,
                     BeforeRights = "―",
                     AfterRights = add.FormattedRights,
+                    Details = $"+{add.FormattedRights}",
                     AppliesTo = add.AppliesTo,
                     IsInherited = add.IsInherited
                 });
@@ -576,6 +580,44 @@ namespace AstraSize.Services
             // DACL(AccessControlSections.Access)のみを復元して安全・確実にロールバック
             sec.SetSecurityDescriptorSddlForm(snapshot.Sddl, AccessControlSections.Access);
             dir.SetAccessControl(sec);
+        }
+
+        /// <summary>
+        /// 2つの権限ビットマスク間の詳細差分（追加・削除されたビット一覧）を算出する
+        /// </summary>
+        private static string CalculateRightsDiff(FileSystemRights before, FileSystemRights after)
+        {
+            if (before == after) return "差分なし";
+
+            var added = after & ~before;
+            var removed = before & ~after;
+
+            var parts = new List<string>();
+
+            if ((after & FileSystemRights.FullControl) == FileSystemRights.FullControl)
+            {
+                parts.Add("+フルコントロール");
+            }
+            else
+            {
+                if ((added & FileSystemRights.Modify) == FileSystemRights.Modify) parts.Add("+変更");
+                if ((added & FileSystemRights.Delete) != 0 || (added & FileSystemRights.DeleteSubdirectoriesAndFiles) != 0) parts.Add("+削除");
+                if ((added & FileSystemRights.Write) == FileSystemRights.Write) parts.Add("+書き込み");
+                if ((added & FileSystemRights.ReadAndExecute) == FileSystemRights.ReadAndExecute) parts.Add("+読み取りと実行");
+                else if ((added & FileSystemRights.Read) == FileSystemRights.Read) parts.Add("+読み取り");
+            }
+
+            if ((removed & FileSystemRights.FullControl) == FileSystemRights.FullControl) parts.Add("-フルコントロール");
+            else
+            {
+                if ((removed & FileSystemRights.Modify) == FileSystemRights.Modify) parts.Add("-変更");
+                if ((removed & FileSystemRights.Delete) != 0 || (removed & FileSystemRights.DeleteSubdirectoriesAndFiles) != 0) parts.Add("-削除");
+                if ((removed & FileSystemRights.Write) == FileSystemRights.Write) parts.Add("-書き込み");
+                if ((removed & FileSystemRights.ReadAndExecute) == FileSystemRights.ReadAndExecute) parts.Add("-読み取りと実行");
+                else if ((removed & FileSystemRights.Read) == FileSystemRights.Read) parts.Add("-読み取り");
+            }
+
+            return parts.Count > 0 ? string.Join(", ", parts) : "詳細ビット変更";
         }
     }
 }

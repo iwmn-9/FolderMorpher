@@ -835,8 +835,9 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
 
-                                <DataGridTextColumn Header="変更前の権限 (Before)" Binding="{Binding BeforeRights}" Width="160" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="変更後の権限 (After)" Binding="{Binding AfterRights}" Width="160" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn Header="変更前の権限 (Before)" Binding="{Binding BeforeRights}" Width="150" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn Header="変更後の権限 (After)" Binding="{Binding AfterRights}" Width="150" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn Header="差分詳細" Binding="{Binding Details}" Width="140" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                 <DataGridTextColumn Header="適用先 (AppliesTo)" Binding="{Binding AppliesTo}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
                             </DataGrid.Columns>
                         </DataGrid>

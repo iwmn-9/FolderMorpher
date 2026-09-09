@@ -299,16 +299,43 @@ namespace FolderMorpher.Services
             {
                 File.WriteAllBytes(tempPath, optimizedBytes);
 
+                // H3完全防御: File.Replace (同一ボリューム・ローカル) または .bak 経由の安全アトミック置換 (UNC / 非対応環境)
+                bool replaced = false;
                 try
                 {
                     // 同一ボリューム内でのアトミック置換
                     File.Replace(tempPath, filePath, backupPath);
+                    replaced = true;
                     try { File.Delete(backupPath); } catch { }
                 }
                 catch
                 {
-                    // File.Replace 非対応環境（UNC共有の一部など）での安全フォールバック
-                    File.Copy(tempPath, filePath, overwrite: true);
+                    // File.Replace 非対応環境（UNC共有や特定SMB実装など）での安全退避フォールバック
+                    // 元画像に .bak を付けて退避 -> 新ファイルを配置 -> 成功なら .bak 削除 / 失敗なら .bak を元に戻す
+                    replaced = false;
+                }
+
+                if (!replaced)
+                {
+                    string uncBakPath = filePath + ".unc_bak_" + Guid.NewGuid().ToString("N");
+                    bool movedToBak = false;
+                    try
+                    {
+                        File.Move(filePath, uncBakPath);
+                        movedToBak = true;
+                        File.Move(tempPath, filePath);
+                        // 新ファイル配置成功：退避ファイルを安全に破棄
+                        try { File.Delete(uncBakPath); } catch { }
+                    }
+                    catch
+                    {
+                        // 新ファイル配置失敗：元画像を即座に復元
+                        if (movedToBak && File.Exists(uncBakPath) && !File.Exists(filePath))
+                        {
+                            try { File.Move(uncBakPath, filePath); } catch { }
+                        }
+                        throw;
+                    }
                 }
 
                 return optimizedBytes.Length;

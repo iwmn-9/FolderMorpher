@@ -2994,7 +2994,36 @@ namespace FolderMorpher.Services.Testing
                     throw new InvalidOperationException("M4 Fail: Non-existent file must NOT increment SuccessCount or FreedBytes!");
                 }
 
-                // 4. M2: LiveAclDiffItem の AccessType 反映
+                // 4. H2: 重複原本が消失または変更されている場合の重複削除防止テスト
+                var origSample = Path.Combine(testTemp, "original_candidate.txt");
+                var dupSample = Path.Combine(testTemp, "duplicate_target.txt");
+                File.WriteAllText(origSample, "original content");
+                File.WriteAllText(dupSample, "duplicate content");
+
+                var dupPlan = new AuditCleanupPlan
+                {
+                    FullPath = dupSample,
+                    FileName = "duplicate_target.txt",
+                    Size = new FileInfo(dupSample).Length,
+                    OriginalCandidatePath = origSample,
+                    OriginalExpectedSize = 99999 // 意図的に不一致（原本サイズ異常）
+                };
+                var dupRes = AuditCleanupService.ExecutePlan(new[] { dupPlan });
+                if (dupRes.SuccessCount != 0 || !File.Exists(dupSample))
+                {
+                    throw new InvalidOperationException("H2 Fail: Duplicate file must NOT be deleted when original size mismatch!");
+                }
+
+                // 原本が存在しない場合
+                dupPlan.OriginalExpectedSize = new FileInfo(origSample).Length;
+                dupPlan.OriginalCandidatePath = Path.Combine(testTemp, "missing_original.txt");
+                var missingOrigRes = AuditCleanupService.ExecutePlan(new[] { dupPlan });
+                if (missingOrigRes.SuccessCount != 0 || !File.Exists(dupSample))
+                {
+                    throw new InvalidOperationException("H2 Fail: Duplicate file must NOT be deleted when original does not exist!");
+                }
+
+                // 5. M2: LiveAclDiffItem の AccessType & 詳細権限ビット差分 (Details)
                 var aclService = new AclService();
                 var origList = new List<SimAclEntry>
                 {
@@ -3010,6 +3039,12 @@ namespace FolderMorpher.Services.Testing
                 if (bobDiff == null || bobDiff.AccessType != AccessControlType.Deny || bobDiff.AccessTypeDisplay != "⛔ 拒否")
                 {
                     throw new InvalidOperationException("M2 Fail: Deny entry must have AccessType = Deny and display ⛔ 拒否!");
+                }
+
+                var aliceDiff = changePlan.DiffItems.FirstOrDefault(d => d.AccountName == "Alice");
+                if (aliceDiff == null || string.IsNullOrEmpty(aliceDiff.Details) || !aliceDiff.Details.Contains("+フルコントロール"))
+                {
+                    throw new InvalidOperationException($"M2 Fail: Alice diff Details must contain detailed bit differences! Got: '{aliceDiff?.Details}'");
                 }
             }
             finally
