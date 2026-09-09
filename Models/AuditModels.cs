@@ -39,14 +39,21 @@ namespace FolderMorpher.Models
         public DateTime LastWriteTime { get; set; }
         public DateTime LastAccessTime { get; set; }
         public AuditIssueType IssueType { get; set; }
-        public string IssueTypeDisplay => IssueType switch
+        public string IssueTypeDisplay
         {
-            AuditIssueType.Duplicate => "重複ファイル",
-            AuditIssueType.Dormant => "休眠ファイル",
-            AuditIssueType.PathTooLong => "パス長危険域 (240字超)",
-            AuditIssueType.InvalidChar => "地雷文字",
-            _ => "その他"
-        };
+            get
+            {
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                return IssueType switch
+                {
+                    AuditIssueType.Duplicate => isJa ? "重複ファイル" : "Duplicate File",
+                    AuditIssueType.Dormant => isJa ? "休眠ファイル" : "Dormant File",
+                    AuditIssueType.PathTooLong => isJa ? "パス長危険域 (240字超)" : "Long Path (>240 chars)",
+                    AuditIssueType.InvalidChar => isJa ? "地雷文字" : "Invalid Characters",
+                    _ => isJa ? "その他" : "Other"
+                };
+            }
+        }
         public string Detail { get; set; } = string.Empty;
         public string? Sha256Hash { get; set; }
         public string DuplicateGroupId { get; set; } = string.Empty;
@@ -63,7 +70,10 @@ namespace FolderMorpher.Models
             {
                 if (IssueType != AuditIssueType.Duplicate || string.IsNullOrEmpty(DuplicateGroupId))
                     return "-";
-                return IsOriginalCandidate ? $"{DuplicateGroupId} (原本候補)" : $"{DuplicateGroupId} (重複)";
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                return IsOriginalCandidate 
+                    ? $"{DuplicateGroupId} {(isJa ? "(原本候補)" : "(Original)")}" 
+                    : $"{DuplicateGroupId} {(isJa ? "(重複)" : "(Duplicate)")}";
             }
         }
 

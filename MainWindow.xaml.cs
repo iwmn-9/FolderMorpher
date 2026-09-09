@@ -3439,6 +3439,12 @@ namespace AstraSize
 
         private void ApplyLocalization()
         {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(ApplyLocalization);
+                return;
+            }
+
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
 
             // 言語切り替えボタン自体の表示（次に切り替わる言語を提示）
@@ -3546,6 +3552,20 @@ namespace AstraSize
             SimAclTitleText.Text = isJa ? "新設計 アクセス権エントリ (ACE)" : "Target Access Control Entries (ACEs)";
             SimAdHeaderTitle.Text = isJa ? "Active Directory / ローカル候補" : "Active Directory / Local Principals";
             SimAdHeaderSubText.Text = isJa ? "中央の権限エリアへドラッグ＆ドロップして付与" : "Drag & drop to center permissions area to grant";
+
+            // Simulation Tree ContextMenu
+            SimCtxNewSubfolder.Header = isJa ? "📁 新規サブフォルダ作成" : "📁 New Subfolder";
+            SimCtxRename.Header = isJa ? "✏️ フォルダ名の変更" : "✏️ Rename Folder";
+            SimCtxPromoteRoot.Header = isJa ? "⏮ 第1階層（ルート）へ昇格" : "⏮ Promote to Root (Level 1)";
+            SimCtxPromote.Header = isJa ? "◀ 1階層昇格" : "◀ Promote 1 Level";
+            SimCtxDemote.Header = isJa ? "▶ 1階層降格 (サブ化)" : "▶ Demote 1 Level (Make Subfolder)";
+            SimCtxDelete.Header = isJa ? "🗑️ 削除" : "🗑️ Delete";
+
+            // 仮想ツリーの各ノードの表示言語更新
+            foreach (var root in _simRootFolders)
+            {
+                root.NotifyLanguageChanged();
+            }
 
             // ==========================================
             // Tab 3 (LinkFixer)
@@ -3704,6 +3724,17 @@ namespace AstraSize
             SecAdvTakeOwnership.Content = isJa ? "所有権の取得" : "Take ownership";
             SecAdvSync.Content = isJa ? "同期 (Synchronize)" : "Synchronize";
 
+            SecComboItemAllow.Content = isJa ? "許可" : "Allow";
+            SecComboItemDeny.Content = isJa ? "拒否" : "Deny";
+
+            SecComboAppliesToAll.Content = isJa ? "このフォルダー、サブフォルダーおよびファイル" : "This folder, subfolders and files";
+            SecComboAppliesToFolderOnly.Content = isJa ? "このフォルダーのみ" : "This folder only";
+            SecComboAppliesToFolderAndSub.Content = isJa ? "このフォルダーおよびサブフォルダー" : "This folder and subfolders";
+            SecComboAppliesToFolderAndFiles.Content = isJa ? "このフォルダーおよびファイル" : "This folder and files";
+            SecComboAppliesToSubAndFiles.Content = isJa ? "サブフォルダーおよびファイルのみ" : "Subfolders and files only";
+            SecComboAppliesToSubOnly.Content = isJa ? "サブフォルダーのみ" : "Subfolders only";
+            SecComboAppliesToFilesOnly.Content = isJa ? "ファイルのみ" : "Files only";
+
             SecModalCancelButton.Content = isJa ? "キャンセル" : "Cancel";
             SecModalApplyButton.Content = isJa ? "変更を保存" : "Save Changes";
 
@@ -3725,6 +3756,9 @@ namespace AstraSize
             // ==========================================
             LinkFixDiffTitleText.Text = isJa ? "⚖️ 変更点" : "⚖️ Changes";
             LinkFixDiffSubTitleText.Text = isJa ? " - ショートカット一括修復" : " - Batch Shortcut Repair";
+            ColLinkDiffFileName.Header = isJa ? "ファイル名" : "File Name";
+            ColLinkDiffOldTarget.Header = isJa ? "置換前ターゲット (Before)" : "Old Target (Before)";
+            ColLinkDiffNewTarget.Header = isJa ? "置換後ターゲット (After)" : "New Target (After)";
             LinkFixDiffModalCloseButton.Content = isJa ? "閉じる" : "Close";
             LinkFixDiffModalApplyButton.Content = isJa ? "⚡ 適用" : "⚡ Apply";
 
@@ -3733,6 +3767,10 @@ namespace AstraSize
             // ==========================================
             MediaDiffTitleText.Text = isJa ? "⚖️ 変更点" : "⚖️ Changes";
             MediaDiffSubTitleText.Text = isJa ? " - 写真・画像軽量化 (上書き縮小)" : " - Image Optimization (In-Place)";
+            ColMediaDiffFileName.Header = isJa ? "ファイル名" : "File Name";
+            ColMediaDiffOriginalSize.Header = isJa ? "元容量" : "Original Size";
+            ColMediaDiffDimensions.Header = isJa ? "現在の解像度" : "Current Resolution";
+            ColMediaDiffFullPath.Header = isJa ? "完全パス" : "Full Path";
             MediaDiffModalCloseButton.Content = isJa ? "閉じる" : "Close";
             MediaDiffModalApplyButton.Content = isJa ? "⚡ 適用" : "⚡ Apply";
 

@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Security.AccessControl;
 using System.Text.Json.Serialization;
+using FolderMorpher.Services;
 
 namespace AstraSize.Models
 {
@@ -119,10 +120,9 @@ namespace AstraSize.Models
 
         public string AppliesTo
         {
-            get => _appliesTo;
+            get => AclInheritanceHelper.ToAppliesToString(_inheritanceFlags, _propagationFlags);
             set
             {
-                _appliesTo = value;
                 var parsed = AclInheritanceHelper.TryFromAppliesToString(value);
                 if (parsed.HasValue)
                 {
@@ -143,12 +143,13 @@ namespace AstraSize.Models
         {
             get
             {
-                if (IsFullControl) return "フルコントロール";
-                if (IsModify) return "変更 (Modify)";
-                if (IsReadExecute) return "読み取りと実行";
-                if (IsRead) return "読み取り";
-                if (IsWrite) return "書き込み";
-                return "カスタム権限";
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                if (IsFullControl) return isJa ? "フルコントロール" : "Full Control";
+                if (IsModify) return isJa ? "変更 (Modify)" : "Modify";
+                if (IsReadExecute) return isJa ? "読み取りと実行" : "Read & Execute";
+                if (IsRead) return isJa ? "読み取り" : "Read";
+                if (IsWrite) return isJa ? "書き込み" : "Write";
+                return isJa ? "カスタム権限" : "Custom Rights";
             }
         }
 
@@ -406,6 +407,16 @@ namespace AstraSize.Models
             OnPropertyChanged(nameof(AdvSynchronize));
         }
 
+        [JsonIgnore]
+        public string InheritedBadgeLabel => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "🔒 継承" : "🔒 Inherited";
+
+        public void NotifyLanguageChanged()
+        {
+            OnPropertyChanged(nameof(FormattedRights));
+            OnPropertyChanged(nameof(AppliesTo));
+            OnPropertyChanged(nameof(InheritedBadgeLabel));
+        }
+
         public SimAclEntry Clone()
         {
             return new SimAclEntry
@@ -557,7 +568,16 @@ namespace AstraSize.Models
         public System.Windows.Thickness IndentMargin => new System.Windows.Thickness(Math.Min(12, Level) * 18, 0, 0, 0);
 
         [JsonIgnore]
-        public string LevelPillText => Level == 0 ? "第1階層 (ルート)" : $"第{Level + 1}階層";
+        public string LevelPillText
+        {
+            get
+            {
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                return Level == 0 
+                    ? (isJa ? "第1階層 (ルート)" : "Level 1 (Root)") 
+                    : (isJa ? $"第{Level + 1}階層" : $"Level {Level + 1}");
+            }
+        }
 
         [JsonIgnore]
         public string LevelPillBackground => Level switch
@@ -583,7 +603,16 @@ namespace AstraSize.Models
         public string FormattedSize => FileItemNode.FormatBytes(EstimatedSizeBytes);
 
         [JsonIgnore]
-        public string InheritStatusBadge => InheritAcl ? "🔗 継承" : "🛡️ 固有";
+        public string InheritStatusBadge
+        {
+            get
+            {
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                return InheritAcl 
+                    ? (isJa ? "🔗 継承" : "🔗 Inherited") 
+                    : (isJa ? "🛡️ 固有" : "🛡️ Explicit");
+            }
+        }
 
         [JsonIgnore]
         public bool HasMapping => MappedSourcePaths.Count > 0;
@@ -596,9 +625,25 @@ namespace AstraSize.Models
         {
             get
             {
-                if (MappedSourcePaths.Count == 0) return "新設 (未紐づけ)";
-                if (MappedSourcePaths.Count == 1) return $"🔗 移行元: {MappedSourcePaths[0]}";
-                return $"🔗 {MappedSourcePaths.Count}箇所の現行を統合中";
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                if (MappedSourcePaths.Count == 0) return isJa ? "新設 (未紐づけ)" : "New (Unmapped)";
+                if (MappedSourcePaths.Count == 1) return isJa ? $"🔗 移行元: {MappedSourcePaths[0]}" : $"🔗 Source: {MappedSourcePaths[0]}";
+                return isJa ? $"🔗 {MappedSourcePaths.Count}箇所の現行を統合中" : $"🔗 Merging {MappedSourcePaths.Count} sources";
+            }
+        }
+
+        public void NotifyLanguageChanged()
+        {
+            OnPropertyChanged(nameof(LevelPillText));
+            OnPropertyChanged(nameof(InheritStatusBadge));
+            OnPropertyChanged(nameof(MappingBadgeText));
+            foreach (var acl in AclEntries)
+            {
+                acl.NotifyLanguageChanged();
+            }
+            foreach (var child in Children)
+            {
+                child.NotifyLanguageChanged();
             }
         }
 
@@ -685,26 +730,27 @@ namespace AstraSize.Models
         public const string AppliesTo_SubfoldersOnly = "サブフォルダーのみ";
         public const string AppliesTo_FilesOnly = "ファイルのみ";
 
-        public static string ToAppliesToString(InheritanceFlags inheritance, PropagationFlags propagation)
+        public static string ToAppliesToString(InheritanceFlags inheritance, PropagationFlags propagation, bool? isEnglish = null)
         {
+            bool en = isEnglish ?? (LocalizationService.Instance.CurrentLanguage == AppLanguage.English);
             if (inheritance == (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit) && propagation == PropagationFlags.None)
-                return AppliesTo_All;
+                return en ? AppliesTo_All_En : AppliesTo_All;
             if (inheritance == InheritanceFlags.None && propagation == PropagationFlags.None)
-                return AppliesTo_ThisFolderOnly;
+                return en ? AppliesTo_ThisFolderOnly_En : AppliesTo_ThisFolderOnly;
             if (inheritance == InheritanceFlags.ContainerInherit && propagation == PropagationFlags.None)
-                return AppliesTo_ThisFolderAndSubfolders;
+                return en ? AppliesTo_ThisFolderAndSubfolders_En : AppliesTo_ThisFolderAndSubfolders;
             if (inheritance == InheritanceFlags.ObjectInherit && propagation == PropagationFlags.None)
-                return AppliesTo_ThisFolderAndFiles;
+                return en ? AppliesTo_ThisFolderAndFiles_En : AppliesTo_ThisFolderAndFiles;
             if (inheritance == (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit) && (propagation & PropagationFlags.InheritOnly) == PropagationFlags.InheritOnly)
-                return AppliesTo_SubfoldersAndFilesOnly;
+                return en ? AppliesTo_SubfoldersAndFilesOnly_En : AppliesTo_SubfoldersAndFilesOnly;
             if (inheritance == InheritanceFlags.ContainerInherit && (propagation & PropagationFlags.InheritOnly) == PropagationFlags.InheritOnly)
-                return AppliesTo_SubfoldersOnly;
+                return en ? AppliesTo_SubfoldersOnly_En : AppliesTo_SubfoldersOnly;
             if (inheritance == InheritanceFlags.ObjectInherit && (propagation & PropagationFlags.InheritOnly) == PropagationFlags.InheritOnly)
-                return AppliesTo_FilesOnly;
+                return en ? AppliesTo_FilesOnly_En : AppliesTo_FilesOnly;
 
             // フォールバック
-            if (inheritance == InheritanceFlags.None) return AppliesTo_ThisFolderOnly;
-            return AppliesTo_All;
+            if (inheritance == InheritanceFlags.None) return en ? AppliesTo_ThisFolderOnly_En : AppliesTo_ThisFolderOnly;
+            return en ? AppliesTo_All_En : AppliesTo_All;
         }
 
         public const string AppliesTo_All_En = "This folder, subfolders and files";

@@ -31,7 +31,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 25;
+            int totalTests = 26;
 
             try
             {
@@ -180,9 +180,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 25
-                Console.WriteLine("\n[TEST 25/25] Defensive Hardening: Flag Preservation (H1), Skeleton Guard (H2), Atomic Media Replace (H3), Optimistic Lock & Existence Guard (H4/M4), and AccessType Diff (M2)...");
+                Console.WriteLine("\n[TEST 25/26] Defensive Hardening: Flag Preservation (H1), Skeleton Guard (H2), Atomic Media Replace (H3), Optimistic Lock & Existence Guard (H4/M4), and AccessType Diff (M2)...");
                 await TestAstraHardeningAndDefensiveMutationAsync();
                 Console.WriteLine("  --> [PASS] Defensive Hardening: All critical mutation guards, optimistic locks, and plan invariants 100% verified.");
+                passCount++;
+
+                // Test 26
+                Console.WriteLine("\n[TEST 26/26] Bilingual Localization: Dynamic JA/EN Language Switching & Model Display Binding Fidelity...");
+                TestBilingualLocalizationFidelity();
+                Console.WriteLine("  --> [PASS] Bilingual Localization: All rights, badges, diff types, and models switch seamlessly without untranslated leftovers.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -3086,6 +3092,103 @@ namespace FolderMorpher.Services.Testing
             finally
             {
                 try { Directory.Delete(testTemp, recursive: true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 26. Bilingual Localization (JA <-> EN) Display & Model Binding Fidelity:
+        /// 言語切り替え時に、SimAclEntry, LiveAclDiffItem, AuditItem, SimFolderNode, AclInheritanceHelper が
+        /// 日本語・英語の両方で正確に切り替わること（日本語モードで既存アサーション維持、英語モードで日本語が混じらないこと）を検証。
+        /// </summary>
+        private static void TestBilingualLocalizationFidelity()
+        {
+            var loc = LocalizationService.Instance;
+            var originalLang = loc.CurrentLanguage;
+
+            try
+            {
+                // --- 1. 日本語モードの検証 ---
+                loc.SetLanguage(AppLanguage.Japanese);
+
+                var acl = new SimAclEntry { Rights = FileSystemRights.FullControl, AccessType = AccessControlType.Allow };
+                if (acl.FormattedRights != "フルコントロール")
+                    throw new InvalidOperationException($"JA FormattedRights mismatch: got '{acl.FormattedRights}'");
+
+                acl.Rights = FileSystemRights.Modify;
+                if (acl.FormattedRights != "変更 (Modify)")
+                    throw new InvalidOperationException($"JA FormattedRights Modify mismatch: got '{acl.FormattedRights}'");
+
+                var diffItem = new LiveAclDiffItem { DiffType = LiveAclDiffType.Added, AccessType = AccessControlType.Deny };
+                if (diffItem.DiffTypeDisplay != "＋ 追加")
+                    throw new InvalidOperationException($"JA DiffTypeDisplay mismatch: got '{diffItem.DiffTypeDisplay}'");
+                if (diffItem.AccessTypeDisplay != "⛔ 拒否")
+                    throw new InvalidOperationException($"JA AccessTypeDisplay mismatch: got '{diffItem.AccessTypeDisplay}'");
+
+                var auditItem = new AuditItem
+                {
+                    IssueType = AuditIssueType.Duplicate,
+                    DuplicateGroupId = "GRP-1",
+                    IsOriginalCandidate = true
+                };
+                if (auditItem.IssueTypeDisplay != "重複ファイル")
+                    throw new InvalidOperationException($"JA IssueTypeDisplay mismatch: got '{auditItem.IssueTypeDisplay}'");
+                if (auditItem.DuplicateGroupBadge != "GRP-1 (原本候補)")
+                    throw new InvalidOperationException($"JA DuplicateGroupBadge mismatch: got '{auditItem.DuplicateGroupBadge}'");
+
+                var simNode = new SimFolderNode { Level = 0, InheritAcl = true };
+                if (simNode.LevelPillText != "第1階層 (ルート)")
+                    throw new InvalidOperationException($"JA LevelPillText mismatch: got '{simNode.LevelPillText}'");
+                if (simNode.InheritStatusBadge != "🔗 継承")
+                    throw new InvalidOperationException($"JA InheritStatusBadge mismatch: got '{simNode.InheritStatusBadge}'");
+
+                string appliesToJa = AclInheritanceHelper.ToAppliesToString(
+                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None);
+                if (appliesToJa != AclInheritanceHelper.AppliesTo_All)
+                    throw new InvalidOperationException($"JA AppliesTo mismatch: got '{appliesToJa}'");
+
+                // --- 2. 英語モードの検証 ---
+                loc.SetLanguage(AppLanguage.English);
+
+                acl.Rights = FileSystemRights.FullControl;
+                if (acl.FormattedRights != "Full Control")
+                    throw new InvalidOperationException($"EN FormattedRights mismatch: got '{acl.FormattedRights}'");
+
+                acl.Rights = FileSystemRights.Modify;
+                if (acl.FormattedRights != "Modify")
+                    throw new InvalidOperationException($"EN FormattedRights Modify mismatch: got '{acl.FormattedRights}'");
+
+                diffItem.DiffType = LiveAclDiffType.Added;
+                diffItem.AccessType = AccessControlType.Deny;
+                if (diffItem.DiffTypeDisplay != "+ Add")
+                    throw new InvalidOperationException($"EN DiffTypeDisplay mismatch: got '{diffItem.DiffTypeDisplay}'");
+                if (diffItem.AccessTypeDisplay != "⛔ Deny")
+                    throw new InvalidOperationException($"EN AccessTypeDisplay mismatch: got '{diffItem.AccessTypeDisplay}'");
+
+                auditItem.IssueType = AuditIssueType.Duplicate;
+                auditItem.IsOriginalCandidate = true;
+                if (auditItem.IssueTypeDisplay != "Duplicate File")
+                    throw new InvalidOperationException($"EN IssueTypeDisplay mismatch: got '{auditItem.IssueTypeDisplay}'");
+                if (auditItem.DuplicateGroupBadge != "GRP-1 (Original)")
+                    throw new InvalidOperationException($"EN DuplicateGroupBadge mismatch: got '{auditItem.DuplicateGroupBadge}'");
+
+                auditItem.IsOriginalCandidate = false;
+                if (auditItem.DuplicateGroupBadge != "GRP-1 (Duplicate)")
+                    throw new InvalidOperationException($"EN DuplicateGroupBadge (dup) mismatch: got '{auditItem.DuplicateGroupBadge}'");
+
+                if (simNode.LevelPillText != "Level 1 (Root)")
+                    throw new InvalidOperationException($"EN LevelPillText mismatch: got '{simNode.LevelPillText}'");
+                if (simNode.InheritStatusBadge != "🔗 Inherited")
+                    throw new InvalidOperationException($"EN InheritStatusBadge mismatch: got '{simNode.InheritStatusBadge}'");
+
+                string appliesToEn = AclInheritanceHelper.ToAppliesToString(
+                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None);
+                if (appliesToEn != AclInheritanceHelper.AppliesTo_All_En)
+                    throw new InvalidOperationException($"EN AppliesTo mismatch: got '{appliesToEn}'");
+            }
+            finally
+            {
+                // 元の言語設定に復元
+                loc.SetLanguage(originalLang);
             }
         }
     }

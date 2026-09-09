@@ -380,6 +380,20 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
     - **回帰テスト Test 25 新設**:
       - 上記の防護機構（H1〜H4, M1〜M5）を網羅する自動検証テストを追加し、**25/25 ALL PASSED**。
 
+41. **原本生存防護 ＆ 異ドメイン所属衝突防止 (v1.6.7 / v1.6.8)**:
+    - **Audit 削除対象の原本候補生存・同一性検証**:
+      - 重複削除時に、残すべき原本候補（`OriginalCandidatePath`）が物理的に実在し、かつ更新日時・サイズがスキャン時から改ざん・変更されていないことを削除直前にトランザクション検証。原本が万一消失・変更されている場合は重複削除を即座に中止・スキップ。
+    - **AD グループ所属のSID優先解決 ＆ 異ドメイン衝突防止**:
+      - 異ドメイン間で同名のセキュリティグループが存在する場合の誤爆を防止するため、内部評価パイプラインでSIDによる完全解決を徹底。
+
+42. **完全バイリンガル（日英）表示の徹底 ＆ 回帰テスト26 (v1.7.0)**:
+    - **未翻訳残存箇所の完全バイリンガル化**:
+      - 英語モード（🌐 EN）選択時に、右クリックメニュー（新規サブフォルダ、名前変更、昇格/降格、削除等）、詳細権限コンボボックス（許可/拒否、適用先7項目）、各種変更点モーダル（Live ACL, LinkFix, Media）、およびモデル動的プロパティ（`LevelPillText`, `InheritStatusBadge`, `MappingBadgeText`, `IssueTypeDisplay`, `DuplicateGroupBadge` 等）に至るまで、日本語の混入を完全根絶。
+    - **UI表示文字列の非信号線化（AGENTS.md 規則 0-3 準拠）**:
+      - 画面表示テキストを業務判定に使用せず、モデル内部の Enum や構造化真偽値を正本とし、`LocalizationService.Instance.LanguageChanged` イベントおよびバインディング経由で動的更新。
+    - **回帰テスト Test 26 新設**:
+      - `TestBilingualLocalizationFidelity` を新設し、JA/EN 切替時の全モデルプロパティ・ヘルパー出力の翻訳整合性を自動検証。**全26回帰テスト 100% PASS**（26/26）。
+
 ---
 
 ## 4. ビルド・実行・検証コマンド
@@ -392,11 +406,11 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
 ### 配布用単一EXEの生成（Release self-contained）
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe" -Destination ".\FolderMorpher.exe" -Force
+Copy-Item -Path ".\bin\Publish\FolderMorpher.exe" -Destination ".\FolderMorpher.exe" -Force
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 25/25 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 26/26 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

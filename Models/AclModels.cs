@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Security.AccessControl;
+using FolderMorpher.Services;
 
 namespace AstraSize.Models
 {
@@ -28,7 +29,9 @@ namespace AstraSize.Models
 
         public string InheritanceText
         {
-            get => IsInherited ? "親から継承" : "固有設定";
+            get => IsInherited 
+                ? (LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "親から継承" : "Inherited") 
+                : (LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "固有設定" : "Explicit");
             set { }
         }
 
@@ -38,16 +41,17 @@ namespace AstraSize.Models
 
         public static string GetFriendlyRightsName(FileSystemRights rights)
         {
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             if ((rights & FileSystemRights.FullControl) == FileSystemRights.FullControl)
-                return "フル コントロール";
+                return isJa ? "フル コントロール" : "Full Control";
             if ((rights & FileSystemRights.Modify) == FileSystemRights.Modify)
-                return "変更 (読取/書込/削除)";
+                return isJa ? "変更 (読取/書込/削除)" : "Modify (Read/Write/Delete)";
             if ((rights & FileSystemRights.ReadAndExecute) == FileSystemRights.ReadAndExecute)
-                return "読取と実行";
+                return isJa ? "読取と実行" : "Read & Execute";
             if ((rights & FileSystemRights.Read) == FileSystemRights.Read)
-                return "読取のみ";
+                return isJa ? "読取のみ" : "Read Only";
             if ((rights & FileSystemRights.Write) == FileSystemRights.Write)
-                return "書込のみ";
+                return isJa ? "書込のみ" : "Write Only";
             return rights.ToString();
         }
     }
@@ -210,6 +214,44 @@ namespace AstraSize.Models
             HasChanges = (remainingOrig.Count > 0);
         }
 
+        public string InheritCheckboxLabel => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+            ? "親フォルダからの権限継承を含める"
+            : "Inherit permissions from parent";
+
+        public string UnappliedBadgeLabel => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+            ? "● 未適用"
+            : "● Unapplied";
+
+        public string DropZoneHintLabel => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+            ? "📥 アカウントをドロップして追加"
+            : "📥 Drop account here to add";
+
+        public string InheritedBadgeLabel => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+            ? "🔒 継承"
+            : "🔒 Inherited";
+
+        public string RollbackButtonLabel => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+            ? "↩️ ロールバック"
+            : "↩️ Rollback";
+
+        public string CheckButtonLabel => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+            ? "🔍 チェック"
+            : "🔍 Check";
+
+        public void NotifyLanguageChanged()
+        {
+            OnPropertyChanged(nameof(InheritCheckboxLabel));
+            OnPropertyChanged(nameof(UnappliedBadgeLabel));
+            OnPropertyChanged(nameof(DropZoneHintLabel));
+            OnPropertyChanged(nameof(InheritedBadgeLabel));
+            OnPropertyChanged(nameof(RollbackButtonLabel));
+            OnPropertyChanged(nameof(CheckButtonLabel));
+            foreach (var e in CurrentAclEntries)
+            {
+                e.NotifyLanguageChanged();
+            }
+        }
+
         public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? prop = null)
             => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(prop));
@@ -248,14 +290,21 @@ namespace AstraSize.Models
     {
         public LiveAclDiffType DiffType { get; set; } = LiveAclDiffType.Added;
 
-        public string DiffTypeDisplay => DiffType switch
+        public string DiffTypeDisplay
         {
-            LiveAclDiffType.Added => "＋ 追加",
-            LiveAclDiffType.Removed => "ー 削除",
-            LiveAclDiffType.Modified => "〜 変更",
-            LiveAclDiffType.Untouched => "＝ 維持",
-            _ => "変更"
-        };
+            get
+            {
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                return DiffType switch
+                {
+                    LiveAclDiffType.Added => isJa ? "＋ 追加" : "+ Add",
+                    LiveAclDiffType.Removed => isJa ? "ー 削除" : "- Remove",
+                    LiveAclDiffType.Modified => isJa ? "〜 変更" : "~ Modify",
+                    LiveAclDiffType.Untouched => isJa ? "＝ 維持" : "= Keep",
+                    _ => isJa ? "変更" : "Change"
+                };
+            }
+        }
 
         public string BadgeBackground => DiffType switch
         {
@@ -277,7 +326,16 @@ namespace AstraSize.Models
         public string DisplayName { get; set; } = string.Empty;
         public string IconGlyph { get; set; } = "👤";
         public AccessControlType AccessType { get; set; } = AccessControlType.Allow;
-        public string AccessTypeDisplay => AccessType == AccessControlType.Deny ? "⛔ 拒否" : "✅ 許可";
+        public string AccessTypeDisplay
+        {
+            get
+            {
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                return AccessType == AccessControlType.Deny 
+                    ? (isJa ? "⛔ 拒否" : "⛔ Deny") 
+                    : (isJa ? "✅ 許可" : "✅ Allow");
+            }
+        }
         public string AccessTypeBadgeBg => AccessType == AccessControlType.Deny ? "#FEE2E2" : "#F0FDF4";
         public string AccessTypeBadgeFg => AccessType == AccessControlType.Deny ? "#B91C1C" : "#15803D";
         public string BeforeRights { get; set; } = "―";

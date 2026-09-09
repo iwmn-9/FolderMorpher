@@ -622,14 +622,14 @@
                                     </TreeView.ItemContainerStyle>
                                     <TreeView.ContextMenu>
                                         <ContextMenu>
-                                            <MenuItem Header="📁 新規サブフォルダ作成" Click="CtxSimAddChild_Click"/>
-                                            <MenuItem Header="✏️ フォルダ名の変更" Click="CtxSimRename_Click"/>
+                                            <MenuItem x:Name="SimCtxNewSubfolder" Header="📁 新規サブフォルダ作成" Click="CtxSimAddChild_Click"/>
+                                            <MenuItem x:Name="SimCtxRename" Header="✏️ フォルダ名の変更" Click="CtxSimRename_Click"/>
                                             <Separator/>
-                                            <MenuItem Header="⏮ 第1階層（ルート）へ昇格" Click="CtxSimJumpRoot_Click"/>
-                                            <MenuItem Header="◀ 1階層昇格" Click="CtxSimPromote_Click"/>
-                                            <MenuItem Header="▶ 1階層降格 (サブ化)" Click="CtxSimDemote_Click"/>
+                                            <MenuItem x:Name="SimCtxPromoteRoot" Header="⏮ 第1階層（ルート）へ昇格" Click="CtxSimJumpRoot_Click"/>
+                                            <MenuItem x:Name="SimCtxPromote" Header="◀ 1階層昇格" Click="CtxSimPromote_Click"/>
+                                            <MenuItem x:Name="SimCtxDemote" Header="▶ 1階層降格 (サブ化)" Click="CtxSimDemote_Click"/>
                                             <Separator/>
-                                            <MenuItem Header="🗑️ 削除" Click="CtxSimDelete_Click"/>
+                                            <MenuItem x:Name="SimCtxDelete" Header="🗑️ 削除" Click="CtxSimDelete_Click"/>
                                         </ContextMenu>
                                     </TreeView.ContextMenu>
                                     <TreeView.ItemTemplate>
@@ -1412,8 +1412,8 @@
                                 <StackPanel Grid.Column="1">
                                     <TextBlock x:Name="SecModalTypeLabel" Text="種類:" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
                                     <ComboBox x:Name="SecAccessTypeCombo" Height="28" SelectedIndex="0" VerticalContentAlignment="Center">
-                                        <ComboBoxItem Content="許可"/>
-                                        <ComboBoxItem Content="拒否"/>
+                                        <ComboBoxItem x:Name="SecComboItemAllow" Content="許可"/>
+                                        <ComboBoxItem x:Name="SecComboItemDeny" Content="拒否"/>
                                     </ComboBox>
                                 </StackPanel>
                             </Grid>
@@ -1421,13 +1421,13 @@
                             <StackPanel Margin="0,0,0,12">
                                 <TextBlock x:Name="SecModalAppliesToLabel" Text="適用先:" FontSize="11" Foreground="#64748B" Margin="0,0,0,2"/>
                                 <ComboBox x:Name="SecAppliesToCombo" Height="28" SelectedIndex="0" VerticalContentAlignment="Center">
-                                    <ComboBoxItem Content="このフォルダー、サブフォルダーおよびファイル"/>
-                                    <ComboBoxItem Content="このフォルダーのみ"/>
-                                    <ComboBoxItem Content="このフォルダーおよびサブフォルダー"/>
-                                    <ComboBoxItem Content="このフォルダーおよびファイル"/>
-                                    <ComboBoxItem Content="サブフォルダーおよびファイルのみ"/>
-                                    <ComboBoxItem Content="サブフォルダーのみ"/>
-                                    <ComboBoxItem Content="ファイルのみ"/>
+                                    <ComboBoxItem x:Name="SecComboAppliesToAll" Content="このフォルダー、サブフォルダーおよびファイル"/>
+                                    <ComboBoxItem x:Name="SecComboAppliesToFolderOnly" Content="このフォルダーのみ"/>
+                                    <ComboBoxItem x:Name="SecComboAppliesToFolderAndSub" Content="このフォルダーおよびサブフォルダー"/>
+                                    <ComboBoxItem x:Name="SecComboAppliesToFolderAndFiles" Content="このフォルダーおよびファイル"/>
+                                    <ComboBoxItem x:Name="SecComboAppliesToSubAndFiles" Content="サブフォルダーおよびファイルのみ"/>
+                                    <ComboBoxItem x:Name="SecComboAppliesToSubOnly" Content="サブフォルダーのみ"/>
+                                    <ComboBoxItem x:Name="SecComboAppliesToFilesOnly" Content="ファイルのみ"/>
                                 </ComboBox>
                             </StackPanel>
 
@@ -1612,15 +1612,15 @@
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="30"
                                   SelectionMode="Single">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="ファイル名" Binding="{Binding FileName}" Width="200"/>
-                                <DataGridTemplateColumn Header="置換前ターゲット (Before)" Width="320">
+                                <DataGridTextColumn x:Name="ColLinkDiffFileName" Header="ファイル名" Binding="{Binding FileName}" Width="200"/>
+                                <DataGridTemplateColumn x:Name="ColLinkDiffOldTarget" Header="置換前ターゲット (Before)" Width="320">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock Text="{Binding OldTarget}" FontSize="11" Foreground="#64748B" TextTrimming="CharacterEllipsis" ToolTip="{Binding OldTarget}" VerticalAlignment="Center"/>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTemplateColumn Header="置換後ターゲット (After)" Width="*">
+                                <DataGridTemplateColumn x:Name="ColLinkDiffNewTarget" Header="置換後ターゲット (After)" Width="*">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock Text="{Binding NewTarget}" FontWeight="SemiBold" FontSize="11" Foreground="#0284C7" TextTrimming="CharacterEllipsis" ToolTip="{Binding NewTarget}" VerticalAlignment="Center"/>
@@ -1678,10 +1678,10 @@
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="30"
                                   SelectionMode="Single">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="ファイル名" Binding="{Binding FileName}" Width="200"/>
-                                <DataGridTextColumn Header="元容量" Binding="{Binding OriginalSizeFormatted}" Width="110"/>
-                                <DataGridTextColumn Header="現在の解像度" Binding="{Binding DimensionsFormatted}" Width="130"/>
-                                <DataGridTemplateColumn Header="完全パス" Width="*">
+                                <DataGridTextColumn x:Name="ColMediaDiffFileName" Header="ファイル名" Binding="{Binding FileName}" Width="200"/>
+                                <DataGridTextColumn x:Name="ColMediaDiffOriginalSize" Header="元容量" Binding="{Binding OriginalSizeFormatted}" Width="110"/>
+                                <DataGridTextColumn x:Name="ColMediaDiffDimensions" Header="現在の解像度" Binding="{Binding DimensionsFormatted}" Width="130"/>
+                                <DataGridTemplateColumn x:Name="ColMediaDiffFullPath" Header="完全パス" Width="*">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock Text="{Binding FullPath}" FontSize="11" Foreground="#64748B" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullPath}" VerticalAlignment="Center"/>

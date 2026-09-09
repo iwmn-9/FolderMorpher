@@ -1198,6 +1198,12 @@ namespace AstraSize.Views
         #region Localization (i18n)
         public void ApplyLocalization(bool isJa)
         {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => ApplyLocalization(isJa));
+                return;
+            }
+
             // Mode Header
             LiveAclHeaderTitle.Text = isJa ? "🛡️ 権限コントロール" : "🛡️ Permission Control";
             LiveAclModeFolderRadio.Content = isJa ? "📁 フォルダ別 権限エディタ" : "📁 Folder ACL Editor";
@@ -1245,8 +1251,33 @@ namespace AstraSize.Views
             PickerApplyButton.Content = isJa ? "決定" : "Select";
             RevBrowseUserButton.Content = isJa ? "👥 参照..." : "👥 Browse...";
 
+            // Empty Banner
+            LiveAclNoPanelsTitle.Text = isJa ? "権限操作パネルが開かれていません" : "No Permission Panels Open";
+            LiveAclNoPanelsDesc.Text = isJa
+                ? "左のフォルダツリーからフォルダをダブルクリック、またはここにドラッグ＆ドロップしてください。"
+                : "Double-click a folder from the tree on the left, or drag & drop here.";
+            LiveAclNoPanelsNote.Text = isJa
+                ? "※最大6つのフォルダを横並びで同時に比較・編集できます。"
+                : "*Compare and edit up to 6 folders side by side simultaneously.";
+
+            // Opened Panels
+            foreach (var panel in _liveAclPanels)
+            {
+                panel.NotifyLanguageChanged();
+            }
+
             // Live ACL Diff Modal (Dry-Run)
             LiveAclDiffTitleText.Text = isJa ? "⚖️ 変更点" : "⚖️ Changes";
+            ColLiveAclDiffType.Header = isJa ? "種別" : "Type";
+            ColLiveAclDiffAccessType.Header = isJa ? "設定" : "Access";
+            ColLiveAclDiffAccount.Header = isJa ? "アカウント / プリンシパル" : "Account / Principal";
+            ColLiveAclDiffBefore.Header = isJa ? "変更前の権限 (Before)" : "Before Rights";
+            ColLiveAclDiffAfter.Header = isJa ? "変更後の権限 (After)" : "After Rights";
+            ColLiveAclDiffDetails.Header = isJa ? "差分詳細" : "Details";
+            ColLiveAclDiffAppliesTo.Header = isJa ? "適用先 (AppliesTo)" : "Applies To";
+            LiveAclDiffFooterNotice.Text = isJa
+                ? "🛡️ 適用直前の状態は自動保存され、いつでもロールバック可能です"
+                : "🛡️ State before apply is automatically saved and can be rolled back anytime";
             LiveAclDiffModalCancelButton.Content = isJa ? "キャンセル" : "Cancel";
             LiveAclDiffModalExecuteButton.Content = isJa ? "⚡ 適用" : "⚡ Apply";
         }

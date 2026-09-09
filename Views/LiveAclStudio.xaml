@@ -145,9 +145,9 @@
                                         BorderThickness="1" CornerRadius="10" Padding="30" VerticalAlignment="Center" HorizontalAlignment="Center">
                                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                         <TextBlock Text="🛡️" FontSize="36" HorizontalAlignment="Center" Margin="0,0,0,10"/>
-                                        <TextBlock Text="権限操作パネルが開かれていません" FontSize="14" FontWeight="Bold" Foreground="#334155" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="左のフォルダツリーからフォルダをダブルクリック、またはここにドラッグ＆ドロップしてください。" FontSize="11.5" Foreground="#64748B" HorizontalAlignment="Center" Margin="0,4,0,0"/>
-                                        <TextBlock Text="※最大6つのフォルダを横並びで同時に比較・編集できます。" FontSize="11" Foreground="#0284C7" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                        <TextBlock x:Name="LiveAclNoPanelsTitle" Text="権限操作パネルが開かれていません" FontSize="14" FontWeight="Bold" Foreground="#334155" HorizontalAlignment="Center"/>
+                                        <TextBlock x:Name="LiveAclNoPanelsDesc" Text="左のフォルダツリーからフォルダをダブルクリック、またはここにドラッグ＆ドロップしてください。" FontSize="11.5" Foreground="#64748B" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                        <TextBlock x:Name="LiveAclNoPanelsNote" Text="※最大6つのフォルダを横並びで同時に比較・編集できます。" FontSize="11" Foreground="#0284C7" HorizontalAlignment="Center" Margin="0,2,0,0"/>
                                     </StackPanel>
                                 </Border>
 
@@ -192,18 +192,18 @@
 
                                                         <!-- Row 1: Inherit & Change Status -->
                                                         <Grid Grid.Row="1" Margin="0,0,0,8">
-                                                            <CheckBox Content="親フォルダからの権限継承を含める" IsChecked="{Binding InheritAcl, Mode=TwoWay}"
+                                                            <CheckBox Content="{Binding InheritCheckboxLabel}" IsChecked="{Binding InheritAcl, Mode=TwoWay}"
                                                                       FontSize="11" FontWeight="Medium" Foreground="#334155" VerticalAlignment="Center"/>
                                                             <Border HorizontalAlignment="Right" Background="#FEF3C7" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="4" Padding="6,1"
                                                                     Visibility="{Binding HasChanges, Converter={StaticResource BoolToVis}}">
-                                                                <TextBlock Text="● 未適用" FontSize="10" FontWeight="SemiBold" Foreground="#B45309"/>
+                                                                <TextBlock Text="{Binding UnappliedBadgeLabel}" FontSize="10" FontWeight="SemiBold" Foreground="#B45309"/>
                                                             </Border>
                                                         </Grid>
 
                                                         <!-- Row 2: Drop Zone -->
                                                         <Border Grid.Row="2" Background="#F0F9FF" BorderBrush="#BAE6FD" BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,8"
                                                                 AllowDrop="True" Drop="LiveAclPanelDropZone_Drop" DragOver="LiveAclGenericDragOver" Tag="{Binding}">
-                                                            <TextBlock Text="📥 アカウントをドロップして追加" FontSize="10.5" FontWeight="SemiBold" Foreground="#0284C7" HorizontalAlignment="Center"/>
+                                                            <TextBlock Text="{Binding DropZoneHintLabel}" FontSize="10.5" FontWeight="SemiBold" Foreground="#0284C7" HorizontalAlignment="Center"/>
                                                         </Border>
 
                                                         <!-- Row 3: Cards List -->
@@ -250,7 +250,7 @@
                                                                                         <!-- 🔒 継承バッジ -->
                                                                                         <Border Background="#F1F5F9" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="4" Padding="5,1.5" Margin="3,0,0,0"
                                                                                                 Visibility="{Binding IsInherited, Converter={StaticResource BoolToVis}}" ToolTip="親フォルダーから継承されているアクセス許可（直接編集不可）">
-                                                                                            <TextBlock Text="🔒 継承" FontSize="9.5" FontWeight="SemiBold" Foreground="#64748B"/>
+                                                                                            <TextBlock Text="{Binding InheritedBadgeLabel}" FontSize="9.5" FontWeight="SemiBold" Foreground="#64748B"/>
                                                                                         </Border>
                                                                                         <!-- 権限バッジ -->
                                                                                         <Border Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="4" Padding="5,1.5" Margin="3,0,0,0">
@@ -277,9 +277,9 @@
                                                                 <ColumnDefinition Width="Auto"/>
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" FontSize="10.5" Foreground="#64748B" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                                            <Button Grid.Column="1" Content="↩️ ロールバック" Height="28" Margin="0,0,6,0" Padding="8,2" FontSize="11"
+                                                            <Button Grid.Column="1" Content="{Binding RollbackButtonLabel}" Height="28" Margin="0,0,6,0" Padding="8,2" FontSize="11"
                                                                     Style="{StaticResource FluentButtonSecondary}" Click="LiveAclPanelRollbackButton_Click" Tag="{Binding}" ToolTip="このフォルダを直前のバックアップから復元"/>
-                                                            <Button Grid.Column="2" Content="🔍 チェック" Height="28" Padding="10,2" FontSize="11.5"
+                                                            <Button Grid.Column="2" Content="{Binding CheckButtonLabel}" Height="28" Padding="10,2" FontSize="11.5"
                                                                     Style="{StaticResource FluentButtonPrimary}" Click="LiveAclPanelApplyDeltaButton_Click" Tag="{Binding}" ToolTip="変更内容をチェック (Dry-Run)"/>
                                                         </Grid>
                                                     </Grid>
@@ -801,7 +801,7 @@
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="36"
                                   SelectionMode="Single">
                             <DataGrid.Columns>
-                                <DataGridTemplateColumn Header="種別" Width="80">
+                                <DataGridTemplateColumn x:Name="ColLiveAclDiffType" Header="種別" Width="80">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:LiveAclDiffItem}">
                                             <Border Background="{Binding BadgeBackground}" CornerRadius="4" Padding="6,2" HorizontalAlignment="Center">
@@ -811,7 +811,7 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
 
-                                <DataGridTemplateColumn Header="設定" Width="70">
+                                <DataGridTemplateColumn x:Name="ColLiveAclDiffAccessType" Header="設定" Width="70">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:LiveAclDiffItem}">
                                             <Border Background="{Binding AccessTypeBadgeBg}" CornerRadius="4" Padding="5,2" HorizontalAlignment="Center">
@@ -821,7 +821,7 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
 
-                                <DataGridTemplateColumn Header="アカウント / プリンシパル" Width="220">
+                                <DataGridTemplateColumn x:Name="ColLiveAclDiffAccount" Header="アカウント / プリンシパル" Width="220">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:LiveAclDiffItem}">
                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0">
@@ -835,10 +835,10 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
 
-                                <DataGridTextColumn Header="変更前の権限 (Before)" Binding="{Binding BeforeRights}" Width="150" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="変更後の権限 (After)" Binding="{Binding AfterRights}" Width="150" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="差分詳細" Binding="{Binding Details}" Width="140" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn Header="適用先 (AppliesTo)" Binding="{Binding AppliesTo}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColLiveAclDiffBefore" Header="変更前の権限 (Before)" Binding="{Binding BeforeRights}" Width="150" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColLiveAclDiffAfter" Header="変更後の権限 (After)" Binding="{Binding AfterRights}" Width="150" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColLiveAclDiffDetails" Header="差分詳細" Binding="{Binding Details}" Width="140" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColLiveAclDiffAppliesTo" Header="適用先 (AppliesTo)" Binding="{Binding AppliesTo}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Border>
@@ -850,7 +850,7 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="🛡️ 適用直前の状態は自動保存され、いつでもロールバック可能です" FontSize="10.5" Foreground="#64748B"/>
+                            <TextBlock x:Name="LiveAclDiffFooterNotice" Text="🛡️ 適用直前の状態は自動保存され、いつでもロールバック可能です" FontSize="10.5" Foreground="#64748B"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
                             <Button x:Name="LiveAclDiffModalCancelButton" Content="キャンセル" Height="32" Width="90" Margin="0,0,8,0"
