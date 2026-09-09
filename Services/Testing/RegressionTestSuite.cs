@@ -3046,6 +3046,42 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException($"M2 Fail: Alice diff Details must contain detailed bit differences! Got: '{aliceDiff?.Details}'");
                 }
+
+                // 6. M1: Effective Access 異ドメイン同名グループの誤マッチ抑止検証
+                var effService = new EffectiveAccessService();
+                var mockDirSec = new DirectorySecurity();
+                // ACLには別ドメインの OTHERDOMAIN\Sales (または同名グループ) のACEが存在する想定
+                var targetAcc = "CORP\\Taro";
+                var tNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { targetAcc };
+
+                // 所属グループ: CORP\Sales (SID: S-1-5-21-1111-9999)
+                var grpMap = new Dictionary<string, PrincipalGroupMembership>(StringComparer.OrdinalIgnoreCase);
+                var corpGroup = new PrincipalGroupMembership
+                {
+                    GroupName = "CORP\\Sales",
+                    DisplayName = "Sales (CORP)",
+                    Sid = "S-1-5-21-1111-9999",
+                    IsDirect = true
+                };
+                grpMap[corpGroup.GroupName] = corpGroup;
+                grpMap[corpGroup.Sid] = corpGroup;
+
+                // 異ドメインの OTHERDOMAIN\Sales (SID: S-1-5-21-2222-9999) がACLに設定されている場合
+                var otherSid = new SecurityIdentifier("S-1-5-21-2222-9999");
+                var otherGroupRule = new FileSystemAccessRule(
+                    otherSid,
+                    FileSystemRights.Modify,
+                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    PropagationFlags.None,
+                    AccessControlType.Allow);
+
+                // ドメイン修飾または異なるSIDを持つACEは CORP\Sales に誤爆一致してはならない
+                mockDirSec.AddAccessRule(otherGroupRule);
+                var crossDomainEval = effService.EvaluateEffectiveAccessOnAcl(mockDirSec, targetAcc, tNames, grpMap, testTemp, "TestFolder");
+                if (crossDomainEval != null)
+                {
+                    throw new InvalidOperationException("M1 Fail: Cross-domain group (OTHERDOMAIN\\Sales / other SID) must NOT match CORP\\Sales!");
+                }
             }
             finally
             {

@@ -148,9 +148,13 @@ namespace FolderMorpher.Services
                                         catch { }
                                     }
 
+                                    var domainPrefixedName = !string.IsNullOrEmpty(_adService.CurrentDomainName)
+                                        ? $"{_adService.CurrentDomainName.Split('.')[0]}\\{gSam}"
+                                        : gSam;
+
                                     memberships.Add(new PrincipalGroupMembership
                                     {
-                                        GroupName = gSam,
+                                        GroupName = domainPrefixedName,
                                         DisplayName = string.IsNullOrEmpty(gDisp) ? gSam : gDisp,
                                         Sid = sidStr,
                                         IsDirect = isDirect,
@@ -181,19 +185,18 @@ namespace FolderMorpher.Services
                 {
                     try
                     {
-                        var identity = WindowsIdentity.GetCurrent();
-                        if (identity.Groups != null)
+                        var wi = WindowsIdentity.GetCurrent();
+                        if (wi.Groups != null)
                         {
-                            foreach (var groupRef in identity.Groups)
+                            foreach (var groupRef in wi.Groups)
                             {
                                 try
                                 {
                                     var ntAccount = (NTAccount)groupRef.Translate(typeof(NTAccount));
-                                    var gName = ntAccount.Value.Contains('\\') ? ntAccount.Value.Split('\\')[1] : ntAccount.Value;
                                     memberships.Add(new PrincipalGroupMembership
                                     {
-                                        GroupName = gName,
-                                        DisplayName = ntAccount.Value,
+                                        GroupName = ntAccount.Value,
+                                        DisplayName = ntAccount.Value.Contains('\\') ? ntAccount.Value.Split('\\')[1] : ntAccount.Value,
                                         Sid = groupRef.Value,
                                         IsDirect = true,
                                         NestingDepth = 1,
@@ -384,9 +387,34 @@ namespace FolderMorpher.Services
                 var id = rule.IdentityReference.Value;
                 var idClean = id.Contains('\\') ? id.Split('\\')[1] : id;
 
-                // M1対策: targetAccount に明示的なドメイン修飾がある場合は完全一致のみ、ドメイン未指定の場合のみクリーン名(idClean)での照合を許容
-                bool isDirectMatch = targetNames.Contains(id) || (!targetAccount.Contains('\\') && targetNames.Contains(idClean));
-                bool isGroupMatch = groupMap.ContainsKey(id) || groupMap.ContainsKey(idClean);
+                // SIDへの変換を試みる（SIDによる絶対的一意照合）
+                string? ruleSid = null;
+                try
+                {
+                    ruleSid = rule.IdentityReference.Translate(typeof(SecurityIdentifier)).Value;
+                }
+                catch { }
+
+                // 1. 直接付与チェック (アカウント名完全一致、またはドメイン未指定時のクリーン名一致、またはSID一致)
+                bool isDirectMatch = targetNames.Contains(id) ||
+                                     (!targetAccount.Contains('\\') && targetNames.Contains(idClean)) ||
+                                     (!string.IsNullOrEmpty(ruleSid) && targetNames.Contains(ruleSid));
+
+                // 2. グループ所属チェック (SID一致最優先 -> 完全修飾名一致 -> ドメイン未指定ACEの場合のみクリーン名一致)
+                bool isGroupMatch = false;
+                if (!string.IsNullOrEmpty(ruleSid) && groupMap.ContainsKey(ruleSid))
+                {
+                    isGroupMatch = true;
+                }
+                else if (groupMap.ContainsKey(id))
+                {
+                    isGroupMatch = true;
+                }
+                else if (!id.Contains('\\') && groupMap.ContainsKey(idClean))
+                {
+                    isGroupMatch = true;
+                }
+
                 bool isSpecialPrincipal = IsSpecialWorldPrincipal(idClean);
 
                 if (!isDirectMatch && !isGroupMatch && !isSpecialPrincipal)
@@ -495,8 +523,32 @@ namespace FolderMorpher.Services
             var id = rule.IdentityReference.Value;
             var idClean = id.Contains('\\') ? id.Split('\\')[1] : id;
 
-            bool isDirect = targetNames.Contains(id) || targetNames.Contains(idClean);
-            bool isGroup = groupMap.TryGetValue(id, out var matchedGroup) || groupMap.TryGetValue(idClean, out matchedGroup);
+            string? ruleSid = null;
+            try
+            {
+                ruleSid = rule.IdentityReference.Translate(typeof(SecurityIdentifier)).Value;
+            }
+            catch { }
+
+            bool isDirect = targetNames.Contains(id) ||
+                            targetNames.Contains(idClean) ||
+                            (!string.IsNullOrEmpty(ruleSid) && targetNames.Contains(ruleSid));
+
+            PrincipalGroupMembership? matchedGroup = null;
+            if (!string.IsNullOrEmpty(ruleSid) && groupMap.TryGetValue(ruleSid, out var mgSid))
+            {
+                matchedGroup = mgSid;
+            }
+            else if (groupMap.TryGetValue(id, out var mgFull))
+            {
+                matchedGroup = mgFull;
+            }
+            else if (!id.Contains('\\') && groupMap.TryGetValue(idClean, out var mgClean))
+            {
+                matchedGroup = mgClean;
+            }
+
+            bool isGroup = matchedGroup != null;
             bool isSpecial = IsSpecialWorldPrincipal(idClean);
 
             var inhStr = isInherited ? " (継承)" : "";
