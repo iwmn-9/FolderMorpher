@@ -22,3 +22,6 @@ dist/
 
 ## AI Agent Workspace & Memory
 .agents/
+
+## Local Specification & User Requirements
+USER_REQUIREMENTS.md
