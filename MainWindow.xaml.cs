@@ -2162,19 +2162,26 @@ namespace AstraSize
             try
             {
                 using var cts = new CancellationTokenSource();
-                var (count, logs) = await _simService.DeploySkeletonAsync(_simRootFolders, targetRoot, progress, cts.Token);
+                var deployResult = await _simService.DeploySkeletonAsync(_simRootFolders, targetRoot, progress, cts.Token);
 
-                // Verify: 展開先ディレクトリの実在検証
-                bool verified = Directory.Exists(targetRoot);
+                // Verify: 展開先ルートおよび新規作成された全フォルダーの実在検証 ＆ エラー件数照合
+                bool allPathsExist = Directory.Exists(targetRoot) &&
+                                     deployResult.DeployedFolderPaths.All(p => Directory.Exists(p));
+                bool isCleanSuccess = deployResult.FailedCount == 0 && allPathsExist;
                 DiffModalOverlay.Visibility = Visibility.Collapsed;
 
-                if (verified)
+                if (isCleanSuccess)
                 {
-                    ShowToast($"✅ スケルトン作成完了 (検証済): {count} 個のフォルダを作成・展開しました");
+                    string skippedMsg = deployResult.SkippedExistingCount > 0 ? $" ({deployResult.SkippedExistingCount} 既存保護)" : "";
+                    ShowToast($"✅ スケルトン作成完了 (全階層検証済): {deployResult.CreatedCount} フォルダ作成{skippedMsg}");
+                }
+                else if (allPathsExist && deployResult.FailedCount > 0)
+                {
+                    ShowToast($"⚠️ スケルトン作成完了 (一部権限警告 {deployResult.FailedCount}件): {deployResult.CreatedCount} フォルダ作成");
                 }
                 else
                 {
-                    ShowToast($"⚠️ スケルトン作成警告: 展開先フォルダの存在を確認できませんでした");
+                    ShowToast($"⚠️ スケルトン作成警告: 一部のフォルダー実在を確認できませんでした (エラー: {deployResult.FailedCount}件)");
                 }
             }
             catch (Exception ex)
@@ -2407,11 +2414,32 @@ namespace AstraSize
             GlobalProgressBar.Visibility = Visibility.Visible;
             GlobalProgressBar.IsIndeterminate = true;
 
-            var progress = new Progress<string>(msg => StatusTextBlock.Text = msg);
+            IProgress<string> progress = new Progress<string>(msg => StatusTextBlock.Text = msg);
 
             try
             {
                 var items = await _linkFixService.ScanShortcutsAsync(scope, oldPattern, newPattern, progress, _linkFixCts.Token);
+
+                // M3対策: Officeファイル内部リンクも含める場合
+                if (LinkIncludeOfficeCheckBox.IsChecked == true)
+                {
+                    progress.Report("Officeファイル内部リンクを走査中...");
+                    var officeItems = await _officeLinkService.ScanOfficeLinksAsync(scope, oldPattern, newPattern, progress, _linkFixCts.Token);
+                    foreach (var off in officeItems)
+                    {
+                        items.Add(new LinkFixItem
+                        {
+                            FilePath = off.FilePath,
+                            FileName = off.FileName,
+                            FileType = $"Office ({off.Extension}) - {off.LinkType}",
+                            OldTarget = off.FoundPattern,
+                            NewTarget = off.TargetReplacement,
+                            Status = off.Status,
+                            AssociatedOfficeItem = off
+                        });
+                    }
+                }
+
                 LinkItemsDataGrid.ItemsSource = items;
                 ShowToast($"切断リンクスキャン完了: {items.Count} 件検出");
             }

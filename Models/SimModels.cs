@@ -123,12 +123,15 @@ namespace AstraSize.Models
             set
             {
                 _appliesTo = value;
-                var (inh, prop) = AclInheritanceHelper.FromAppliesToString(value);
-                _inheritanceFlags = inh;
-                _propagationFlags = prop;
+                var parsed = AclInheritanceHelper.TryFromAppliesToString(value);
+                if (parsed.HasValue)
+                {
+                    _inheritanceFlags = parsed.Value.inheritance;
+                    _propagationFlags = parsed.Value.propagation;
+                    OnPropertyChanged(nameof(InheritanceFlags));
+                    OnPropertyChanged(nameof(PropagationFlags));
+                }
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(InheritanceFlags));
-                OnPropertyChanged(nameof(PropagationFlags));
             }
         }
 
@@ -414,8 +417,7 @@ namespace AstraSize.Models
                 AccessType = this.AccessType,
                 IsInherited = this.IsInherited,
                 InheritanceFlags = this.InheritanceFlags,
-                PropagationFlags = this.PropagationFlags,
-                AppliesTo = this.AppliesTo
+                PropagationFlags = this.PropagationFlags
             };
         }
 
@@ -705,21 +707,54 @@ namespace AstraSize.Models
             return AppliesTo_All;
         }
 
-        public static (InheritanceFlags inheritance, PropagationFlags propagation) FromAppliesToString(string? text)
+        public const string AppliesTo_All_En = "This folder, subfolders and files";
+        public const string AppliesTo_ThisFolderOnly_En = "This folder only";
+        public const string AppliesTo_ThisFolderAndSubfolders_En = "This folder and subfolders";
+        public const string AppliesTo_ThisFolderAndFiles_En = "This folder and files";
+        public const string AppliesTo_SubfoldersAndFilesOnly_En = "Subfolders and files only";
+        public const string AppliesTo_SubfoldersOnly_En = "Subfolders only";
+        public const string AppliesTo_FilesOnly_En = "Files only";
+
+        public static (InheritanceFlags inheritance, PropagationFlags propagation)? TryFromAppliesToString(string? text)
         {
-            if (string.IsNullOrWhiteSpace(text))
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var trimmed = text.Trim();
+            if (string.Equals(trimmed, AppliesTo_ThisFolderOnly, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, AppliesTo_ThisFolderOnly_En, StringComparison.OrdinalIgnoreCase))
+                return (InheritanceFlags.None, PropagationFlags.None);
+
+            if (string.Equals(trimmed, AppliesTo_ThisFolderAndSubfolders, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, AppliesTo_ThisFolderAndSubfolders_En, StringComparison.OrdinalIgnoreCase))
+                return (InheritanceFlags.ContainerInherit, PropagationFlags.None);
+
+            if (string.Equals(trimmed, AppliesTo_ThisFolderAndFiles, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, AppliesTo_ThisFolderAndFiles_En, StringComparison.OrdinalIgnoreCase))
+                return (InheritanceFlags.ObjectInherit, PropagationFlags.None);
+
+            if (string.Equals(trimmed, AppliesTo_SubfoldersAndFilesOnly, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, AppliesTo_SubfoldersAndFilesOnly_En, StringComparison.OrdinalIgnoreCase))
+                return (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.InheritOnly);
+
+            if (string.Equals(trimmed, AppliesTo_SubfoldersOnly, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, AppliesTo_SubfoldersOnly_En, StringComparison.OrdinalIgnoreCase))
+                return (InheritanceFlags.ContainerInherit, PropagationFlags.InheritOnly);
+
+            if (string.Equals(trimmed, AppliesTo_FilesOnly, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, AppliesTo_FilesOnly_En, StringComparison.OrdinalIgnoreCase))
+                return (InheritanceFlags.ObjectInherit, PropagationFlags.InheritOnly);
+
+            if (string.Equals(trimmed, AppliesTo_All, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, AppliesTo_All_En, StringComparison.OrdinalIgnoreCase))
                 return (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None);
 
-            return text.Trim() switch
-            {
-                AppliesTo_ThisFolderOnly => (InheritanceFlags.None, PropagationFlags.None),
-                AppliesTo_ThisFolderAndSubfolders => (InheritanceFlags.ContainerInherit, PropagationFlags.None),
-                AppliesTo_ThisFolderAndFiles => (InheritanceFlags.ObjectInherit, PropagationFlags.None),
-                AppliesTo_SubfoldersAndFilesOnly => (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.InheritOnly),
-                AppliesTo_SubfoldersOnly => (InheritanceFlags.ContainerInherit, PropagationFlags.InheritOnly),
-                AppliesTo_FilesOnly => (InheritanceFlags.ObjectInherit, PropagationFlags.InheritOnly),
-                _ => (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None)
-            };
+            return null;
+        }
+
+        public static (InheritanceFlags inheritance, PropagationFlags propagation) FromAppliesToString(string? text)
+        {
+            var parsed = TryFromAppliesToString(text);
+            return parsed ?? (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None);
         }
     }
 
@@ -739,6 +774,28 @@ namespace AstraSize.Models
             target.DisplayName = displayName;
             target.AccessType = IndexToAccessType(accessTypeIndex);
             target.AppliesTo = appliesToText;
+        }
+    }
+
+    /// <summary>
+    /// スケルトン展開の実行結果（検証・エラー集約構造体）
+    /// タプル分解 (CreatedCount, Logs) をサポートし既存コードと100%後方互換
+    /// </summary>
+    public class DeploySkeletonResult
+    {
+        public int CreatedCount { get; set; }
+        public int SkippedExistingCount { get; set; }
+        public int AclAppliedCount { get; set; }
+        public int FailedCount => Errors.Count;
+        public List<string> Errors { get; set; } = new();
+        public List<string> Logs { get; set; } = new();
+        public List<string> DeployedFolderPaths { get; set; } = new();
+        public bool IsSuccess => FailedCount == 0;
+
+        public void Deconstruct(out int createdCount, out List<string> logs)
+        {
+            createdCount = CreatedCount;
+            logs = Logs;
         }
     }
 }

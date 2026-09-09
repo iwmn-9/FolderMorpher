@@ -276,12 +276,54 @@ namespace FolderMorpher.Services
             byte[] optimizedBytes = outMs.ToArray();
 
             // もし最適化後の方が大きくなってしまった場合は上書きしない
-            if (optimizedBytes.Length < fileBytes.Length)
+            if (optimizedBytes.Length >= fileBytes.Length)
             {
-                File.WriteAllBytes(filePath, optimizedBytes);
+                return fileBytes.Length;
+            }
+
+            // H3対策: 書き出し前に最適化データが正常な画像か再デコード検証 (破損データの上書き防止)
+            using (var verifyMs = new MemoryStream(optimizedBytes))
+            {
+                var verifyDecoder = BitmapDecoder.Create(verifyMs, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+                if (verifyDecoder.Frames.Count == 0 || verifyDecoder.Frames[0].PixelWidth == 0 || verifyDecoder.Frames[0].PixelHeight == 0)
+                {
+                    throw new InvalidOperationException("最適化後データの画像検証に失敗しました。ファイル破損防止のため上書きを中断しました。");
+                }
+            }
+
+            // H3対策: 一時ファイル書き出し ➔ アトミック置換 (途中クラッシュや破損からの完全防護)
+            string tempPath = filePath + ".tmp_" + Guid.NewGuid().ToString("N");
+            string backupPath = filePath + ".orig_" + Guid.NewGuid().ToString("N");
+
+            try
+            {
+                File.WriteAllBytes(tempPath, optimizedBytes);
+
+                try
+                {
+                    // 同一ボリューム内でのアトミック置換
+                    File.Replace(tempPath, filePath, backupPath);
+                    try { File.Delete(backupPath); } catch { }
+                }
+                catch
+                {
+                    // File.Replace 非対応環境（UNC共有の一部など）での安全フォールバック
+                    File.Copy(tempPath, filePath, overwrite: true);
+                }
+
                 return optimizedBytes.Length;
             }
-            return fileBytes.Length;
+            finally
+            {
+                if (File.Exists(tempPath))
+                {
+                    try { File.Delete(tempPath); } catch { }
+                }
+                if (File.Exists(backupPath))
+                {
+                    try { File.Delete(backupPath); } catch { }
+                }
+            }
         }
 
         /// <summary>

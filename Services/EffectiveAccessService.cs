@@ -267,15 +267,24 @@ namespace FolderMorpher.Services
 
                 // Build lookup maps for fast matching
                 var targetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var cleanTarget = targetAccount.Contains('\\') ? targetAccount.Split('\\')[1] : targetAccount;
                 targetNames.Add(targetAccount);
-                targetNames.Add(cleanTarget);
+
+                var cleanTarget = targetAccount.Contains('\\') ? targetAccount.Split('\\')[1] : targetAccount;
+                // M1対策: アカウントに明示的なドメイン指定がない場合のみクリーン名（ユーザー名単体）をフォールバックとして許容
+                // （DOMAIN\User が指定されている場合にローカルPCの同名 User と誤爆しないよう保護）
+                if (!targetAccount.Contains('\\'))
+                {
+                    targetNames.Add(cleanTarget);
+                }
 
                 var groupMap = new Dictionary<string, PrincipalGroupMembership>(StringComparer.OrdinalIgnoreCase);
                 foreach (var g in memberships)
                 {
                     groupMap[g.GroupName] = g;
+                    if (!string.IsNullOrEmpty(g.DisplayName)) groupMap[g.DisplayName] = g;
                     if (!string.IsNullOrEmpty(g.Sid)) groupMap[g.Sid] = g;
+                    var cleanG = g.GroupName.Contains('\\') ? g.GroupName.Split('\\')[1] : g.GroupName;
+                    if (!groupMap.ContainsKey(cleanG)) groupMap[cleanG] = g;
                 }
 
                 int scannedCount = 0;
@@ -319,6 +328,13 @@ namespace FolderMorpher.Services
                         foreach (var sub in currentDir.GetDirectories())
                         {
                             if (ct.IsCancellationRequested) break;
+
+                            // M5対策: ジャンクションやシンボリックリンクによる無限循環・重複スキャンを防止
+                            if (sub.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                            {
+                                continue;
+                            }
+
                             Traverse(sub, depth + 1);
                         }
                     }
@@ -364,7 +380,8 @@ namespace FolderMorpher.Services
                 var id = rule.IdentityReference.Value;
                 var idClean = id.Contains('\\') ? id.Split('\\')[1] : id;
 
-                bool isDirectMatch = targetNames.Contains(id) || targetNames.Contains(idClean);
+                // M1対策: targetAccount に明示的なドメイン修飾がある場合は完全一致のみ、ドメイン未指定の場合のみクリーン名(idClean)での照合を許容
+                bool isDirectMatch = targetNames.Contains(id) || (!targetAccount.Contains('\\') && targetNames.Contains(idClean));
                 bool isGroupMatch = groupMap.ContainsKey(id) || groupMap.ContainsKey(idClean);
                 bool isSpecialPrincipal = IsSpecialWorldPrincipal(idClean);
 

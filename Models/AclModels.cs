@@ -276,8 +276,13 @@ namespace AstraSize.Models
         public string AccountName { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
         public string IconGlyph { get; set; } = "👤";
+        public AccessControlType AccessType { get; set; } = AccessControlType.Allow;
+        public string AccessTypeDisplay => AccessType == AccessControlType.Deny ? "⛔ 拒否" : "✅ 許可";
+        public string AccessTypeBadgeBg => AccessType == AccessControlType.Deny ? "#FEE2E2" : "#F0FDF4";
+        public string AccessTypeBadgeFg => AccessType == AccessControlType.Deny ? "#B91C1C" : "#15803D";
         public string BeforeRights { get; set; } = "―";
         public string AfterRights { get; set; } = "―";
+        public string Details { get; set; } = string.Empty;
         public string AppliesTo { get; set; } = "このフォルダー、サブフォルダーおよびファイル";
         public bool IsInherited { get; set; } = false;
     }

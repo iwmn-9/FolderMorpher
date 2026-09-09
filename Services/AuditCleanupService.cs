@@ -14,6 +14,7 @@ namespace FolderMorpher.Services
         public string FullPath { get; set; } = string.Empty;
         public string FileName { get; set; } = string.Empty;
         public long Size { get; set; }
+        public DateTime? ExpectedLastWriteTimeUtc { get; set; }
         public bool IsOriginalCandidate { get; set; }
         public List<AuditItem> AssociatedItems { get; set; } = new();
     }
@@ -63,6 +64,7 @@ namespace FolderMorpher.Services
                         FullPath = g.Key,
                         FileName = first.FileName,
                         Size = first.Size,
+                        ExpectedLastWriteTimeUtc = first.LastWriteTime != default ? first.LastWriteTime.ToUniversalTime() : null,
                         IsOriginalCandidate = originalPaths.Contains(g.Key),
                         AssociatedItems = g.ToList()
                     };
@@ -85,19 +87,35 @@ namespace FolderMorpher.Services
                 FileAttributes? originalAttrs = null;
                 try
                 {
-                    if (File.Exists(plan.FullPath))
+                    if (!File.Exists(plan.FullPath))
                     {
-                        var fi = new FileInfo(plan.FullPath);
-                        originalAttrs = fi.Attributes;
-
-                        // 読み取り専用属性の解除
-                        if (fi.IsReadOnly)
-                        {
-                            fi.IsReadOnly = false;
-                        }
-
-                        fi.Delete();
+                        // M4対策: ファイルが存在しない場合は成功カウントせず、警告として記録
+                        result.Errors.Add($"{plan.FileName}: ファイルが存在しません（既に移動または削除されています）");
+                        continue;
                     }
+
+                    var fi = new FileInfo(plan.FullPath);
+
+                    // H4対策: スキャン後のファイル更新を検知（楽観的ロック / ETag検証）
+                    if (plan.ExpectedLastWriteTimeUtc.HasValue)
+                    {
+                        var diffSeconds = Math.Abs((fi.LastWriteTimeUtc - plan.ExpectedLastWriteTimeUtc.Value).TotalSeconds);
+                        if (diffSeconds > 2 || fi.Length != plan.Size)
+                        {
+                            result.Errors.Add($"{plan.FileName}: スキャン後にファイルが変更されています（安全のため削除をスキップしました）");
+                            continue;
+                        }
+                    }
+
+                    originalAttrs = fi.Attributes;
+
+                    // 読み取り専用属性の解除
+                    if (fi.IsReadOnly)
+                    {
+                        fi.IsReadOnly = false;
+                    }
+
+                    fi.Delete();
 
                     result.SuccessCount++;
                     result.FreedBytes += plan.Size;

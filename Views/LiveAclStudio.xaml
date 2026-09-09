@@ -801,7 +801,7 @@
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="36"
                                   SelectionMode="Single">
                             <DataGrid.Columns>
-                                <DataGridTemplateColumn Header="種別" Width="85">
+                                <DataGridTemplateColumn Header="種別" Width="80">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:LiveAclDiffItem}">
                                             <Border Background="{Binding BadgeBackground}" CornerRadius="4" Padding="6,2" HorizontalAlignment="Center">
@@ -811,7 +811,17 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
 
-                                <DataGridTemplateColumn Header="アカウント / プリンシパル" Width="260">
+                                <DataGridTemplateColumn Header="設定" Width="70">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="{x:Type models:LiveAclDiffItem}">
+                                            <Border Background="{Binding AccessTypeBadgeBg}" CornerRadius="4" Padding="5,2" HorizontalAlignment="Center">
+                                                <TextBlock Text="{Binding AccessTypeDisplay}" FontWeight="SemiBold" FontSize="10" Foreground="{Binding AccessTypeBadgeFg}"/>
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <DataGridTemplateColumn Header="アカウント / プリンシパル" Width="220">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate DataType="{x:Type models:LiveAclDiffItem}">
                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0">

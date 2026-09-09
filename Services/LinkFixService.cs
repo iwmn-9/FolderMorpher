@@ -17,11 +17,13 @@ namespace FolderMorpher.Services
         public string NewTarget { get; set; } = string.Empty;
         public bool IsFixed { get; set; }
         public string Status { get; set; } = "検出";
+        public OfficeLinkItem? AssociatedOfficeItem { get; set; }
         public bool NeedsFix => !IsFixed && !string.IsNullOrEmpty(NewTarget) && !string.Equals(OldTarget, NewTarget, StringComparison.OrdinalIgnoreCase);
     }
 
     public class LinkFixService
     {
+        private readonly OfficeLinkFixService _officeLinkService = new();
         public async Task<List<LinkFixItem>> ScanShortcutsAsync(
             string searchDirectory,
             string oldPathPattern,
@@ -105,7 +107,24 @@ namespace FolderMorpher.Services
 
                     try
                     {
-                        if (item.FileType.Contains(".lnk") && wsh is not null)
+                        if (item.AssociatedOfficeItem != null)
+                        {
+                            var officeList = new List<OfficeLinkItem> { item.AssociatedOfficeItem };
+                            int offResult = _officeLinkService.ExecuteOfficeFixAsync(officeList, null, ct).GetAwaiter().GetResult();
+                            if (offResult > 0)
+                            {
+                                item.IsFixed = true;
+                                item.Status = "修復完了 (バックアップ済)";
+                                successCount++;
+                                progress?.Report((item.FilePath, true));
+                            }
+                            else
+                            {
+                                item.Status = item.AssociatedOfficeItem.Status;
+                                progress?.Report((item.FilePath, false));
+                            }
+                        }
+                        else if (item.FileType.Contains(".lnk") && wsh is not null)
                         {
                             // バックアップ作成
                             string bakPath = item.FilePath + ".bak";

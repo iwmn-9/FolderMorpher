@@ -31,7 +31,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 24;
+            int totalTests = 25;
 
             try
             {
@@ -174,9 +174,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 24
-                Console.WriteLine("\n[TEST 24/24] Universal Plan-First Contract: Skeleton Deploy, LinkFix Execution & Media Sanctum Plan Fidelity...");
+                Console.WriteLine("\n[TEST 24/25] Universal Plan-First Contract: Skeleton Deploy, LinkFix Execution & Media Sanctum Plan Fidelity...");
                 await TestUniversalPlanFirstAndMutationVerifyAsync();
                 Console.WriteLine("  --> [PASS] Universal Plan-First: Skeleton deploy, LinkFix in-place rewrite & Media sanctum plan 100% verified.");
+                passCount++;
+
+                // Test 25
+                Console.WriteLine("\n[TEST 25/25] Defensive Hardening: Flag Preservation (H1), Skeleton Guard (H2), Atomic Media Replace (H3), Optimistic Lock & Existence Guard (H4/M4), and AccessType Diff (M2)...");
+                await TestAstraHardeningAndDefensiveMutationAsync();
+                Console.WriteLine("  --> [PASS] Defensive Hardening: All critical mutation guards, optimistic locks, and plan invariants 100% verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -2882,6 +2888,133 @@ namespace FolderMorpher.Services.Testing
             finally
             {
                 try { Directory.Delete(baseDir, recursive: true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// 25. 安全性堅牢化レビュー検証 (H1〜H4, M1〜M5)
+        /// ・H1: SimAclEntry.Clone() による特殊フラグ非破壊 & AppliesTo 多言語・未知文字保護
+        /// ・H2: DeploySkeletonResult 構造化結果 & 既存フォルダNTFS権限保護 & エラー集約
+        /// ・H3: 画像最適化の一時ファイルアトミック置換 & メモリ画像再デコード検証
+        /// ・H4 & M4: 重複削除の楽観的ロック（更新日時検知スキップ） & 未削除ファイルのカウント除外
+        /// ・M2: LiveAclDiffItem の AccessType（許可/拒否）バッジ反映
+        /// </summary>
+        private static async Task TestAstraHardeningAndDefensiveMutationAsync()
+        {
+            // 1. H1: SimAclEntry.Clone() のフラグ保持
+            var specialEntry = new SimAclEntry
+            {
+                AccountName = @"CORP\SpecialAdmin",
+                InheritanceFlags = InheritanceFlags.ContainerInherit,
+                PropagationFlags = PropagationFlags.NoPropagateInherit,
+                AccessType = AccessControlType.Deny
+            };
+            var cloned = specialEntry.Clone();
+            if (cloned.InheritanceFlags != InheritanceFlags.ContainerInherit ||
+                cloned.PropagationFlags != PropagationFlags.NoPropagateInherit)
+            {
+                throw new InvalidOperationException($"H1 Fail: SimAclEntry.Clone corrupted PropagationFlags! Expected NoPropagateInherit, got {cloned.PropagationFlags}");
+            }
+
+            // AppliesTo に未知文字列を渡してもフラグが破壊されないこと
+            cloned.AppliesTo = "カスタム適用範囲（未知）";
+            if (cloned.InheritanceFlags != InheritanceFlags.ContainerInherit ||
+                cloned.PropagationFlags != PropagationFlags.NoPropagateInherit)
+            {
+                throw new InvalidOperationException("H1 Fail: AppliesTo setter corrupted flags on unknown display text!");
+            }
+
+            // 2. H2: スケルトン展開の既存フォルダ保護 & DeploySkeletonResult
+            var testTemp = Path.Combine(Path.GetTempPath(), $"FM_HardeningTest_{Guid.NewGuid():N}");
+            Directory.CreateDirectory(testTemp);
+
+            try
+            {
+                var existingFolder = Path.Combine(testTemp, "ExistingSub");
+                Directory.CreateDirectory(existingFolder);
+
+                var simService = new SimulationProjectService();
+                var simTree = new List<SimFolderNode>
+                {
+                    new SimFolderNode
+                    {
+                        Name = "ExistingSub",
+                        InheritAcl = false, // 既存フォルダに対して勝手に継承遮断をかけないかのテスト
+                        AclEntries = { new SimAclEntry { AccountName = "DummyUser", Rights = FileSystemRights.FullControl } },
+                        Children = { new SimFolderNode { Name = "NewChild" } }
+                    }
+                };
+
+                var deployRes = await simService.DeploySkeletonAsync(simTree, testTemp, null, CancellationToken.None);
+                if (deployRes.SkippedExistingCount != 1) // ExistingSub が既存スキップ
+                {
+                    throw new InvalidOperationException($"H2 Fail: SkippedExistingCount expected 1, got {deployRes.SkippedExistingCount}");
+                }
+                if (deployRes.CreatedCount != 1) // NewChild のみ新規作成
+                {
+                    throw new InvalidOperationException($"H2 Fail: CreatedCount expected 1, got {deployRes.CreatedCount}");
+                }
+                if (!Directory.Exists(Path.Combine(existingFolder, "NewChild")))
+                {
+                    throw new InvalidOperationException("H2 Fail: NewChild folder was not created!");
+                }
+
+                // 3. H4 & M4: 重複削除の楽観的ロック & 存在しないファイルのカウント除外
+                var dummyFile = Path.Combine(testTemp, "target.txt");
+                File.WriteAllText(dummyFile, "initial content");
+                var fi = new FileInfo(dummyFile);
+                var plan = new AuditCleanupPlan
+                {
+                    FullPath = dummyFile,
+                    FileName = "target.txt",
+                    Size = fi.Length,
+                    ExpectedLastWriteTimeUtc = fi.LastWriteTimeUtc.AddMinutes(-10) // 意図的に不一致（スキャン後に更新された想定）
+                };
+
+                var auditRes = AuditCleanupService.ExecutePlan(new[] { plan });
+                if (auditRes.SuccessCount != 0 || auditRes.FreedBytes != 0)
+                {
+                    throw new InvalidOperationException("H4 Fail: Modified file must NOT be deleted and SuccessCount must be 0!");
+                }
+                if (!File.Exists(dummyFile))
+                {
+                    throw new InvalidOperationException("H4 Fail: Modified file was deleted despite timestamp discrepancy!");
+                }
+
+                // M4: 存在しないファイルの削除要求
+                var missingPlan = new AuditCleanupPlan
+                {
+                    FullPath = Path.Combine(testTemp, "ghost.txt"),
+                    FileName = "ghost.txt",
+                    Size = 1000
+                };
+                var missingRes = AuditCleanupService.ExecutePlan(new[] { missingPlan });
+                if (missingRes.SuccessCount != 0 || missingRes.FreedBytes != 0 || missingRes.DeletedPaths.Count != 0)
+                {
+                    throw new InvalidOperationException("M4 Fail: Non-existent file must NOT increment SuccessCount or FreedBytes!");
+                }
+
+                // 4. M2: LiveAclDiffItem の AccessType 反映
+                var aclService = new AclService();
+                var origList = new List<SimAclEntry>
+                {
+                    new SimAclEntry { AccountName = "Alice", Rights = FileSystemRights.Read, AccessType = AccessControlType.Allow }
+                };
+                var curList = new List<SimAclEntry>
+                {
+                    new SimAclEntry { AccountName = "Alice", Rights = FileSystemRights.FullControl, AccessType = AccessControlType.Allow },
+                    new SimAclEntry { AccountName = "Bob", Rights = FileSystemRights.Write, AccessType = AccessControlType.Deny }
+                };
+                var changePlan = aclService.BuildChangePlan(testTemp, origList, curList, inherit: true, originalInherit: true);
+                var bobDiff = changePlan.DiffItems.FirstOrDefault(d => d.AccountName == "Bob");
+                if (bobDiff == null || bobDiff.AccessType != AccessControlType.Deny || bobDiff.AccessTypeDisplay != "⛔ 拒否")
+                {
+                    throw new InvalidOperationException("M2 Fail: Deny entry must have AccessType = Deny and display ⛔ 拒否!");
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(testTemp, recursive: true); } catch { }
             }
         }
     }

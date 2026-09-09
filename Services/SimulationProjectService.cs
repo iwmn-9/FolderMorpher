@@ -182,9 +182,10 @@ namespace AstraSize.Services
         }
 
         /// <summary>
+        /// <summary>
         /// Deploy skeleton folders and apply simulated ACLs to actual filesystem
         /// </summary>
-        public async Task<(int CreatedCount, List<string> Logs)> DeploySkeletonAsync(
+        public async Task<DeploySkeletonResult> DeploySkeletonAsync(
             IEnumerable<SimFolderNode> rootNodes,
             string destinationRoot,
             IProgress<(string Status, int Count)>? progress = null,
@@ -192,48 +193,66 @@ namespace AstraSize.Services
         {
             return await Task.Run(() =>
             {
-                int count = 0;
-                var logs = new List<string>();
+                var result = new DeploySkeletonResult();
 
-                if (!Directory.Exists(destinationRoot))
+                try
                 {
-                    Directory.CreateDirectory(destinationRoot);
-                    logs.Add($"[作成] ルート作成: {destinationRoot}");
+                    if (!Directory.Exists(destinationRoot))
+                    {
+                        Directory.CreateDirectory(destinationRoot);
+                        result.Logs.Add($"[作成] ルート作成: {destinationRoot}");
+                    }
+                    else
+                    {
+                        result.Logs.Add($"[既存] ルート既存検知: {destinationRoot}");
+                    }
+
+                    foreach (var root in rootNodes)
+                    {
+                        DeployNodeRecursive(root, destinationRoot, result, progress, ct);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    result.Errors.Add($"ルート準備失敗: {ex.Message}");
+                    result.Logs.Add($"[重大エラー] ルート作成失敗: {ex.Message}");
                 }
 
-                foreach (var root in rootNodes)
-                {
-                    DeployNodeRecursive(root, destinationRoot, ref count, logs, progress, ct);
-                }
-
-                return (count, logs);
+                return result;
             }, ct);
         }
 
         private static void DeployNodeRecursive(
             SimFolderNode node,
             string currentParentPath,
-            ref int count,
-            List<string> logs,
+            DeploySkeletonResult result,
             IProgress<(string Status, int Count)>? progress,
             CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
 
             var folderPath = Path.Combine(currentParentPath, node.Name);
+            bool isNewFolder = false;
             try
             {
                 if (!Directory.Exists(folderPath))
                 {
                     Directory.CreateDirectory(folderPath);
-                    count++;
-                    progress?.Report(($"フォルダ作成中: {node.Name}", count));
-                    logs.Add($"[作成] {folderPath}");
+                    result.CreatedCount++;
+                    isNewFolder = true;
+                    result.DeployedFolderPaths.Add(folderPath);
+                    progress?.Report(($"フォルダ作成中: {node.Name}", result.CreatedCount));
+                    result.Logs.Add($"[作成] {folderPath}");
+                }
+                else
+                {
+                    result.SkippedExistingCount++;
+                    result.Logs.Add($"[既存保持] {folderPath} は既に存在するため作成をスキップし、既存NTFS権限を保護しました");
                 }
 
-                // Apply ACL if configured
                 // Apply ACL if configured or inheritance is explicitly disabled
-                if (!node.InheritAcl || node.AclEntries.Count > 0)
+                // 既存フォルダの場合は意図しない権限破壊を防ぐため、新規作成されたフォルダのみに適用
+                if (isNewFolder && (!node.InheritAcl || node.AclEntries.Count > 0))
                 {
                     try
                     {
@@ -271,31 +290,35 @@ namespace AstraSize.Services
                                         acl.PropagationFlags,
                                         acl.AccessType);
                                     ds.AddAccessRule(rule);
-                                    logs.Add($"  [権限付与] {acl.AccountName} ({acl.AccessType}) -> {acl.FormattedRights}");
+                                    result.Logs.Add($"  [権限付与] {acl.AccountName} ({acl.AccessType}) -> {acl.FormattedRights}");
                                 }
                                 catch (Exception aex)
                                 {
-                                    logs.Add($"  [権限警告] アカウント '{acl.AccountName}' の解決失敗: {aex.Message}");
+                                    result.Errors.Add($"アカウント '{acl.AccountName}' の解決失敗: {aex.Message}");
+                                    result.Logs.Add($"  [権限警告] アカウント '{acl.AccountName}' の解決失敗: {aex.Message}");
                                 }
                             }
                         }
 
                         di.SetAccessControl(ds);
+                        result.AclAppliedCount++;
                     }
                     catch (Exception ex)
                     {
-                        logs.Add($"  [ACL適用失敗] {ex.Message}");
+                        result.Errors.Add($"ACL適用失敗 ({folderPath}): {ex.Message}");
+                        result.Logs.Add($"  [ACL適用失敗] {ex.Message}");
                     }
                 }
             }
             catch (Exception ex)
             {
-                logs.Add($"[エラー] 作成失敗 {folderPath}: {ex.Message}");
+                result.Errors.Add($"作成失敗 ({folderPath}): {ex.Message}");
+                result.Logs.Add($"[エラー] 作成失敗 {folderPath}: {ex.Message}");
             }
 
             foreach (var child in node.Children)
             {
-                DeployNodeRecursive(child, folderPath, ref count, logs, progress, ct);
+                DeployNodeRecursive(child, folderPath, result, progress, ct);
             }
         }
 

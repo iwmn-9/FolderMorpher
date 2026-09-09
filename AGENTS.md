@@ -355,6 +355,31 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
     - **回帰テスト Test 24 新設**:
       - スケルトン展開の実在検証、LinkFix の直接書き換え＆.bak生成＆TargetPath検証、MediaOptimizer の聖域保護契約をヘッドレス自動検証し、24/24 ALL PASSED。
 
+40. **本番防護・堅牢化（Defensive Mutation & Integrity Hardening） (v1.6.6)**:
+    - **H1: `SimAclEntry.Clone()` 特殊フラグ絶対保護 ＆ AppliesTo 未知文字防護**:
+      - `Clone()` 内での `AppliesTo = this.AppliesTo` 代入を完全撤去。`InheritanceFlags` と `PropagationFlags` を正本として直接複製し、特殊フラグ（`NoPropagateInherit` など）の破壊を根絶。
+      - `AppliesTo` の setter は `TryFromAppliesToString` による既知パターン（日英両言語対応）にマッチした場合のみフラグを更新し、未知テキストによるフラグリセットを防止。
+    - **H2: スケルトン展開の真の全階層Verify ＆ 既存フォルダ権限保護 (`DeploySkeletonResult`)**:
+      - `DeploySkeletonAsync` の戻り値を構造化結果 `DeploySkeletonResult` に昇格（タプル分解構文互換）。
+      - 既存フォルダへの意図しない親継承遮断・権限上書きを遮断し、新規作成フォルダのみにACLを先行展開。
+      - UI側ではルートの存在確認だけでなく、作成対象の全フォルダの実在およびエラー0件（`FailedCount == 0`）を厳密に検証。
+    - **H3: 画像最適化の非破壊・メモリ画像再デコード検証 ＆ 一時ファイルアトミック置換**:
+      - `OptimizeSingleImage` で最適化データをメモリ上でデコーダーによる再検証（フレーム数・解像度チェック）。
+      - 一時ファイル（`.tmp_...`）への書き出し ➔ `File.Replace`（同ボリュームでのアトミック置換）により、途中クラッシュやファイル破損による元画像消失を物理的に防御。
+    - **H4 & M4: 重複削除の楽観的ロック（更新日時検知スキップ） ＆ 存在しないファイルのカウント除外**:
+      - `AuditCleanupPlan` に `ExpectedLastWriteTimeUtc` を追加し、削除直前にスキャン時からのサイズ・更新日時変更を検知した場合は「変更検知」としてスキップ。
+      - 削除対象ファイルが存在しない場合は成功件数・解放容量に加算せず、警告として記録。
+    - **M3: Officeリンク一括修復の正式結線**:
+      - `LinkIncludeOfficeCheckBox` と `OfficeLinkFixService` を正式に結線。スキャンおよび一括修復でショートカット（.lnk）とOffice内部リンク（.xlsx/.xlsm）の両方を一括処理可能に。
+    - **M5: 逆引き権限監査のリパースポイント循環抑止**:
+      - ディレクトリ走査時に `FileAttributes.ReparsePoint` をチェックし、ジャンクションやシンボリックリンクによる無限ループを安全にスキップ。
+    - **M1: Effective Access のドメイン完全一致優先 ＆ 同名異ドメイン誤爆防止**:
+      - `targetAccount` にドメインが明示されている場合は完全一致（`DOMAIN\User`）のみを対象とし、ローカルPCの同名アカウントとの誤爆を根絶。
+    - **M2: Live ACL 差分モーダルでの Allow/Deny 種別可視化**:
+      - `LiveAclDiffItem` に「設定」（`✅ 許可` / `⛔ 拒否`）バッジ列を追加し、権限差分の意図を明確化。
+    - **回帰テスト Test 25 新設**:
+      - 上記の防護機構（H1〜H4, M1〜M5）を網羅する自動検証テストを追加し、**25/25 ALL PASSED**。
+
 ---
 
 ## 4. ビルド・実行・検証コマンド
@@ -371,7 +396,7 @@ Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe"
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 24/24 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 25/25 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```
