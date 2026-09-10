@@ -33,6 +33,10 @@ namespace FolderMorpher.Services.Testing
             int passCount = 0;
             int totalTests = 26;
 
+            var originalLang = LocalizationService.Instance.CurrentLanguage;
+            // テストスイートのベース言語を初期化（Test 26でJA/EN双方の動的切替を検証後、finallyで元の言語へ復元）
+            LocalizationService.Instance.SetLanguage(AppLanguage.Japanese);
+
             try
             {
                 // Test 1
@@ -203,6 +207,10 @@ namespace FolderMorpher.Services.Testing
                 Console.WriteLine(ex.ToString());
                 Console.ResetColor();
                 return false;
+            }
+            finally
+            {
+                LocalizationService.Instance.SetLanguage(originalLang);
             }
         }
 
@@ -771,10 +779,11 @@ namespace FolderMorpher.Services.Testing
                         $"特殊ACE適用先変質バグ検出: 'このフォルダーのみ' のフラグが保持されていません。" +
                         $" 期待値: InheritanceFlags.None, PropagationFlags.None / 実際: {userEntry.InheritanceFlags}, {userEntry.PropagationFlags}");
                 }
-                if (userEntry.AppliesTo != AclInheritanceHelper.AppliesTo_ThisFolderOnly)
+                string expectedUserAppliesTo = AclInheritanceHelper.ToAppliesToString(InheritanceFlags.None, PropagationFlags.None);
+                if (userEntry.AppliesTo != expectedUserAppliesTo && userEntry.AppliesTo != AclInheritanceHelper.AppliesTo_ThisFolderOnly)
                 {
                     throw new InvalidOperationException(
-                        $"AppliesTo 文字列が不正です。期待値: '{AclInheritanceHelper.AppliesTo_ThisFolderOnly}', 実際: '{userEntry.AppliesTo}'");
+                        $"AppliesTo 文字列が不正です。期待値: '{expectedUserAppliesTo}', 実際: '{userEntry.AppliesTo}'");
                 }
 
                 // Everyone のエントリ検証: ContainerInherit | ObjectInherit, InheritOnly
@@ -789,10 +798,11 @@ namespace FolderMorpher.Services.Testing
                         $"特殊ACE適用先変質バグ検出: 'サブフォルダーおよびファイルのみ' の InheritOnly フラグが保持されていません。" +
                         $" 実際: {everyoneEntry.PropagationFlags}");
                 }
-                if (everyoneEntry.AppliesTo != AclInheritanceHelper.AppliesTo_SubfoldersAndFilesOnly)
+                string expectedEveryoneAppliesTo = AclInheritanceHelper.ToAppliesToString(InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.InheritOnly);
+                if (everyoneEntry.AppliesTo != expectedEveryoneAppliesTo && everyoneEntry.AppliesTo != AclInheritanceHelper.AppliesTo_SubfoldersAndFilesOnly)
                 {
                     throw new InvalidOperationException(
-                        $"AppliesTo 文字列が不正です。期待値: '{AclInheritanceHelper.AppliesTo_SubfoldersAndFilesOnly}', 実際: '{everyoneEntry.AppliesTo}'");
+                        $"AppliesTo 文字列が不正です。期待値: '{expectedEveryoneAppliesTo}', 実際: '{everyoneEntry.AppliesTo}'");
                 }
             }
             finally
@@ -3042,13 +3052,15 @@ namespace FolderMorpher.Services.Testing
                 };
                 var changePlan = aclService.BuildChangePlan(testTemp, origList, curList, inherit: true, originalInherit: true);
                 var bobDiff = changePlan.DiffItems.FirstOrDefault(d => d.AccountName == "Bob");
-                if (bobDiff == null || bobDiff.AccessType != AccessControlType.Deny || bobDiff.AccessTypeDisplay != "⛔ 拒否")
+                if (bobDiff == null || bobDiff.AccessType != AccessControlType.Deny || 
+                    (bobDiff.AccessTypeDisplay != "⛔ 拒否" && bobDiff.AccessTypeDisplay != "⛔ Deny"))
                 {
-                    throw new InvalidOperationException("M2 Fail: Deny entry must have AccessType = Deny and display ⛔ 拒否!");
+                    throw new InvalidOperationException("M2 Fail: Deny entry must have AccessType = Deny and display ⛔ 拒否/Deny!");
                 }
 
                 var aliceDiff = changePlan.DiffItems.FirstOrDefault(d => d.AccountName == "Alice");
-                if (aliceDiff == null || string.IsNullOrEmpty(aliceDiff.Details) || !aliceDiff.Details.Contains("+フルコントロール"))
+                if (aliceDiff == null || string.IsNullOrEmpty(aliceDiff.Details) || 
+                    (!aliceDiff.Details.Contains("+フルコントロール") && !aliceDiff.Details.Contains("+Full Control")))
                 {
                     throw new InvalidOperationException($"M2 Fail: Alice diff Details must contain detailed bit differences! Got: '{aliceDiff?.Details}'");
                 }
