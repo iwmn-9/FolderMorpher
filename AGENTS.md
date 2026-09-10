@@ -386,13 +386,16 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
     - **AD グループ所属のSID優先解決 ＆ 異ドメイン衝突防止**:
       - 異ドメイン間で同名のセキュリティグループが存在する場合の誤爆を防止するため、内部評価パイプラインでSIDによる完全解決を徹底。
 
-42. **完全バイリンガル（日英）表示の徹底 ＆ 回帰テスト26 (v1.7.0)**:
-    - **未翻訳残存箇所の完全バイリンガル化**:
-      - 英語モード（🌐 EN）選択時に、右クリックメニュー（新規サブフォルダ、名前変更、昇格/降格、削除等）、詳細権限コンボボックス（許可/拒否、適用先7項目）、各種変更点モーダル（Live ACL, LinkFix, Media）、およびモデル動的プロパティ（`LevelPillText`, `InheritStatusBadge`, `MappingBadgeText`, `IssueTypeDisplay`, `DuplicateGroupBadge` 等）に至るまで、日本語の混入を完全根絶。
+42. **完全バイリンガル（日英）表示の徹底 ＆ 動的バージョン表示 ＆ 回帰テスト26 (v1.7.0)**:
+    - **アセンブリ連動の動的バージョン表示（表記不一致の恒久防止）**:
+      - 左下バージョン表示（`SidebarVersionText`）を XAML の固定文字列直書きから、アセンブリメタデータ（`Assembly.GetExecutingAssembly().GetName().Version`）からの動的反映へと移行。今後のバージョンアップ時に自動追従するよう恒久化。
+    - **未翻訳残存箇所の完全バイリンガル化（全メニュー・全ツールチップ・全モーダル網羅）**:
+      - 英語モード（🌐 EN）選択時に、右クリックメニュー（新規サブフォルダ、名前変更、昇格/降格、削除、エクスプローラーで開く、パスをコピー等）、詳細権限コンボボックス（許可/拒否、適用先7項目）、各種変更点モーダル（Live ACL, LinkFix, Media）、スマート選択コンボ（`AuditSmartItem*`）、全タブ・全操作ボタンの ToolTip、およびモデル動的プロパティ（`LevelPillText`, `InheritStatusBadge`, `MappingBadgeText`, `IssueTypeDisplay`, `DuplicateGroupBadge`, `QuickJumpRootToolTip`, `CloseTabToolTip` 等）に至るまで、日本語の混入を完全根絶。
     - **UI表示文字列の非信号線化（AGENTS.md 規則 0-3 準拠）**:
       - 画面表示テキストを業務判定に使用せず、モデル内部の Enum や構造化真偽値を正本とし、`LocalizationService.Instance.LanguageChanged` イベントおよびバインディング経由で動的更新。
-    - **回帰テスト Test 26 新設**:
+    - **回帰テスト Test 26 新設 ＆ CI完全成功**:
       - `TestBilingualLocalizationFidelity` を新設し、JA/EN 切替時の全モデルプロパティ・ヘルパー出力の翻訳整合性を自動検証。**全26回帰テスト 100% PASS**（26/26）。
+      - GitHub Actions CI（windows-latest）でもビルド・全26テスト・単一自己完結EXE生成・GitHub Release公開が完全成功。
 
 ---
 
