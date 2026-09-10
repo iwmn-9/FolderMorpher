@@ -1211,6 +1211,14 @@ namespace AstraSize.Views
             LiveAclBrowseButton.Content = isJa ? "参照" : "Browse";
             LiveAclExportMatrixButton.Content = isJa ? "📋 CSV出力" : "📋 Export CSV";
 
+            LiveAclTargetFolderLabel.Text = isJa ? "マルチフォルダ 権限エディタ" : "Multi-Folder ACL Editor";
+            LiveAclEditorSubtitleText.Text = isJa ? "💡 ツリーからフォルダーを開いて権限を編集（最大6つ同時表示）" : "💡 Open folders from tree to edit permissions (up to 6 simultaneously)";
+            LiveAclCloseAllPanelsButton.Content = isJa ? "✕ 全て閉じる" : "✕ Close All";
+            LiveAclCloseAllPanelsButton.ToolTip = isJa ? "開いているパネルをすべて閉じます" : "Close all open panels";
+            LiveAclBrowseTitleText.Text = isJa ? "📁 フォルダ参照" : "📁 Folder Explorer";
+            LiveAclBrowseSubText.Text = isJa ? "Wクリック または D&Dでパネル追加" : "Double-click or D&D to open panel";
+            LiveAclReloadButton.ToolTip = isJa ? "フォルダ階層を展開" : "Expand folder hierarchy";
+
             LiveAclPrincipalsHeaderTitle.Text = isJa ? "👥 Active Directory / ローカル" : "👥 Active Directory / Local";
             LiveAclLocalPcTitle.Text = isJa ? "⚠️ ローカルPC環境" : "⚠️ Local PC Environment";
             LiveAclLocalPcDesc.Text = isJa ? "※ローカルPC環境のためADプリンシパルは未接続です\n（上部の入力欄から直接アカウント名を入力して追加可能）" : "※Not connected to Active Directory in local PC environment.\n(Direct account name input is available)";
@@ -1224,15 +1232,26 @@ namespace AstraSize.Views
             RevTargetAccountLabel.Text = isJa ? "調査対象 ユーザー / グループ (sAMAccountName または 表示名)" : "Target User / Group (sAMAccountName or Display Name)";
             RevRootPathLabel.Text = isJa ? "調査ルートディレクトリ (UNC / ローカル)" : "Root Directory (UNC / Local)";
             RevDepthLabel.Text = isJa ? "探索階層深度" : "Folder Depth";
+
+            RevDepthItemUnlimited.Content = isJa ? "無制限 (推奨)" : "Unlimited (Recommended)";
+            RevDepthItem1.Content = isJa ? "第1階層 (直下のみ)" : "Level 1 (Direct Only)";
+            RevDepthItem2.Content = isJa ? "第2階層まで" : "Up to Level 2";
+            RevDepthItem3.Content = isJa ? "第3階層まで" : "Up to Level 3";
+            RevDepthItem5.Content = isJa ? "第5階層まで" : "Up to Level 5";
+            RevDepthItem8.Content = isJa ? "第8階層まで" : "Up to Level 8";
+            RevDepthItem10.Content = isJa ? "第10階層まで" : "Up to Level 10";
+
             RevUncNoticeText.Text = isJa ? "※UNC共有経由アクセス時は、ファイルサーバーのSMB共有権限（Share Permissions）の上限も併せて適用されます。" : "*When accessing via UNC shares, SMB share permissions also apply as an upper limit.";
-            RevGroupsHeaderTitle.Text = isJa ? "解決された所属セキュリティグループ (多重入れ子・ネスト全展開)" : "Resolved Security Group Memberships (Full Nested Chain)";
-            RevGroupsLegendText.Text = isJa ? "青=直属グループ / 紫=ネスト所属(親グループ経由) / 緑=ビルトイン等" : "Blue: Direct / Purple: Nested / Green: Built-in";
-            RevKpiTotalTitle.Text = isJa ? "調査対象フォルダ総数" : "Total Folders Audited";
+            RevTargetAccountHeader.Text = isJa ? "👤 調査対象: (未選択)" : "👤 Target: (None selected)";
+            RevTargetAccountSub.Text = isJa ? "所属グループと実効権限を自動解決します" : "Automatically resolves groups and effective access";
+            RevGroupsHeaderTitle.Text = isJa ? "👥 所属グループ (多重入れ子・再帰解決)" : "👥 Group Memberships (Recursive Chain)";
+            RevGroupsLegendText.Text = isJa ? "💡 青バッジ＝直接所属 / 紫バッジ＝多重入れ子所属 (AD Chainにより自動解決)" : "💡 Blue: Direct / Purple: Nested / Green: Built-in";
+            RevKpiTotalTitle.Text = isJa ? "アクセス可能" : "Accessible";
             RevKpiFullTitle.Text = isJa ? "フルコントロール" : "Full Control";
-            RevKpiModTitle.Text = isJa ? "変更 / 書込可能" : "Modify / Write";
-            RevKpiReadTitle.Text = isJa ? "読取のみ / その他" : "Read-Only / Other";
-            RevFoldersTableTitle.Text = isJa ? "アクセス可能フォルダー一覧 (多重グループ経由の実効NTFS権限)" : "Accessible Folders (Effective NTFS Permissions via Group Chain)";
-            RevFolderFilterLabel.Text = isJa ? "権限レベル絞り込み:" : "Filter Permission:";
+            RevKpiModTitle.Text = isJa ? "変更 (Modify)" : "Modify";
+            RevKpiReadTitle.Text = isJa ? "読み取り専用" : "Read-Only";
+            RevFoldersTableTitle.Text = isJa ? "📂 アクセス可能フォルダー一覧 (Wクリックでエクスプローラー直行)" : "📂 Accessible Folders (Double-click to open in Explorer)";
+            RevFolderFilterLabel.Text = isJa ? "絞り込み:" : "Filter:";
 
             ColRevFolderName.Header = isJa ? "フォルダ名" : "Folder Name";
             ColRevRights.Header = isJa ? "実効権限レベル" : "Effective Rights";
@@ -1247,6 +1266,10 @@ namespace AstraSize.Views
             PickerListTitleText.Text = isJa ? "選択OU内の所属アカウント一覧" : "Accounts in Selected OU";
             PickerIncludeUsersCheck.Content = isJa ? "👤 ユーザー" : "👤 Users";
             PickerIncludeGroupsCheck.Content = isJa ? "👥 グループ" : "👥 Groups";
+            ColPickerType.Header = isJa ? "種別" : "Type";
+            ColPickerName.Header = isJa ? "表示名 (アカウント名)" : "Name (sAMAccountName)";
+            ColPickerDesc.Header = isJa ? "説明" : "Description";
+            PickerSelectedLabel.Text = isJa ? "選択中:" : "Selected:";
             PickerCancelButton.Content = isJa ? "キャンセル" : "Cancel";
             PickerApplyButton.Content = isJa ? "決定" : "Select";
             RevBrowseUserButton.Content = isJa ? "👥 参照..." : "👥 Browse...";
@@ -1268,6 +1291,7 @@ namespace AstraSize.Views
 
             // Live ACL Diff Modal (Dry-Run)
             LiveAclDiffTitleText.Text = isJa ? "⚖️ 変更点" : "⚖️ Changes";
+            LiveAclDiffTargetText.Text = isJa ? " - 対象フォルダー" : " - Target Folder";
             ColLiveAclDiffType.Header = isJa ? "種別" : "Type";
             ColLiveAclDiffAccessType.Header = isJa ? "設定" : "Access";
             ColLiveAclDiffAccount.Header = isJa ? "アカウント / プリンシパル" : "Account / Principal";

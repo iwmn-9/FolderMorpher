@@ -187,6 +187,13 @@ namespace AstraSize.Models
             OnPropertyChanged(nameof(ExtensionSummaries));
         }
 
+        public string CloseTabToolTip => FolderMorpher.Services.LocalizationService.Instance.CurrentLanguage == FolderMorpher.Services.AppLanguage.Japanese ? "タブを閉じる" : "Close tab";
+
+        public void NotifyLanguageChanged()
+        {
+            OnPropertyChanged(nameof(CloseTabToolTip));
+        }
+
         public event PropertyChangedEventHandler? PropertyChanged;
         public void OnPropertyChanged([CallerMemberName] string? prop = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(prop));

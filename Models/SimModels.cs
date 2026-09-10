@@ -632,11 +632,23 @@ namespace AstraSize.Models
             }
         }
 
+        [JsonIgnore]
+        public string QuickJumpRootToolTip => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "第1階層(ルート)へ一気ジャンプ" : "Jump to Root (Level 1)";
+
+        [JsonIgnore]
+        public string QuickPromoteToolTip => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "1階層昇格" : "Promote 1 Level";
+
+        [JsonIgnore]
+        public string QuickDemoteToolTip => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "1階層降格" : "Demote 1 Level";
+
         public void NotifyLanguageChanged()
         {
             OnPropertyChanged(nameof(LevelPillText));
             OnPropertyChanged(nameof(InheritStatusBadge));
             OnPropertyChanged(nameof(MappingBadgeText));
+            OnPropertyChanged(nameof(QuickJumpRootToolTip));
+            OnPropertyChanged(nameof(QuickPromoteToolTip));
+            OnPropertyChanged(nameof(QuickDemoteToolTip));
             foreach (var acl in AclEntries)
             {
                 acl.NotifyLanguageChanged();

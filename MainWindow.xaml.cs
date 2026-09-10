@@ -3447,18 +3447,37 @@ namespace AstraSize
 
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
 
+            // バージョン表示動的反映
+            if (SidebarVersionText != null)
+            {
+                var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v1.7.0";
+                SidebarVersionText.Text = $"FolderMorpher {verStr}";
+            }
+            if (SidebarSubtitleText != null)
+            {
+                SidebarSubtitleText.Text = isJa ? "ストレージ ＆ 移行スタジオ" : "Storage & Migration Studio";
+            }
+
             // 言語切り替えボタン自体の表示（次に切り替わる言語を提示）
             LanguageToggleButton.Content = isJa ? "🌐 EN" : "🌐 JA";
             LanguageToggleButton.ToolTip = isJa ? "英語に切り替え / Switch to English" : "日本語に切り替え / Switch to Japanese";
             LanguageToggleButtonMini.ToolTip = LanguageToggleButton.ToolTip;
 
-            // サイドバー タブ名
+            // サイドバー 開閉ボタン & タブ名 & ToolTip
+            if (SidebarToggleButton != null) SidebarToggleButton.ToolTip = isJa ? "サイドバーの開閉 (収縮 / 展開)" : "Toggle Sidebar (Collapse / Expand)";
             NavTabStorage.Content = isJa ? "容量分析 & 監視" : "Storage Explorer";
+            NavTabStorage.ToolTip = isJa ? "📊 容量分析 & 監視 (Storage Explorer)" : "📊 Storage Explorer";
             NavTabLiveAcl.Content = isJa ? "権限コントロール" : "Live ACL";
+            NavTabLiveAcl.ToolTip = isJa ? "🛡️ 実環境 権限コントロール (Live ACL)" : "🛡️ Live ACL Control";
             NavTabSimulation.Content = isJa ? "移行スタジオ" : "Simulation Studio";
+            NavTabSimulation.ToolTip = isJa ? "🚀 移行シミュレーション (Simulation Studio)" : "🚀 Migration Studio";
             NavTabLinkFix.Content = isJa ? "リンク一括修復" : "LinkFixer";
+            NavTabLinkFix.ToolTip = isJa ? "🔗 ショートカット・Office修復 (LinkFixer)" : "🔗 LinkFixer";
             NavTabAudit.Content = isJa ? "断捨離・健全化" : "Audit & Hygiene";
+            NavTabAudit.ToolTip = isJa ? "🧹 重複・休眠・パス長チェック (Audit & Hygiene)" : "🧹 Audit & Hygiene";
             NavTabMedia.Content = isJa ? "メディア最適化" : "Media Optimizer";
+            NavTabMedia.ToolTip = isJa ? "🖼️ 写真軽量化 & 巨大動画抽出 (Media Optimizer)" : "🖼️ Media Optimizer";
 
             // ==========================================
             // Tab 0 (Storage Explorer)
@@ -3469,6 +3488,17 @@ namespace AstraSize
             CancelButton.Content = isJa ? "中止" : "Cancel";
             ExportButton.Content = isJa ? "Excel / CSV 出力" : "Export Excel/CSV";
             TabHistoryButton.Content = isJa ? "📈 容量推移グラフ" : "📈 History Graph";
+
+            if (CtxTreeOpenExplorer != null) CtxTreeOpenExplorer.Header = isJa ? "📂 エクスプローラーで開く" : "📂 Open in Explorer";
+            if (CtxTreeCopyPath != null) CtxTreeCopyPath.Header = isJa ? "📋 パスをコピー" : "📋 Copy Path";
+            if (CtxTreeScanSubtree != null) CtxTreeScanSubtree.Header = isJa ? "🔍 このフォルダーをルートにしてスキャン" : "🔍 Scan This Subfolder as Root";
+            if (CtxTreeEditAcl != null) CtxTreeEditAcl.Header = isJa ? "🛡️ このフォルダーのNTFS権限を確認・編集" : "🛡️ View/Edit NTFS Permissions";
+
+            if (CtxTopOpenExplorer != null) CtxTopOpenExplorer.Header = isJa ? "📂 エクスプローラーで表示" : "📂 Reveal in Explorer";
+            if (CtxTopCopyPath != null) CtxTopCopyPath.Header = isJa ? "📋 パスをコピー" : "📋 Copy Path";
+
+            if (TopFilesDataGrid != null) TopFilesDataGrid.ToolTip = isJa ? "ダブルクリックでエクスプローラーを開く" : "Double-click to open in Explorer";
+            if (FolderChildSharesDataGrid != null) FolderChildSharesDataGrid.ToolTip = isJa ? "ダブルクリックで該当フォルダへドリルダウン" : "Double-click to drill down";
 
             StorageKpiScannedSizeTitle.Text = isJa ? "スキャン対象 容量" : "Scanned Capacity";
             StorageKpiLargestFileTitle.Text = isJa ? "最大ファイル Top 1" : "Largest File Top 1";
@@ -3520,13 +3550,26 @@ namespace AstraSize
             SimCloneSelectedButton.Content = isJa ? "➡️ 選択フォルダを中央へ新設配置" : "➡️ Clone Selected to Center";
             SimAddRootFolderButton.Content = isJa ? "＋ ルートフォルダ新設" : "＋ Add Root Folder";
             SimSaveProjectButton.Content = isJa ? "💾 保存" : "💾 Save";
+            SimSaveProjectButton.ToolTip = isJa ? "プロジェクト保存 (.fmorph)" : "Save Project (.fmorph)";
             SimLoadProjectButton.Content = isJa ? "📂 読込" : "📂 Load";
+            SimLoadProjectButton.ToolTip = isJa ? "プロジェクト読込" : "Load Project";
             SimDiffReviewButton.Content = isJa ? "⚖️ 差分 (Diff)" : "⚖️ Review Diffs";
+            SimDiffReviewButton.ToolTip = isJa ? "変化点差分インスペクター" : "Review Architecture Diffs";
             SimDeploySkeletonButton.Content = isJa ? "🚀 スケルトン作成" : "🚀 Deploy Skeleton";
+            SimDeploySkeletonButton.ToolTip = isJa ? "空フォルダ階層と設計済みNTFSアクセス権を新環境へ先行展開" : "Deploy skeleton folders and ACLs to target server";
             SimExportScriptsButton.Content = isJa ? "⚙️ 移行スクリプト" : "⚙️ Export Scripts";
+            SimExportScriptsButton.ToolTip = isJa ? "Robocopy / FastCopy スクリプト生成" : "Generate Robocopy / FastCopy scripts";
             SimExportExcelButton.Content = isJa ? "📊 Excel設計書" : "📊 Export Excel";
+            SimExportExcelButton.ToolTip = isJa ? "移行設計書Excel出力" : "Export Migration Specification (.xlsx)";
             SimInheritCheckBox.Content = isJa ? "親からの権限継承を含める" : "Inherit from parent";
             SimOpenSecModalButton.Content = isJa ? "⚙️ セキュリティ詳細設定" : "⚙️ Advanced Security";
+
+            if (SimInspectorTitleText != null) SimInspectorTitleText.Text = isJa ? "③ フォルダ詳細 ＆ 権限設定" : "③ Folder Details & Permissions";
+            if (SimSourceBrowseButton != null)
+            {
+                SimSourceBrowseButton.Content = isJa ? "参照..." : "Browse...";
+                SimSourceBrowseButton.ToolTip = isJa ? "現行フォルダ（UNCまたはローカル）を参照選択" : "Browse source directory (UNC or local)";
+            }
 
             if (SimProjectNameTextBox.Text == "新ファイルサーバー移行設計_Ver1" || SimProjectNameTextBox.Text == "New File Server Migration Plan_Ver1")
             {
@@ -3578,8 +3621,10 @@ namespace AstraSize
             LinkTableTitleText.Text = isJa ? "検出された切断リンク一覧" : "Detected Broken Links";
 
             LinkGenerateGpoButton.Content = isJa ? "📜 GPOログオンスクリプト生成 (.ps1)" : "📜 Generate GPO Script (.ps1)";
+            LinkGenerateGpoButton.ToolTip = isJa ? "全社PCのデスクトップ/マイドキュメント等のショートカットを自動修復するスクリプトを出力" : "Generate logon script (.ps1) to repair shortcuts across client PCs";
             LinkScanButton.Content = isJa ? "切断リンク検出スキャン" : "Scan Broken Links";
             LinkFixExecuteButton.Content = isJa ? "⚡ 一括修復を実行 (バックアップ付)" : "⚡ Execute Fix (with Backup)";
+            LinkFixExecuteButton.ToolTip = isJa ? "修復対象のショートカット一覧と置換差分をチェック" : "Check list of shortcuts and preview replacements";
             LinkIncludeOfficeCheckBox.Content = isJa ? "Officeファイル内部リンク (.xlsx/.xlsm) も対象に含める" : "Include Office internal links (.xlsx/.xlsm)";
 
             ColLinkFileName.Header = isJa ? "ファイル名" : "File Name";
@@ -3610,10 +3655,19 @@ namespace AstraSize
             AuditKpiTotalFilesTitle.Text = isJa ? "総走査ファイル数" : "Total Files Scanned";
             AuditKpiDupWastedTitle.Text = isJa ? "重複ファイルによる無駄" : "Wasted by Duplicates";
             AuditKpiDormantSizeTitle.Text = isJa ? "休眠ファイル容量 (3年超)" : "Dormant Capacity (3+ Yrs)";
+            if (AuditKpiPathLimitsTitle != null) AuditKpiPathLimitsTitle.Text = isJa ? "パス長超過 / 禁則文字" : "Path Limit / Invalid Chars";
             string auditBaseTitle = isJa ? "検出された課題・断捨離候補一覧" : "Detected Issues & Cleanup Candidates";
             AuditTableTitleText.Text = _lastAuditItems.Count > 0
                 ? $"{auditBaseTitle} ({_auditVisibleItems.Count:N0} / {_lastAuditItems.Count:N0} 件)"
                 : auditBaseTitle;
+            if (AuditLiveReductionLabel != null) AuditLiveReductionLabel.Text = isJa ? "選択中の削減見込み: " : "Est. Space Reclaimed: ";
+            if (AuditSmartSelectLabel != null) AuditSmartSelectLabel.Text = isJa ? "☑️ 一括選択:" : "☑️ Smart Select:";
+            if (AuditSmartItemPreset != null) AuditSmartItemPreset.Content = isJa ? "選択プリセット..." : "Select Preset...";
+            if (AuditSmartItemDupCopy != null) AuditSmartItemDupCopy.Content = isJa ? "重複の原本以外を選択" : "Select Duplicate Copies";
+            if (AuditSmartItemDormant3Y != null) AuditSmartItemDormant3Y.Content = isJa ? "3年以上前の休眠を選択" : "Select Dormant (>3 Years)";
+            if (AuditSmartItemDormant5Y != null) AuditSmartItemDormant5Y.Content = isJa ? "5年以上前の休眠を選択" : "Select Dormant (>5 Years)";
+            if (AuditSmartItemVisible != null) AuditSmartItemVisible.Content = isJa ? "表示中のみすべて選択" : "Select All Visible";
+            if (AuditSmartItemClear != null) AuditSmartItemClear.Content = isJa ? "選択をすべて解除" : "Clear All Selections";
             if (AuditFilterLabel != null) AuditFilterLabel.Text = isJa ? "絞り込み:" : "Filter:";
             if (AuditCategoryFilterComboBox?.Items.Count >= 4)
             {
@@ -3629,8 +3683,16 @@ namespace AstraSize
 
             AuditStartButton.Content = isJa ? "🔍 監査スキャン開始" : "🔍 Start Audit Scan";
             AuditExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
+            AuditExportExcelButton.ToolTip = isJa ? "上司・各部署提出用の美麗Excelレポートを生成" : "Generate executive Excel audit report (.xlsx)";
             AuditExportCsvButton.Content = isJa ? "📄 CSV台帳出力" : "📄 Export CSV";
             AuditGenArchiveScriptButton.Content = isJa ? "📦 安全退避バッチ生成 (.bat)" : "📦 Generate Archive Batch (.bat)";
+            AuditGenArchiveScriptButton.ToolTip = isJa ? "休眠・重複ファイルを安全に別フォルダへ退避するスクリプトを出力" : "Generate batch script to safely move dormant/duplicate files to archive";
+            if (AuditDeleteSelectedButton != null)
+            {
+                AuditDeleteSelectedButton.Content = isJa ? "🗑️ 選択ファイルを完全削除" : "🗑️ Delete Selected Files";
+                AuditDeleteSelectedButton.ToolTip = isJa ? "チェックを入れたファイルを直接完全削除します（※復元不可）" : "Permanently deletes checked files (Cannot be undone)";
+            }
+            if (AuditHeaderCheckBox != null) AuditHeaderCheckBox.ToolTip = isJa ? "すべて選択 / すべて解除" : "Select All / Deselect All";
             AuditCheckDuplicatesCheckBox.Content = isJa ? "重複ファイル (SHA256)" : "Duplicates (SHA256)";
             AuditCheckDormantCheckBox.Content = isJa ? "休眠ファイル (3年以上)" : "Dormant (3+ Years)";
             AuditCheckPathLimitsCheckBox.Content = isJa ? "パス長260字超/禁則文字" : "Path Limits / Invalid Chars";
@@ -3677,9 +3739,10 @@ namespace AstraSize
 
             MediaScanButton.Content = isJa ? "🔍 メディア走査" : "🔍 Scan Media";
             MediaOptimizeButton.Content = isJa ? "🔍 チェック" : "🔍 Check";
+            MediaOptimizeButton.ToolTip = isJa ? "軽量化対象の写真一覧と設定差分をチェック" : "Check photos to optimize and preview changes";
             MediaGenVideoBatchButton.Content = isJa ? "🎬 巨大動画 夜間圧縮バッチ出力 (.bat)" : "🎬 Export Nightly Video Batch (.bat)";
+            MediaGenVideoBatchButton.ToolTip = isJa ? "GPUハードウェアエンコード (H.265) で動画を一括軽量化するスクリプトを出力" : "Generate GPU H.265 compression batch script for large videos";
             MediaExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
-            LinkFixExecuteButton.Content = isJa ? "🔍 チェック" : "🔍 Check";
 
             ColMediaType.Header = isJa ? "種別" : "Type";
             ColMediaFileName.Header = isJa ? "ファイル名" : "File Name";
@@ -3800,13 +3863,17 @@ namespace AstraSize
             SettingsBrowseCustomButton.Content = isJa ? "参照..." : "Browse...";
             SettingsCancelButton.Content = isJa ? "キャンセル" : "Cancel";
             SettingsSaveButton.Content = isJa ? "設定を保存" : "Save Settings";
-
+            if (SettingsReadPathTextBox != null)
+            {
+                SettingsReadPathTextBox.ToolTip = isJa ? "空の場合はローカル既定値 (%LocalAppData%\\FolderMorpher) を参照します" : "Defaults to local directory (%LocalAppData%\\FolderMorpher) if blank";
+            }
 
             // 既存の空タブのタイトルとステータス
             if (StorageTabs != null)
             {
                 foreach (var t in StorageTabs)
                 {
+                    t.NotifyLanguageChanged();
                     if (t.TabTitle == "新規スキャン" || t.TabTitle == "New Scan")
                     {
                         t.TabTitle = isJa ? "新規スキャン" : "New Scan";

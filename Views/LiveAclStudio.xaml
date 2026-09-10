@@ -54,7 +54,7 @@
                             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="🛡️" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                 <TextBlock x:Name="LiveAclTargetFolderLabel" Text="マルチフォルダ 権限エディタ" FontWeight="Bold" FontSize="13" Foreground="#0F172A" VerticalAlignment="Center"/>
-                                <TextBlock Text="💡 ツリーからフォルダーを開いて権限を編集（最大6つ同時表示）" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="14,0,0,0"/>
+                                <TextBlock x:Name="LiveAclEditorSubtitleText" Text="💡 ツリーからフォルダーを開いて権限を編集（最大6つ同時表示）" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="14,0,0,0"/>
                             </StackPanel>
 
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -89,8 +89,8 @@
                                     <RowDefinition Height="*"/>
                                 </Grid.RowDefinitions>
                                 <StackPanel Grid.Row="0" Margin="0,0,0,8">
-                                    <TextBlock Text="📁 フォルダ参照" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
-                                    <TextBlock Text="Wクリック または D&amp;Dでパネル追加" FontSize="10" Foreground="#64748B" Margin="0,2,0,0"/>
+                                    <TextBlock x:Name="LiveAclBrowseTitleText" Text="📁 フォルダ参照" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
+                                    <TextBlock x:Name="LiveAclBrowseSubText" Text="Wクリック または D&amp;Dでパネル追加" FontSize="10" Foreground="#64748B" Margin="0,2,0,0"/>
                                 </StackPanel>
                                 <!-- Search & Browse -->
                                 <Grid Grid.Row="1" Margin="0,0,0,8">
@@ -419,13 +419,13 @@
                                 </StackPanel>
 
                                 <ComboBox x:Name="RevDepthComboBox" Grid.Column="6" Height="32" Margin="0,0,14,0" FontSize="11" VerticalContentAlignment="Center" SelectedIndex="0">
-                                    <ComboBoxItem Content="無制限 (推奨)" Tag="unlimited"/>
-                                    <ComboBoxItem Content="第1階層 (直下のみ)" Tag="1"/>
-                                    <ComboBoxItem Content="第2階層まで" Tag="2"/>
-                                    <ComboBoxItem Content="第3階層まで" Tag="3"/>
-                                    <ComboBoxItem Content="第5階層まで" Tag="5"/>
-                                    <ComboBoxItem Content="第8階層まで" Tag="8"/>
-                                    <ComboBoxItem Content="第10階層まで" Tag="10"/>
+                                    <ComboBoxItem x:Name="RevDepthItemUnlimited" Content="無制限 (推奨)" Tag="unlimited"/>
+                                    <ComboBoxItem x:Name="RevDepthItem1" Content="第1階層 (直下のみ)" Tag="1"/>
+                                    <ComboBoxItem x:Name="RevDepthItem2" Content="第2階層まで" Tag="2"/>
+                                    <ComboBoxItem x:Name="RevDepthItem3" Content="第3階層まで" Tag="3"/>
+                                    <ComboBoxItem x:Name="RevDepthItem5" Content="第5階層まで" Tag="5"/>
+                                    <ComboBoxItem x:Name="RevDepthItem8" Content="第8階層まで" Tag="8"/>
+                                    <ComboBoxItem x:Name="RevDepthItem10" Content="第10階層まで" Tag="10"/>
                                 </ComboBox>
 
                                 <StackPanel Grid.Column="7" Orientation="Horizontal">
@@ -706,9 +706,9 @@
                                           SelectionMode="Single" SelectionChanged="PickerPrincipalsDataGrid_SelectionChanged"
                                           MouseDoubleClick="PickerPrincipalsDataGrid_MouseDoubleClick">
                                     <DataGrid.Columns>
-                                        <DataGridTextColumn Header="種別" Binding="{Binding PrincipalTypeDisplay}" Width="80" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                        <DataGridTextColumn Header="表示名 (アカウント名)" Binding="{Binding DisplayName}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                        <DataGridTextColumn Header="説明" Binding="{Binding Description}" Width="160" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                        <DataGridTextColumn x:Name="ColPickerType" Header="種別" Binding="{Binding PrincipalTypeDisplay}" Width="80" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                        <DataGridTextColumn x:Name="ColPickerName" Header="表示名 (アカウント名)" Binding="{Binding DisplayName}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                        <DataGridTextColumn x:Name="ColPickerDesc" Header="説明" Binding="{Binding Description}" Width="160" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                     </DataGrid.Columns>
                                 </DataGrid>
                             </Grid>
@@ -723,7 +723,7 @@
                         </Grid.ColumnDefinitions>
 
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="選択中:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="PickerSelectedLabel" Text="選択中:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
                             <TextBlock x:Name="PickerSelectedAccountText" Text="(未選択)" FontWeight="Bold" FontSize="12" Foreground="#2563EB" VerticalAlignment="Center"/>
                         </StackPanel>
 

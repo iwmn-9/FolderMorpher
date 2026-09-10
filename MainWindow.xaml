@@ -79,8 +79,8 @@
                         <!-- Expanded Footer (2-tier layout: Brand on top, Controls below) -->
                         <StackPanel x:Name="SidebarFooterExpandedPanel" Margin="14,8,14,10">
                             <StackPanel Margin="0,0,0,8">
-                                <TextBlock Text="FolderMorpher v1.6.6" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
-                                <TextBlock Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#94A3B8" Margin="0,1,0,0"/>
+                                <TextBlock x:Name="SidebarVersionText" Text="FolderMorpher v1.7.0" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock x:Name="SidebarSubtitleText" Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#94A3B8" Margin="0,1,0,0"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal">
                                 <Button x:Name="SettingsButton" Content="⚙️" Height="24" Width="28" FontSize="11" Margin="0,0,6,0" Padding="0"
@@ -153,7 +153,7 @@
                                                 <TextBlock Text="{Binding TabTitle}" FontWeight="SemiBold" FontSize="12" Foreground="#1E293B" VerticalAlignment="Center"/>
                                                 <Button Content="✕" Margin="8,0,0,0" Width="16" Height="16" FontSize="10"
                                                         Background="Transparent" BorderThickness="0" Foreground="#94A3B8"
-                                                        Click="CloseStorageTabButton_Click" Tag="{Binding}" Cursor="Hand" ToolTip="タブを閉じる"/>
+                                                        Click="CloseStorageTabButton_Click" Tag="{Binding}" Cursor="Hand" ToolTip="{Binding CloseTabToolTip}"/>
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>
@@ -287,11 +287,11 @@
                                   MouseDoubleClick="FileTreeDataGrid_MouseDoubleClick">
                             <DataGrid.ContextMenu>
                                 <ContextMenu>
-                                    <MenuItem Header="📂 エクスプローラーで開く" Click="CtxOpenExplorer_Click"/>
-                                    <MenuItem Header="📋 パスをコピー" Click="CtxCopyPath_Click"/>
-                                    <MenuItem Header="🔍 このフォルダーをルートにしてスキャン" Click="CtxScanSubtree_Click"/>
+                                    <MenuItem x:Name="CtxTreeOpenExplorer" Header="📂 エクスプローラーで開く" Click="CtxOpenExplorer_Click"/>
+                                    <MenuItem x:Name="CtxTreeCopyPath" Header="📋 パスをコピー" Click="CtxCopyPath_Click"/>
+                                    <MenuItem x:Name="CtxTreeScanSubtree" Header="🔍 このフォルダーをルートにしてスキャン" Click="CtxScanSubtree_Click"/>
                                     <Separator/>
-                                    <MenuItem Header="🛡️ このフォルダーのNTFS権限を確認・編集" Click="CtxEditAcl_Click"/>
+                                    <MenuItem x:Name="CtxTreeEditAcl" Header="🛡️ このフォルダーのNTFS権限を確認・編集" Click="CtxEditAcl_Click"/>
                                 </ContextMenu>
                             </DataGrid.ContextMenu>
                             <DataGrid.Columns>
@@ -378,8 +378,8 @@
                                       MouseDoubleClick="TopFilesDataGrid_MouseDoubleClick" ToolTip="ダブルクリックでエクスプローラーを開く">
                                 <DataGrid.ContextMenu>
                                     <ContextMenu>
-                                        <MenuItem Header="📂 エクスプローラーで表示" Click="CtxTopFileOpenExplorer_Click"/>
-                                        <MenuItem Header="📋 パスをコピー" Click="CtxTopFileCopyPath_Click"/>
+                                        <MenuItem x:Name="CtxTopOpenExplorer" Header="📂 エクスプローラーで表示" Click="CtxTopFileOpenExplorer_Click"/>
+                                        <MenuItem x:Name="CtxTopCopyPath" Header="📋 パスをコピー" Click="CtxTopFileCopyPath_Click"/>
                                     </ContextMenu>
                                 </DataGrid.ContextMenu>
                                 <DataGrid.Columns>
@@ -660,11 +660,11 @@
                                                     </Border>
 
                                                     <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                        <Button Content="⏮" Width="18" Height="18" Padding="0" FontSize="9" ToolTip="第1階層(ルート)へ一気ジャンプ"
+                                                        <Button Content="⏮" Width="18" Height="18" Padding="0" FontSize="9" ToolTip="{Binding QuickJumpRootToolTip}"
                                                                 Style="{StaticResource FluentButtonSecondary}" Margin="1,0" Click="SimQuickJumpRoot_Click" Tag="{Binding}"/>
-                                                        <Button Content="◀" Width="18" Height="18" Padding="0" FontSize="9" ToolTip="1階層昇格"
+                                                        <Button Content="◀" Width="18" Height="18" Padding="0" FontSize="9" ToolTip="{Binding QuickPromoteToolTip}"
                                                                 Style="{StaticResource FluentButtonSecondary}" Margin="1,0" Click="SimQuickPromote_Click" Tag="{Binding}"/>
-                                                        <Button Content="▶" Width="18" Height="18" Padding="0" FontSize="9" ToolTip="1階層降格"
+                                                        <Button Content="▶" Width="18" Height="18" Padding="0" FontSize="9" ToolTip="{Binding QuickDemoteToolTip}"
                                                                 Style="{StaticResource FluentButtonSecondary}" Margin="1,0" Click="SimQuickDemote_Click" Tag="{Binding}"/>
                                                     </StackPanel>
                                                 </Grid>
@@ -693,7 +693,7 @@
 
                             <!-- Row 0: Selected Folder Header -->
                             <StackPanel Grid.Row="0" Margin="0,0,0,8">
-                                <TextBlock Text="③ フォルダ詳細 ＆ 権限設定" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
+                                <TextBlock x:Name="SimInspectorTitleText" Text="③ フォルダ詳細 ＆ 権限設定" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
                                 <Grid Margin="0,4,0,0">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                         <TextBlock x:Name="SimSelectedFolderPrefixText" Text="📁 " FontWeight="Bold" FontSize="12" Foreground="#334155"/>
@@ -1124,12 +1124,12 @@
                             <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock x:Name="AuditSmartSelectLabel" Text="☑️ 一括選択:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                 <ComboBox x:Name="AuditSmartSelectComboBox" Width="170" Height="28" FontSize="11" Margin="0,0,12,0" SelectionChanged="AuditSmartSelectComboBox_SelectionChanged">
-                                    <ComboBoxItem Content="選択プリセット..." IsSelected="True" Tag="None"/>
-                                    <ComboBoxItem Content="重複の原本以外を選択" Tag="DupCopyOnly"/>
-                                    <ComboBoxItem Content="3年以上前の休眠を選択" Tag="Dormant3Y"/>
-                                    <ComboBoxItem Content="5年以上前の休眠を選択" Tag="Dormant5Y"/>
-                                    <ComboBoxItem Content="表示中のみすべて選択" Tag="SelectVisible"/>
-                                    <ComboBoxItem Content="選択をすべて解除" Tag="ClearAll"/>
+                                    <ComboBoxItem x:Name="AuditSmartItemPreset" Content="選択プリセット..." IsSelected="True" Tag="None"/>
+                                    <ComboBoxItem x:Name="AuditSmartItemDupCopy" Content="重複の原本以外を選択" Tag="DupCopyOnly"/>
+                                    <ComboBoxItem x:Name="AuditSmartItemDormant3Y" Content="3年以上前の休眠を選択" Tag="Dormant3Y"/>
+                                    <ComboBoxItem x:Name="AuditSmartItemDormant5Y" Content="5年以上前の休眠を選択" Tag="Dormant5Y"/>
+                                    <ComboBoxItem x:Name="AuditSmartItemVisible" Content="表示中のみすべて選択" Tag="SelectVisible"/>
+                                    <ComboBoxItem x:Name="AuditSmartItemClear" Content="選択をすべて解除" Tag="ClearAll"/>
                                 </ComboBox>
 
                                 <TextBlock x:Name="AuditFilterLabel" Text="絞り込み:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
