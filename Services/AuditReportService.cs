@@ -159,29 +159,60 @@ namespace FolderMorpher.Services
                     .ToList();
 
                 // Step 2: 1MB以上のファイルは Head-Tail ハッシュ (先頭4KB+末尾4KB) で高速ふるい落とし
-                // 1MB未満のファイルはサイズグループをそのまま引き継ぐ
+                // 1MB未満のファイルはシークオーバーヘッドを避けるため直接フルハッシュ照合へ（ADR 50確定仕様）
                 var fullHashCandidates = new List<List<ScannedFileEntry>>();
-                int quickGroupCount = 0;
+                var smallGroups = sizeGroups.Where(g => g.Key < QuickHashThresholdBytes).ToList();
+                var largeGroups = sizeGroups.Where(g => g.Key >= QuickHashThresholdBytes).ToList();
 
-                foreach (var sGroup in sizeGroups)
+                // 1MB未満は直接フルハッシュ照合へ引き継ぐ
+                foreach (var sGroup in smallGroups)
                 {
-                    ct.ThrowIfCancellationRequested();
-                    var list = sGroup.ToList();
-                    if (sGroup.Key < QuickHashThresholdBytes)
-                    {
-                        // 1MB未満は直接フルハッシュ照合へ
-                        fullHashCandidates.Add(list);
-                    }
-                    else
-                    {
-                        // 1MB以上は Head-Tail ハッシュでさらに細分化
-                        var quickMap = new Dictionary<string, List<ScannedFileEntry>>();
-                        foreach (var fi in list)
-                        {
-                            ct.ThrowIfCancellationRequested();
-                            var qHash = await ComputeHeadTailHashAsync(fi.FullPath, fi.Length, ct);
-                            if (string.IsNullOrEmpty(qHash)) continue;
+                    fullHashCandidates.Add(sGroup.ToList());
+                }
 
+                // 1MB以上は Head-Tail ハッシュでさらに細分化（並列度2 & ファイル単位スムーズ進捗通知）
+                if (largeGroups.Count > 0)
+                {
+                    int totalLargeFiles = largeGroups.Sum(g => g.Count());
+                    int processedLargeFiles = 0;
+                    using var quickSemaphore = new SemaphoreSlim(DuplicateConcurrency, DuplicateConcurrency);
+
+                    foreach (var sGroup in largeGroups)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        var list = sGroup.ToList();
+
+                        // 同一サイズグループ内のファイルを並列度2で同時読み込み（UNC往復遅延を隠蔽）
+                        var qTasks = list.Select(async fi =>
+                        {
+                            await quickSemaphore.WaitAsync(ct);
+                            try
+                            {
+                                var qHash = await ComputeHeadTailHashAsync(fi.FullPath, fi.Length, ct);
+                                var current = Interlocked.Increment(ref processedLargeFiles);
+                                if (current % 10 == 0 || current == totalLargeFiles)
+                                {
+                                    progress?.Report(new AuditProgress
+                                    {
+                                        CurrentStatus = $"{Strings.AuditProgressQuickHash} ({current:N0}/{totalLargeFiles:N0} 件)",
+                                        ScannedFilesCount = summary.TotalFilesScanned,
+                                        IssueCount = items.Count
+                                    });
+                                }
+                                return (fi, qHash);
+                            }
+                            finally
+                            {
+                                quickSemaphore.Release();
+                            }
+                        });
+
+                        var qResults = await Task.WhenAll(qTasks);
+
+                        var quickMap = new Dictionary<string, List<ScannedFileEntry>>();
+                        foreach (var (fi, qHash) in qResults)
+                        {
+                            if (string.IsNullOrEmpty(qHash)) continue;
                             if (!quickMap.TryGetValue(qHash, out var qList))
                             {
                                 qList = new List<ScannedFileEntry>();
@@ -195,17 +226,6 @@ namespace FolderMorpher.Services
                         {
                             fullHashCandidates.Add(qGroup);
                         }
-                    }
-
-                    quickGroupCount++;
-                    if (quickGroupCount % 50 == 0 || quickGroupCount == sizeGroups.Count)
-                    {
-                        progress?.Report(new AuditProgress
-                        {
-                            CurrentStatus = $"{Strings.AuditProgressQuickHash} ({quickGroupCount}/{sizeGroups.Count})",
-                            ScannedFilesCount = summary.TotalFilesScanned,
-                            IssueCount = items.Count
-                        });
                     }
                 }
 
