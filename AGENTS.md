@@ -506,6 +506,18 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
       - プロパティ手動代入テストを廃止し、一時ディレクトリ上に実際の NTFS ACL（Baseline / Inherited / Explicit / Elevated / Severed / Enclave）を構築して `EffectiveAccessService.ScanEffectiveAccessAsync` を実走させる完全な実態テストへ置換。
       - 英語モード（`Language.English`）において、全バッジ・権限表示・辞書に日本語（CJK）文字が 1 文字も残存していないことを機械的にアサートするテストガードを導入。
 
+49. **親走査不能の状態伝播（Unknown分離） ＆ レポート全項目の英語モード CJK ゼロ保証 (v2.0.2)**:
+    - **親 `ScanUnavailable` の状態伝播 ＆ 飛び地誤認バグの根絶**:
+      - 親フォルダーのACL取得失敗時、以前は `currentItem` が `null` のまま子へ伝わったため、子でアクセス権ありの場合に「親がアクセス不可（`PermissionLevel == None`）だったから飛び地（`EnclaveGranted`）」と誤認される重大な判定バグを解消。
+      - `Traverse` 内で `scanFailed` 時に `currentItem = unavailItem;` として配下に親の状態を確実に伝播。
+      - 子の判定時、`parentItem.ChangeType == ScanUnavailable` の場合は新設の `EffectiveAccessChangeType.Unknown`（`"❓ 判定不能 (親走査不能)"`）へ明示的に分離。
+    - **実サービス生成テキストの完全国際化（i18n）**:
+      - `EffectiveAccessService` 内部の `GrantSource`, `GrantPathTrace`, `DirectStatusText`, `MembershipPath`, `ResolutionStatusText`, `UncShareNotice` に至るまで、日本語ハードコードを `AppStrings.cs`（`Strings`）へ完全移設。
+    - **Test 29 の実走査強化 ＆ レポート全項目の機械的 CJK ゼロ検査**:
+      - `AclReaderHook` による決定論的かつ安全な走査不能シミュレーションを導入し、`ScanUnavailable` およびその子の `Unknown` が実際のトラバースで正しく検出・分類されることを実証。
+      - 英語モード時、生成されたレポートの全プロパティ（全フォルダーアイテム、全遮断アイテム、全走査不能アイテム、全グループ所属、ステータス、注釈）に対して CJK 正規表現チェックを実行し、1文字も日本語文字が残存しないことを機械的に保証。
+    - **全29回帰テスト 100% PASS**（29/29）。
+
 ---
 
 ## 4. ビルド・実行・検証コマンド

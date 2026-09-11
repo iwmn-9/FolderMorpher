@@ -10,7 +10,7 @@ namespace FolderMorpher.Services
     /// </summary>
     public static class Strings
     {
-        private static bool IsJa => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+        public static bool IsJa => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
 
         // ==========================================
         // 共通操作 (Common)
@@ -359,6 +359,24 @@ namespace FolderMorpher.Services
         public static string ColRevGrantTrace => IsJa ? "詳細トレース / 理由" : "Trace / Reason";
         public static string RevInheritedBadge => IsJa ? "継承" : "Inherited";
         public static string RevExplicitBadge => IsJa ? "明示的付与" : "Explicit";
+        public static string RevChangeUnknown => IsJa ? "❓ 判定不能 (親走査不能)" : "❓ Unknown (Parent Unavailable)";
+        public static string RevDirectMembership => IsJa ? "直接所属" : "Direct Member";
+        public static string RevNestedMembership => IsJa ? "入れ子所属 (深度 {0})" : "Nested Member (Depth {0})";
+        public static string RevGrantDirect => IsJa ? "👤 直接付与" : "👤 Direct Grant";
+        public static string RevGrantGroupPrefix => "👥 ";
+        public static string RevGrantVia => IsJa ? "経由" : "via";
+        public static string RevGrantDepth => IsJa ? "深度" : "depth";
+        public static string RevGrantInherited => IsJa ? "(継承)" : "(Inherited)";
+        public static string RevGrantSeveredSource => IsJa ? "継承遮断 (親権限消失)" : "Inheritance Severed (Revoked)";
+        public static string RevTraceDirect => IsJa ? "対象アカウントに直接ACEが付与されています" : "Direct ACE granted to target account";
+        public static string RevTraceInheritedFormat => IsJa ? "親({0}: {1})から継承" : "Inherited from parent ({0}: {1})";
+        public static string RevTraceSeveredFormat => IsJa ? "親({0}: {1})ではアクセス可能でしたが、この階層で継承切断または拒否によりアクセス権が消失しています" : "Accessible in parent ({0}: {1}), but revoked here due to severed inheritance or deny rule";
+        public static string RevTraceUnavailable => IsJa ? "管理者権限不足、排他制御、またはネットワーク応答エラーによりNTFSセキュリティ記述子を取得できませんでした" : "Failed to retrieve NTFS security descriptor due to insufficient admin rights, file lock, or network error";
+        public static string RevTraceParentUnavailable => IsJa ? "親フォルダーのセキュリティ記述子が取得不能だったため、階層変化点を判定できません" : "Cannot evaluate hierarchical change point because parent security descriptor was unavailable";
+        public static string RevResAdConnected => IsJa ? "Active Directory 接続中 (所属グループ {0} 件解決済み)" : "Active Directory Connected ({0} groups resolved)";
+        public static string RevResLocalOnly => IsJa ? "ローカル環境 (直接付与ACEのみ判定)" : "Local PC (Direct ACEs evaluated only)";
+        public static string RevResCurrentLogonUser => IsJa ? "現在ログオン中のユーザー (ローカルIDフォールバック)" : "Current logon user (Local identity fallback)";
+        public static string RevUncNotice => IsJa ? "※UNC共有フォルダです。ファイルサーバー上のSMB共有アクセス権（Share Permissions）の上限も併せて適用されます。" : "*UNC share path: SMB share permissions also apply as an upper limit.";
 
         /// <summary>
         /// 全プロパティが言語ごとに非空文字列を返すかを自己検証（自動テスト用）

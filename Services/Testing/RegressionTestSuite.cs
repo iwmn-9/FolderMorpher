@@ -1001,7 +1001,7 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException($"付与元グループ特定失敗: 実際={nestedItem.GrantSource}");
                 }
-                if (!nestedItem.GrantSource.Contains("深度 3"))
+                if (!nestedItem.GrantSource.Contains("深度 3") && !nestedItem.GrantSource.Contains("depth 3"))
                 {
                     throw new InvalidOperationException($"入れ子深度特定失敗: 実際={nestedItem.GrantSource}");
                 }
@@ -1012,7 +1012,7 @@ namespace FolderMorpher.Services.Testing
 
                 // 検証 3: 直接付与の特定
                 var directItem = report.AccessibleFolders.First(f => f.FolderPath.Equals(subDirect, StringComparison.OrdinalIgnoreCase));
-                if (!directItem.GrantSource.Contains("直接付与"))
+                if (!directItem.GrantSource.Contains("直接付与") && !directItem.GrantSource.Contains("Direct"))
                 {
                     throw new InvalidOperationException($"直接付与判定失敗: 実際={directItem.GrantSource}");
                 }
@@ -3663,6 +3663,8 @@ namespace FolderMorpher.Services.Testing
             var subSevered = Path.Combine(testRoot, "04_Severed");
             var subRestricted = Path.Combine(testRoot, "05_RestrictedParent");
             var subEnclave = Path.Combine(subRestricted, "06_EnclaveChild");
+            var subNoAccess = Path.Combine(testRoot, "07_NoAccessParent");
+            var subUnknownChild = Path.Combine(subNoAccess, "08_UnknownChild");
 
             Directory.CreateDirectory(subNormal);
             Directory.CreateDirectory(subExplicit);
@@ -3670,6 +3672,8 @@ namespace FolderMorpher.Services.Testing
             Directory.CreateDirectory(subSevered);
             Directory.CreateDirectory(subRestricted);
             Directory.CreateDirectory(subEnclave);
+            Directory.CreateDirectory(subNoAccess);
+            Directory.CreateDirectory(subUnknownChild);
 
             try
             {
@@ -3716,8 +3720,27 @@ namespace FolderMorpher.Services.Testing
                 encSec.AddAccessRule(new FileSystemAccessRule(targetUser, FileSystemRights.Modify, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
                 new DirectoryInfo(subEnclave).SetAccessControl(encSec);
 
+                // 8. subUnknownChild: targetUser に ReadAndExecute (親が ScanUnavailable なので判定不能 Unknown になる)
+                var unkChildSec = new DirectorySecurity();
+                unkChildSec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                unkChildSec.AddAccessRule(new FileSystemAccessRule(adminUser, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                unkChildSec.AddAccessRule(new FileSystemAccessRule(targetUser, FileSystemRights.ReadAndExecute, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                new DirectoryInfo(subUnknownChild).SetAccessControl(unkChildSec);
+
+                // 9. subNoAccess: 走査不能 (ScanUnavailable) フォルダー
+                // AclReaderHook により確実に UnauthorizedAccessException をシミュレート
+
                 // 実サービスを実行！
                 var effService = new EffectiveAccessService();
+                effService.AclReaderHook = d =>
+                {
+                    if (d.FullName.Equals(subNoAccess, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new UnauthorizedAccessException("Simulated access denied for test");
+                    }
+                    return null;
+                };
+
                 var report = await effService.ScanEffectiveAccessAsync(
                     testRoot,
                     targetUser,
@@ -3756,10 +3779,22 @@ namespace FolderMorpher.Services.Testing
                 if (enclaveItem == null || enclaveItem.ChangeType != EffectiveAccessChangeType.EnclaveGranted || !enclaveItem.IsChangePoint)
                     throw new InvalidOperationException($"EffectiveAccess: Enclave child should be EnclaveGranted, but was {enclaveItem?.ChangeType}");
 
+                // G. subNoAccess: ScanUnavailable (走査不能・変化点)
+                var unavailItem = report.UnavailableFolders.FirstOrDefault(f => f.FolderPath.Equals(subNoAccess, StringComparison.OrdinalIgnoreCase));
+                if (unavailItem == null || unavailItem.ChangeType != EffectiveAccessChangeType.ScanUnavailable || !unavailItem.IsChangePoint)
+                    throw new InvalidOperationException($"EffectiveAccess: NoAccess folder should be in UnavailableFolders as ScanUnavailable, but was {unavailItem?.ChangeType}");
+
+                // H. subUnknownChild: Unknown (親が走査不能のため飛び地ではなく判定不能・変化点)
+                var unknownItem = report.AccessibleFolders.FirstOrDefault(f => f.FolderPath.Equals(subUnknownChild, StringComparison.OrdinalIgnoreCase));
+                if (unknownItem == null || unknownItem.ChangeType != EffectiveAccessChangeType.Unknown || !unknownItem.IsChangePoint)
+                    throw new InvalidOperationException($"EffectiveAccess: Child of ScanUnavailable parent should be Unknown, but was {unknownItem?.ChangeType}");
+
                 if (report.EnclaveCount < 1)
                     throw new InvalidOperationException($"EffectiveAccess: EnclaveCount should be >= 1, but was {report.EnclaveCount}");
                 if (report.SeveredCount < 1)
                     throw new InvalidOperationException($"EffectiveAccess: SeveredCount should be >= 1, but was {report.SeveredCount}");
+                if (report.UnavailableFolders.Count < 1)
+                    throw new InvalidOperationException($"EffectiveAccess: UnavailableFolders count should be >= 1, but was {report.UnavailableFolders.Count}");
             }
             finally
             {
@@ -3769,9 +3804,11 @@ namespace FolderMorpher.Services.Testing
                     var clearSec = new DirectorySecurity();
                     clearSec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
                     clearSec.AddAccessRule(new FileSystemAccessRule(adminUser, FileSystemRights.FullControl, AccessControlType.Allow));
-                    new DirectoryInfo(subSevered).SetAccessControl(clearSec);
-                    new DirectoryInfo(subRestricted).SetAccessControl(clearSec);
-                    new DirectoryInfo(subEnclave).SetAccessControl(clearSec);
+                    try { new DirectoryInfo(subSevered).SetAccessControl(clearSec); } catch { }
+                    try { new DirectoryInfo(subRestricted).SetAccessControl(clearSec); } catch { }
+                    try { new DirectoryInfo(subEnclave).SetAccessControl(clearSec); } catch { }
+                    try { new DirectoryInfo(subNoAccess).SetAccessControl(clearSec); } catch { }
+                    try { new DirectoryInfo(subUnknownChild).SetAccessControl(clearSec); } catch { }
                     Directory.Delete(testRoot, recursive: true);
                 }
                 catch { }
@@ -3902,6 +3939,101 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException($"English translation missing: {string.Join(", ", dictErrors)}");
                 }
+
+                // 5. 英語モードでの実走査レポート全項目（GrantSource, GrantPathTrace, Membership, Notice）の機械的 CJK ゼロ検証
+                var engReport = new EffectiveAccessAuditReport
+                {
+                    ResolutionStatusText = string.Format(Strings.RevResAdConnected, 3),
+                    GroupMemberships = new List<PrincipalGroupMembership>
+                    {
+                        new PrincipalGroupMembership
+                        {
+                            GroupName = "FinanceGroup",
+                            DisplayName = "Finance",
+                            IsDirect = true,
+                            NestingDepth = 1,
+                            MembershipPath = Strings.RevDirectMembership
+                        },
+                        new PrincipalGroupMembership
+                        {
+                            GroupName = "DomainAdmins",
+                            DisplayName = "Domain Admins",
+                            IsDirect = false,
+                            NestingDepth = 2,
+                            MembershipPath = string.Format(Strings.RevNestedMembership, 2)
+                        }
+                    }
+                };
+
+                // GroupMembership の文字列検証
+                foreach (var gm in engReport.GroupMemberships)
+                {
+                    if (japaneseRegex.IsMatch(gm.DirectStatusText))
+                        throw new InvalidOperationException($"English DirectStatusText contains Japanese: '{gm.DirectStatusText}'");
+                    if (japaneseRegex.IsMatch(gm.MembershipPath))
+                        throw new InvalidOperationException($"English MembershipPath contains Japanese: '{gm.MembershipPath}'");
+                }
+
+                if (japaneseRegex.IsMatch(engReport.ResolutionStatusText))
+                    throw new InvalidOperationException($"English ResolutionStatusText contains Japanese: '{engReport.ResolutionStatusText}'");
+
+                if (japaneseRegex.IsMatch(engReport.UncShareNotice))
+                    throw new InvalidOperationException($"English UncShareNotice contains Japanese: '{engReport.UncShareNotice}'");
+
+                // EvaluateEffectiveAccessOnAcl による実生成 GrantSource / GrantPathTrace 検証
+                var testSec = new DirectorySecurity();
+                testSec.AddAccessRule(new FileSystemAccessRule("BUILTIN\\Users", FileSystemRights.ReadAndExecute, InheritanceFlags.ContainerInherit, PropagationFlags.None, AccessControlType.Allow));
+                testSec.AddAccessRule(new FileSystemAccessRule(Environment.UserName, FileSystemRights.Modify, InheritanceFlags.ContainerInherit, PropagationFlags.None, AccessControlType.Allow));
+
+                var groupMap = new Dictionary<string, PrincipalGroupMembership>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["BUILTIN\\Users"] = engReport.GroupMemberships[0]
+                };
+                var targetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Environment.UserName };
+
+                var effItem = new EffectiveAccessService().EvaluateEffectiveAccessOnAcl(
+                    testSec,
+                    Environment.UserName,
+                    targetNames,
+                    groupMap,
+                    @"C:\TestPath",
+                    "TestPath");
+
+                if (effItem != null)
+                {
+                    if (japaneseRegex.IsMatch(effItem.GrantSource))
+                        throw new InvalidOperationException($"English GrantSource contains Japanese: '{effItem.GrantSource}'");
+                    if (japaneseRegex.IsMatch(effItem.GrantPathTrace))
+                        throw new InvalidOperationException($"English GrantPathTrace contains Japanese: '{effItem.GrantPathTrace}'");
+                }
+
+                // 遮断アイテムと走査不能アイテムの文字列検証
+                var sevItem = new EffectiveFolderAccessItem
+                {
+                    ChangeType = EffectiveAccessChangeType.InheritanceSevered,
+                    GrantSource = Strings.RevGrantSeveredSource,
+                    GrantPathTrace = string.Format(Strings.RevTraceSeveredFormat, "ParentFolder", "Read")
+                };
+                if (japaneseRegex.IsMatch(sevItem.GrantSource) || japaneseRegex.IsMatch(sevItem.GrantPathTrace))
+                    throw new InvalidOperationException($"English Severed item contains Japanese: '{sevItem.GrantSource}' / '{sevItem.GrantPathTrace}'");
+
+                var unavailTestItem = new EffectiveFolderAccessItem
+                {
+                    ChangeType = EffectiveAccessChangeType.ScanUnavailable,
+                    GrantSource = Strings.RevChangeUnavailable,
+                    GrantPathTrace = Strings.RevTraceUnavailable
+                };
+                if (japaneseRegex.IsMatch(unavailTestItem.GrantSource) || japaneseRegex.IsMatch(unavailTestItem.GrantPathTrace))
+                    throw new InvalidOperationException($"English Unavailable item contains Japanese: '{unavailTestItem.GrantSource}' / '{unavailTestItem.GrantPathTrace}'");
+
+                var unkTestItem = new EffectiveFolderAccessItem
+                {
+                    ChangeType = EffectiveAccessChangeType.Unknown,
+                    GrantSource = Strings.RevChangeUnknown,
+                    GrantPathTrace = Strings.RevTraceParentUnavailable
+                };
+                if (japaneseRegex.IsMatch(unkTestItem.GrantSource) || japaneseRegex.IsMatch(unkTestItem.GrantPathTrace))
+                    throw new InvalidOperationException($"English Unknown item contains Japanese: '{unkTestItem.GrantSource}' / '{unkTestItem.GrantPathTrace}'");
             }
             finally
             {

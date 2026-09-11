@@ -30,7 +30,8 @@ namespace FolderMorpher.Models
         EnclaveGranted = 3,      // 🚨 飛び地 (権限獲得): 親はアクセス不可だが子でアクセス可能
         InheritanceSevered = 4,  // ⛔ 遮断 (権限消失): 親はアクセス可能だったが子で継承遮断/Denyにより消失
         PermissionChanged = 5,   // ⚡ 権限変更: 親と異なる権限レベルへ昇格/変更
-        ScanUnavailable = 6      // ⚠️ 走査不能: 管理者権限不足やネットワークエラー等でACL取得不能
+        ScanUnavailable = 6,     // ⚠️ 走査不能: 管理者権限不足やネットワークエラー等でACL取得不能
+        Unknown = 7              // ❓ 判定不能: 親が走査不能だったため変化点の判定が不可能
     }
 
     /// <summary>
@@ -47,7 +48,7 @@ namespace FolderMorpher.Models
         public bool IsInherited { get; set; } = false;
 
         /// <summary>
-        /// 階層変化点分類 (基準点・飛び地・遮断・走査不能・明示化境界・権限変更・通常継承)
+        /// 階層変化点分類 (基準点・飛び地・遮断・走査不能・明示化境界・権限変更・通常継承・判定不能)
         /// </summary>
         public EffectiveAccessChangeType ChangeType { get; set; } = EffectiveAccessChangeType.InheritedSame;
 
@@ -98,6 +99,7 @@ namespace FolderMorpher.Models
             EffectiveAccessChangeType.ScanUnavailable => Strings.RevChangeUnavailable,
             EffectiveAccessChangeType.ExplicitBoundary => Strings.RevChangeExplicitBoundary,
             EffectiveAccessChangeType.PermissionChanged => Strings.RevChangeModified,
+            EffectiveAccessChangeType.Unknown => Strings.RevChangeUnknown,
             _ => Strings.RevChangeInherited
         };
 
@@ -109,6 +111,7 @@ namespace FolderMorpher.Models
             EffectiveAccessChangeType.ScanUnavailable => "#FFFBEB",
             EffectiveAccessChangeType.ExplicitBoundary => "#F0F9FF",
             EffectiveAccessChangeType.PermissionChanged => "#FEF3C7",
+            EffectiveAccessChangeType.Unknown => "#F1F5F9",
             _ => "#F8FAFC"
         };
 
@@ -120,6 +123,7 @@ namespace FolderMorpher.Models
             EffectiveAccessChangeType.ScanUnavailable => "#FDE68A",
             EffectiveAccessChangeType.ExplicitBoundary => "#BAE6FD",
             EffectiveAccessChangeType.PermissionChanged => "#FCD34D",
+            EffectiveAccessChangeType.Unknown => "#CBD5E1",
             _ => "#E2E8F0"
         };
 
@@ -131,6 +135,7 @@ namespace FolderMorpher.Models
             EffectiveAccessChangeType.ScanUnavailable => "#D97706",
             EffectiveAccessChangeType.ExplicitBoundary => "#0284C7",
             EffectiveAccessChangeType.PermissionChanged => "#B45309",
+            EffectiveAccessChangeType.Unknown => "#64748B",
             _ => "#64748B"
         };
     }
@@ -147,7 +152,7 @@ namespace FolderMorpher.Models
         public int NestingDepth { get; set; } = 0;
         public string MembershipPath { get; set; } = string.Empty;
 
-        public string DirectStatusText => IsDirect ? "直接所属" : $"入れ子所属 (深度 {NestingDepth})";
+        public string DirectStatusText => IsDirect ? Strings.RevDirectMembership : string.Format(Strings.RevNestedMembership, NestingDepth);
         public string DirectBadgeColor => IsDirect ? "#2563EB" : "#7C3AED";
     }
 
@@ -197,7 +202,7 @@ namespace FolderMorpher.Models
         public string ResolutionStatusText { get; set; } = string.Empty;
         public bool IsUncPath => RootFolderPath.StartsWith(@"\\");
         public string UncShareNotice => IsUncPath
-            ? "※UNC共有フォルダです。ファイルサーバー上のSMB共有アクセス権（Share Permissions）の上限も併せて適用されます。"
+            ? Strings.RevUncNotice
             : string.Empty;
     }
 

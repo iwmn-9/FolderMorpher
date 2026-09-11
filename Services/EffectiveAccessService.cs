@@ -21,6 +21,11 @@ namespace FolderMorpher.Services
     {
         private readonly ActiveDirectoryService _adService;
 
+        /// <summary>
+        /// テスト用ACLリーダーフック（通常時はnull、テスト時に特定パスのアクセス拒否をシミュレート可能）
+        /// </summary>
+        internal Func<DirectoryInfo, FileSystemSecurity?>? AclReaderHook { get; set; }
+
         public EffectiveAccessService(ActiveDirectoryService? adService = null)
         {
             _adService = adService ?? new ActiveDirectoryService();
@@ -159,7 +164,7 @@ namespace FolderMorpher.Services
                                         Sid = sidStr,
                                         IsDirect = isDirect,
                                         NestingDepth = isDirect ? 1 : 2,
-                                        MembershipPath = isDirect ? "直接所属" : "入れ子所属 (AD Chain)"
+                                        MembershipPath = isDirect ? Strings.RevDirectMembership : string.Format(Strings.RevNestedMembership, 2)
                                     });
                                 }
                             }
@@ -169,7 +174,7 @@ namespace FolderMorpher.Services
                                 return (
                                     memberships.OrderByDescending(m => m.IsDirect).ThenBy(m => m.GroupName).ToList(),
                                     EffectiveAccessResolutionMode.ActiveDirectory,
-                                    $"AD多重ネスト解決完了 ({memberships.Count} グループ)"
+                                    string.Format(Strings.RevResAdConnected, memberships.Count)
                                 );
                             }
                         }
@@ -200,7 +205,7 @@ namespace FolderMorpher.Services
                                         Sid = groupRef.Value,
                                         IsDirect = true,
                                         NestingDepth = 1,
-                                        MembershipPath = "ローカル所属 (実行ユーザー)"
+                                        MembershipPath = Strings.RevDirectMembership
                                     });
                                 }
                                 catch { }
@@ -212,7 +217,7 @@ namespace FolderMorpher.Services
                             return (
                                 memberships.OrderByDescending(m => m.IsDirect).ThenBy(m => m.GroupName).ToList(),
                                 EffectiveAccessResolutionMode.CurrentLogonUserLocal,
-                                $"実行中ユーザー ({Environment.UserName}) の所属グループを使用 ({memberships.Count} グループ)"
+                                string.Format(Strings.RevResCurrentLogonUser + " ({0})", memberships.Count)
                             );
                         }
                     }
@@ -225,7 +230,7 @@ namespace FolderMorpher.Services
                 return (
                     memberships,
                     EffectiveAccessResolutionMode.DirectAclOnly,
-                    $"ADグループ未解決 (対象 '{accountName}' の直接付与ACEのみ判定)"
+                    Strings.RevResLocalOnly
                 );
             });
         }
@@ -254,7 +259,7 @@ namespace FolderMorpher.Services
                 if (!dir.Exists) throw new DirectoryNotFoundException($"指定フォルダが存在しません: {rootPath}");
 
                 var (memberships, resMode, resStatus) = preResolvedGroups != null
-                    ? (preResolvedGroups, EffectiveAccessResolutionMode.ActiveDirectory, "事前解決済みグループセットを使用")
+                    ? (preResolvedGroups, EffectiveAccessResolutionMode.ActiveDirectory, Strings.IsJa ? "事前解決済みグループセットを使用" : "Using pre-resolved group set")
                     : await ResolveMembershipsAsync(targetAccount);
 
                 var report = new EffectiveAccessAuditReport
@@ -312,7 +317,9 @@ namespace FolderMorpher.Services
 
                     try
                     {
-                        var sec = currentDir.GetAccessControl(AccessControlSections.Access);
+                        var sec = AclReaderHook != null
+                            ? (AclReaderHook(currentDir) ?? currentDir.GetAccessControl(AccessControlSections.Access))
+                            : currentDir.GetAccessControl(AccessControlSections.Access);
                         currentItem = EvaluateEffectiveAccessOnAcl(sec, targetAccount, targetNames, groupMap, currentDir.FullName, currentDir.Name);
                     }
                     catch
@@ -336,13 +343,16 @@ namespace FolderMorpher.Services
                             IsInherited = false,
                             ChangeType = EffectiveAccessChangeType.ScanUnavailable,
                             GrantSource = Strings.RevChangeUnavailable,
-                            GrantPathTrace = "管理者権限不足、排他制御、またはネットワーク応答エラーによりNTFSセキュリティ記述子を取得できませんでした"
+                            GrantPathTrace = Strings.RevTraceUnavailable
                         };
 
                         lock (report.UnavailableFolders)
                         {
                             report.UnavailableFolders.Add(unavailItem);
                         }
+
+                        // 親として配下の子に渡すため currentItem を unavailItem に設定
+                        currentItem = unavailItem;
                     }
                     else if (currentItem != null)
                     {
@@ -350,6 +360,12 @@ namespace FolderMorpher.Services
                         {
                             // 🏁 基準点: 走査ルート自身（親が存在しないため飛び地ではなくBaseline）
                             currentItem.ChangeType = EffectiveAccessChangeType.Baseline;
+                        }
+                        else if (parentItem != null && parentItem.ChangeType == EffectiveAccessChangeType.ScanUnavailable)
+                        {
+                            // ❓ 判定不能: 親フォルダーが走査不能だったため、飛び地か通常継承か判定不能
+                            currentItem.ChangeType = EffectiveAccessChangeType.Unknown;
+                            currentItem.GrantPathTrace = Strings.RevTraceParentUnavailable;
                         }
                         else if (parentItem == null || parentItem.PermissionLevel == EffectivePermissionLevel.None)
                         {
@@ -406,8 +422,8 @@ namespace FolderMorpher.Services
                             HasDeny = true,
                             IsInherited = false,
                             ChangeType = EffectiveAccessChangeType.InheritanceSevered,
-                            GrantSource = "継承遮断 (親権限消失)",
-                            GrantPathTrace = $"親({parentItem.FolderName}: {parentItem.FormattedRights})ではアクセス可能でしたが、この階層で継承切断または拒否によりアクセス権が消失しています"
+                            GrantSource = Strings.RevGrantSeveredSource,
+                            GrantPathTrace = string.Format(Strings.RevTraceSeveredFormat, parentItem.FolderName, parentItem.FormattedRights)
                         };
 
                         lock (report.SeveredFolders)
@@ -595,7 +611,7 @@ namespace FolderMorpher.Services
                 DeniedRights = totalDenied,
                 HasDeny = totalDenied != 0,
                 IsInherited = isInheritedOnly,
-                GrantSource = grantSources.Distinct().FirstOrDefault() ?? "付与",
+                GrantSource = grantSources.Distinct().FirstOrDefault() ?? (Strings.IsJa ? "付与" : "Granted"),
                 GrantPathTrace = string.Join(" / ", grantTraces.Distinct())
             };
         }
@@ -639,23 +655,23 @@ namespace FolderMorpher.Services
             bool isGroup = matchedGroup != null;
             bool isSpecial = IsSpecialWorldPrincipal(idClean);
 
-            var inhStr = isInherited ? " (継承)" : "";
+            var inhStr = isInherited ? $" {Strings.RevGrantInherited}" : "";
 
             if (isDirect)
             {
-                grantSources.Add($"👤 直接付与 ({idClean}){inhStr}");
+                grantSources.Add($"{Strings.RevGrantDirect} ({idClean}){inhStr}");
                 grantTraces.Add($"Direct: {idClean}{inhStr}");
             }
             else if (isGroup && matchedGroup != null)
             {
                 var badge = matchedGroup.IsDirect ? "👥" : "👥🔗";
-                var depthStr = matchedGroup.IsDirect ? "" : $" (深度 {matchedGroup.NestingDepth})";
-                grantSources.Add($"{badge} {matchedGroup.GroupName} 経由{depthStr}{inhStr}");
+                var depthStr = matchedGroup.IsDirect ? "" : $" ({Strings.RevGrantDepth} {matchedGroup.NestingDepth})";
+                grantSources.Add($"{badge} {matchedGroup.GroupName} {Strings.RevGrantVia}{depthStr}{inhStr}");
                 grantTraces.Add($"{matchedGroup.MembershipPath}{inhStr}");
             }
             else if (isSpecial)
             {
-                grantSources.Add($"🌐 {idClean} 経由{inhStr}");
+                grantSources.Add($"🌐 {idClean} {Strings.RevGrantVia}{inhStr}");
                 grantTraces.Add($"Special: {idClean}{inhStr}");
             }
         }
