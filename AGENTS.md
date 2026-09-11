@@ -438,9 +438,10 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
       - 従来、単一の `history.json` にすべてのスキャン対象パスの履歴が混在し、他パスのスキャンによって履歴が押し出されるリスクや読み込み遅延の要因となっていた。
       - パス正規化ハッシュに基づくサブディレクトリ（`Snapshots/{PathHash}/`）へ完全分離。監視対象フォルダごとに独立した時系列データとして最大500件を長期保持。
       - 共有フォルダ（UNC）とローカル（AppData）の双方向ロード＆重複排除マージを実現。個別ファイル（`snapshot_*.json`）は最新20件を残して自動ローテーション。
-    - **Live ACL 切り戻しスナップショットの10世代ローテーション ＆ 変更要約（ChangeSummary）記録**:
+    - **Live ACL 切り戻しスナップショットの10世代ローテーション ＆ 変更要約（ChangeSummary）記録 ＆ 維持項目の集約化**:
       - 事故復旧用の切り戻しスナップショット（`AclSnapshot`）について、対象パスごとに直近10世代を保持する自動ローテーション機構（`CleanOldSnapshots`）を導入。
       - スナップショット内に変更差分の内訳要約（`+X, -Y, ~Z`）を `ChangeSummary` として永続化し、復元時の視認性を向上。
+      - 変更点プレビューモーダルにおいて、変化のない「維持（Untouched）」項目は詳細グリッドから除外し、変更対象（追加・削除・変更）のみをリストアップ（維持件数は上部サマリー `(🛡️ 維持: X件)` に集約）。
     - **移行スタジオ（Skeleton Deploy）の True Plan-First パイプライン貫通**:
       - プレビュー画面（`DiffModalOverlay`）と本番適用の間で同一の `SkeletonDeployPlan`（`List<SkeletonFolderAction>`, `List<SimDiffItem>`）を貫通。
       - 計画先行型（Dry-Run）で展開予定フォルダ・継承・ACLを事前構築し、モーダル承認後にコミット・事後物理検証（Verify）を実施。

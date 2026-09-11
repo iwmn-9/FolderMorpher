@@ -380,18 +380,7 @@ namespace AstraSize.Services
                 if (matchedOrig != null)
                 {
                     plan.Untouched.Add(cur);
-                    plan.DiffItems.Add(new LiveAclDiffItem
-                    {
-                        DiffType = LiveAclDiffType.Untouched,
-                        AccountName = cur.AccountName,
-                        DisplayName = cur.DisplayName,
-                        IconGlyph = cur.IconGlyph,
-                        AccessType = cur.AccessType,
-                        BeforeRights = matchedOrig.FormattedRights,
-                        AfterRights = cur.FormattedRights,
-                        AppliesTo = cur.AppliesTo,
-                        IsInherited = cur.IsInherited
-                    });
+                    // 維持項目は上部サマリー（維持: X件）に集約し、詳細グリッド（DiffItems）には変更対象（追加・削除・変更）のみを表示
                     remainingCur.RemoveAt(i);
                     remainingOrig.Remove(matchedOrig);
                 }
