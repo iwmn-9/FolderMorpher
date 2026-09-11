@@ -53,13 +53,13 @@ namespace FolderMorpher.Services
             // 1. 全アイテムから原本候補の FullPath を聖域として抽出
             // （休眠行から選択されても原本保護を確実に発動させるための正本リスト）
             var originalPaths = new HashSet<string>(
-                itemList.Where(i => i.IsOriginalCandidate || (i.Detail != null && i.Detail.Contains("[原本候補]")))
+                itemList.Where(i => i.IsOriginalCandidate)
                         .Select(i => i.FullPath),
                 StringComparer.OrdinalIgnoreCase);
 
             // 重複グループごとの原本アイテム逆引きマップを作成
             var origByGroup = itemList
-                .Where(i => !string.IsNullOrEmpty(i.DuplicateGroupId) && (i.IsOriginalCandidate || (i.Detail != null && i.Detail.Contains("[原本候補]"))))
+                .Where(i => !string.IsNullOrEmpty(i.DuplicateGroupId) && i.IsOriginalCandidate)
                 .GroupBy(i => i.DuplicateGroupId)
                 .ToDictionary(g => g.Key, g => g.First());
 

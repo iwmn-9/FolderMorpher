@@ -167,7 +167,7 @@ namespace AstraSize.Services
         }
 
         // Snapshot & Rollback
-        public async Task<AclSnapshot> CreateSnapshotAsync(string path, string note = "変更前のバックアップ")
+        public async Task<AclSnapshot> CreateSnapshotAsync(string path, string note = "変更前のバックアップ", string changeSummary = "")
         {
             var dir = new DirectoryInfo(path);
             // ADR: SACL(監査権限)によるPrivilegeNotHeldExceptionを防止するため、DACL(AccessControlSections.Access)のみを対象とする
@@ -179,6 +179,7 @@ namespace AstraSize.Services
                 TargetPath = path,
                 Timestamp = DateTime.Now,
                 Note = note,
+                ChangeSummary = changeSummary,
                 Sddl = sddl
             };
 
@@ -186,7 +187,48 @@ namespace AstraSize.Services
             var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
             await File.WriteAllTextAsync(file, json);
 
+            // 対象パスごとに直近10世代を保持し、古い切り戻しバックアップを自動ローテーション削除
+            CleanOldSnapshots(path, keepCount: 10);
+
             return snapshot;
+        }
+
+        private void CleanOldSnapshots(string path, int keepCount)
+        {
+            try
+            {
+                if (!Directory.Exists(_snapshotDir)) return;
+                var normalized = path.TrimEnd('\\', '/');
+
+                var snapshots = new List<(string filePath, DateTime timestamp)>();
+                foreach (var file in Directory.GetFiles(_snapshotDir, "*.json"))
+                {
+                    try
+                    {
+                        var json = File.ReadAllText(file);
+                        var s = JsonSerializer.Deserialize<AclSnapshot>(json);
+                        if (s != null && string.Equals(s.TargetPath.TrimEnd('\\', '/'), normalized, StringComparison.OrdinalIgnoreCase))
+                        {
+                            snapshots.Add((file, s.Timestamp));
+                        }
+                    }
+                    catch { }
+                }
+
+                if (snapshots.Count > keepCount)
+                {
+                    var toDelete = snapshots
+                        .OrderByDescending(x => x.timestamp)
+                        .Skip(keepCount)
+                        .ToList();
+
+                    foreach (var old in toDelete)
+                    {
+                        try { File.Delete(old.filePath); } catch { }
+                    }
+                }
+            }
+            catch { }
         }
 
         public async Task<List<AclSnapshot>> GetSnapshotsAsync(string path)
@@ -457,7 +499,8 @@ namespace AstraSize.Services
             }
 
             // 変更前の完全DACLをバックアップ（ロールバック用）
-            var snapshot = await CreateSnapshotAsync(plan.FolderPath, $"差分変更前バックアップ (変更: +{plan.Added.Count}, -{plan.Removed.Count}, ~{plan.Modified.Count})");
+            string changeSummary = $"変更: +{plan.Added.Count}, -{plan.Removed.Count}, ~{plan.Modified.Count}" + (plan.InheritanceChanged ? $", 継承:{(plan.InheritanceAfter ? "有効" : "無効")}" : "");
+            var snapshot = await CreateSnapshotAsync(plan.FolderPath, $"差分変更前バックアップ ({changeSummary})", changeSummary);
 
             if (plan.InheritanceChanged)
             {

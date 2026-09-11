@@ -122,7 +122,7 @@ FolderMorpher enforces a strict operational dualism designed to keep SysAdmins f
 - **Security Interop**: `System.Security.AccessControl` (Native NTFS ACL / SDDL)
 - **Office Engine**: `ClosedXML` (Direct OpenXML packaging) & Headless ZipArchive
 - **Imaging Engine**: WIC (Windows Imaging Component / Hardware Accelerated)
-- **Headless Quality Assurance**: 24 automated regression tests (`--test-regression`) gating every release.
+- **Headless Quality Assurance**: 28 automated regression tests (`--test-regression`) gating every release.
 - **Engineering Guidelines**: Strictly documented in [`AGENTS.md`](AGENTS.md) preserving decoupled service layers and ADR principles.
 
 ---

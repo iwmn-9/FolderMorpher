@@ -433,6 +433,25 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
     - **回帰テスト Test 27 強化**:
       - 因果的MAD判定、最低サンプル数ガード、閾値超過状態、未来データ流入時の過去判定不変性を自動検証。**全27回帰テスト 100% PASS**（27/27）。
 
+45. **安全文法の全社統一（Live ACL基準への引き上げ） ＆ パス別履歴完全分離 ＆ 10世代ロールバック ＆ Skeleton Plan-First ＆ アトミックリンク修復 (v1.9.0)**:
+    - **スナップショット・容量履歴のパス別完全分離（`Snapshots/{PathHash}/`） ＆ 双方向スマートマージ**:
+      - 従来、単一の `history.json` にすべてのスキャン対象パスの履歴が混在し、他パスのスキャンによって履歴が押し出されるリスクや読み込み遅延の要因となっていた。
+      - パス正規化ハッシュに基づくサブディレクトリ（`Snapshots/{PathHash}/`）へ完全分離。監視対象フォルダごとに独立した時系列データとして最大500件を長期保持。
+      - 共有フォルダ（UNC）とローカル（AppData）の双方向ロード＆重複排除マージを実現。個別ファイル（`snapshot_*.json`）は最新20件を残して自動ローテーション。
+    - **Live ACL 切り戻しスナップショットの10世代ローテーション ＆ 変更要約（ChangeSummary）記録**:
+      - 事故復旧用の切り戻しスナップショット（`AclSnapshot`）について、対象パスごとに直近10世代を保持する自動ローテーション機構（`CleanOldSnapshots`）を導入。
+      - スナップショット内に変更差分の内訳要約（`+X, -Y, ~Z`）を `ChangeSummary` として永続化し、復元時の視認性を向上。
+    - **移行スタジオ（Skeleton Deploy）の True Plan-First パイプライン貫通**:
+      - プレビュー画面（`DiffModalOverlay`）と本番適用の間で同一の `SkeletonDeployPlan`（`List<SkeletonFolderAction>`, `List<SimDiffItem>`）を貫通。
+      - 計画先行型（Dry-Run）で展開予定フォルダ・継承・ACLを事前構築し、モーダル承認後にコミット・事後物理検証（Verify）を実施。
+    - **リンク修復（LinkFixer）のコミット後実態検証 ＆ Office アトミック置換**:
+      - ショートカット修復（`.lnk`）: 保存直後に COM 経由でショートカットを開き直して `TargetPath == item.NewTarget` を実態検証。
+      - Office リンク修復（`.xlsx`/`.xlsm`）: 原本直接編集を廃止。一時ファイル（`.tmp`）で編集 ➔ `ZipFile.OpenRead` による破損検証 ➔ バックアップ作成（`.bak`） ➔ アトミック置換（`File.Move`）を実施。
+    - **Audit & Hygiene の `IsOriginalCandidate` 単一正本化**:
+      - `Detail.Contains("[原本候補]")` のような UI 表示用文字列による業務判定を完全撤廃し、モデル真偽値 `IsOriginalCandidate` のみに一本化（整線規則 0-3 準拠）。
+    - **回帰テスト Test 28 新設**:
+      - パス別履歴分離、10世代ロールバック、Skeleton Plan-First、原本判定プロパティ、リンク修復検証を網羅する自動テストを追加し、**全28回帰テスト 100% PASS**（28/28）。
+
 ---
 
 ## 4. ビルド・実行・検証コマンド
@@ -449,7 +468,7 @@ Copy-Item -Path ".\bin\Publish\FolderMorpher.exe" -Destination ".\FolderMorpher.
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 27/27 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 28/28 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

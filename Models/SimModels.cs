@@ -856,4 +856,27 @@ namespace AstraSize.Models
             logs = Logs;
         }
     }
+
+    /// <summary>
+    /// スケルトン展開の実行計画（Plan-First 貫通オブジェクト）
+    /// Preview から Commit まで同一インスタンスを通し、計画と適用の乖離を物理的に排除する
+    /// </summary>
+    public class SkeletonDeployPlan
+    {
+        public string DestinationRoot { get; set; } = string.Empty;
+        public List<SkeletonFolderAction> FolderActions { get; set; } = new();
+        public List<SimDiffItem> DiffReviews { get; set; } = new();
+        public int PlannedCreateCount => FolderActions.Count(a => !a.IsExisting);
+        public int PlannedExistingCount => FolderActions.Count(a => a.IsExisting);
+    }
+
+    public class SkeletonFolderAction
+    {
+        public string RelativePath { get; set; } = string.Empty;
+        public string FullTargetPath { get; set; } = string.Empty;
+        public bool IsExisting { get; set; }
+        public bool InheritAcl { get; set; } = true;
+        public List<SimAclEntry> AclEntries { get; set; } = new();
+    }
 }
+

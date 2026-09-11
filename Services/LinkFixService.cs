@@ -136,10 +136,22 @@ namespace FolderMorpher.Services
                             dynamic shortcut = wsh.CreateShortcut(item.FilePath);
                             shortcut.TargetPath = item.NewTarget;
                             shortcut.Save();
-                            item.IsFixed = true;
-                            item.Status = "修復完了 (バックアップ済)";
-                            successCount++;
-                            progress?.Report((item.FilePath, true));
+
+                            // Verify: 保存した .lnk を再度開き直して TargetPath が意図通り更新されたかを本番検証
+                            dynamic verifyShortcut = wsh.CreateShortcut(item.FilePath);
+                            string verifiedTarget = verifyShortcut.TargetPath;
+                            if (string.Equals(verifiedTarget?.TrimEnd('\\'), item.NewTarget.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                            {
+                                item.IsFixed = true;
+                                item.Status = "修復完了 (検証済・バックアップ済)";
+                                successCount++;
+                                progress?.Report((item.FilePath, true));
+                            }
+                            else
+                            {
+                                item.Status = $"修復検証失敗 (書込値: {verifiedTarget})";
+                                progress?.Report((item.FilePath, false));
+                            }
                         }
                     }
                     catch

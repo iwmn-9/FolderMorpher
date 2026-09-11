@@ -394,9 +394,9 @@ namespace FolderMorpher.Services
             sb.AppendLine();
 
             // 1. 原本候補のパスを聖域として抽出（絶対に退避させない）
-            // プロパティ IsOriginalCandidate を主たる判定根拠とし、互換性のため [原本候補] 文字列も多層防御でサポート
+            // 正本プロパティ IsOriginalCandidate を唯一絶対の判定根拠とする
             var originalFilePaths = new HashSet<string>(
-                items.Where(i => i.IsOriginalCandidate || (i.Detail != null && i.Detail.Contains("[原本候補]")))
+                items.Where(i => i.IsOriginalCandidate)
                      .Select(i => i.FullPath),
                 StringComparer.OrdinalIgnoreCase);
 

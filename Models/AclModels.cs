@@ -81,6 +81,7 @@ namespace AstraSize.Models
         public DateTime Timestamp { get; set; } = DateTime.Now;
         public string Note { get; set; } = string.Empty;
         public string Sddl { get; set; } = string.Empty;
+        public string ChangeSummary { get; set; } = string.Empty;
         public string FormattedDate => Timestamp.ToString("yyyy/MM/dd HH:mm:ss");
     }
 

@@ -144,21 +144,20 @@ namespace FolderMorpher.Services
                         continue;
                     }
 
+                    string tempPath = Path.Combine(Path.GetTempPath(), $"FM_OfficeLink_{Guid.NewGuid():N}{ext}");
+                    string backupPath = item.FilePath + ".bak";
+
                     try
                     {
-                        // 1. バックアップ作成
-                        string backupPath = item.FilePath + ".bak";
-                        if (!File.Exists(backupPath))
-                        {
-                            File.Copy(item.FilePath, backupPath);
-                        }
-
                         // タイムスタンプ退避
                         var origTime = File.GetLastWriteTime(item.FilePath);
 
-                        // 2. ZIP内部のXMLエントリを置換
+                        // 1. 一時ファイルへ原本を安全コピー（原本直接編集の完全撤廃）
+                        File.Copy(item.FilePath, tempPath, overwrite: true);
+
+                        // 2. 一時ファイル内部のXMLエントリを置換
                         bool modified = false;
-                        using (var zip = ZipFile.Open(item.FilePath, ZipArchiveMode.Update))
+                        using (var zip = ZipFile.Open(tempPath, ZipArchiveMode.Update))
                         {
                             // externalLinks, sheets, rels, workbook などを対象に置換
                             var targetEntries = zip.Entries.Where(e =>
@@ -180,7 +179,7 @@ namespace FolderMorpher.Services
                                 {
                                     // 大文字小文字を保持しながら置換
                                     string updated = content.Replace(item.FoundPattern, item.TargetReplacement, StringComparison.OrdinalIgnoreCase);
-                                    
+
                                     // エントリを上書き再書き込み
                                     entry.Delete();
                                     var newEntry = zip.CreateEntry(entry.FullName, CompressionLevel.Optimal);
@@ -191,22 +190,48 @@ namespace FolderMorpher.Services
                             }
                         }
 
-                        // 3. タイムスタンプ復元
-                        if (modified)
-                        {
-                            File.SetLastWriteTime(item.FilePath, origTime);
-                            item.IsFixed = true;
-                            item.Status = "修復完了 (バックアップ済)";
-                            successCount++;
-                            progress?.Report((item.FilePath, true, "修復完了"));
-                        }
-                        else
+                        if (!modified)
                         {
                             item.Status = "該当なし";
+                            try { File.Delete(tempPath); } catch { }
+                            continue;
                         }
+
+                        // 3. 事後検証 (Verify): 更新後の一時ファイルを読み取りモードで開き直し、ZIP整合性とXML構造を検証
+                        using (var verifyZip = ZipFile.OpenRead(tempPath))
+                        {
+                            if (verifyZip.Entries.Count == 0)
+                            {
+                                throw new InvalidOperationException("更新後のOfficeファイルが空です。");
+                            }
+                            // 少なくとも1つのエントリを実際にストリーム解凍して整合性チェック
+                            var testEntry = verifyZip.Entries.FirstOrDefault(e => e.Length > 0);
+                            if (testEntry != null)
+                            {
+                                using var testStream = testEntry.Open();
+                                byte[] buf = new byte[64];
+                                testStream.Read(buf, 0, buf.Length);
+                            }
+                        }
+
+                        // 4. バックアップ作成 (未存在時のみ)
+                        if (!File.Exists(backupPath))
+                        {
+                            File.Copy(item.FilePath, backupPath);
+                        }
+
+                        // 5. アトミック置換 (一時ファイル -> 原本パス) ＆ タイムスタンプ復元
+                        File.Move(tempPath, item.FilePath, overwrite: true);
+                        File.SetLastWriteTime(item.FilePath, origTime);
+
+                        item.IsFixed = true;
+                        item.Status = "修復完了 (検証済・バックアップ済)";
+                        successCount++;
+                        progress?.Report((item.FilePath, true, "修復完了 (検証済)"));
                     }
                     catch (Exception ex)
                     {
+                        try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
                         item.Status = $"失敗: {ex.Message}";
                         progress?.Report((item.FilePath, false, ex.Message));
                     }

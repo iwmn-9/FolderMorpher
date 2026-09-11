@@ -61,6 +61,7 @@ namespace AstraSize
         private readonly ObservableCollection<AdPrincipalItem> _adPrincipals = new();
         private SimFolderNode? _selectedSimNode;
         private SimAclEntry? _currentEditingAcl;
+        private SkeletonDeployPlan? _currentSkeletonPlan;
 
         // Live ACL & Effective Access Services
         private readonly EffectiveAccessService _effectiveAccessService = new();
@@ -2154,6 +2155,9 @@ namespace AstraSize
                 return;
             }
 
+            // Plan-First 貫通: プレビュー承認された同一の SkeletonDeployPlan インスタンスを直接コミット
+            var plan = _currentSkeletonPlan ?? _simService.BuildDeployPlan(_simRootFolders, targetRoot, _currentTab?.RootNode);
+
             GlobalProgressBar.Visibility = Visibility.Visible;
             GlobalProgressBar.IsIndeterminate = true;
 
@@ -2165,10 +2169,10 @@ namespace AstraSize
             try
             {
                 using var cts = new CancellationTokenSource();
-                var deployResult = await _simService.DeploySkeletonAsync(_simRootFolders, targetRoot, progress, cts.Token);
+                var deployResult = await _simService.DeploySkeletonAsync(plan, progress, cts.Token);
 
                 // Verify: 展開先ルートおよび新規作成された全フォルダーの実在検証 ＆ エラー件数照合
-                bool allPathsExist = Directory.Exists(targetRoot) &&
+                bool allPathsExist = Directory.Exists(plan.DestinationRoot) &&
                                      deployResult.DeployedFolderPaths.All(p => Directory.Exists(p));
                 bool isCleanSuccess = deployResult.FailedCount == 0 && allPathsExist;
                 DiffModalOverlay.Visibility = Visibility.Collapsed;
@@ -2176,7 +2180,7 @@ namespace AstraSize
                 if (isCleanSuccess)
                 {
                     string skippedMsg = deployResult.SkippedExistingCount > 0 ? $" ({deployResult.SkippedExistingCount} 既存保護)" : "";
-                    ShowToast($"✅ スケルトン作成完了 (全階層検証済): {deployResult.CreatedCount} フォルダ作成{skippedMsg}");
+                    ShowToast($"✅ スケルトン作成完了 (Plan-First全階層検証済): {deployResult.CreatedCount} フォルダ作成{skippedMsg}");
                 }
                 else if (allPathsExist && deployResult.FailedCount > 0)
                 {
@@ -2314,10 +2318,10 @@ namespace AstraSize
                 return;
             }
 
-            // 差分（実行計画）を計算して「変更点」モーダルを表示
-            var diffs = _simService.GenerateDiffReview(_currentTab?.RootNode, _simRootFolders);
-            DiffReviewDataGrid.ItemsSource = diffs;
-            DiffSummaryStatsText.Text = $"📊 差分項目: {diffs.Count}件 (展開先: {targetRoot})";
+            // Plan-First: 実行計画 (SkeletonDeployPlan) を事前構築し、同一インスタンスをプレビュー・コミットで貫通
+            _currentSkeletonPlan = _simService.BuildDeployPlan(_simRootFolders, targetRoot, _currentTab?.RootNode);
+            DiffReviewDataGrid.ItemsSource = _currentSkeletonPlan.DiffReviews;
+            DiffSummaryStatsText.Text = $"📊 計画項目: 作成予定 {_currentSkeletonPlan.PlannedCreateCount}件 / 既存保護 {_currentSkeletonPlan.PlannedExistingCount}件 (展開先: {targetRoot})";
             DiffModalOverlay.Visibility = Visibility.Visible;
         }
 

@@ -182,12 +182,54 @@ namespace AstraSize.Services
         }
 
         /// <summary>
-        /// <summary>
-        /// Deploy skeleton folders and apply simulated ACLs to actual filesystem
+        /// スケルトン展開の実行計画 (SkeletonDeployPlan) を事前構築する。
+        /// Preview 表示と Commit 実行で完全に同一の計画オブジェクトを貫通させる。
         /// </summary>
-        public async Task<DeploySkeletonResult> DeploySkeletonAsync(
+        public SkeletonDeployPlan BuildDeployPlan(
             IEnumerable<SimFolderNode> rootNodes,
             string destinationRoot,
+            FileItemNode? sourceRootNode = null)
+        {
+            var plan = new SkeletonDeployPlan
+            {
+                DestinationRoot = destinationRoot,
+                DiffReviews = GenerateDiffReview(sourceRootNode, rootNodes)
+            };
+
+            void CollectActions(SimFolderNode node, string currentParentPath, string currentRelativePath)
+            {
+                var relPath = string.IsNullOrEmpty(currentRelativePath) ? node.Name : Path.Combine(currentRelativePath, node.Name);
+                var fullPath = Path.Combine(currentParentPath, node.Name);
+                bool exists = Directory.Exists(fullPath);
+
+                plan.FolderActions.Add(new SkeletonFolderAction
+                {
+                    RelativePath = relPath,
+                    FullTargetPath = fullPath,
+                    IsExisting = exists,
+                    InheritAcl = node.InheritAcl,
+                    AclEntries = node.AclEntries.ToList()
+                });
+
+                foreach (var child in node.Children)
+                {
+                    CollectActions(child, fullPath, relPath);
+                }
+            }
+
+            foreach (var root in rootNodes)
+            {
+                CollectActions(root, destinationRoot, "");
+            }
+
+            return plan;
+        }
+
+        /// <summary>
+        /// Plan First 方式: 事前構築・プレビューされた SkeletonDeployPlan をコミット実行する
+        /// </summary>
+        public async Task<DeploySkeletonResult> DeploySkeletonAsync(
+            SkeletonDeployPlan plan,
             IProgress<(string Status, int Count)>? progress = null,
             CancellationToken ct = default)
         {
@@ -197,19 +239,104 @@ namespace AstraSize.Services
 
                 try
                 {
-                    if (!Directory.Exists(destinationRoot))
+                    if (!Directory.Exists(plan.DestinationRoot))
                     {
-                        Directory.CreateDirectory(destinationRoot);
-                        result.Logs.Add($"[作成] ルート作成: {destinationRoot}");
+                        Directory.CreateDirectory(plan.DestinationRoot);
+                        result.Logs.Add($"[作成] ルート作成: {plan.DestinationRoot}");
                     }
                     else
                     {
-                        result.Logs.Add($"[既存] ルート既存検知: {destinationRoot}");
+                        result.Logs.Add($"[既存] ルート既存検知: {plan.DestinationRoot}");
                     }
 
-                    foreach (var root in rootNodes)
+                    foreach (var action in plan.FolderActions)
                     {
-                        DeployNodeRecursive(root, destinationRoot, result, progress, ct);
+                        ct.ThrowIfCancellationRequested();
+
+                        var folderPath = action.FullTargetPath;
+                        bool isNewFolder = false;
+
+                        try
+                        {
+                            if (!Directory.Exists(folderPath))
+                            {
+                                Directory.CreateDirectory(folderPath);
+                                result.CreatedCount++;
+                                isNewFolder = true;
+                                result.DeployedFolderPaths.Add(folderPath);
+                                progress?.Report(($"フォルダ作成中: {Path.GetFileName(folderPath)}", result.CreatedCount));
+                                result.Logs.Add($"[作成] {folderPath}");
+                            }
+                            else
+                            {
+                                result.SkippedExistingCount++;
+                                result.Logs.Add($"[既存保持] {folderPath} は既に存在するため作成をスキップし、既存NTFS権限を保護しました");
+                            }
+
+                            // 既存フォルダの場合は意図しない権限破壊を防ぐため、新規作成されたフォルダのみに適用
+                            if (isNewFolder && (!action.InheritAcl || action.AclEntries.Count > 0))
+                            {
+                                try
+                                {
+                                    var di = new DirectoryInfo(folderPath);
+                                    var ds = di.GetAccessControl();
+
+                                    if (!action.InheritAcl)
+                                    {
+                                        // ADR 10: 継承無効化時は SetAccessRuleProtection(true, false) で親由来の不要ルールを複製保持させない
+                                        ds.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                                    }
+
+                                    if (action.AclEntries.Count > 0)
+                                    {
+                                        // Canonical ACL Apply Contract:
+                                        // 継承有効時(InheritAcl == true)は親から受け継ぐべき継承ACE(IsInherited)を除外し、明示ACE(!IsInherited)のみを適用。
+                                        // 継承無効時(InheritAcl == false)は親を遮断した上で全ACEを明示的ルールとして付与。
+                                        var targetEntries = action.InheritAcl
+                                            ? action.AclEntries.Where(a => !a.IsInherited)
+                                            : action.AclEntries;
+
+                                        // Windows Canonical DACL Ordering: Deny rules FIRST, then Allow rules
+                                        var orderedEntries = targetEntries
+                                            .OrderBy(a => a.AccessType == AccessControlType.Deny ? 0 : 1);
+
+                                        foreach (var entry in orderedEntries)
+                                        {
+                                            try
+                                            {
+                                                var id = new NTAccount(entry.AccountName);
+                                                var rule = new FileSystemAccessRule(
+                                                    id,
+                                                    entry.Rights,
+                                                    entry.InheritanceFlags,
+                                                    entry.PropagationFlags,
+                                                    entry.AccessType);
+                                                ds.AddAccessRule(rule);
+                                            }
+                                            catch (Exception aex)
+                                            {
+                                                result.Errors.Add($"アカウント '{entry.AccountName}' の解決失敗: {aex.Message}");
+                                                result.Logs.Add($"  [権限警告] アカウント '{entry.AccountName}' の解決失敗: {aex.Message}");
+                                            }
+                                        }
+                                    }
+
+                                    di.SetAccessControl(ds);
+                                    result.AclAppliedCount++;
+                                    result.Logs.Add($"[ACL適用] {folderPath} (継承: {action.InheritAcl}, ルール数: {action.AclEntries.Count})");
+                                }
+                                catch (Exception ex)
+                                {
+                                    result.Errors.Add($"{folderPath} のACL適用失敗: {ex.Message}");
+                                    result.Logs.Add($"[ACL警告] {folderPath}: {ex.Message}");
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            result.Errors.Add($"{folderPath} の作成失敗: {ex.Message}");
+                            result.Logs.Add($"[エラー] {folderPath}: {ex.Message}");
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -222,104 +349,17 @@ namespace AstraSize.Services
             }, ct);
         }
 
-        private static void DeployNodeRecursive(
-            SimFolderNode node,
-            string currentParentPath,
-            DeploySkeletonResult result,
-            IProgress<(string Status, int Count)>? progress,
-            CancellationToken ct)
+        /// <summary>
+        /// Deploy skeleton folders and apply simulated ACLs to actual filesystem (互換用オーバーロード)
+        /// </summary>
+        public async Task<DeploySkeletonResult> DeploySkeletonAsync(
+            IEnumerable<SimFolderNode> rootNodes,
+            string destinationRoot,
+            IProgress<(string Status, int Count)>? progress = null,
+            CancellationToken ct = default)
         {
-            ct.ThrowIfCancellationRequested();
-
-            var folderPath = Path.Combine(currentParentPath, node.Name);
-            bool isNewFolder = false;
-            try
-            {
-                if (!Directory.Exists(folderPath))
-                {
-                    Directory.CreateDirectory(folderPath);
-                    result.CreatedCount++;
-                    isNewFolder = true;
-                    result.DeployedFolderPaths.Add(folderPath);
-                    progress?.Report(($"フォルダ作成中: {node.Name}", result.CreatedCount));
-                    result.Logs.Add($"[作成] {folderPath}");
-                }
-                else
-                {
-                    result.SkippedExistingCount++;
-                    result.Logs.Add($"[既存保持] {folderPath} は既に存在するため作成をスキップし、既存NTFS権限を保護しました");
-                }
-
-                // Apply ACL if configured or inheritance is explicitly disabled
-                // 既存フォルダの場合は意図しない権限破壊を防ぐため、新規作成されたフォルダのみに適用
-                if (isNewFolder && (!node.InheritAcl || node.AclEntries.Count > 0))
-                {
-                    try
-                    {
-                        var di = new DirectoryInfo(folderPath);
-                        var ds = di.GetAccessControl();
-
-                        if (!node.InheritAcl)
-                        {
-                            // ADR 10: 継承無効化時は SetAccessRuleProtection(true, false) で親由来の不要ルールを複製保持させない
-                            ds.SetAccessRuleProtection(true, false);
-                        }
-
-                        if (node.AclEntries.Count > 0)
-                        {
-                            // Canonical ACL Apply Contract:
-                            // 継承有効時(InheritAcl == true)は親から受け継ぐべき継承ACE(IsInherited)を除外し、明示ACE(!IsInherited)のみを適用。
-                            // 継承無効時(InheritAcl == false)は親を遮断した上で全ACEを明示的ルールとして付与。
-                            var targetEntries = node.InheritAcl
-                                ? node.AclEntries.Where(a => !a.IsInherited)
-                                : node.AclEntries;
-
-                            // Windows Canonical DACL Ordering: Deny rules FIRST, then Allow rules
-                            var orderedEntries = targetEntries
-                                .OrderBy(a => a.AccessType == AccessControlType.Deny ? 0 : 1);
-
-                            foreach (var acl in orderedEntries)
-                            {
-                                try
-                                {
-                                    var sid = new NTAccount(acl.AccountName);
-                                    var rule = new FileSystemAccessRule(
-                                        sid,
-                                        acl.Rights,
-                                        acl.InheritanceFlags,
-                                        acl.PropagationFlags,
-                                        acl.AccessType);
-                                    ds.AddAccessRule(rule);
-                                    result.Logs.Add($"  [権限付与] {acl.AccountName} ({acl.AccessType}) -> {acl.FormattedRights}");
-                                }
-                                catch (Exception aex)
-                                {
-                                    result.Errors.Add($"アカウント '{acl.AccountName}' の解決失敗: {aex.Message}");
-                                    result.Logs.Add($"  [権限警告] アカウント '{acl.AccountName}' の解決失敗: {aex.Message}");
-                                }
-                            }
-                        }
-
-                        di.SetAccessControl(ds);
-                        result.AclAppliedCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        result.Errors.Add($"ACL適用失敗 ({folderPath}): {ex.Message}");
-                        result.Logs.Add($"  [ACL適用失敗] {ex.Message}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                result.Errors.Add($"作成失敗 ({folderPath}): {ex.Message}");
-                result.Logs.Add($"[エラー] 作成失敗 {folderPath}: {ex.Message}");
-            }
-
-            foreach (var child in node.Children)
-            {
-                DeployNodeRecursive(child, folderPath, result, progress, ct);
-            }
+            var plan = BuildDeployPlan(rootNodes, destinationRoot);
+            return await DeploySkeletonAsync(plan, progress, ct);
         }
 
         /// <summary>

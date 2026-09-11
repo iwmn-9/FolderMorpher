@@ -31,7 +31,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 27;
+            int totalTests = 28;
 
             var originalLang = LocalizationService.Instance.CurrentLanguage;
             // テストスイートのベース言語を初期化（Test 26でJA/EN双方の動的切替を検証後、finallyで元の言語へ復元）
@@ -196,9 +196,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 27
-                Console.WriteLine("\n[TEST 27/27] Storage Forecasting, Robust MAD Anomaly Detection & i18n Dictionary Integrity...");
+                Console.WriteLine("\n[TEST 27/28] Storage Forecasting, Robust MAD Anomaly Detection & i18n Dictionary Integrity...");
                 TestForecastingAndLocalizationDictionary();
                 Console.WriteLine("  --> [PASS] Forecasting & Dictionary: Linear regression, Holt trend, MAD floor & zero untranslated verified.");
+                passCount++;
+
+                // Test 28
+                Console.WriteLine("\n[TEST 28/28] Architectural Unification: Per-Target History Isolation, Rollback Rotation, True Plan-First Skeleton & Atomic Link Verification...");
+                await TestArchitecturalUnificationAsync();
+                Console.WriteLine("  --> [PASS] Architectural Unification: Per-target isolation, rollback rotation, plan-first skeleton & atomic link verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -524,6 +530,7 @@ namespace FolderMorpher.Services.Testing
                         FileName = "Contract_Original.pdf",
                         DirectoryPath = @"C:\MockRoot\Department",
                         IssueType = AuditIssueType.Duplicate,
+                        IsOriginalCandidate = true,
                         Detail = "[原本候補] ハッシュ: e3b0c44298fc...",
                         DuplicateGroupId = "DUP-0001",
                         Size = 5000000
@@ -3369,6 +3376,189 @@ namespace FolderMorpher.Services.Testing
                 throw new InvalidOperationException("Look-Ahead bias defect: Historical anomaly was incorrectly overwritten by future high-growth data!");
             if (Math.Abs(retestedSurgePoint.ModifiedZScore - surgePoint.ModifiedZScore) > 1e-4)
                 throw new InvalidOperationException("ModifiedZScore of historical point changed when future data was added. Causal isolation failed!");
+        }
+
+        /// <summary>
+        /// Test 28: 安全文法の統一 ＆ 履歴分離・ロールバック世代管理・Plan-First・アトミックリンク検証
+        /// </summary>
+        private static async Task TestArchitecturalUnificationAsync()
+        {
+            // --- 1. スナップショット＆履歴のパス別完全分離 ＆ マージ ---
+            var historyService = new StorageHistoryService();
+            string pathA = @"C:\FM_RegTest_PathA_" + Guid.NewGuid().ToString("N");
+            string pathB = @"C:\FM_RegTest_PathB_" + Guid.NewGuid().ToString("N");
+
+            string hashA = StorageHistoryService.GetPathHash(pathA);
+            string hashB = StorageHistoryService.GetPathHash(pathB);
+            if (hashA == hashB)
+                throw new InvalidOperationException("Different paths produced identical hashes!");
+
+            // Path A に 2 件、Path B に 1 件記録（秒単位の重複排除を回避するため明確に異なる日時を指定）
+            var baseTime = DateTime.Now;
+            await historyService.RecordScanAsync(pathA, 1000, 10, 2, baseTime.AddSeconds(-30));
+            await historyService.RecordScanAsync(pathA, 2000, 20, 3, baseTime);
+            await historyService.RecordScanAsync(pathB, 5000, 50, 5, baseTime);
+
+            var histA = await historyService.GetHistoryForPathAsync(pathA);
+            var histB = await historyService.GetHistoryForPathAsync(pathB);
+
+            if (histA.Count < 2)
+                throw new InvalidOperationException($"Expected at least 2 records for PathA, got {histA.Count}");
+            if (histB.Count < 1)
+                throw new InvalidOperationException($"Expected at least 1 record for PathB, got {histB.Count}");
+            if (histA.Any(s => s.TargetPath.Contains("PathB", StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException("PathA history contains PathB records! Target isolation failed.");
+            if (histB.Any(s => s.TargetPath.Contains("PathA", StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException("PathB history contains PathA records! Target isolation failed.");
+
+            // --- 2. Live ACL 切り戻しスナップショットの10世代ローテーション ---
+            var aclService = new AclService();
+            string tempAclDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_AclRot_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempAclDir);
+            try
+            {
+                // 12回スナップショットを作成
+                for (int i = 1; i <= 12; i++)
+                {
+                    await aclService.CreateSnapshotAsync(tempAclDir, $"スナップショット #{i}", $"変更: +{i}, -0, ~0");
+                    await Task.Delay(10);
+                }
+
+                var snapshots = await aclService.GetSnapshotsAsync(tempAclDir);
+                if (snapshots.Count != 10)
+                    throw new InvalidOperationException($"Expected exactly 10 rotated snapshots, but got {snapshots.Count}");
+
+                // 最新のスナップショットが #12 であり、古い #1 と #2 が削除されていること
+                if (!snapshots[0].Note.Contains("#12"))
+                    throw new InvalidOperationException($"Latest snapshot should be #12, got: {snapshots[0].Note}");
+                if (snapshots.Any(s => s.Note == "スナップショット #1" || s.Note == "スナップショット #2"))
+                    throw new InvalidOperationException("Oldest snapshots (#1 or #2) were not purged by 10-generation rotation!");
+
+                if (string.IsNullOrEmpty(snapshots[0].ChangeSummary))
+                    throw new InvalidOperationException("ChangeSummary was not persisted in AclSnapshot!");
+            }
+            finally
+            {
+                try { Directory.Delete(tempAclDir, recursive: true); } catch { }
+            }
+
+            // --- 3. Skeleton Deploy の True Plan-First パイプライン貫通 ---
+            var simService = new SimulationProjectService();
+            string testDeployTarget = Path.Combine(Path.GetTempPath(), "FM_RegTest_SkeletonPlan_" + Guid.NewGuid().ToString("N"));
+            var rootSim = new SimFolderNode { Name = "PlanRoot", InheritAcl = true };
+            rootSim.Children.Add(new SimFolderNode { Name = "ChildA", InheritAcl = true, Parent = rootSim });
+            rootSim.Children.Add(new SimFolderNode { Name = "ChildB", InheritAcl = true, Parent = rootSim });
+
+            // 事前に Plan を構築
+            var deployPlan = simService.BuildDeployPlan(new[] { rootSim }, testDeployTarget);
+            if (deployPlan.FolderActions.Count != 3)
+                throw new InvalidOperationException($"Expected 3 folder actions in plan, got {deployPlan.FolderActions.Count}");
+            if (deployPlan.PlannedCreateCount != 3)
+                throw new InvalidOperationException($"Expected 3 planned creations, got {deployPlan.PlannedCreateCount}");
+
+            try
+            {
+                // プレビューした Plan をそのままコミット実行
+                var deployResult = await simService.DeploySkeletonAsync(deployPlan);
+                if (deployResult.CreatedCount != 3)
+                    throw new InvalidOperationException($"DeploySkeletonAsync expected to create 3 folders, got {deployResult.CreatedCount}");
+
+                // 物理実在の事後検証 (Verify)
+                if (!Directory.Exists(testDeployTarget))
+                    throw new InvalidOperationException("Deploy target root does not exist!");
+                if (!Directory.Exists(Path.Combine(testDeployTarget, "PlanRoot", "ChildA")))
+                    throw new InvalidOperationException("PlanRoot\\ChildA was not physically created!");
+            }
+            finally
+            {
+                try { Directory.Delete(testDeployTarget, recursive: true); } catch { }
+            }
+
+            // --- 4. Audit の IsOriginalCandidate 単体判定（文字列非依存） ---
+            var auditItems = new List<AuditItem>
+            {
+                new()
+                {
+                    FullPath = @"C:\Share\OriginalDoc.pdf",
+                    FileName = "OriginalDoc.pdf",
+                    Size = 1024,
+                    DuplicateGroupId = "DUP-0001",
+                    IsOriginalCandidate = true,
+                    Detail = "", // 意図的に文字列を空にしてプロパティ単体で機能するか検証
+                    IsChecked = true
+                },
+                new()
+                {
+                    FullPath = @"C:\Share\CopyDoc.pdf",
+                    FileName = "CopyDoc.pdf",
+                    Size = 1024,
+                    DuplicateGroupId = "DUP-0001",
+                    IsOriginalCandidate = false,
+                    Detail = "",
+                    IsChecked = true
+                }
+            };
+
+            var plans = AuditCleanupService.BuildPlan(auditItems);
+            // CopyDoc の計画に OriginalDoc が正本として紐づいていること
+            var copyPlan = plans.FirstOrDefault(p => p.FullPath.Contains("CopyDoc.pdf"));
+            if (copyPlan == null || string.IsNullOrEmpty(copyPlan.OriginalCandidatePath))
+                throw new InvalidOperationException("Audit cleanup plan failed to link original candidate relying purely on IsOriginalCandidate property!");
+            if (!copyPlan.OriginalCandidatePath.Contains("OriginalDoc.pdf"))
+                throw new InvalidOperationException("Wrong original candidate linked!");
+
+            // --- 5. OfficeLinkFix の一時ファイル生成 ➔ ZIP検証 ➔ アトミック置換 ---
+            var officeService = new OfficeLinkFixService();
+            string testXlsx = Path.Combine(Path.GetTempPath(), $"FM_RegTest_Office_{Guid.NewGuid():N}.xlsx");
+            try
+            {
+                // 有効な ZIP アーカイブ（ダミー .xlsx）を生成
+                using (var zip = System.IO.Compression.ZipFile.Open(testXlsx, System.IO.Compression.ZipArchiveMode.Create))
+                {
+                    var entry = zip.CreateEntry("xl/externalLinks/_rels/externalLink1.xml.rels");
+                    using var writer = new StreamWriter(entry.Open(), System.Text.Encoding.UTF8);
+                    writer.Write("<Relationships><Relationship Target=\"file:///\\\\oldserver\\share\\data.xlsx\" /></Relationships>");
+                }
+
+                var officeItems = new List<OfficeLinkItem>
+                {
+                    new()
+                    {
+                        FilePath = testXlsx,
+                        FileName = Path.GetFileName(testXlsx),
+                        Extension = ".xlsx",
+                        FoundPattern = @"\\oldserver\share",
+                        TargetReplacement = @"\\newserver\share",
+                        IsLocked = false
+                    }
+                };
+
+                int fixedCount = await officeService.ExecuteOfficeFixAsync(officeItems, null, CancellationToken.None);
+                if (fixedCount != 1)
+                    throw new InvalidOperationException($"Expected 1 fixed Office link, got {fixedCount}");
+
+                // バックアップファイル (.bak) が生成されていること
+                string bakFile = testXlsx + ".bak";
+                if (!File.Exists(bakFile))
+                    throw new InvalidOperationException("OfficeLinkFix did not create .bak backup before atomic replace!");
+
+                // 置換後のファイルが正常に ZIP として開け、文字列が置換されていること (Verify)
+                using (var verifyZip = System.IO.Compression.ZipFile.OpenRead(testXlsx))
+                {
+                    var verifyEntry = verifyZip.GetEntry("xl/externalLinks/_rels/externalLink1.xml.rels");
+                    if (verifyEntry == null)
+                        throw new InvalidOperationException("Missing entry in verified xlsx!");
+                    using var reader = new StreamReader(verifyEntry.Open(), System.Text.Encoding.UTF8);
+                    string updatedContent = reader.ReadToEnd();
+                    if (!updatedContent.Contains(@"\\newserver\share"))
+                        throw new InvalidOperationException("Target replacement string was not found in updated xlsx!");
+                }
+            }
+            finally
+            {
+                try { if (File.Exists(testXlsx)) File.Delete(testXlsx); } catch { }
+                try { if (File.Exists(testXlsx + ".bak")) File.Delete(testXlsx + ".bak"); } catch { }
+            }
         }
     }
 }

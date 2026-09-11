@@ -124,7 +124,7 @@ FolderMorpher は、管理者の探索スピードを最大限に引き上げつ
 - **セキュリティ**: `System.Security.AccessControl` (NTFS ACL / SDDL)
 - **Excel生成**: `ClosedXML` (OpenXML直接バイナリ生成)
 - **画像エンジン**: WIC (Windows Imaging Component / ハードウェアアクセラレーション)
-- **品質保証ゲート**: 全24項目のヘッドレス自動回帰テストスイート（`--test-regression`）による常時検証。
+- **品質保証ゲート**: 全28項目のヘッドレス自動回帰テストスイート（`--test-regression`）による常時検証。
 - **アーキテクチャ規約**: [`AGENTS.md`](AGENTS.md) にてサービス層とUI層を疎結合に保つADR（設計判断）を厳格に管理。
 
 ---

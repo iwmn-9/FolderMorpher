@@ -28,27 +28,35 @@ namespace AstraSize.Services
             }
         }
 
-        private string GetSnapshotReadFilePath()
+        public static string GetPathHash(string targetPath)
         {
-            var readDir = AppSettingsService.Instance.GetReadDirectory("Snapshots");
-            if (!string.IsNullOrEmpty(readDir))
-            {
-                var path = Path.Combine(readDir, "history.json");
-                if (File.Exists(path)) return path;
-            }
-
-            if (AppSettingsService.Instance.Current.FallbackToLocalOnReadError)
-            {
-                return _defaultLocalHistoryFilePath;
-            }
-
-            return string.Empty;
+            var normalized = targetPath.TrimEnd('\\', '/').ToLowerInvariant();
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            var bytes = System.Text.Encoding.UTF8.GetBytes(normalized);
+            var hash = sha.ComputeHash(bytes);
+            return Convert.ToHexString(hash);
         }
 
-        private string GetSnapshotWriteFilePath()
+        private List<string> GetSnapshotDirectories(string? subHash = null)
         {
-            var writeDir = AppSettingsService.Instance.GetWriteDirectory("Snapshots");
-            return Path.Combine(writeDir, "history.json");
+            var dirs = new List<string>();
+            var configuredReadDir = AppSettingsService.Instance.GetReadDirectory("Snapshots");
+            if (!string.IsNullOrEmpty(configuredReadDir) && Directory.Exists(configuredReadDir))
+            {
+                dirs.Add(string.IsNullOrEmpty(subHash) ? configuredReadDir : Path.Combine(configuredReadDir, subHash));
+            }
+
+            var localBase = AppSettingsService.Instance.GetDefaultLocalBaseDirectory();
+            var localDir = Path.Combine(localBase, "Snapshots");
+            if (Directory.Exists(localDir))
+            {
+                var targetLocal = string.IsNullOrEmpty(subHash) ? localDir : Path.Combine(localDir, subHash);
+                if (!dirs.Contains(targetLocal, StringComparer.OrdinalIgnoreCase))
+                {
+                    dirs.Add(targetLocal);
+                }
+            }
+            return dirs;
         }
 
         public async Task<List<ScanSnapshot>> LoadAllAsync()
@@ -56,53 +64,34 @@ namespace AstraSize.Services
             return await Task.Run(async () =>
             {
                 var list = new List<ScanSnapshot>();
-                var readDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var baseDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 var configuredReadDir = AppSettingsService.Instance.GetReadDirectory("Snapshots");
                 if (!string.IsNullOrEmpty(configuredReadDir) && Directory.Exists(configuredReadDir))
                 {
-                    readDirs.Add(configuredReadDir);
+                    baseDirs.Add(configuredReadDir);
                 }
 
-                // ローカル側の Snapshots ディレクトリも常にマージ対象に含めてチーム共有とローカル最新履歴を合流
                 var localBase = AppSettingsService.Instance.GetDefaultLocalBaseDirectory();
                 var localDir = Path.Combine(localBase, "Snapshots");
                 if (Directory.Exists(localDir))
                 {
-                    readDirs.Add(localDir);
+                    baseDirs.Add(localDir);
                 }
 
-                if (readDirs.Count == 0)
-                {
-                    return list;
-                }
+                if (baseDirs.Count == 0) return list;
 
-                foreach (var dir in readDirs)
+                foreach (var baseDir in baseDirs)
                 {
-                    var historyPath = Path.Combine(dir, "history.json");
-                    if (File.Exists(historyPath))
-                    {
-                        try
-                        {
-                            var json = await File.ReadAllTextAsync(historyPath);
-                            var baseList = JsonSerializer.Deserialize<List<ScanSnapshot>>(json);
-                            if (baseList != null) list.AddRange(baseList);
-                        }
-                        catch { }
-                    }
+                    // 1. ルート直下の旧形式 history.json / snapshot_*.json
+                    await LoadSnapshotsFromDirectoryAsync(baseDir, list);
 
-                    // 個別スナップショットファイル (snapshot_*.json) も読み込んで合算（マルチクライアント対応）
+                    // 2. パス別ハッシュサブディレクトリ (Snapshots/{hash}/)
                     try
                     {
-                        foreach (var file in Directory.GetFiles(dir, "snapshot_*.json"))
+                        foreach (var subDir in Directory.GetDirectories(baseDir))
                         {
-                            try
-                            {
-                                var json = await File.ReadAllTextAsync(file);
-                                var single = JsonSerializer.Deserialize<ScanSnapshot>(json);
-                                if (single != null) list.Add(single);
-                            }
-                            catch { }
+                            await LoadSnapshotsFromDirectoryAsync(subDir, list);
                         }
                     }
                     catch { }
@@ -117,11 +106,44 @@ namespace AstraSize.Services
             });
         }
 
+        private static async Task LoadSnapshotsFromDirectoryAsync(string dir, List<ScanSnapshot> list)
+        {
+            if (!Directory.Exists(dir)) return;
+
+            var historyPath = Path.Combine(dir, "history.json");
+            if (File.Exists(historyPath))
+            {
+                try
+                {
+                    var json = await File.ReadAllTextAsync(historyPath);
+                    var baseList = JsonSerializer.Deserialize<List<ScanSnapshot>>(json);
+                    if (baseList != null) list.AddRange(baseList);
+                }
+                catch { }
+            }
+
+            try
+            {
+                foreach (var file in Directory.GetFiles(dir, "snapshot_*.json"))
+                {
+                    try
+                    {
+                        var json = await File.ReadAllTextAsync(file);
+                        var single = JsonSerializer.Deserialize<ScanSnapshot>(json);
+                        if (single != null) list.Add(single);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
         public async Task SaveAllAsync(List<ScanSnapshot> list)
         {
             try
             {
-                var writePath = GetSnapshotWriteFilePath();
+                var writeDir = AppSettingsService.Instance.GetWriteDirectory("Snapshots");
+                var writePath = Path.Combine(writeDir, "history.json");
                 var dir = Path.GetDirectoryName(writePath);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
@@ -133,15 +155,12 @@ namespace AstraSize.Services
                 await File.WriteAllTextAsync(tempFile, json);
                 File.Move(tempFile, writePath, overwrite: true);
             }
-            catch
-            {
-                // Ignore file write lock errors
-            }
+            catch { }
         }
 
         public async Task SaveSnapshotAsync(FileItemNode rootNode)
         {
-            if (rootNode == null) return;
+            if (rootNode == null || string.IsNullOrWhiteSpace(rootNode.FullPath)) return;
 
             var snapshot = new ScanSnapshot
             {
@@ -159,53 +178,179 @@ namespace AstraSize.Services
             {
                 try
                 {
-                    var writeDir = AppSettingsService.Instance.GetWriteDirectory("Snapshots");
-                    if (!Directory.Exists(writeDir)) Directory.CreateDirectory(writeDir);
+                    var hash = GetPathHash(rootNode.FullPath);
 
-                    // 1スキャン1ファイル形式で安全に個別保存（ファイル共有競合皆無）
+                    // 1. 保存先ディレクトリの決定 (指定の WriteDirectory とローカル両方への書き込み同期)
+                    var targetDirs = new List<string>();
+                    var configuredWriteDir = AppSettingsService.Instance.GetWriteDirectory("Snapshots");
+                    if (!string.IsNullOrEmpty(configuredWriteDir))
+                    {
+                        targetDirs.Add(Path.Combine(configuredWriteDir, hash));
+                    }
+
+                    var localBase = AppSettingsService.Instance.GetDefaultLocalBaseDirectory();
+                    var localTargetDir = Path.Combine(localBase, "Snapshots", hash);
+                    if (!targetDirs.Contains(localTargetDir, StringComparer.OrdinalIgnoreCase))
+                    {
+                        targetDirs.Add(localTargetDir);
+                    }
+
+                    // 2. 既存の該当パス履歴をすべてマージロード
+                    var pathHistory = await GetHistoryForPathAsync(rootNode.FullPath);
+                    pathHistory.Add(snapshot);
+
+                    // 同一タイムスタンプ重複排除 ＆ 日時順ソート
+                    pathHistory = pathHistory
+                        .GroupBy(s => $"{s.TargetPath.TrimEnd('\\', '/').ToLowerInvariant()}_{s.Timestamp:yyyyMMddHHmmss}")
+                        .Select(g => g.First())
+                        .OrderBy(s => s.Timestamp)
+                        .ToList();
+
+                    // フォルダ単位で最大500件まで長期保持（別フォルダによる押し出し完全根絶）
+                    if (pathHistory.Count > 500)
+                    {
+                        pathHistory = pathHistory.Skip(pathHistory.Count - 500).ToList();
+                    }
+
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    var historyJson = JsonSerializer.Serialize(pathHistory, options);
+
                     var singleFileName = $"snapshot_{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}.json";
-                    var singleFilePath = Path.Combine(writeDir, singleFileName);
-                    var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
-                    await File.WriteAllTextAsync(singleFilePath, json);
+                    var singleJson = JsonSerializer.Serialize(snapshot, options);
 
-                    // history.json もベストエフォートで統合更新
-                    var all = await LoadAllAsync();
-                    all.Add(snapshot);
-                    if (all.Count > 100) all = all.Skip(all.Count - 100).ToList();
-                    await SaveAllAsync(all);
+                    // 3. 各保存先（共有・ローカル）へアトミック書き込み ＆ 古い個別スナップショットのお掃除
+                    foreach (var dir in targetDirs)
+                    {
+                        try
+                        {
+                            Directory.CreateDirectory(dir);
+
+                            // 個別ファイル書き出し
+                            var singleFilePath = Path.Combine(dir, singleFileName);
+                            await File.WriteAllTextAsync(singleFilePath, singleJson);
+
+                            // history.json アトミック更新
+                            var historyFile = Path.Combine(dir, "history.json");
+                            var tempFile = historyFile + $".tmp_{Guid.NewGuid():N}";
+                            await File.WriteAllTextAsync(tempFile, historyJson);
+                            File.Move(tempFile, historyFile, overwrite: true);
+
+                            // 個別ファイルの自動ローテーション（最新20件を残して古いものを安全削除）
+                            CleanOldSnapshotFiles(dir, keepCount: 20);
+                        }
+                        catch { }
+                    }
                 }
                 catch { }
             });
         }
 
-        public async Task RecordScanAsync(string targetPath, long totalBytes, int totalFiles, int totalFolders)
+        private static void CleanOldSnapshotFiles(string dir, int keepCount)
+        {
+            try
+            {
+                var files = Directory.GetFiles(dir, "snapshot_*.json")
+                    .Select(f => new FileInfo(f))
+                    .OrderByDescending(fi => fi.CreationTimeUtc)
+                    .ToList();
+
+                if (files.Count > keepCount)
+                {
+                    foreach (var oldFile in files.Skip(keepCount))
+                    {
+                        try { oldFile.Delete(); } catch { }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        public async Task RecordScanAsync(string targetPath, long totalBytes, int totalFiles, int totalFolders, DateTime? timestamp = null)
         {
             var snapshot = new ScanSnapshot
             {
                 TargetPath = targetPath,
-                Timestamp = DateTime.Now,
+                Timestamp = timestamp ?? DateTime.Now,
                 TotalBytes = totalBytes,
                 TotalFiles = totalFiles
             };
 
-            var all = await LoadAllAsync();
-            all.Add(snapshot);
-
-            if (all.Count > 50)
+            await Task.Run(async () =>
             {
-                all = all.Skip(all.Count - 50).ToList();
-            }
+                try
+                {
+                    var pathHistory = await GetHistoryForPathAsync(targetPath);
+                    pathHistory.Add(snapshot);
+                    pathHistory = pathHistory
+                        .GroupBy(s => $"{s.TargetPath.TrimEnd('\\', '/').ToLowerInvariant()}_{s.Timestamp:yyyyMMddHHmmss}")
+                        .Select(g => g.First())
+                        .OrderBy(s => s.Timestamp)
+                        .ToList();
 
-            await SaveAllAsync(all);
+                    if (pathHistory.Count > 500) pathHistory = pathHistory.Skip(pathHistory.Count - 500).ToList();
+
+                    var hash = GetPathHash(targetPath);
+                    var writeDir = AppSettingsService.Instance.GetWriteDirectory("Snapshots");
+                    var targetDir = Path.Combine(writeDir, hash);
+                    Directory.CreateDirectory(targetDir);
+
+                    var historyFile = Path.Combine(targetDir, "history.json");
+                    var tempFile = historyFile + $".tmp_{Guid.NewGuid():N}";
+                    var json = JsonSerializer.Serialize(pathHistory, new JsonSerializerOptions { WriteIndented = true });
+                    await File.WriteAllTextAsync(tempFile, json);
+                    File.Move(tempFile, historyFile, overwrite: true);
+                }
+                catch { }
+            });
         }
 
         public async Task<List<ScanSnapshot>> GetHistoryForPathAsync(string targetPath)
         {
-            var all = await LoadAllAsync();
-            return all
-                .Where(s => string.Equals(s.TargetPath.TrimEnd('\\'), targetPath.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(s => s.Timestamp)
-                .ToList();
+            if (string.IsNullOrWhiteSpace(targetPath)) return new List<ScanSnapshot>();
+
+            return await Task.Run(async () =>
+            {
+                var list = new List<ScanSnapshot>();
+                var hash = GetPathHash(targetPath);
+                var normalizedTarget = targetPath.TrimEnd('\\', '/').ToLowerInvariant();
+
+                // 1. パス別ハッシュディレクトリ (Snapshots/{hash}/) からのピンポイント高速ロード
+                var targetDirs = GetSnapshotDirectories(hash);
+                foreach (var dir in targetDirs)
+                {
+                    await LoadSnapshotsFromDirectoryAsync(dir, list);
+                }
+
+                // 2. 旧形式（ルート直下の history.json / snapshot_*.json）にも該当データがあればマージ（旧データ救済）
+                var rootDirs = GetSnapshotDirectories(null);
+                foreach (var rDir in rootDirs)
+                {
+                    var rootHistory = Path.Combine(rDir, "history.json");
+                    if (File.Exists(rootHistory))
+                    {
+                        try
+                        {
+                            var json = await File.ReadAllTextAsync(rootHistory);
+                            var rootList = JsonSerializer.Deserialize<List<ScanSnapshot>>(json);
+                            if (rootList != null)
+                            {
+                                list.AddRange(rootList.Where(s => string.Equals(s.TargetPath.TrimEnd('\\', '/').ToLowerInvariant(), normalizedTarget, StringComparison.OrdinalIgnoreCase)));
+                            }
+                        }
+                        catch { }
+                    }
+                }
+
+                // 3. 重複排除 (TargetPath + Timestamp) して降順ソート
+                var merged = list
+                    .Where(s => string.Equals(s.TargetPath.TrimEnd('\\', '/').ToLowerInvariant(), normalizedTarget, StringComparison.OrdinalIgnoreCase))
+                    .GroupBy(s => $"{s.TargetPath.TrimEnd('\\', '/').ToLowerInvariant()}_{s.Timestamp:yyyyMMddHHmmss}")
+                    .Select(g => g.First())
+                    .OrderByDescending(s => s.Timestamp)
+                    .ToList();
+
+                return merged;
+            });
         }
 
         public async Task<(ScanSnapshot? lastScan, long diffBytes, string formattedDiff)> GetLastScanDiffAsync(string targetPath, long currentBytes)
