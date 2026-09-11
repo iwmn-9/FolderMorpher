@@ -453,6 +453,21 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
     - **回帰テスト Test 28 新設**:
       - パス別履歴分離、10世代ロールバック、Skeleton Plan-First、原本判定プロパティ、リンク修復検証を網羅する自動テストを追加し、**全28回帰テスト 100% PASS**（28/28）。
 
+46. **安全文法の深化（Solレビュー反映）：Skeleton Plan完全凍結・外部競合検知・.lnk自動ロールバック・Office真のアトミック置換・ACL共有同期 (v1.9.1)**:
+    - **Skeleton Plan の完全固定 ＆ 外部変更競合検知（`ConflictCount`）**:
+      - `BuildDeployPlan` 構築時に、全ノードの ACL を `node.AclEntries.Select(x => x.Clone()).ToList()` でディープコピーして完全凍結。
+      - `DeploySkeletonAsync` 実行時、現在の存在状態 `Directory.Exists` と Plan 作成時の `action.IsExisting` を照合。外部管理者による削除や作成等の競合（Conflict）を検知した場合、計画外の勝手な作成・ACL上書きを防止するため安全にスキップ＆ログ記録。
+    - **`.lnk` ショートカット Verify 失敗時の自動ロールバック**:
+      - 保存後の COM 再オープンによる Verify 判定において、書き込み値が期待値と不一致、または例外が発生した場合、直前の `.bak` から原本を即座に自動復元（Rollback）。破損ショートカットの現場残存を完全排除。
+    - **Office リンク修復の真のアトミック置換（同一ディレクトリ .tmp + File.Replace / UNC フォールバック）**:
+      - `Path.GetTempPath()` を廃止し、原本と同一ディレクトリに `$"{item.FilePath}.tmp_{Guid.NewGuid():N}"` を作成。
+      - `File.Replace`（同一ボリューム）または同一FS内退避フォールバック（`.unc_bak_`）により、UNC共有や別ドライブでも真のアトミック置換を保証。
+    - **ACL Snapshot の共有ディレクトリ同期（チーム内事故復旧共有）**:
+      - `AppSettingsService` の共有保存先（`GetWriteDirectory`）および参照先（`GetReadDirectory`）の `AclSnapshots/` に対応。
+      - ローカルと共有の双方へ自動同期保存し、複数管理者がそれぞれの端末から切り戻しスナップショットを参照・復元可能に拡張。
+    - **回帰テスト Test 28 強化**:
+      - 上記のディープコピー凍結、外部競合検知、.lnk 自動ロールバック、同一FS置換、共有スナップショット同期を網羅し、**全28回帰テスト 100% PASS**（28/28）。
+
 ---
 
 ## 4. ビルド・実行・検証コマンド

@@ -144,7 +144,8 @@ namespace FolderMorpher.Services
                         continue;
                     }
 
-                    string tempPath = Path.Combine(Path.GetTempPath(), $"FM_OfficeLink_{Guid.NewGuid():N}{ext}");
+                    // 原本と同一ディレクトリに一時ファイルを作成（同一ボリューム・ファイルシステムでの真のアトミック置換を保証）
+                    string tempPath = item.FilePath + ".tmp_" + Guid.NewGuid().ToString("N");
                     string backupPath = item.FilePath + ".bak";
 
                     try
@@ -214,15 +215,49 @@ namespace FolderMorpher.Services
                             }
                         }
 
-                        // 4. バックアップ作成 (未存在時のみ)
+                        // 4. バックアップ作成 (未存在時のみ、安全な永続バックアップとして保持)
                         if (!File.Exists(backupPath))
                         {
                             File.Copy(item.FilePath, backupPath);
                         }
 
-                        // 5. アトミック置換 (一時ファイル -> 原本パス) ＆ タイムスタンプ復元
-                        File.Move(tempPath, item.FilePath, overwrite: true);
-                        File.SetLastWriteTime(item.FilePath, origTime);
+                        // 5. 真のアトミック置換 (同一ボリューム File.Replace または UNC フォールバック) ＆ タイムスタンプ復元
+                        bool replaced = false;
+                        string replaceBakPath = item.FilePath + ".tmp_rep_" + Guid.NewGuid().ToString("N");
+                        try
+                        {
+                            File.Replace(tempPath, item.FilePath, replaceBakPath);
+                            replaced = true;
+                            try { File.Delete(replaceBakPath); } catch { }
+                        }
+                        catch
+                        {
+                            replaced = false;
+                        }
+
+                        if (!replaced)
+                        {
+                            // File.Replace 非対応環境 (UNC共有等) での同一FS内アトミック置換フォールバック
+                            string uncBakPath = item.FilePath + ".unc_bak_" + Guid.NewGuid().ToString("N");
+                            bool movedToBak = false;
+                            try
+                            {
+                                File.Move(item.FilePath, uncBakPath);
+                                movedToBak = true;
+                                File.Move(tempPath, item.FilePath);
+                                try { File.Delete(uncBakPath); } catch { }
+                            }
+                            catch
+                            {
+                                if (movedToBak && File.Exists(uncBakPath) && !File.Exists(item.FilePath))
+                                {
+                                    try { File.Move(uncBakPath, item.FilePath); } catch { }
+                                }
+                                throw;
+                            }
+                        }
+
+                        try { File.SetLastWriteTime(item.FilePath, origTime); } catch { }
 
                         item.IsFixed = true;
                         item.Status = "修復完了 (検証済・バックアップ済)";

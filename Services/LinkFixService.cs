@@ -149,14 +149,35 @@ namespace FolderMorpher.Services
                             }
                             else
                             {
-                                item.Status = $"修復検証失敗 (書込値: {verifiedTarget})";
+                                // Verify NG: 意図したパスに書き換わっていないため、直前の .bak から即座に自動ロールバック
+                                try
+                                {
+                                    if (File.Exists(bakPath))
+                                    {
+                                        File.Copy(bakPath, item.FilePath, overwrite: true);
+                                    }
+                                }
+                                catch { }
+
+                                item.Status = $"修復検証失敗 (自動復元済, 書込値: {verifiedTarget})";
                                 progress?.Report((item.FilePath, false));
                             }
                         }
                     }
                     catch
                     {
-                        item.Status = "修復失敗";
+                        // 例外発生時もバックアップから自動ロールバック
+                        try
+                        {
+                            string bakPath = item.FilePath + ".bak";
+                            if (File.Exists(bakPath))
+                            {
+                                File.Copy(bakPath, item.FilePath, overwrite: true);
+                            }
+                        }
+                        catch { }
+
+                        item.Status = "修復失敗 (自動復元済)";
                         progress?.Report((item.FilePath, false));
                     }
                 }

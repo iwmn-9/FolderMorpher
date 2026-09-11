@@ -27,7 +27,7 @@ Please submit your feedback or bug reports via [GitHub Issues](../../issues)!
 
 ## 🛡️ Core Operational Philosophy: Two Worlds & 3-Stage Rocket
 
-FolderMorpher enforces a strict operational dualism designed to keep SysAdmins fast during exploration and 100% safe during state mutations:
+FolderMorpher enforces a strict operational dualism designed to keep SysAdmins fast during exploration and rigorously safe during state mutations:
 
 | Category | Targeted Actions | UX Behavior |
 | :--- | :--- | :--- |

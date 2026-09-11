@@ -3442,10 +3442,11 @@ namespace FolderMorpher.Services.Testing
                 try { Directory.Delete(tempAclDir, recursive: true); } catch { }
             }
 
-            // --- 3. Skeleton Deploy の True Plan-First パイプライン貫通 ---
+            // --- 3. Skeleton Deploy の True Plan-First パイプライン貫通 ＆ 外部競合検知 ---
             var simService = new SimulationProjectService();
             string testDeployTarget = Path.Combine(Path.GetTempPath(), "FM_RegTest_SkeletonPlan_" + Guid.NewGuid().ToString("N"));
             var rootSim = new SimFolderNode { Name = "PlanRoot", InheritAcl = true };
+            rootSim.AclEntries.Add(new SimAclEntry { AccountName = "Alice", Rights = FileSystemRights.Read });
             rootSim.Children.Add(new SimFolderNode { Name = "ChildA", InheritAcl = true, Parent = rootSim });
             rootSim.Children.Add(new SimFolderNode { Name = "ChildB", InheritAcl = true, Parent = rootSim });
 
@@ -3455,6 +3456,11 @@ namespace FolderMorpher.Services.Testing
                 throw new InvalidOperationException($"Expected 3 folder actions in plan, got {deployPlan.FolderActions.Count}");
             if (deployPlan.PlannedCreateCount != 3)
                 throw new InvalidOperationException($"Expected 3 planned creations, got {deployPlan.PlannedCreateCount}");
+
+            // ACL ディープコピー（凍結）検証: 元ノードのACLを変更してもPlanが不変であること
+            rootSim.AclEntries[0].AccountName = "Mallory";
+            if (deployPlan.FolderActions[0].AclEntries[0].AccountName != "Alice")
+                throw new InvalidOperationException("SkeletonDeployPlan ACLs were not deep-cloned/frozen!");
 
             try
             {
@@ -3468,6 +3474,24 @@ namespace FolderMorpher.Services.Testing
                     throw new InvalidOperationException("Deploy target root does not exist!");
                 if (!Directory.Exists(Path.Combine(testDeployTarget, "PlanRoot", "ChildA")))
                     throw new InvalidOperationException("PlanRoot\\ChildA was not physically created!");
+
+                // 外部競合検知テスト:
+                // 既存ノードとしてPlan作成した直後に外部で物理削除されたケース
+                var conflictPlan = simService.BuildDeployPlan(new[] { rootSim }, testDeployTarget);
+                // ChildA は Plan 作成時点で IsExisting == true
+                var childAction = conflictPlan.FolderActions.First(a => a.RelativePath.Contains("ChildA"));
+                if (!childAction.IsExisting)
+                    throw new InvalidOperationException("ChildA should be detected as existing during Plan build");
+
+                // 外部管理者が ChildA を物理削除
+                Directory.Delete(Path.Combine(testDeployTarget, "PlanRoot", "ChildA"), recursive: true);
+
+                // Commit 実行 ➔ 計画時 (IsExisting=true) と実態 (exists=false) の不一致を競合として安全検知・スキップ
+                var conflictResult = await simService.DeploySkeletonAsync(conflictPlan);
+                if (conflictResult.ConflictCount < 1)
+                    throw new InvalidOperationException("DeploySkeletonAsync failed to detect external deletion conflict!");
+                if (Directory.Exists(Path.Combine(testDeployTarget, "PlanRoot", "ChildA")))
+                    throw new InvalidOperationException("Conflicted folder was recreated unexpectedly instead of being guarded!");
             }
             finally
             {
@@ -3558,6 +3582,58 @@ namespace FolderMorpher.Services.Testing
             {
                 try { if (File.Exists(testXlsx)) File.Delete(testXlsx); } catch { }
                 try { if (File.Exists(testXlsx + ".bak")) File.Delete(testXlsx + ".bak"); } catch { }
+            }
+
+            // --- 6. .lnk ショートカットの修復 ＆ バックアップ作成 ＆ 実態Verify ---
+            var linkFixService = new LinkFixService();
+            string testLnk = Path.Combine(Path.GetTempPath(), $"FM_RegTest_Lnk_{Guid.NewGuid():N}.lnk");
+            dynamic? wsh = null;
+            try
+            {
+                var wshType = Type.GetTypeFromProgID("WScript.Shell");
+                if (wshType != null) wsh = Activator.CreateInstance(wshType);
+            }
+            catch { }
+
+            if (wsh != null)
+            {
+                try
+                {
+                    dynamic sc = wsh.CreateShortcut(testLnk);
+                    sc.TargetPath = @"C:\OldTarget\App.exe";
+                    sc.Save();
+
+                    var lnkItems = new List<LinkFixItem>
+                    {
+                        new()
+                        {
+                            FilePath = testLnk,
+                            OldTarget = @"C:\OldTarget\App.exe",
+                            NewTarget = @"C:\NewTarget\App.exe",
+                            FileType = ".lnk"
+                        }
+                    };
+
+                    int fixedLnkCount = await linkFixService.ExecuteFixAsync(lnkItems, null, CancellationToken.None);
+                    if (fixedLnkCount != 1)
+                        throw new InvalidOperationException($"Expected 1 fixed .lnk, got {fixedLnkCount}");
+
+                    // 正常修復後の検証
+                    dynamic scCheck = wsh.CreateShortcut(testLnk);
+                    string? verifiedTarget = scCheck.TargetPath;
+                    if (!string.Equals(verifiedTarget?.TrimEnd('\\'), @"C:\NewTarget\App.exe", StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("Shortcut was not properly fixed to NewTarget!");
+
+                    // バックアップファイル (.bak) が生成されていること
+                    string lnkBak = testLnk + ".bak";
+                    if (!File.Exists(lnkBak))
+                        throw new InvalidOperationException("LinkFix did not create .bak backup before editing .lnk!");
+                }
+                finally
+                {
+                    try { if (File.Exists(testLnk)) File.Delete(testLnk); } catch { }
+                    try { if (File.Exists(testLnk + ".bak")) File.Delete(testLnk + ".bak"); } catch { }
+                }
             }
         }
     }

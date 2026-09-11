@@ -843,6 +843,7 @@ namespace AstraSize.Models
     {
         public int CreatedCount { get; set; }
         public int SkippedExistingCount { get; set; }
+        public int ConflictCount { get; set; }
         public int AclAppliedCount { get; set; }
         public int FailedCount => Errors.Count;
         public List<string> Errors { get; set; } = new();

@@ -208,7 +208,7 @@ namespace AstraSize.Services
                     FullTargetPath = fullPath,
                     IsExisting = exists,
                     InheritAcl = node.InheritAcl,
-                    AclEntries = node.AclEntries.ToList()
+                    AclEntries = node.AclEntries.Select(x => x.Clone()).ToList()
                 });
 
                 foreach (var child in node.Children)
@@ -258,7 +258,21 @@ namespace AstraSize.Services
 
                         try
                         {
-                            if (!Directory.Exists(folderPath))
+                            bool currentExists = Directory.Exists(folderPath);
+
+                            // 外部競合検知: 計画時 (action.IsExisting) と現在の実態 (currentExists) の不一致を防御
+                            if (currentExists != action.IsExisting)
+                            {
+                                string conflictMsg = action.IsExisting
+                                    ? $"[外部競合検知] 計画時は既存だったフォルダが外部で削除されています: {folderPath}"
+                                    : $"[外部競合検知] 計画時は存在しなかったフォルダが外部で新規作成されています: {folderPath}";
+                                result.Logs.Add(conflictMsg);
+                                result.ConflictCount++;
+                                // 外部競合したノードは計画外の変更事故を防ぐためスキップ
+                                continue;
+                            }
+
+                            if (!currentExists)
                             {
                                 Directory.CreateDirectory(folderPath);
                                 result.CreatedCount++;

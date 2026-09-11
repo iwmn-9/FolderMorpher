@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using AstraSize.Models;
+using FolderMorpher.Services;
 
 namespace AstraSize.Services
 {
@@ -167,6 +168,38 @@ namespace AstraSize.Services
         }
 
         // Snapshot & Rollback
+        private List<string> GetAclWriteDirectories()
+        {
+            var dirs = new List<string>();
+            var configuredWriteDir = AppSettingsService.Instance.GetWriteDirectory("Snapshots");
+            if (!string.IsNullOrEmpty(configuredWriteDir))
+            {
+                var sharedAcl = Path.Combine(configuredWriteDir, "AclSnapshots");
+                dirs.Add(sharedAcl);
+            }
+            if (!dirs.Contains(_snapshotDir, StringComparer.OrdinalIgnoreCase))
+            {
+                dirs.Add(_snapshotDir);
+            }
+            return dirs;
+        }
+
+        private List<string> GetAclReadDirectories()
+        {
+            var dirs = new List<string>();
+            var configuredReadDir = AppSettingsService.Instance.GetReadDirectory("Snapshots");
+            if (!string.IsNullOrEmpty(configuredReadDir))
+            {
+                var sharedAcl = Path.Combine(configuredReadDir, "AclSnapshots");
+                if (Directory.Exists(sharedAcl)) dirs.Add(sharedAcl);
+            }
+            if (Directory.Exists(_snapshotDir) && !dirs.Contains(_snapshotDir, StringComparer.OrdinalIgnoreCase))
+            {
+                dirs.Add(_snapshotDir);
+            }
+            return dirs;
+        }
+
         public async Task<AclSnapshot> CreateSnapshotAsync(string path, string note = "変更前のバックアップ", string changeSummary = "")
         {
             var dir = new DirectoryInfo(path);
@@ -183,25 +216,36 @@ namespace AstraSize.Services
                 Sddl = sddl
             };
 
-            var file = Path.Combine(_snapshotDir, $"{snapshot.Id}.json");
             var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
-            await File.WriteAllTextAsync(file, json);
 
-            // 対象パスごとに直近10世代を保持し、古い切り戻しバックアップを自動ローテーション削除
-            CleanOldSnapshots(path, keepCount: 10);
+            // ローカルおよび設定された共有ディレクトリの双方へ保存（チーム内での事故復旧共有）
+            var writeDirs = GetAclWriteDirectories();
+            foreach (var targetDir in writeDirs)
+            {
+                try
+                {
+                    Directory.CreateDirectory(targetDir);
+                    var file = Path.Combine(targetDir, $"{snapshot.Id}.json");
+                    await File.WriteAllTextAsync(file, json);
+
+                    // 各保存先で直近10世代を保持し、古い切り戻しバックアップを自動ローテーション削除
+                    CleanOldSnapshots(targetDir, path, keepCount: 10);
+                }
+                catch { }
+            }
 
             return snapshot;
         }
 
-        private void CleanOldSnapshots(string path, int keepCount)
+        private void CleanOldSnapshots(string dir, string path, int keepCount)
         {
             try
             {
-                if (!Directory.Exists(_snapshotDir)) return;
+                if (!Directory.Exists(dir)) return;
                 var normalized = path.TrimEnd('\\', '/');
 
                 var snapshots = new List<(string filePath, DateTime timestamp)>();
-                foreach (var file in Directory.GetFiles(_snapshotDir, "*.json"))
+                foreach (var file in Directory.GetFiles(dir, "*.json"))
                 {
                     try
                     {
@@ -234,23 +278,33 @@ namespace AstraSize.Services
         public async Task<List<AclSnapshot>> GetSnapshotsAsync(string path)
         {
             var list = new List<AclSnapshot>();
-            if (!Directory.Exists(_snapshotDir)) return list;
+            var readDirs = GetAclReadDirectories();
 
-            foreach (var file in Directory.GetFiles(_snapshotDir, "*.json"))
+            foreach (var dir in readDirs)
             {
-                try
+                if (!Directory.Exists(dir)) continue;
+
+                foreach (var file in Directory.GetFiles(dir, "*.json"))
                 {
-                    var json = await File.ReadAllTextAsync(file);
-                    var s = JsonSerializer.Deserialize<AclSnapshot>(json);
-                    if (s != null && string.Equals(s.TargetPath.TrimEnd('\\'), path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                    try
                     {
-                        list.Add(s);
+                        var json = await File.ReadAllTextAsync(file);
+                        var s = JsonSerializer.Deserialize<AclSnapshot>(json);
+                        if (s != null && string.Equals(s.TargetPath.TrimEnd('\\'), path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                        {
+                            list.Add(s);
+                        }
                     }
+                    catch { }
                 }
-                catch { }
             }
 
-            return list.OrderByDescending(s => s.Timestamp).ToList();
+            // スナップショットId（または TargetPath + Timestamp）で重複排除して日時降順ソート
+            return list
+                .GroupBy(s => s.Id)
+                .Select(g => g.First())
+                .OrderByDescending(s => s.Timestamp)
+                .ToList();
         }
 
         public (List<SimAclEntry> entries, bool isInherited, string owner) GetSimAclForFolder(string path)
