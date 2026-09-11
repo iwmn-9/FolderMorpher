@@ -145,33 +145,113 @@ namespace FolderMorpher.Services
                 }
             }
 
-            // 3. 重複ファイルチェック（SHA256ハッシュ判定）
+            // 3. 重複ファイルチェック（Head-Tail クイックハッシュ ＋ 並列度2 フルSHA256）
             if (options.CheckDuplicates)
             {
-                progress?.Report(new AuditProgress { CurrentStatus = "重複ファイルを分析中 (サイズ絞り込み)...", ScannedFilesCount = summary.TotalFilesScanned, IssueCount = items.Count });
+                progress?.Report(new AuditProgress
+                {
+                    CurrentStatus = Strings.AuditProgressQuickHash,
+                    ScannedFilesCount = summary.TotalFilesScanned,
+                    IssueCount = items.Count
+                });
 
-                // サイズでグルーピング（100KB以上かつ同一サイズが2個以上あるもの）
-                var candidateGroups = scannedFiles
+                // Step 1: サイズによる初期グルーピング (同一サイズが2個以上あるもの)
+                var sizeGroups = scannedFiles
                     .Where(f => f.Length >= options.MinFileSizeBytes)
                     .GroupBy(f => f.Length)
                     .Where(g => g.Count() > 1)
                     .ToList();
 
+                // Step 2: 1MB以上のファイルは Head-Tail ハッシュ (先頭4KB+末尾4KB) で高速ふるい落とし
+                // 1MB未満のファイルはサイズグループをそのまま引き継ぐ
+                var fullHashCandidates = new List<List<FileInfo>>();
+                int quickGroupCount = 0;
+
+                foreach (var sGroup in sizeGroups)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var list = sGroup.ToList();
+                    if (sGroup.Key < QuickHashThresholdBytes)
+                    {
+                        // 1MB未満は直接フルハッシュ照合へ
+                        fullHashCandidates.Add(list);
+                    }
+                    else
+                    {
+                        // 1MB以上は Head-Tail ハッシュでさらに細分化
+                        var quickMap = new Dictionary<string, List<FileInfo>>();
+                        foreach (var fi in list)
+                        {
+                            ct.ThrowIfCancellationRequested();
+                            var qHash = await ComputeHeadTailHashAsync(fi.FullName, fi.Length, ct);
+                            if (string.IsNullOrEmpty(qHash)) continue;
+
+                            if (!quickMap.TryGetValue(qHash, out var qList))
+                            {
+                                qList = new List<FileInfo>();
+                                quickMap[qHash] = qList;
+                            }
+                            qList.Add(fi);
+                        }
+
+                        // クイックハッシュが一致し、2個以上残ったもののみが真の重複候補
+                        foreach (var qGroup in quickMap.Values.Where(q => q.Count > 1))
+                        {
+                            fullHashCandidates.Add(qGroup);
+                        }
+                    }
+
+                    quickGroupCount++;
+                    if (quickGroupCount % 50 == 0 || quickGroupCount == sizeGroups.Count)
+                    {
+                        progress?.Report(new AuditProgress
+                        {
+                            CurrentStatus = $"{Strings.AuditProgressQuickHash} ({quickGroupCount}/{sizeGroups.Count})",
+                            ScannedFilesCount = summary.TotalFilesScanned,
+                            IssueCount = items.Count
+                        });
+                    }
+                }
+
+                // Step 3: フルSHA256による確定検証 (並列度2 & 帯域リミッター)
+                BandwidthThrottler? throttler = options.BandwidthLimit == AuditBandwidthLimit.Standard50MB
+                    ? new BandwidthThrottler(50L * 1024 * 1024)
+                    : null;
+
+                using var semaphore = new SemaphoreSlim(DuplicateConcurrency, DuplicateConcurrency);
                 int dupGroupIndex = 1;
-                foreach (var group in candidateGroups)
+                int processedCandidateGroups = 0;
+
+                foreach (var group in fullHashCandidates)
                 {
                     ct.ThrowIfCancellationRequested();
                     var hashToFiles = new Dictionary<string, List<FileInfo>>();
 
-                    foreach (var file in group)
+                    var tasks = group.Select(async file =>
                     {
-                        ct.ThrowIfCancellationRequested();
-                        var hash = await ComputeSha256Async(file.FullName, ct);
-                        if (string.IsNullOrEmpty(hash)) continue;
+                        await semaphore.WaitAsync(ct);
+                        try
+                        {
+                            var hash = await ComputeSha256WithThrottlingAsync(file.FullName, throttler, ct);
+                            return (file, hash);
+                        }
+                        finally
+                        {
+                            semaphore.Release();
+                        }
+                    });
 
-                        if (!hashToFiles.ContainsKey(hash))
-                            hashToFiles[hash] = new List<FileInfo>();
-                        hashToFiles[hash].Add(file);
+                    var results = await Task.WhenAll(tasks);
+
+                    foreach (var (file, hash) in results)
+                    {
+                        if (string.IsNullOrEmpty(hash)) continue;
+                        if (!hashToFiles.TryGetValue(hash, out var fileList))
+                        {
+                            fileList = new List<FileInfo>();
+                            hashToFiles[hash] = fileList;
+                        }
+                        fileList.Add(file);
                     }
 
                     // 同一ハッシュが複数あれば重複確定
@@ -179,12 +259,7 @@ namespace FolderMorpher.Services
                     {
                         var groupNum = dupGroupIndex++;
                         var groupId = $"DUP-{groupNum:D4}";
-                        // 原本候補を賢く選定（スコアリングソート）
-                        // 1. ファイル名に「コピー」「copy」「(1)」「_backup」等が含まれていないもの優先
-                        // 2. ディレクトリ階層が浅い（パス区切り文字が少ない＝ルートに近い）もの優先
-                        // 3. パス文字列長が短いもの優先
-                        // 4. 作成日時が古いもの優先
-                        // 5. 更新日時が古いもの優先
+
                         var fileList = kvp.Value
                             .OrderBy(f => HasCopyKeywords(f.Name) ? 1 : 0)
                             .ThenBy(f => f.FullName.Count(c => c == '\\' || c == '/'))
@@ -193,7 +268,6 @@ namespace FolderMorpher.Services
                             .ThenBy(f => f.LastWriteTimeUtc)
                             .ToList();
 
-                        // 最初以外のファイルを「重複による無駄（Wasted）」として集計
                         for (int i = 0; i < fileList.Count; i++)
                         {
                             var fi = fileList[i];
@@ -223,12 +297,16 @@ namespace FolderMorpher.Services
                         }
                     }
 
-                    progress?.Report(new AuditProgress
+                    processedCandidateGroups++;
+                    if (processedCandidateGroups % 10 == 0 || processedCandidateGroups == fullHashCandidates.Count)
                     {
-                        CurrentStatus = $"重複ハッシュ計算中 (グループ {dupGroupIndex})...",
-                        ScannedFilesCount = summary.TotalFilesScanned,
-                        IssueCount = items.Count
-                    });
+                        progress?.Report(new AuditProgress
+                        {
+                            CurrentStatus = $"{Strings.AuditProgressFullHash} ({processedCandidateGroups}/{fullHashCandidates.Count})",
+                            ScannedFilesCount = summary.TotalFilesScanned,
+                            IssueCount = items.Count
+                        });
+                    }
                 }
             }
 
@@ -337,19 +415,75 @@ namespace FolderMorpher.Services
             }
         }
 
-        private static async Task<string?> ComputeSha256Async(string filePath, CancellationToken ct)
+        public const long QuickHashThresholdBytes = 1024 * 1024; // 1MB以上をHead-Tailクイック判定対象
+        public const int QuickHashChunkSize = 4096; // 4KB (先頭4KB + 末尾4KB = 計8KB)
+        public const int DuplicateConcurrency = 2; // 並列度2 (サーバーI/O保護・アイドル解消の黄金律)
+
+        public static async Task<string?> ComputeHeadTailHashAsync(string filePath, long fileSize, CancellationToken ct)
         {
             try
             {
                 using var sha256 = SHA256.Create();
-                await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, true);
-                var hashBytes = await sha256.ComputeHashAsync(stream, ct);
+                byte[] buffer = new byte[QuickHashChunkSize * 2]; // 8KB
+                int totalRead = 0;
+
+                await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, QuickHashChunkSize, true);
+
+                // 先頭4KB
+                int headRead = await stream.ReadAsync(buffer.AsMemory(0, QuickHashChunkSize), ct);
+                totalRead += headRead;
+
+                // 末尾4KB
+                if (fileSize > QuickHashChunkSize)
+                {
+                    long tailOffset = Math.Max(headRead, fileSize - QuickHashChunkSize);
+                    stream.Seek(tailOffset, SeekOrigin.Begin);
+                    int tailRead = await stream.ReadAsync(buffer.AsMemory(headRead, QuickHashChunkSize), ct);
+                    totalRead += tailRead;
+                }
+
+                var hashBytes = sha256.ComputeHash(buffer, 0, totalRead);
                 return Convert.ToHexString(hashBytes).ToLowerInvariant();
             }
             catch
             {
                 return null; // ロック中やアクセス権なしはスキップ
             }
+        }
+
+        public static async Task<string?> ComputeSha256WithThrottlingAsync(
+            string filePath,
+            BandwidthThrottler? throttler,
+            CancellationToken ct)
+        {
+            try
+            {
+                using var sha256 = SHA256.Create();
+                byte[] buffer = new byte[65536];
+                await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, true);
+
+                int bytesRead;
+                while ((bytesRead = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), ct)) > 0)
+                {
+                    sha256.TransformBlock(buffer, 0, bytesRead, null, 0);
+                    if (throttler != null)
+                    {
+                        await throttler.ThrottleAsync(bytesRead, ct);
+                    }
+                }
+
+                sha256.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+                return Convert.ToHexString(sha256.Hash!).ToLowerInvariant();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static async Task<string?> ComputeSha256Async(string filePath, CancellationToken ct)
+        {
+            return await ComputeSha256WithThrottlingAsync(filePath, null, ct);
         }
 
         public void ExportAuditCsv(string filePath, IEnumerable<AuditItem> items)
@@ -458,5 +592,48 @@ namespace FolderMorpher.Services
         }
 
         private static string EscapeCsv(string s) => s.Replace("\"", "\"\"");
+    }
+
+    /// <summary>
+    /// ネットワーク・ディスク帯域を平滑化制御するスロットラー。
+    /// 複数スレッド（並列度2）からの累積転送量と経過時間を監視し、指定レートを超過した場合にミリ秒待機を挿入する。
+    /// </summary>
+    public class BandwidthThrottler
+    {
+        private readonly long _bytesPerSecond;
+        private readonly System.Diagnostics.Stopwatch _stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        private long _totalBytesTransferred;
+        private readonly object _lock = new();
+
+        public BandwidthThrottler(long bytesPerSecond)
+        {
+            _bytesPerSecond = bytesPerSecond;
+        }
+
+        public long BytesPerSecond => _bytesPerSecond;
+
+        public async Task ThrottleAsync(int bytesRead, CancellationToken ct)
+        {
+            if (_bytesPerSecond <= 0 || bytesRead <= 0) return;
+
+            long delayMs = 0;
+            lock (_lock)
+            {
+                _totalBytesTransferred += bytesRead;
+                double elapsedSeconds = _stopwatch.Elapsed.TotalSeconds;
+                if (elapsedSeconds <= 0.001) elapsedSeconds = 0.001;
+
+                double expectedSeconds = (double)_totalBytesTransferred / _bytesPerSecond;
+                if (expectedSeconds > elapsedSeconds)
+                {
+                    delayMs = (long)((expectedSeconds - elapsedSeconds) * 1000);
+                }
+            }
+
+            if (delayMs > 5)
+            {
+                await Task.Delay((int)Math.Min(delayMs, 500), ct);
+            }
+        }
     }
 }

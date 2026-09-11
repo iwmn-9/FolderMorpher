@@ -2597,12 +2597,19 @@ namespace AstraSize
             GlobalProgressBar.IsIndeterminate = true;
             AuditStatusText.Text = "監査スキャン中...";
 
+            var limit = AuditBandwidthLimit.Standard50MB;
+            if (AuditBandwidthComboBox != null && AuditBandwidthComboBox.SelectedItem is ComboBoxItem cbi && cbi.Tag?.ToString() == "Unlimited")
+            {
+                limit = AuditBandwidthLimit.Unlimited;
+            }
+
             var options = new AuditOptions
             {
                 TargetDirectory = target,
                 CheckDuplicates = AuditCheckDuplicatesCheckBox.IsChecked == true,
                 CheckDormant = AuditCheckDormantCheckBox.IsChecked == true,
-                CheckPathLimits = AuditCheckPathLimitsCheckBox.IsChecked == true
+                CheckPathLimits = AuditCheckPathLimitsCheckBox.IsChecked == true,
+                BandwidthLimit = limit
             };
 
             var progress = new Progress<AuditProgress>(p =>
@@ -3471,7 +3478,7 @@ namespace AstraSize
             if (SidebarVersionText != null)
             {
                 var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-                string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v2.0.1";
+                string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v2.0.3";
                 SidebarVersionText.Text = App.IsClientMode
                     ? $"FolderCleaner {verStr}"
                     : $"FolderMorpher {verStr}";
@@ -3722,6 +3729,9 @@ namespace AstraSize
             AuditCheckDuplicatesCheckBox.Content = isJa ? "重複ファイル (SHA256)" : "Duplicates (SHA256)";
             AuditCheckDormantCheckBox.Content = isJa ? "休眠ファイル (3年以上)" : "Dormant (3+ Years)";
             AuditCheckPathLimitsCheckBox.Content = isJa ? "パス長260字超/禁則文字" : "Path Limits / Invalid Chars";
+            if (AuditBandwidthLabel != null) AuditBandwidthLabel.Text = Strings.AuditBandwidthLimitLabel;
+            if (AuditBandwidthStandardItem != null) AuditBandwidthStandardItem.Content = Strings.AuditBandwidthStandard;
+            if (AuditBandwidthUnlimitedItem != null) AuditBandwidthUnlimitedItem.Content = Strings.AuditBandwidthUnlimited;
 
             ColAuditIssueType.Header = isJa ? "問題種別" : "Issue Type";
             ColAuditDupGroup.Header = isJa ? "重複グループ" : "Duplicate Group";

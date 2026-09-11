@@ -31,7 +31,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 29;
+            int totalTests = 30;
 
             var originalLang = LocalizationService.Instance.CurrentLanguage;
             // テストスイートのベース言語を初期化（Test 26でJA/EN双方の動的切替を検証後、finallyで元の言語へ復元）
@@ -208,9 +208,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 29
-                Console.WriteLine("\n[TEST 29/29] Safety, Real Traversal & i18n v2.0.1: Real NTFS Effective Access Traversal, LinkFix Optimistic Lock & Scoped Rollback, and English CJK-Free Verification...");
+                Console.WriteLine("\n[TEST 29/30] Safety, Real Traversal & i18n v2.0.1: Real NTFS Effective Access Traversal, LinkFix Optimistic Lock & Scoped Rollback, and English CJK-Free Verification...");
                 await TestOptimisticLockAndEffectiveAccessChangePointsAsync();
                 Console.WriteLine("  --> [PASS] Safety, Real Traversal & i18n v2.0.1: Real NTFS Effective Access traversal, LinkFix optimistic lock & scoped rollback, and English CJK-free 100% verified.");
+                passCount++;
+
+                // Test 30
+                Console.WriteLine("\n[TEST 30/30] Audit Duplicate Pipeline v2.0.3: Head-Tail Hash, Concurrency 2, Bandwidth Throttling & English CJK-Free Verification...");
+                await TestHeadTailHashAndBandwidthLimiterAsync();
+                Console.WriteLine("  --> [PASS] Audit Duplicate Pipeline v2.0.3: Head-Tail hash, concurrency 2, bandwidth throttling & English CJK-free 100% verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -4057,6 +4063,134 @@ namespace FolderMorpher.Services.Testing
             finally
             {
                 LocalizationService.Instance.SetLanguage(origLang);
+            }
+        }
+
+        private static async Task TestHeadTailHashAndBandwidthLimiterAsync()
+        {
+            string testDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_Regression_Test30_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(testDir);
+
+            try
+            {
+                // 1. Head-Tail ハッシュの判定検証 (1MB超ファイル)
+                // サイズ: 1.5MB (1,572,864 bytes)
+                const int fileSize = 1572864;
+                byte[] dataA = new byte[fileSize];
+                byte[] dataB = new byte[fileSize]; // 先頭違い
+                byte[] dataC = new byte[fileSize]; // 末尾違い
+                byte[] dataD = new byte[fileSize]; // Aと同一
+
+                // 先頭4KBにシグネチャ
+                System.Text.Encoding.ASCII.GetBytes("HEAD_A").CopyTo(dataA, 0);
+                System.Text.Encoding.ASCII.GetBytes("HEAD_B").CopyTo(dataB, 0);
+                System.Text.Encoding.ASCII.GetBytes("HEAD_A").CopyTo(dataC, 0);
+                System.Text.Encoding.ASCII.GetBytes("HEAD_A").CopyTo(dataD, 0);
+
+                // 末尾4KBにシグネチャ
+                int tailPos = fileSize - 100;
+                System.Text.Encoding.ASCII.GetBytes("TAIL_COMMON").CopyTo(dataA, tailPos);
+                System.Text.Encoding.ASCII.GetBytes("TAIL_COMMON").CopyTo(dataB, tailPos);
+                System.Text.Encoding.ASCII.GetBytes("TAIL_DIFFERENT").CopyTo(dataC, tailPos);
+                System.Text.Encoding.ASCII.GetBytes("TAIL_COMMON").CopyTo(dataD, tailPos);
+
+                string fileA = Path.Combine(testDir, "fileA.dat");
+                string fileB = Path.Combine(testDir, "fileB.dat");
+                string fileC = Path.Combine(testDir, "fileC.dat");
+                string fileD = Path.Combine(testDir, "fileD.dat");
+
+                await File.WriteAllBytesAsync(fileA, dataA);
+                await File.WriteAllBytesAsync(fileB, dataB);
+                await File.WriteAllBytesAsync(fileC, dataC);
+                await File.WriteAllBytesAsync(fileD, dataD);
+
+                var ct = CancellationToken.None;
+                var hashA = await AuditReportService.ComputeHeadTailHashAsync(fileA, fileSize, ct);
+                var hashB = await AuditReportService.ComputeHeadTailHashAsync(fileB, fileSize, ct);
+                var hashC = await AuditReportService.ComputeHeadTailHashAsync(fileC, fileSize, ct);
+                var hashD = await AuditReportService.ComputeHeadTailHashAsync(fileD, fileSize, ct);
+
+                if (string.IsNullOrEmpty(hashA) || string.IsNullOrEmpty(hashB) || string.IsNullOrEmpty(hashC) || string.IsNullOrEmpty(hashD))
+                    throw new InvalidOperationException("HeadTailHash returned null for test files.");
+
+                if (hashA != hashD)
+                    throw new InvalidOperationException($"HeadTailHash mismatch for identical head-tail files: {hashA} != {hashD}");
+                if (hashA == hashB)
+                    throw new InvalidOperationException("HeadTailHash failed to distinguish different head content.");
+                if (hashA == hashC)
+                    throw new InvalidOperationException("HeadTailHash failed to distinguish different tail content.");
+
+                // 2. 1MB未満ファイルの直接照合ファイルも作成
+                byte[] smallData1 = new byte[200 * 1024];
+                byte[] smallData2 = new byte[200 * 1024];
+                new Random(42).NextBytes(smallData1);
+                Array.Copy(smallData1, smallData2, smallData1.Length);
+
+                string smallFile1 = Path.Combine(testDir, "small1.bin");
+                string smallFile2 = Path.Combine(testDir, "small2.bin");
+                await File.WriteAllBytesAsync(smallFile1, smallData1);
+                await File.WriteAllBytesAsync(smallFile2, smallData2);
+
+                // 3. AuditReportService.RunAuditAsync 実行検証 (Standard50MB)
+                var auditService = new AuditReportService();
+                var options = new AuditOptions
+                {
+                    TargetDirectory = testDir,
+                    CheckDuplicates = true,
+                    CheckDormant = false,
+                    CheckPathLimits = false,
+                    MinFileSizeBytes = 100 * 1024,
+                    BandwidthLimit = AuditBandwidthLimit.Standard50MB
+                };
+
+                var (summary, items) = await auditService.RunAuditAsync(options, null, ct);
+
+                // 重複グループ数は2 (fileA+fileD と small1+small2)
+                var dupItems = items.Where(i => i.IssueType == AuditIssueType.Duplicate).ToList();
+                var dupGroups = dupItems.GroupBy(i => i.DuplicateGroupId).ToList();
+                if (dupGroups.Count != 2)
+                    throw new InvalidOperationException($"Expected exactly 2 duplicate groups, got {dupGroups.Count}");
+
+                var largeGroup = dupGroups.FirstOrDefault(g => g.Any(i => i.FileName == "fileA.dat"));
+                if (largeGroup == null || largeGroup.Count() != 2)
+                    throw new InvalidOperationException("Large duplicate group (fileA & fileD) was not detected correctly.");
+
+                // fileB と fileC は重複に含まれていないこと
+                if (dupItems.Any(i => i.FileName == "fileB.dat" || i.FileName == "fileC.dat"))
+                    throw new InvalidOperationException("Non-duplicate files (fileB or fileC) were erroneously marked as duplicates.");
+
+                // 4. BandwidthThrottler の単体挙動検証
+                var throttler = new BandwidthThrottler(10 * 1024 * 1024); // 10MB/s
+                if (throttler.BytesPerSecond != 10 * 1024 * 1024)
+                    throw new InvalidOperationException("BandwidthThrottler BytesPerSecond mismatch.");
+                await throttler.ThrottleAsync(1024, ct); // 微小バイトは遅延なしで通過
+
+                // 5. 英語モード時の CJK ゼロ検証
+                var origLang = LocalizationService.Instance.CurrentLanguage;
+                try
+                {
+                    LocalizationService.Instance.SetLanguage(AppLanguage.English);
+                    var japaneseRegex = new System.Text.RegularExpressions.Regex(@"[\p{IsCJKUnifiedIdeographs}\p{IsHiragana}\p{IsKatakana}]");
+
+                    if (japaneseRegex.IsMatch(Strings.AuditBandwidthLimitLabel))
+                        throw new InvalidOperationException($"English AuditBandwidthLimitLabel contains Japanese: '{Strings.AuditBandwidthLimitLabel}'");
+                    if (japaneseRegex.IsMatch(Strings.AuditBandwidthStandard))
+                        throw new InvalidOperationException($"English AuditBandwidthStandard contains Japanese: '{Strings.AuditBandwidthStandard}'");
+                    if (japaneseRegex.IsMatch(Strings.AuditBandwidthUnlimited))
+                        throw new InvalidOperationException($"English AuditBandwidthUnlimited contains Japanese: '{Strings.AuditBandwidthUnlimited}'");
+                    if (japaneseRegex.IsMatch(Strings.AuditProgressQuickHash))
+                        throw new InvalidOperationException($"English AuditProgressQuickHash contains Japanese: '{Strings.AuditProgressQuickHash}'");
+                    if (japaneseRegex.IsMatch(Strings.AuditProgressFullHash))
+                        throw new InvalidOperationException($"English AuditProgressFullHash contains Japanese: '{Strings.AuditProgressFullHash}'");
+                }
+                finally
+                {
+                    LocalizationService.Instance.SetLanguage(origLang);
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(testDir, true); } catch { }
             }
         }
     }

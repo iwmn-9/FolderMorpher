@@ -12,6 +12,12 @@ namespace FolderMorpher.Models
         InvalidChar    // 移行禁則文字
     }
 
+    public enum AuditBandwidthLimit
+    {
+        Standard50MB = 0, // 通常 50MB/s (他業務保護)
+        Unlimited = 1     // 無制限 (夜間・最速)
+    }
+
     public class AuditItem : System.ComponentModel.INotifyPropertyChanged
     {
         public static Action<AuditItem>? GlobalCheckedChanged;
@@ -145,6 +151,7 @@ namespace FolderMorpher.Models
         public double DormantYearsThreshold { get; set; } = 3.0;
         public bool CheckPathLimits { get; set; } = true;
         public long MinFileSizeBytes { get; set; } = 100 * 1024; // デフォルト100KB以上を重複チェック対象
+        public AuditBandwidthLimit BandwidthLimit { get; set; } = AuditBandwidthLimit.Standard50MB;
     }
 
     public class AuditProgress

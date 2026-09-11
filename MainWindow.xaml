@@ -1045,7 +1045,12 @@
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,4">
                                 <CheckBox x:Name="AuditCheckDuplicatesCheckBox" Content="重複ファイル (SHA256)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12" Foreground="#334155"/>
                                 <CheckBox x:Name="AuditCheckDormantCheckBox" Content="休眠ファイル (3年以上)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12" Foreground="#334155"/>
-                                <CheckBox x:Name="AuditCheckPathLimitsCheckBox" Content="パス長260字超/禁則文字" IsChecked="True" VerticalAlignment="Center" FontSize="12" Foreground="#334155"/>
+                                <CheckBox x:Name="AuditCheckPathLimitsCheckBox" Content="パス長260字超/禁則文字" IsChecked="True" VerticalAlignment="Center" Margin="0,0,14,0" FontSize="12" Foreground="#334155"/>
+                                <TextBlock x:Name="AuditBandwidthLabel" Text="帯域制限:" VerticalAlignment="Center" FontSize="12" Foreground="#64748B" Margin="0,0,6,0"/>
+                                <ComboBox x:Name="AuditBandwidthComboBox" Height="30" Width="175" VerticalAlignment="Center" FontSize="11.5">
+                                    <ComboBoxItem x:Name="AuditBandwidthStandardItem" Content="通常 50MB/s (他業務保護)" IsSelected="True" Tag="Standard50MB"/>
+                                    <ComboBoxItem x:Name="AuditBandwidthUnlimitedItem" Content="無制限 (夜間・最速)" Tag="Unlimited"/>
+                                </ComboBox>
                             </StackPanel>
                         </Grid>
 

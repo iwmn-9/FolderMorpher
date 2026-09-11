@@ -382,6 +382,15 @@ namespace FolderMorpher.Services
         public static string RevErrFolderNotFound => IsJa ? "指定フォルダが存在しません: {0}" : "Target folder does not exist: {0}";
         public static string RevGrantDefault => IsJa ? "付与" : "Granted";
 
+        // ==========================================
+        // Tab 4: 断捨離・健全化 (Audit & Hygiene)
+        // ==========================================
+        public static string AuditBandwidthLimitLabel => IsJa ? "帯域リミッター:" : "Bandwidth Limit:";
+        public static string AuditBandwidthStandard => IsJa ? "通常 50MB/s (他業務保護)" : "Standard 50MB/s (Workload Safe)";
+        public static string AuditBandwidthUnlimited => IsJa ? "無制限 (夜間・最速)" : "Unlimited (Night / Fastest)";
+        public static string AuditProgressQuickHash => IsJa ? "クイック照合中 (Head-Tail)..." : "Quick checking (Head-Tail)...";
+        public static string AuditProgressFullHash => IsJa ? "重複確定検証中 (SHA256)..." : "Verifying duplicates (SHA256)...";
+
         /// <summary>
         /// 全プロパティが言語ごとに非空文字列を返すかを自己検証（自動テスト用）
         /// </summary>
