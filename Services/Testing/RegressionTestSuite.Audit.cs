@@ -20,7 +20,8 @@ namespace FolderMorpher.Services.Testing
     public static partial class RegressionTestSuite
     {
         /// <summary>
-        /// [DOMAIN 4/7] Audit & Hygiene 邨ｱ蜷医ユ繧ｹ繝・        /// </summary>
+        /// [DOMAIN 4/7] Audit & Hygiene 統合テスト
+        /// </summary>
         public static async Task TestDomain_AuditAndHygieneAsync()
         {
             TestAuditArchivalOriginalExclusionAndDeduplication();

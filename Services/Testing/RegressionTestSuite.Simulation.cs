@@ -20,7 +20,8 @@ namespace FolderMorpher.Services.Testing
     public static partial class RegressionTestSuite
     {
         /// <summary>
-        /// [DOMAIN 3/7] Simulation Studio 邨ｱ蜷医ユ繧ｹ繝・        /// </summary>
+        /// [DOMAIN 3/7] Simulation Studio 統合テスト
+        /// </summary>
         public static async Task TestDomain_SimulationStudioAsync()
         {
             TestSimulationAclRobocopyAndEffectiveAccessInheritOnly();

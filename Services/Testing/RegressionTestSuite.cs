@@ -6,7 +6,9 @@ using FolderMorpher.Services;
 namespace FolderMorpher.Services.Testing
 {
     /// <summary>
-    /// FolderMorpher 閾ｪ蜍募屓蟶ｰ繝・せ繝医せ繧､繝ｼ繝茨ｼ・螟ｧ繝峨Γ繧､繝ｳ蛹・峡讀懆ｨｼ・・    /// 驕主悉縺ｫ闢・ｩ阪＆繧後◆蜈ｨ31莉ｶ縺ｮ蜀咲匱髦ｲ豁｢繧ｻ繝ｼ繝輔ユ繧｣繝阪ャ繝医ｒ7螟ｧ讖溯・繝峨Γ繧､繝ｳ縺ｫ邨ｱ蜷医・謨ｴ邱・    /// </summary>
+    /// FolderMorpher 自動回帰テストスイート（7大ドメイン包括検証）
+    /// 過去に蓄積された全31件の再発防止セーフティネットを7大機能ドメインに統合・整線
+    /// </summary>
     public static partial class RegressionTestSuite
     {
         public static async Task<bool> RunAllTestsAsync()

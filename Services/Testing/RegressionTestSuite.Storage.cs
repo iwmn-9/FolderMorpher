@@ -20,7 +20,8 @@ namespace FolderMorpher.Services.Testing
     public static partial class RegressionTestSuite
     {
         /// <summary>
-        /// [DOMAIN 2/7] Storage Explorer & UNC Traversal 邨ｱ蜷医ユ繧ｹ繝・        /// </summary>
+        /// [DOMAIN 2/7] Storage Explorer & UNC Traversal 統合テスト
+        /// </summary>
         public static async Task TestDomain_StorageAndUncTraversalAsync()
         {
             await TestStorageHistoryTreeCacheAndDiffAsync();

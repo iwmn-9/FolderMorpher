@@ -20,7 +20,8 @@ namespace FolderMorpher.Services.Testing
     public static partial class RegressionTestSuite
     {
         /// <summary>
-        /// [DOMAIN 5/7] Media Optimizer & LinkFixer 邨ｱ蜷医ユ繧ｹ繝・        /// </summary>
+        /// [DOMAIN 5/7] Media Optimizer & LinkFixer 統合テスト
+        /// </summary>
         public static async Task TestDomain_MediaOptimizerAndLinkFixerAsync()
         {
             await TestMediaOptimizerPngPreservationAsync();

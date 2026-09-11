@@ -20,7 +20,8 @@ namespace FolderMorpher.Services.Testing
     public static partial class RegressionTestSuite
     {
         /// <summary>
-        /// [DOMAIN 1/7] Live ACL & Effective Access 邨ｱ蜷医ユ繧ｹ繝・        /// </summary>
+        /// [DOMAIN 1/7] Live ACL & Effective Access 統合テスト
+        /// </summary>
         public static async Task TestDomain_LiveAclAndEffectiveAccessAsync()
         {
             TestLiveAclDenyAndInheritance();

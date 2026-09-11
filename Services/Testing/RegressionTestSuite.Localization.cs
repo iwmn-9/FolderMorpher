@@ -20,7 +20,8 @@ namespace FolderMorpher.Services.Testing
     public static partial class RegressionTestSuite
     {
         /// <summary>
-        /// [DOMAIN 7/7] Bilingual Localization & Storage Forecasting 邨ｱ蜷医ユ繧ｹ繝・        /// </summary>
+        /// [DOMAIN 7/7] Bilingual Localization & Storage Forecasting 統合テスト
+        /// </summary>
         public static void TestDomain_LocalizationAndForecasting()
         {
             TestBilingualLocalizationFidelity();
