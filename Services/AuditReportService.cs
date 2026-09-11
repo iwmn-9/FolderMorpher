@@ -22,19 +22,19 @@ namespace FolderMorpher.Services
         {
             var summary = new AuditSummary();
             var items = new List<AuditItem>();
-            var scannedFiles = new List<FileInfo>();
+            var scannedFiles = new List<ScannedFileEntry>();
 
             if (string.IsNullOrWhiteSpace(options.TargetDirectory) || !Directory.Exists(options.TargetDirectory))
             {
                 throw new DirectoryNotFoundException($"対象ディレクトリが見つかりません: {options.TargetDirectory}");
             }
 
-            // 1. ファイル列挙（SafeFileEnumerator に一本化）
+            // 1. ファイル列挙（SafeFileEnumerator に一本化・ScannedFileEntry で stat 再問い合わせゼロ）
             var coverage = new ScanCoverage();
             summary.Coverage = coverage;
             progress?.Report(new AuditProgress { CurrentStatus = "ファイル一覧を走査中...", ScannedFilesCount = 0, IssueCount = 0 });
 
-            scannedFiles = await SafeFileEnumerator.EnumerateFilesSafeParallelAsync(
+            scannedFiles = await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
                 options.TargetDirectory,
                 "*.*",
                 coverage,
@@ -62,19 +62,19 @@ namespace FolderMorpher.Services
                 processedCount++;
 
                 // パス長チェック (移行先での長大化＆Excel保存不能リスクを未然に防ぐため >= 240 を危険域とする)
-                if (options.CheckPathLimits && fi.FullName.Length >= 240)
+                if (options.CheckPathLimits && fi.FullPath.Length >= 240)
                 {
                     summary.PathTooLongCount++;
                     items.Add(new AuditItem
                     {
-                        FullPath = fi.FullName,
+                        FullPath = fi.FullPath,
                         FileName = fi.Name,
-                        DirectoryPath = fi.DirectoryName ?? string.Empty,
+                        DirectoryPath = fi.DirectoryPath,
                         Size = fi.Length,
                         LastWriteTime = fi.LastWriteTime,
                         LastAccessTime = fi.LastAccessTime,
                         IssueType = AuditIssueType.PathTooLong,
-                        Detail = $"文字数: {fi.FullName.Length} 文字 (移行危険域: 240文字以上)"
+                        Detail = $"文字数: {fi.FullPath.Length} 文字 (移行危険域: 240文字以上)"
                     });
                 }
 
@@ -99,9 +99,9 @@ namespace FolderMorpher.Services
                         summary.InvalidCharCount++;
                         items.Add(new AuditItem
                         {
-                            FullPath = fi.FullName,
+                            FullPath = fi.FullPath,
                             FileName = fi.Name,
-                            DirectoryPath = fi.DirectoryName ?? string.Empty,
+                            DirectoryPath = fi.DirectoryPath,
                             Size = fi.Length,
                             LastWriteTime = fi.LastWriteTime,
                             LastAccessTime = fi.LastAccessTime,
@@ -119,9 +119,9 @@ namespace FolderMorpher.Services
                     summary.DormantBytes += fi.Length;
                     items.Add(new AuditItem
                     {
-                        FullPath = fi.FullName,
+                        FullPath = fi.FullPath,
                         FileName = fi.Name,
-                        DirectoryPath = fi.DirectoryName ?? string.Empty,
+                        DirectoryPath = fi.DirectoryPath,
                         Size = fi.Length,
                         LastWriteTime = fi.LastWriteTime,
                         LastAccessTime = fi.LastAccessTime,
@@ -160,7 +160,7 @@ namespace FolderMorpher.Services
 
                 // Step 2: 1MB以上のファイルは Head-Tail ハッシュ (先頭4KB+末尾4KB) で高速ふるい落とし
                 // 1MB未満のファイルはサイズグループをそのまま引き継ぐ
-                var fullHashCandidates = new List<List<FileInfo>>();
+                var fullHashCandidates = new List<List<ScannedFileEntry>>();
                 int quickGroupCount = 0;
 
                 foreach (var sGroup in sizeGroups)
@@ -175,16 +175,16 @@ namespace FolderMorpher.Services
                     else
                     {
                         // 1MB以上は Head-Tail ハッシュでさらに細分化
-                        var quickMap = new Dictionary<string, List<FileInfo>>();
+                        var quickMap = new Dictionary<string, List<ScannedFileEntry>>();
                         foreach (var fi in list)
                         {
                             ct.ThrowIfCancellationRequested();
-                            var qHash = await ComputeHeadTailHashAsync(fi.FullName, fi.Length, ct);
+                            var qHash = await ComputeHeadTailHashAsync(fi.FullPath, fi.Length, ct);
                             if (string.IsNullOrEmpty(qHash)) continue;
 
                             if (!quickMap.TryGetValue(qHash, out var qList))
                             {
-                                qList = new List<FileInfo>();
+                                qList = new List<ScannedFileEntry>();
                                 quickMap[qHash] = qList;
                             }
                             qList.Add(fi);
@@ -221,14 +221,14 @@ namespace FolderMorpher.Services
                 foreach (var group in fullHashCandidates)
                 {
                     ct.ThrowIfCancellationRequested();
-                    var hashToFiles = new Dictionary<string, List<FileInfo>>();
+                    var hashToFiles = new Dictionary<string, List<ScannedFileEntry>>();
 
                     var tasks = group.Select(async file =>
                     {
                         await semaphore.WaitAsync(ct);
                         try
                         {
-                            var hash = await ComputeSha256WithThrottlingAsync(file.FullName, throttler, ct);
+                            var hash = await ComputeSha256WithThrottlingAsync(file.FullPath, throttler, ct);
                             return (file, hash);
                         }
                         finally
@@ -244,7 +244,7 @@ namespace FolderMorpher.Services
                         if (string.IsNullOrEmpty(hash)) continue;
                         if (!hashToFiles.TryGetValue(hash, out var fileList))
                         {
-                            fileList = new List<FileInfo>();
+                            fileList = new List<ScannedFileEntry>();
                             hashToFiles[hash] = fileList;
                         }
                         fileList.Add(file);
@@ -258,10 +258,10 @@ namespace FolderMorpher.Services
 
                         var fileList = kvp.Value
                             .OrderBy(f => HasCopyKeywords(f.Name) ? 1 : 0)
-                            .ThenBy(f => f.FullName.Count(c => c == '\\' || c == '/'))
-                            .ThenBy(f => f.FullName.Length)
-                            .ThenBy(f => f.CreationTimeUtc)
-                            .ThenBy(f => f.LastWriteTimeUtc)
+                            .ThenBy(f => f.FullPath.Count(c => c == '\\' || c == '/'))
+                            .ThenBy(f => f.FullPath.Length)
+                            .ThenBy(f => f.CreationTime)
+                            .ThenBy(f => f.LastWriteTime)
                             .ToList();
 
                         for (int i = 0; i < fileList.Count; i++)
@@ -276,9 +276,9 @@ namespace FolderMorpher.Services
 
                             items.Add(new AuditItem
                             {
-                                FullPath = fi.FullName,
+                                FullPath = fi.FullPath,
                                 FileName = fi.Name,
-                                DirectoryPath = fi.DirectoryName ?? string.Empty,
+                                DirectoryPath = fi.DirectoryPath,
                                 Size = fi.Length,
                                 LastWriteTime = fi.LastWriteTime,
                                 LastAccessTime = fi.LastAccessTime,

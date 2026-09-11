@@ -21,7 +21,8 @@ dist/
 *.ps1
 
 ## AI Agent Workspace & Memory
-.agents/
+.agents/*
+!.agents/ADR.md
 
 ## Local Specification & User Requirements
 USER_REQUIREMENTS.md

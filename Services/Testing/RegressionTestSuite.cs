@@ -4260,6 +4260,26 @@ namespace FolderMorpher.Services.Testing
                 if (coverage.TotalFilesFound != 4)
                     throw new InvalidOperationException($"Coverage TotalFilesFound mismatch: {coverage.TotalFilesFound}");
 
+                // 3b. SafeFileEnumerator.EnumerateFileEntriesParallelAsync (ScannedFileEntry メタデータ直接保持・再stat問い合わせゼロ) 検証
+                var entryCoverage = new ScanCoverage();
+                var scannedEntries = await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
+                    testDir,
+                    "*.*",
+                    entryCoverage,
+                    null,
+                    CancellationToken.None);
+
+                if (scannedEntries.Count != 4)
+                    throw new InvalidOperationException($"EnumerateFileEntriesParallelAsync expected 4 entries, got {scannedEntries.Count}");
+
+                var rootEntry = scannedEntries.FirstOrDefault(e => e.Name == "root1.txt");
+                if (rootEntry == null)
+                    throw new InvalidOperationException("ScannedFileEntry for root1.txt not found.");
+                if (rootEntry.Length != 1000)
+                    throw new InvalidOperationException($"ScannedFileEntry Length mismatch: expected 1000, got {rootEntry.Length}");
+                if (rootEntry.CreationTime == DateTime.MinValue || rootEntry.LastWriteTime == DateTime.MinValue)
+                    throw new InvalidOperationException("ScannedFileEntry timestamps were not populated from Win32 find data.");
+
                 // 4. DiskScanService (フォールバックスキャン・並列度2ツリー構築) 検証
                 var diskScanner = new AstraSize.Services.DiskScanService();
                 var (rootNode, summary) = await diskScanner.ScanPathAsync(testDir, null, CancellationToken.None);

@@ -235,9 +235,9 @@ namespace AstraSize.Services
                     if (depth == 0 && validSubDirs.Count > 1)
                     {
                         using var sem = new SemaphoreSlim(2, 2);
-                        var tasks = validSubDirs.Select(async sd =>
+                        var tasks = validSubDirs.Select(sd => Task.Run(async () =>
                         {
-                            await sem.WaitAsync(ct);
+                            await sem.WaitAsync(ct).ConfigureAwait(false);
                             try
                             {
                                 return ScanDirectoryInternal(Path.Combine(currentPath, sd.Name), sd.Name, depth + 1, node);
@@ -246,7 +246,7 @@ namespace AstraSize.Services
                             {
                                 sem.Release();
                             }
-                        }).ToList();
+                        }, ct)).ToList();
 
                         var scannedSubNodes = Task.WhenAll(tasks).GetAwaiter().GetResult();
                         foreach (var subNode in scannedSubNodes)
