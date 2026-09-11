@@ -3951,6 +3951,14 @@ namespace FolderMorpher.Services.Testing
                             GroupName = "FinanceGroup",
                             DisplayName = "Finance",
                             IsDirect = true,
+                            NestingDepth = 0,
+                            MembershipPath = Strings.RevTargetGroupSelf // 対象自身がグループの場合
+                        },
+                        new PrincipalGroupMembership
+                        {
+                            GroupName = "AccountingTeam",
+                            DisplayName = "Accounting",
+                            IsDirect = true,
                             NestingDepth = 1,
                             MembershipPath = Strings.RevDirectMembership
                         },
@@ -4034,6 +4042,17 @@ namespace FolderMorpher.Services.Testing
                 };
                 if (japaneseRegex.IsMatch(unkTestItem.GrantSource) || japaneseRegex.IsMatch(unkTestItem.GrantPathTrace))
                     throw new InvalidOperationException($"English Unknown item contains Japanese: '{unkTestItem.GrantSource}' / '{unkTestItem.GrantPathTrace}'");
+
+                // 6. 追加された RevTargetGroupSelf, RevErrFolderNotFound, RevResPreResolved, RevGrantDefault の CJK ゼロ検証
+                if (japaneseRegex.IsMatch(Strings.RevTargetGroupSelf))
+                    throw new InvalidOperationException($"English RevTargetGroupSelf contains Japanese: '{Strings.RevTargetGroupSelf}'");
+                if (japaneseRegex.IsMatch(Strings.RevResPreResolved))
+                    throw new InvalidOperationException($"English RevResPreResolved contains Japanese: '{Strings.RevResPreResolved}'");
+                if (japaneseRegex.IsMatch(Strings.RevGrantDefault))
+                    throw new InvalidOperationException($"English RevGrantDefault contains Japanese: '{Strings.RevGrantDefault}'");
+                var notFoundMsg = string.Format(Strings.RevErrFolderNotFound, @"C:\NonExistent");
+                if (japaneseRegex.IsMatch(notFoundMsg))
+                    throw new InvalidOperationException($"English RevErrFolderNotFound contains Japanese: '{notFoundMsg}'");
             }
             finally
             {

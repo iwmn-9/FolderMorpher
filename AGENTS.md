@@ -512,10 +512,11 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
       - `Traverse` 内で `scanFailed` 時に `currentItem = unavailItem;` として配下に親の状態を確実に伝播。
       - 子の判定時、`parentItem.ChangeType == ScanUnavailable` の場合は新設の `EffectiveAccessChangeType.Unknown`（`"❓ 判定不能 (親走査不能)"`）へ明示的に分離。
     - **実サービス生成テキストの完全国際化（i18n）**:
-      - `EffectiveAccessService` 内部の `GrantSource`, `GrantPathTrace`, `DirectStatusText`, `MembershipPath`, `ResolutionStatusText`, `UncShareNotice` に至るまで、日本語ハードコードを `AppStrings.cs`（`Strings`）へ完全移設。
+      - `EffectiveAccessService` 内部の `GrantSource`, `GrantPathTrace`, `DirectStatusText`, `MembershipPath`（対象自身がグループの場合の `RevTargetGroupSelf` 含む）、`ResolutionStatusText`, `UncShareNotice`, `RevErrFolderNotFound` に至るまで、日本語ハードコードを `AppStrings.cs`（`Strings`）へ完全移設。
+      - 親が `ScanUnavailable` で子のACLが読め、かつ対象アカウントにアクセス権がない（`currentItem == null`）場合は、通常のアクセス不能フォルダーと同様にレポーティング対象外（数万件のアクセス不能フォルダによるツリー氾濫防止の確定仕様）。
     - **Test 29 の実走査強化 ＆ レポート全項目の機械的 CJK ゼロ検査**:
       - `AclReaderHook` による決定論的かつ安全な走査不能シミュレーションを導入し、`ScanUnavailable` およびその子の `Unknown` が実際のトラバースで正しく検出・分類されることを実証。
-      - 英語モード時、生成されたレポートの全プロパティ（全フォルダーアイテム、全遮断アイテム、全走査不能アイテム、全グループ所属、ステータス、注釈）に対して CJK 正規表現チェックを実行し、1文字も日本語文字が残存しないことを機械的に保証。
+      - 英語モード時、生成されたレポートの全プロパティ（全フォルダーアイテム、全遮断アイテム、全走査不能アイテム、全グループ所属、ステータス、注釈、辞書キー、例外メッセージ）に対して CJK 正規表現チェックを実行し、1文字も日本語文字が残存しないことを機械的に保証。
     - **全29回帰テスト 100% PASS**（29/29）。
 
 ---

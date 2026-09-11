@@ -376,7 +376,11 @@ namespace FolderMorpher.Services
         public static string RevResAdConnected => IsJa ? "Active Directory 接続中 (所属グループ {0} 件解決済み)" : "Active Directory Connected ({0} groups resolved)";
         public static string RevResLocalOnly => IsJa ? "ローカル環境 (直接付与ACEのみ判定)" : "Local PC (Direct ACEs evaluated only)";
         public static string RevResCurrentLogonUser => IsJa ? "現在ログオン中のユーザー (ローカルIDフォールバック)" : "Current logon user (Local identity fallback)";
+        public static string RevResPreResolved => IsJa ? "事前解決済みグループセットを使用" : "Using pre-resolved group set";
         public static string RevUncNotice => IsJa ? "※UNC共有フォルダです。ファイルサーバー上のSMB共有アクセス権（Share Permissions）の上限も併せて適用されます。" : "*UNC share path: SMB share permissions also apply as an upper limit.";
+        public static string RevTargetGroupSelf => IsJa ? "対象グループ自身" : "Target Group (Self)";
+        public static string RevErrFolderNotFound => IsJa ? "指定フォルダが存在しません: {0}" : "Target folder does not exist: {0}";
+        public static string RevGrantDefault => IsJa ? "付与" : "Granted";
 
         /// <summary>
         /// 全プロパティが言語ごとに非空文字列を返すかを自己検証（自動テスト用）

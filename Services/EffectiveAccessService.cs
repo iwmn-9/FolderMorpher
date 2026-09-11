@@ -116,7 +116,7 @@ namespace FolderMorpher.Services
                                     Sid = sidStr,
                                     IsDirect = true,
                                     NestingDepth = 0,
-                                    MembershipPath = "対象グループ自身"
+                                    MembershipPath = Strings.RevTargetGroupSelf
                                 });
                             }
 
@@ -256,10 +256,10 @@ namespace FolderMorpher.Services
             return await Task.Run(async () =>
             {
                 var dir = new DirectoryInfo(rootPath);
-                if (!dir.Exists) throw new DirectoryNotFoundException($"指定フォルダが存在しません: {rootPath}");
+                if (!dir.Exists) throw new DirectoryNotFoundException(string.Format(Strings.RevErrFolderNotFound, rootPath));
 
                 var (memberships, resMode, resStatus) = preResolvedGroups != null
-                    ? (preResolvedGroups, EffectiveAccessResolutionMode.ActiveDirectory, Strings.IsJa ? "事前解決済みグループセットを使用" : "Using pre-resolved group set")
+                    ? (preResolvedGroups, EffectiveAccessResolutionMode.ActiveDirectory, Strings.RevResPreResolved)
                     : await ResolveMembershipsAsync(targetAccount);
 
                 var report = new EffectiveAccessAuditReport
@@ -431,6 +431,8 @@ namespace FolderMorpher.Services
                             report.SeveredFolders.Add(severedItem);
                         }
                     }
+                    // ※親が ScanUnavailable で子のACLが読め、かつ対象アカウントにアクセス権がない場合（currentItem == null）は、
+                    // 通常のアクセス不能フォルダーと同様にレポーティング対象外とする（数万件のアクセス不能フォルダによるツリー肥大化・氾濫の防止）。
 
                     if (depth >= maxDepth) return;
 
@@ -611,7 +613,7 @@ namespace FolderMorpher.Services
                 DeniedRights = totalDenied,
                 HasDeny = totalDenied != 0,
                 IsInherited = isInheritedOnly,
-                GrantSource = grantSources.Distinct().FirstOrDefault() ?? (Strings.IsJa ? "付与" : "Granted"),
+                GrantSource = grantSources.Distinct().FirstOrDefault() ?? Strings.RevGrantDefault,
                 GrantPathTrace = string.Join(" / ", grantTraces.Distinct())
             };
         }
