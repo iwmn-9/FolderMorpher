@@ -79,7 +79,7 @@
                         <!-- Expanded Footer (2-tier layout: Brand on top, Controls below) -->
                         <StackPanel x:Name="SidebarFooterExpandedPanel" Margin="14,8,14,10">
                             <StackPanel Margin="0,0,0,8">
-                                <TextBlock x:Name="SidebarVersionText" Text="FolderMorpher v2.0.0" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock x:Name="SidebarVersionText" Text="FolderMorpher v2.0.1" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                                 <TextBlock x:Name="SidebarSubtitleText" Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#94A3B8" Margin="0,1,0,0"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal">

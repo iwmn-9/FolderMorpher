@@ -3471,7 +3471,7 @@ namespace AstraSize
             if (SidebarVersionText != null)
             {
                 var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-                string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v2.0.0";
+                string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v2.0.1";
                 SidebarVersionText.Text = App.IsClientMode
                     ? $"FolderCleaner {verStr}"
                     : $"FolderMorpher {verStr}";

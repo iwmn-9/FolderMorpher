@@ -281,9 +281,10 @@ namespace FolderMorpher.Services
             DrawKpiCard(ws, "B5", "C6", "総検出フォルダ数", $"{report.AccessibleFolders.Count:N0} 箇所", "#2563EB");
             DrawKpiCard(ws, "D5", "E6", "🚨 飛び地 (獲得)", $"{report.EnclaveCount:N0} 箇所", "#DC2626");
             DrawKpiCard(ws, "F5", "G6", "⛔ 遮断 (消失)", $"{report.SeveredCount:N0} 箇所", "#E11D48");
-            DrawKpiCard(ws, "H5", "I6", "フルコントロール", $"{report.FullControlCount:N0} 箇所", "#DC2626");
-            DrawKpiCard(ws, "J5", "K6", "変更 (Modify)", $"{report.ModifyCount:N0} 箇所", "#D97706");
-            DrawKpiCard(ws, "L5", "M6", "読み取り専用", $"{report.ReadOnlyCount:N0} 箇所", "#059669");
+            DrawKpiCard(ws, "H5", "I6", "⚠️ 走査不能", $"{report.UnavailableCount:N0} 箇所", "#D97706");
+            DrawKpiCard(ws, "J5", "K6", "フルコントロール", $"{report.FullControlCount:N0} 箇所", "#DC2626");
+            DrawKpiCard(ws, "L5", "M6", "変更 (Modify)", $"{report.ModifyCount:N0} 箇所", "#D97706");
+            DrawKpiCard(ws, "N5", "O6", "読み取り専用", $"{report.ReadOnlyCount:N0} 箇所", "#059669");
 
             // Group Memberships Section
             int row = 8;

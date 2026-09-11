@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Security.AccessControl;
 using AstraSize.Models;
 
+using FolderMorpher.Services;
+
 namespace FolderMorpher.Models
 {
     /// <summary>
@@ -22,10 +24,13 @@ namespace FolderMorpher.Models
     /// </summary>
     public enum EffectiveAccessChangeType
     {
-        InheritedSame = 0,       // 🔗 通常継承: 親からそのまま継承
-        EnclaveGranted = 1,      // 🚨 飛び地 (権限獲得): 親はアクセス不可だが子でアクセス可能
-        InheritanceSevered = 2,  // ⛔ 遮断 (権限消失): 親はアクセス可能だったが子で継承遮断/Denyにより消失
-        PermissionChanged = 3    // ⚡ 権限変更: 親と異なる権限レベルへ昇格/変更
+        Baseline = 0,            // 🏁 基準点: 走査ルート自身
+        InheritedSame = 1,       // 🔗 通常継承: 親からそのまま継承 (実効権限も同一)
+        ExplicitBoundary = 2,    // 🔧 明示化境界: 親と実効権限は同一だが明示ACE化
+        EnclaveGranted = 3,      // 🚨 飛び地 (権限獲得): 親はアクセス不可だが子でアクセス可能
+        InheritanceSevered = 4,  // ⛔ 遮断 (権限消失): 親はアクセス可能だったが子で継承遮断/Denyにより消失
+        PermissionChanged = 5,   // ⚡ 権限変更: 親と異なる権限レベルへ昇格/変更
+        ScanUnavailable = 6      // ⚠️ 走査不能: 管理者権限不足やネットワークエラー等でACL取得不能
     }
 
     /// <summary>
@@ -42,14 +47,15 @@ namespace FolderMorpher.Models
         public bool IsInherited { get; set; } = false;
 
         /// <summary>
-        /// 階層変化点分類 (飛び地・遮断・権限変更・通常継承)
+        /// 階層変化点分類 (基準点・飛び地・遮断・走査不能・明示化境界・権限変更・通常継承)
         /// </summary>
         public EffectiveAccessChangeType ChangeType { get; set; } = EffectiveAccessChangeType.InheritedSame;
 
         /// <summary>
-        /// 変化点 (飛び地または遮断または変更) かどうか
+        /// 変化点 (通常継承および基準点以外) かどうか
         /// </summary>
-        public bool IsChangePoint => ChangeType != EffectiveAccessChangeType.InheritedSame;
+        public bool IsChangePoint => ChangeType != EffectiveAccessChangeType.InheritedSame
+                                  && ChangeType != EffectiveAccessChangeType.Baseline;
 
         /// <summary>
         /// Source of the permission grant: Direct, Specific Group, Nested Group, or Special Principal
@@ -63,11 +69,11 @@ namespace FolderMorpher.Models
 
         public string FormattedRights => PermissionLevel switch
         {
-            EffectivePermissionLevel.FullControl => "フルコントロール",
-            EffectivePermissionLevel.Modify => "変更 (Modify)",
-            EffectivePermissionLevel.ReadAndExecute => "読み取りと実行",
-            EffectivePermissionLevel.Read => "読み取り",
-            _ => "アクセス権なし (遮断)"
+            EffectivePermissionLevel.FullControl => Strings.SecFullControl,
+            EffectivePermissionLevel.Modify => Strings.SecModify,
+            EffectivePermissionLevel.ReadAndExecute => Strings.SecReadExecute,
+            EffectivePermissionLevel.Read => Strings.SecRead,
+            _ => Strings.RevRightsNone
         };
 
         public string RightsBadgeBackground => PermissionLevel switch
@@ -81,37 +87,49 @@ namespace FolderMorpher.Models
 
         public string RightsBadgeForeground => "#FFFFFF";
 
-        public string InheritanceBadgeText => IsInherited ? "継承" : "明示的付与";
+        public string InheritanceBadgeText => IsInherited ? Strings.RevInheritedBadge : Strings.RevExplicitBadge;
         public string InheritanceBadgeColor => IsInherited ? "#64748B" : "#2563EB";
 
         public string ChangeBadgeText => ChangeType switch
         {
-            EffectiveAccessChangeType.EnclaveGranted => "🚨 飛び地 (獲得)",
-            EffectiveAccessChangeType.InheritanceSevered => "⛔ 遮断 (消失)",
-            EffectiveAccessChangeType.PermissionChanged => "⚡ 権限変更",
-            _ => "🔗 通常継承"
+            EffectiveAccessChangeType.Baseline => Strings.RevChangeBaseline,
+            EffectiveAccessChangeType.EnclaveGranted => Strings.RevChangeEnclave,
+            EffectiveAccessChangeType.InheritanceSevered => Strings.RevChangeSevered,
+            EffectiveAccessChangeType.ScanUnavailable => Strings.RevChangeUnavailable,
+            EffectiveAccessChangeType.ExplicitBoundary => Strings.RevChangeExplicitBoundary,
+            EffectiveAccessChangeType.PermissionChanged => Strings.RevChangeModified,
+            _ => Strings.RevChangeInherited
         };
 
         public string ChangeBadgeBackground => ChangeType switch
         {
+            EffectiveAccessChangeType.Baseline => "#F1F5F9",
             EffectiveAccessChangeType.EnclaveGranted => "#FEF2F2",
             EffectiveAccessChangeType.InheritanceSevered => "#FFF1F2",
+            EffectiveAccessChangeType.ScanUnavailable => "#FFFBEB",
+            EffectiveAccessChangeType.ExplicitBoundary => "#F0F9FF",
             EffectiveAccessChangeType.PermissionChanged => "#FEF3C7",
             _ => "#F8FAFC"
         };
 
         public string ChangeBadgeBorder => ChangeType switch
         {
+            EffectiveAccessChangeType.Baseline => "#CBD5E1",
             EffectiveAccessChangeType.EnclaveGranted => "#FCA5A5",
             EffectiveAccessChangeType.InheritanceSevered => "#FDA4AF",
+            EffectiveAccessChangeType.ScanUnavailable => "#FDE68A",
+            EffectiveAccessChangeType.ExplicitBoundary => "#BAE6FD",
             EffectiveAccessChangeType.PermissionChanged => "#FCD34D",
             _ => "#E2E8F0"
         };
 
         public string ChangeBadgeForeground => ChangeType switch
         {
+            EffectiveAccessChangeType.Baseline => "#475569",
             EffectiveAccessChangeType.EnclaveGranted => "#DC2626",
             EffectiveAccessChangeType.InheritanceSevered => "#E11D48",
+            EffectiveAccessChangeType.ScanUnavailable => "#D97706",
+            EffectiveAccessChangeType.ExplicitBoundary => "#0284C7",
             EffectiveAccessChangeType.PermissionChanged => "#B45309",
             _ => "#64748B"
         };
@@ -157,9 +175,14 @@ namespace FolderMorpher.Models
         public List<EffectiveFolderAccessItem> SeveredFolders { get; set; } = new();
 
         /// <summary>
-        /// 監査対象となった全フォルダー (アクセス可能 + 遮断)
+        /// 管理者自身の権限不足やエラー等によりACLを走査・判定できなかったフォルダー一覧 (走査不能)
         /// </summary>
-        public IEnumerable<EffectiveFolderAccessItem> AllAuditItems => AccessibleFolders.Concat(SeveredFolders);
+        public List<EffectiveFolderAccessItem> UnavailableFolders { get; set; } = new();
+
+        /// <summary>
+        /// 監査対象となった全フォルダー (アクセス可能 + 遮断 + 走査不能)
+        /// </summary>
+        public IEnumerable<EffectiveFolderAccessItem> AllAuditItems => AccessibleFolders.Concat(SeveredFolders).Concat(UnavailableFolders);
 
         public int TotalFoldersScanned { get; set; } = 0;
         public int FullControlCount { get; set; } = 0;
@@ -167,6 +190,8 @@ namespace FolderMorpher.Models
         public int ReadOnlyCount { get; set; } = 0;
         public int EnclaveCount { get; set; } = 0;
         public int SeveredCount => SeveredFolders.Count;
+        public int UnavailableCount => UnavailableFolders.Count;
+        public int ExplicitBoundaryCount { get; set; } = 0;
 
         public EffectiveAccessResolutionMode ResolutionMode { get; set; } = EffectiveAccessResolutionMode.DirectAclOnly;
         public string ResolutionStatusText { get; set; } = string.Empty;

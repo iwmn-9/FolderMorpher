@@ -529,9 +529,11 @@
                                     <RowDefinition Height="Auto"/> <!-- Status / Progress -->
                                 </Grid.RowDefinitions>
 
-                                <!-- KPI Cards (6枚構成: 飛び地・遮断・権限レベル) -->
+                                <!-- KPI Cards (7枚構成: 飛び地・遮断・走査不能・権限レベル) -->
                                 <Grid Grid.Row="0" Margin="0,0,0,12">
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="6"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="6"/>
                                         <ColumnDefinition Width="*"/>
@@ -569,24 +571,32 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- 4. フルコントロール -->
-                                    <Border Grid.Column="6" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="8,6">
+                                    <!-- 4. 走査不能 (要確認) -->
+                                    <Border Grid.Column="6" Background="#FFFBEB" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="8" Padding="8,6">
+                                        <StackPanel>
+                                            <TextBlock x:Name="RevKpiUnavailableTitle" Text="⚠️ 走査不能" FontSize="9.5" FontWeight="SemiBold" Foreground="#92400E"/>
+                                            <TextBlock x:Name="RevKpiUnavailable" Text="0 箇所" FontSize="13.5" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#D97706"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- 5. フルコントロール -->
+                                    <Border Grid.Column="8" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="8,6">
                                         <StackPanel>
                                             <TextBlock x:Name="RevKpiFullTitle" Text="フルコントロール" FontSize="9.5" Foreground="#64748B"/>
                                             <TextBlock x:Name="RevKpiFull" Text="0 箇所" FontSize="13.5" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#DC2626"/>
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- 5. 変更 (Modify) -->
-                                    <Border Grid.Column="8" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="8,6">
+                                    <!-- 6. 変更 (Modify) -->
+                                    <Border Grid.Column="10" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="8,6">
                                         <StackPanel>
                                             <TextBlock x:Name="RevKpiModTitle" Text="変更 (Modify)" FontSize="9.5" Foreground="#64748B"/>
                                             <TextBlock x:Name="RevKpiMod" Text="0 箇所" FontSize="13.5" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#D97706"/>
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- 6. 読み取り専用 -->
-                                    <Border Grid.Column="10" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="8,6">
+                                    <!-- 7. 読み取り専用 -->
+                                    <Border Grid.Column="12" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="8,6">
                                         <StackPanel>
                                             <TextBlock x:Name="RevKpiReadTitle" Text="読み取り専用" FontSize="9.5" Foreground="#64748B"/>
                                             <TextBlock x:Name="RevKpiRead" Text="0 箇所" FontSize="13.5" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#059669"/>

@@ -492,6 +492,20 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
     - **回帰テスト Test 29 新設**:
       - 楽観ロック、直前ロールバック、飛び地・遮断の自動判定、Skeleton 競合UI判定を網羅し、**全29回帰テスト 100% PASS**（29/29）。
 
+48. **Effective Access 意味論精緻化、i18n ハードコード完全撤廃 ＆ テスト実態化 (v2.0.1)**:
+    - **「⛔ 遮断（AccessSevered）」と「⚠️ 走査不能（ScanUnavailable）」の厳密分離**:
+      - 管理者自身の権限不足、ファイルロック、ネットワーク応答エラーによる ACL 取得失敗を「対象ユーザーのアクセス権消失（遮断）」と誤認させないため、新設の `ScanUnavailable`（走査不能・要確認）として `report.UnavailableFolders` に完全分離。
+      - UIに 7 枚目の KPI カード「⚠️ 走査不能」を新設し、Excel 台帳にも明確に出力。
+    - **走査ルートの「🏁 基準点（Baseline）」化 ＆ 「🔧 明示化境界（ExplicitBoundary）」の分離**:
+      - `depth == 0`（走査ルート自身）は親が存在しないため、飛び地ではなく「🏁 基準点（Baseline）」として正しく分類。
+      - 親と実効権限（PermissionLevel および AllowedRights）は同一だが、継承を切って明示ACE化しただけのフォルダーを「⚡ 権限変更」から「🔧 明示化境界（ExplicitBoundary）」へ分離。真の実効権限変更とACL境界を明確に区別。
+    - **国際化（i18n）の正本単一化（ハードコードの完全撤廃）**:
+      - `Models/EffectiveAccessModels.cs` 内の日本語文字列直書きを完全撤廃。全変化点バッジ、権限レベル、継承バッジを `Strings.Rev...` から動的取得する設計へ統一。
+      - `Views/LiveAclStudio.xaml.cs` の `ApplyLocalization()` に `ColRevChangeType`, `ColRevGrantTrace`, `RevFilterChangesOnlyCheckBox`, KPI カード群を完全網羅。言語切り替え時にバッジを含め即座に日英動的切り替えされるよう `Items.Refresh()` を適用。
+    - **Test 29 の実ファイルシステム（NTFS ACL）貫通テスト化 ＆ 英語モード日本語残留検知**:
+      - プロパティ手動代入テストを廃止し、一時ディレクトリ上に実際の NTFS ACL（Baseline / Inherited / Explicit / Elevated / Severed / Enclave）を構築して `EffectiveAccessService.ScanEffectiveAccessAsync` を実走させる完全な実態テストへ置換。
+      - 英語モード（`Language.English`）において、全バッジ・権限表示・辞書に日本語（CJK）文字が 1 文字も残存していないことを機械的にアサートするテストガードを導入。
+
 ---
 
 ## 4. ビルド・実行・検証コマンド

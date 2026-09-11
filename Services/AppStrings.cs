@@ -339,6 +339,27 @@ namespace FolderMorpher.Services
         public static string AnomalySpikeBreakdownTitle => IsJa ? "🔍 選択スキャンの急増主因 Top" : "🔍 Top Growth Contributors";
         public static string AnomalyDoubleclickHint => IsJa ? "ダブルクリックで該当フォルダへ直行" : "Double-click to reveal in tree/Explorer";
 
+        // ==========================================
+        // 逆引き権限 & 変化点監査 (Effective Access)
+        // ==========================================
+        public static string RevRightsNone => IsJa ? "アクセス権なし (遮断)" : "No Access (Severed)";
+        public static string RevChangeBaseline => IsJa ? "🏁 基準点 (走査ルート)" : "🏁 Baseline (Scan Root)";
+        public static string RevChangeEnclave => IsJa ? "🚨 飛び地 (獲得)" : "🚨 Enclave (Granted)";
+        public static string RevChangeSevered => IsJa ? "⛔ 遮断 (消失)" : "⛔ Severed (Revoked)";
+        public static string RevChangeUnavailable => IsJa ? "⚠️ 走査不能 (要確認)" : "⚠️ Scan Unavailable";
+        public static string RevChangeExplicitBoundary => IsJa ? "🔧 明示化境界" : "🔧 Explicit Boundary";
+        public static string RevChangeModified => IsJa ? "⚡ 権限変更" : "⚡ Permission Changed";
+        public static string RevChangeInherited => IsJa ? "🔗 通常継承" : "🔗 Inherited (Unchanged)";
+        public static string RevKpiEnclaveTitle => IsJa ? "🚨 飛び地 (獲得)" : "🚨 Enclaves (Granted)";
+        public static string RevKpiSeveredTitle => IsJa ? "⛔ 遮断 (消失)" : "⛔ Severed (Revoked)";
+        public static string RevKpiUnavailableTitle => IsJa ? "⚠️ 走査不能" : "⚠️ Scan Unavailable";
+        public static string RevFilterChangesOnly => IsJa ? "⚡ 変化点（飛び地・遮断・走査不能）のみ" : "⚡ Change Points (Enclave / Severed / Unavailable) Only";
+        public static string RevFilterChangesOnlyToolTip => IsJa ? "親からそのまま継承された同一権限フォルダーを非表示にし、権限が獲得された『飛び地』や切断された『遮断』、走査不能フォルダーのみを表示します" : "Hides normally inherited folders with identical rights, showing only enclaves, severed points, permission changes, and unavailable folders";
+        public static string ColRevChangeType => IsJa ? "変化点 / 状態" : "Change / Status";
+        public static string ColRevGrantTrace => IsJa ? "詳細トレース / 理由" : "Trace / Reason";
+        public static string RevInheritedBadge => IsJa ? "継承" : "Inherited";
+        public static string RevExplicitBadge => IsJa ? "明示的付与" : "Explicit";
+
         /// <summary>
         /// 全プロパティが言語ごとに非空文字列を返すかを自己検証（自動テスト用）
         /// </summary>

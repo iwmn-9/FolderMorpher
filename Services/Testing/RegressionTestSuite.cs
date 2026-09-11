@@ -208,9 +208,9 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 29
-                Console.WriteLine("\n[TEST 29/29] Safety & Usability v2.0: LinkFix Optimistic Lock & Scoped Rollback, Effective Access Enclave/Severed Classification & Skeleton Conflict UI Verification...");
+                Console.WriteLine("\n[TEST 29/29] Safety, Real Traversal & i18n v2.0.1: Real NTFS Effective Access Traversal, LinkFix Optimistic Lock & Scoped Rollback, and English CJK-Free Verification...");
                 await TestOptimisticLockAndEffectiveAccessChangePointsAsync();
-                Console.WriteLine("  --> [PASS] Safety & Usability v2.0: LinkFix optimistic lock & scoped rollback, effective access enclave/severed detection & skeleton conflict UI verified.");
+                Console.WriteLine("  --> [PASS] Safety, Real Traversal & i18n v2.0.1: Real NTFS Effective Access traversal, LinkFix optimistic lock & scoped rollback, and English CJK-free 100% verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -3644,86 +3644,142 @@ namespace FolderMorpher.Services.Testing
         }
 
         /// <summary>
-        /// Test 29: LinkFixer 楽観ロック ＆ 直前一時ロールバック、Effective Access 変化点（飛び地・遮断）の自動判定、Skeleton Deploy 競合検知の検証
+        /// Test 29: Effective Access 実サービス走査（実NTFS ACLツリーによるBaseline/Inherited/Boundary/Elevated/Severed/Enclaveの網羅検証）、
+        /// Skeleton Deploy 競合判定、LinkFixer 楽観ロック ＆ 直前ロールバック、および英語モード時日本語残留機械的検知
         /// </summary>
         private static async Task TestOptimisticLockAndEffectiveAccessChangePointsAsync()
         {
-            // Part 1: Effective Access の変化点判定ロジック検証
-            var parentItem = new EffectiveFolderAccessItem
-            {
-                FolderPath = @"C:\MockRoot\DeptA",
-                FolderName = "DeptA",
-                PermissionLevel = EffectivePermissionLevel.Read,
-                AllowedRights = FileSystemRights.ReadAndExecute,
-                IsInherited = true
-            };
+            // =========================================================================
+            // Part 1: EffectiveAccessService 実ファイルシステム（NTFS ACL）による実態走査テスト
+            // =========================================================================
+            string testRoot = Path.Combine(Path.GetTempPath(), "Test29_EffAccessReal_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(testRoot);
 
-            // 1-1. 通常継承 (InheritedSame)
-            var childSame = new EffectiveFolderAccessItem
+            string adminUser = Environment.UserName;
+            string targetUser = ((NTAccount)new SecurityIdentifier(WellKnownSidType.BuiltinGuestsSid, null).Translate(typeof(NTAccount))).Value;
+            var subNormal = Path.Combine(testRoot, "01_NormalInherited");
+            var subExplicit = Path.Combine(testRoot, "02_ExplicitBoundary");
+            var subElevated = Path.Combine(testRoot, "03_PermissionElevated");
+            var subSevered = Path.Combine(testRoot, "04_Severed");
+            var subRestricted = Path.Combine(testRoot, "05_RestrictedParent");
+            var subEnclave = Path.Combine(subRestricted, "06_EnclaveChild");
+
+            Directory.CreateDirectory(subNormal);
+            Directory.CreateDirectory(subExplicit);
+            Directory.CreateDirectory(subElevated);
+            Directory.CreateDirectory(subSevered);
+            Directory.CreateDirectory(subRestricted);
+            Directory.CreateDirectory(subEnclave);
+
+            try
             {
-                FolderPath = @"C:\MockRoot\DeptA\Sub1",
-                FolderName = "Sub1",
-                PermissionLevel = EffectivePermissionLevel.Read,
-                AllowedRights = FileSystemRights.ReadAndExecute,
-                IsInherited = true
-            };
-            if (childSame.IsInherited && childSame.PermissionLevel == parentItem.PermissionLevel && childSame.AllowedRights == parentItem.AllowedRights)
-            {
-                childSame.ChangeType = EffectiveAccessChangeType.InheritedSame;
+                // 1. ルート: AdminUser に FullControl、TargetUser に ReadAndExecute (親なし Baseline)
+                var rootSec = new DirectorySecurity();
+                rootSec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                rootSec.AddAccessRule(new FileSystemAccessRule(adminUser, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                rootSec.AddAccessRule(new FileSystemAccessRule(targetUser, FileSystemRights.ReadAndExecute, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                new DirectoryInfo(testRoot).SetAccessControl(rootSec);
+
+                // 2. subNormal: ルートから継承そのまま (InheritedSame)
+                // 何も設定しない (継承有効)
+
+                // 3. subExplicit: 継承切断だが同一権限の明示ACE (ExplicitBoundary)
+                var expSec = new DirectorySecurity();
+                expSec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                expSec.AddAccessRule(new FileSystemAccessRule(adminUser, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                expSec.AddAccessRule(new FileSystemAccessRule(targetUser, FileSystemRights.ReadAndExecute, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                new DirectoryInfo(subExplicit).SetAccessControl(expSec);
+
+                // 4. subElevated: 継承切断で権限昇格 (PermissionChanged)
+                var eleSec = new DirectorySecurity();
+                eleSec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                eleSec.AddAccessRule(new FileSystemAccessRule(adminUser, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                eleSec.AddAccessRule(new FileSystemAccessRule(targetUser, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                new DirectoryInfo(subElevated).SetAccessControl(eleSec);
+
+                // 5. subSevered: 継承切断でTargetUserの権限なし (InheritanceSevered)
+                var sevSec = new DirectorySecurity();
+                sevSec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                sevSec.AddAccessRule(new FileSystemAccessRule(adminUser, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                new DirectoryInfo(subSevered).SetAccessControl(sevSec);
+
+                // 6. subRestricted: 継承切断でTargetUserの権限なし (親はアクセス不可)
+                var resSec = new DirectorySecurity();
+                resSec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                resSec.AddAccessRule(new FileSystemAccessRule(adminUser, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                new DirectoryInfo(subRestricted).SetAccessControl(resSec);
+
+                // 7. subEnclave: 親はアクセス不可だが子でTargetUserに明示Allow (EnclaveGranted)
+                var encSec = new DirectorySecurity();
+                encSec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                encSec.AddAccessRule(new FileSystemAccessRule(adminUser, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                encSec.AddAccessRule(new FileSystemAccessRule(targetUser, FileSystemRights.Modify, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+                new DirectoryInfo(subEnclave).SetAccessControl(encSec);
+
+                // 実サービスを実行！
+                var effService = new EffectiveAccessService();
+                var report = await effService.ScanEffectiveAccessAsync(
+                    testRoot,
+                    targetUser,
+                    new List<PrincipalGroupMembership>(),
+                    maxDepth: 5,
+                    ct: CancellationToken.None);
+
+                // --- 判定結果の実態アサーション ---
+                // A. ルート: Baseline
+                var rootItem = report.AccessibleFolders.FirstOrDefault(f => f.FolderPath.Equals(testRoot, StringComparison.OrdinalIgnoreCase));
+                if (rootItem == null || rootItem.ChangeType != EffectiveAccessChangeType.Baseline || rootItem.IsChangePoint)
+                    throw new InvalidOperationException($"EffectiveAccess: Root folder should be Baseline, but was {rootItem?.ChangeType}");
+
+                // B. NormalChild: InheritedSame
+                var normalItem = report.AccessibleFolders.FirstOrDefault(f => f.FolderPath.Equals(subNormal, StringComparison.OrdinalIgnoreCase));
+                if (normalItem == null || normalItem.ChangeType != EffectiveAccessChangeType.InheritedSame || normalItem.IsChangePoint)
+                    throw new InvalidOperationException($"EffectiveAccess: Normal child should be InheritedSame, but was {normalItem?.ChangeType}");
+
+                // C. ExplicitChild: ExplicitBoundary (変化点)
+                var explicitItem = report.AccessibleFolders.FirstOrDefault(f => f.FolderPath.Equals(subExplicit, StringComparison.OrdinalIgnoreCase));
+                if (explicitItem == null || explicitItem.ChangeType != EffectiveAccessChangeType.ExplicitBoundary || !explicitItem.IsChangePoint)
+                    throw new InvalidOperationException($"EffectiveAccess: Explicit child should be ExplicitBoundary, but was {explicitItem?.ChangeType}");
+
+                // D. ElevatedChild: PermissionChanged (変化点)
+                var elevatedItem = report.AccessibleFolders.FirstOrDefault(f => f.FolderPath.Equals(subElevated, StringComparison.OrdinalIgnoreCase));
+                if (elevatedItem == null || elevatedItem.ChangeType != EffectiveAccessChangeType.PermissionChanged || !elevatedItem.IsChangePoint)
+                    throw new InvalidOperationException($"EffectiveAccess: Elevated child should be PermissionChanged, but was {elevatedItem?.ChangeType}");
+
+                // E. SeveredChild: InheritanceSevered (遮断フォルダー一覧に含まれ、変化点)
+                var severedItem = report.SeveredFolders.FirstOrDefault(f => f.FolderPath.Equals(subSevered, StringComparison.OrdinalIgnoreCase));
+                if (severedItem == null || severedItem.ChangeType != EffectiveAccessChangeType.InheritanceSevered || !severedItem.IsChangePoint)
+                    throw new InvalidOperationException($"EffectiveAccess: Severed child should be in SeveredFolders as InheritanceSevered, but was {severedItem?.ChangeType}");
+
+                // F. EnclaveChild: EnclaveGranted (飛び地・変化点)
+                var enclaveItem = report.AccessibleFolders.FirstOrDefault(f => f.FolderPath.Equals(subEnclave, StringComparison.OrdinalIgnoreCase));
+                if (enclaveItem == null || enclaveItem.ChangeType != EffectiveAccessChangeType.EnclaveGranted || !enclaveItem.IsChangePoint)
+                    throw new InvalidOperationException($"EffectiveAccess: Enclave child should be EnclaveGranted, but was {enclaveItem?.ChangeType}");
+
+                if (report.EnclaveCount < 1)
+                    throw new InvalidOperationException($"EffectiveAccess: EnclaveCount should be >= 1, but was {report.EnclaveCount}");
+                if (report.SeveredCount < 1)
+                    throw new InvalidOperationException($"EffectiveAccess: SeveredCount should be >= 1, but was {report.SeveredCount}");
             }
-            if (childSame.ChangeType != EffectiveAccessChangeType.InheritedSame || childSame.IsChangePoint)
-                throw new InvalidOperationException("EffectiveAccess: InheritedSame detection failed!");
-
-            // 1-2. 権限変更 (PermissionChanged: 昇格)
-            var childElevated = new EffectiveFolderAccessItem
+            finally
             {
-                FolderPath = @"C:\MockRoot\DeptA\Sub2",
-                FolderName = "Sub2",
-                PermissionLevel = EffectivePermissionLevel.Modify,
-                AllowedRights = FileSystemRights.Modify,
-                IsInherited = false
-            };
-            if (!childElevated.IsInherited || childElevated.PermissionLevel != parentItem.PermissionLevel)
-            {
-                childElevated.ChangeType = EffectiveAccessChangeType.PermissionChanged;
+                // クリーンアップ: 後片付け前に Deny ルールを全消去して削除可能にする
+                try
+                {
+                    var clearSec = new DirectorySecurity();
+                    clearSec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                    clearSec.AddAccessRule(new FileSystemAccessRule(adminUser, FileSystemRights.FullControl, AccessControlType.Allow));
+                    new DirectoryInfo(subSevered).SetAccessControl(clearSec);
+                    new DirectoryInfo(subRestricted).SetAccessControl(clearSec);
+                    new DirectoryInfo(subEnclave).SetAccessControl(clearSec);
+                    Directory.Delete(testRoot, recursive: true);
+                }
+                catch { }
             }
-            if (childElevated.ChangeType != EffectiveAccessChangeType.PermissionChanged || !childElevated.IsChangePoint)
-                throw new InvalidOperationException("EffectiveAccess: PermissionChanged detection failed!");
 
-            // 1-3. 飛び地 (EnclaveGranted: 親はNoneだが子で獲得)
-            var parentNone = new EffectiveFolderAccessItem
-            {
-                FolderPath = @"C:\MockRoot\Restricted",
-                FolderName = "Restricted",
-                PermissionLevel = EffectivePermissionLevel.None
-            };
-            var childEnclave = new EffectiveFolderAccessItem
-            {
-                FolderPath = @"C:\MockRoot\Restricted\PublicDrop",
-                FolderName = "PublicDrop",
-                PermissionLevel = EffectivePermissionLevel.Modify,
-                AllowedRights = FileSystemRights.Modify,
-                IsInherited = false
-            };
-            if (parentNone == null || parentNone.PermissionLevel == EffectivePermissionLevel.None)
-            {
-                childEnclave.ChangeType = EffectiveAccessChangeType.EnclaveGranted;
-            }
-            if (childEnclave.ChangeType != EffectiveAccessChangeType.EnclaveGranted || !childEnclave.IsChangePoint)
-                throw new InvalidOperationException("EffectiveAccess: EnclaveGranted detection failed!");
-
-            // 1-4. 遮断 (InheritanceSevered: 親は可だが子はNone)
-            var childSevered = new EffectiveFolderAccessItem
-            {
-                FolderPath = @"C:\MockRoot\DeptA\SecretVault",
-                FolderName = "SecretVault",
-                PermissionLevel = EffectivePermissionLevel.None,
-                ChangeType = EffectiveAccessChangeType.InheritanceSevered
-            };
-            if (childSevered.ChangeType != EffectiveAccessChangeType.InheritanceSevered || !childSevered.IsChangePoint)
-                throw new InvalidOperationException("EffectiveAccess: InheritanceSevered detection failed!");
-
+            // =========================================================================
             // Part 2: Skeleton Deploy の競合判定と UI 判定ロジック検証
+            // =========================================================================
             var mockResultClean = new DeploySkeletonResult
             {
                 CreatedCount = 5,
@@ -3740,7 +3796,9 @@ namespace FolderMorpher.Services.Testing
             bool conflictCleanSuccess = mockResultConflict.FailedCount == 0 && mockResultConflict.ConflictCount == 0;
             if (conflictCleanSuccess) throw new InvalidOperationException("Skeleton Deploy conflict suppression failed (should not be clean success)!");
 
-            // Part 3: LinkFixer 楽観ロック (Optimistic Lock) の実動検証
+            // =========================================================================
+            // Part 3: LinkFixer 楽観ロック (Optimistic Lock) & 直前ロールバックの実動検証
+            // =========================================================================
             Type? shellType = Type.GetTypeFromProgID("WScript.Shell");
             if (shellType != null)
             {
@@ -3775,11 +3833,79 @@ namespace FolderMorpher.Services.Testing
                     var rollbackFiles = Directory.GetFiles(tempDir, "*.rollback_*");
                     if (rollbackFiles.Length > 0)
                         throw new InvalidOperationException("Temporary rollback snapshot was not cleaned up!");
+
+                    // 正常修復ケース: 楽観ロックが一致し、Verify成功で一時スナップショットが削除されること
+                    var normalItem = new LinkFixItem
+                    {
+                        FilePath = testLnk,
+                        OldTarget = @"C:\ExternalModified\OldPath.exe", // 実態と一致
+                        NewTarget = @"C:\NewTarget\App.exe",
+                        FileType = ".lnk"
+                    };
+                    int fixedNormal = await linkService.ExecuteFixAsync(new List<LinkFixItem> { normalItem }, null, CancellationToken.None);
+                    if (fixedNormal != 1 || !normalItem.IsFixed)
+                        throw new InvalidOperationException("LinkFixer normal execution failed!");
+
+                    var remainingRollbacks = Directory.GetFiles(tempDir, "*.rollback_*");
+                    if (remainingRollbacks.Length > 0)
+                        throw new InvalidOperationException("Temporary rollback snapshot should be deleted after successful verify!");
                 }
                 finally
                 {
                     try { Directory.Delete(tempDir, recursive: true); } catch { }
                 }
+            }
+
+            // =========================================================================
+            // Part 4: 英語モード時の日本語文字（CJK）残留を機械的に全件検知
+            // =========================================================================
+            var origLang = LocalizationService.Instance.CurrentLanguage;
+            try
+            {
+                LocalizationService.Instance.SetLanguage(AppLanguage.English);
+
+                var japaneseRegex = new System.Text.RegularExpressions.Regex(@"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]");
+
+                // 1. 全 ChangeType のバッジ文字列に日本語が含まれていないこと
+                foreach (EffectiveAccessChangeType ctVal in Enum.GetValues(typeof(EffectiveAccessChangeType)))
+                {
+                    var dummyItem = new EffectiveFolderAccessItem { ChangeType = ctVal };
+                    string badge = dummyItem.ChangeBadgeText;
+                    if (japaneseRegex.IsMatch(badge))
+                    {
+                        throw new InvalidOperationException($"English localization failed: ChangeBadgeText for {ctVal} contains Japanese characters: '{badge}'");
+                    }
+                }
+
+                // 2. 権限レベル表示に日本語が含まれていないこと
+                foreach (EffectivePermissionLevel plVal in Enum.GetValues(typeof(EffectivePermissionLevel)))
+                {
+                    var dummyItem = new EffectiveFolderAccessItem { PermissionLevel = plVal };
+                    string rights = dummyItem.FormattedRights;
+                    if (japaneseRegex.IsMatch(rights))
+                    {
+                        throw new InvalidOperationException($"English localization failed: FormattedRights for {plVal} contains Japanese characters: '{rights}'");
+                    }
+                }
+
+                // 3. 継承バッジ文字列に日本語が含まれていないこと
+                var inheritedItem = new EffectiveFolderAccessItem { IsInherited = true };
+                var explicitItem = new EffectiveFolderAccessItem { IsInherited = false };
+                if (japaneseRegex.IsMatch(inheritedItem.InheritanceBadgeText) || japaneseRegex.IsMatch(explicitItem.InheritanceBadgeText))
+                {
+                    throw new InvalidOperationException("English localization failed: InheritanceBadgeText contains Japanese characters!");
+                }
+
+                // 4. AppStrings 辞書の英訳漏れチェック
+                var dictErrors = Strings.ValidateTranslations(AppLanguage.English);
+                if (dictErrors.Count > 0)
+                {
+                    throw new InvalidOperationException($"English translation missing: {string.Join(", ", dictErrors)}");
+                }
+            }
+            finally
+            {
+                LocalizationService.Instance.SetLanguage(origLang);
             }
         }
     }

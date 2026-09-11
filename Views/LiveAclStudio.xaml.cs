@@ -933,6 +933,7 @@ namespace AstraSize.Views
             RevKpiTotal.Text = "0 箇所";
             RevKpiEnclave.Text = "0 箇所";
             RevKpiSevered.Text = "0 箇所";
+            RevKpiUnavailable.Text = "0 箇所";
             RevKpiFull.Text = "0 箇所";
             RevKpiMod.Text = "0 箇所";
             RevKpiRead.Text = "0 箇所";
@@ -978,11 +979,12 @@ namespace AstraSize.Views
                 RevKpiTotal.Text = $"{report.AccessibleFolders.Count:N0} 箇所";
                 RevKpiEnclave.Text = $"{report.EnclaveCount:N0} 箇所";
                 RevKpiSevered.Text = $"{report.SeveredCount:N0} 箇所";
+                RevKpiUnavailable.Text = $"{report.UnavailableCount:N0} 箇所";
                 RevKpiFull.Text = $"{report.FullControlCount:N0} 箇所";
                 RevKpiMod.Text = $"{report.ModifyCount:N0} 箇所";
                 RevKpiRead.Text = $"{report.ReadOnlyCount:N0} 箇所";
 
-                RevStatusText.Text = $"監査完了: 総走査 {report.TotalFoldersScanned:N0} フォルダ中、{report.AccessibleFolders.Count:N0} 箇所のフォルダーを検出 (飛び地: {report.EnclaveCount}件, 遮断: {report.SeveredCount}件)";
+                RevStatusText.Text = $"監査完了: 総走査 {report.TotalFoldersScanned:N0} フォルダ中、{report.AccessibleFolders.Count:N0} 箇所のフォルダーを検出 (飛び地: {report.EnclaveCount}件, 遮断: {report.SeveredCount}件, 走査不能: {report.UnavailableCount}件)";
                 RevExportExcelButton.IsEnabled = report.AccessibleFolders.Count > 0;
                 ShowToast($"🔍 「{targetAccount}」の逆引き監査が完了しました ({report.AccessibleFolders.Count:N0} 箇所)");
             }
@@ -1274,16 +1276,28 @@ namespace AstraSize.Views
             RevGroupsHeaderTitle.Text = isJa ? "👥 所属グループ (多重入れ子・再帰解決)" : "👥 Group Memberships (Recursive Chain)";
             RevGroupsLegendText.Text = isJa ? "💡 青バッジ＝直接所属 / 紫バッジ＝多重入れ子所属 (AD Chainにより自動解決)" : "💡 Blue: Direct / Purple: Nested / Green: Built-in";
             RevKpiTotalTitle.Text = isJa ? "アクセス可能" : "Accessible";
+            RevKpiEnclaveTitle.Text = Strings.RevKpiEnclaveTitle;
+            RevKpiSeveredTitle.Text = Strings.RevKpiSeveredTitle;
+            RevKpiUnavailableTitle.Text = Strings.RevKpiUnavailableTitle;
             RevKpiFullTitle.Text = isJa ? "フルコントロール" : "Full Control";
             RevKpiModTitle.Text = isJa ? "変更 (Modify)" : "Modify";
             RevKpiReadTitle.Text = isJa ? "読み取り専用" : "Read-Only";
-            RevFoldersTableTitle.Text = isJa ? "📂 アクセス可能フォルダー一覧 (Wクリックでエクスプローラー直行)" : "📂 Accessible Folders (Double-click to open in Explorer)";
+            RevFoldersTableTitle.Text = isJa ? "📂 監査フォルダー一覧 (Wクリックでエクスプローラー直行)" : "📂 Audit Folders (Double-click to open in Explorer)";
+            RevFilterChangesOnlyCheckBox.Content = Strings.RevFilterChangesOnly;
+            RevFilterChangesOnlyCheckBox.ToolTip = Strings.RevFilterChangesOnlyToolTip;
             RevFolderFilterLabel.Text = isJa ? "絞り込み:" : "Filter:";
 
             ColRevFolderName.Header = isJa ? "フォルダ名" : "Folder Name";
+            ColRevChangeType.Header = Strings.ColRevChangeType;
             ColRevRights.Header = isJa ? "実効権限レベル" : "Effective Rights";
             ColRevGrantSource.Header = isJa ? "権限付与元 (直接付与 / 経由グループ)" : "Grant Source (Direct / Group)";
+            ColRevGrantTrace.Header = Strings.ColRevGrantTrace;
             ColRevFullPath.Header = isJa ? "フォルダー完全パス" : "Full Folder Path";
+
+            if (_revFolders.Count > 0)
+            {
+                RevFoldersDataGrid.Items.Refresh();
+            }
 
             // OU Picker Modal
             PickerTitleText.Text = isJa ? "👥 調査対象アカウントの参照・選択" : "👥 Select Target Account";

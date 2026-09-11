@@ -321,32 +321,65 @@ namespace FolderMorpher.Services
                         scanFailed = true;
                     }
 
-                    // 変化点（飛び地・遮断・権限変更・通常継承）の判定
-                    if (currentItem != null)
+                    // 変化点（基準点・飛び地・遮断・走査不能・明示化境界・権限変更・通常継承）の判定
+                    if (scanFailed)
                     {
-                        if (parentItem == null || parentItem.PermissionLevel == EffectivePermissionLevel.None)
+                        // ⚠️ 走査不能 (管理者自身の権限不足・排他ロック・ネットワークエラー等)
+                        var unavailItem = new EffectiveFolderAccessItem
                         {
-                            // 親はアクセス不可 (またはルート) だが、このフォルダでアクセス権を獲得！
-                            currentItem.ChangeType = (depth == 0 && currentItem.IsInherited)
-                                ? EffectiveAccessChangeType.InheritedSame
-                                : EffectiveAccessChangeType.EnclaveGranted;
+                            FolderPath = currentDir.FullName,
+                            FolderName = currentDir.Name,
+                            PermissionLevel = EffectivePermissionLevel.None,
+                            AllowedRights = 0,
+                            DeniedRights = 0,
+                            HasDeny = false,
+                            IsInherited = false,
+                            ChangeType = EffectiveAccessChangeType.ScanUnavailable,
+                            GrantSource = Strings.RevChangeUnavailable,
+                            GrantPathTrace = "管理者権限不足、排他制御、またはネットワーク応答エラーによりNTFSセキュリティ記述子を取得できませんでした"
+                        };
 
-                            if (currentItem.ChangeType == EffectiveAccessChangeType.EnclaveGranted)
-                            {
-                                lock (report.AccessibleFolders) { report.EnclaveCount++; }
-                            }
+                        lock (report.UnavailableFolders)
+                        {
+                            report.UnavailableFolders.Add(unavailItem);
+                        }
+                    }
+                    else if (currentItem != null)
+                    {
+                        if (depth == 0)
+                        {
+                            // 🏁 基準点: 走査ルート自身（親が存在しないため飛び地ではなくBaseline）
+                            currentItem.ChangeType = EffectiveAccessChangeType.Baseline;
+                        }
+                        else if (parentItem == null || parentItem.PermissionLevel == EffectivePermissionLevel.None)
+                        {
+                            // 🚨 飛び地 (獲得): 親はアクセス不可だったが、このフォルダでアクセス権を獲得！
+                            currentItem.ChangeType = EffectiveAccessChangeType.EnclaveGranted;
+                            lock (report.AccessibleFolders) { report.EnclaveCount++; }
                         }
                         else
                         {
-                            // 親もアクセス可能
-                            if (currentItem.IsInherited &&
-                                currentItem.PermissionLevel == parentItem.PermissionLevel &&
-                                currentItem.AllowedRights == parentItem.AllowedRights)
+                            // 親もアクセス可能だった場合
+                            bool sameRights = currentItem.PermissionLevel == parentItem.PermissionLevel
+                                           && currentItem.AllowedRights == parentItem.AllowedRights;
+
+                            if (sameRights)
                             {
-                                currentItem.ChangeType = EffectiveAccessChangeType.InheritedSame;
+                                if (currentItem.IsInherited)
+                                {
+                                    // 🔗 通常継承: 親と同一権限をそのまま継承
+                                    currentItem.ChangeType = EffectiveAccessChangeType.InheritedSame;
+                                }
+                                else
+                                {
+                                    // 🔧 明示化境界: 実効権限は同一だが明示ACE化された境界
+                                    currentItem.ChangeType = EffectiveAccessChangeType.ExplicitBoundary;
+                                    lock (report.AccessibleFolders) { report.ExplicitBoundaryCount++; }
+                                }
                             }
                             else
                             {
+                                // ⚡ 権限変更: 親と異なる権限レベルへ昇格または変更
                                 currentItem.ChangeType = EffectiveAccessChangeType.PermissionChanged;
                             }
                         }
@@ -362,7 +395,7 @@ namespace FolderMorpher.Services
                     }
                     else if (parentItem != null && parentItem.PermissionLevel != EffectivePermissionLevel.None)
                     {
-                        // ⛔ 遮断（権限消失）: 親ではアクセスできたのに、この階層で継承切断またはDeny、あるいは権限剥奪された！
+                        // ⛔ 遮断（権限消失）: 親ではアクセスできたのに、この階層で継承切断またはDenyによりアクセス権が消失！
                         var severedItem = new EffectiveFolderAccessItem
                         {
                             FolderPath = currentDir.FullName,
@@ -373,7 +406,7 @@ namespace FolderMorpher.Services
                             HasDeny = true,
                             IsInherited = false,
                             ChangeType = EffectiveAccessChangeType.InheritanceSevered,
-                            GrantSource = scanFailed ? "アクセス拒否 (Deny / 権限なし)" : "継承遮断 (親権限消失)",
+                            GrantSource = "継承遮断 (親権限消失)",
                             GrantPathTrace = $"親({parentItem.FolderName}: {parentItem.FormattedRights})ではアクセス可能でしたが、この階層で継承切断または拒否によりアクセス権が消失しています"
                         };
 
