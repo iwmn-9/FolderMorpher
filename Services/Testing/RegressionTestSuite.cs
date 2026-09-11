@@ -31,7 +31,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 26;
+            int totalTests = 27;
 
             var originalLang = LocalizationService.Instance.CurrentLanguage;
             // テストスイートのベース言語を初期化（Test 26でJA/EN双方の動的切替を検証後、finallyで元の言語へ復元）
@@ -190,9 +190,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 26
-                Console.WriteLine("\n[TEST 26/26] Bilingual Localization: Dynamic JA/EN Language Switching & Model Display Binding Fidelity...");
+                Console.WriteLine("\n[TEST 26/27] Bilingual Localization: Dynamic JA/EN Language Switching & Model Display Binding Fidelity...");
                 TestBilingualLocalizationFidelity();
                 Console.WriteLine("  --> [PASS] Bilingual Localization: All rights, badges, diff types, and models switch seamlessly without untranslated leftovers.");
+                passCount++;
+
+                // Test 27
+                Console.WriteLine("\n[TEST 27/27] Storage Forecasting, Robust MAD Anomaly Detection & i18n Dictionary Integrity...");
+                TestForecastingAndLocalizationDictionary();
+                Console.WriteLine("  --> [PASS] Forecasting & Dictionary: Linear regression, Holt trend, MAD floor & zero untranslated verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -3202,6 +3208,129 @@ namespace FolderMorpher.Services.Testing
                 // 元の言語設定に復元
                 loc.SetLanguage(originalLang);
             }
+        }
+
+        private static void TestForecastingAndLocalizationDictionary()
+        {
+            // --- 1. 静的辞書 Strings の網羅性 & 未翻訳ゼロ機械的検証 ---
+            var jaErrors = Strings.ValidateTranslations(AppLanguage.Japanese);
+            if (jaErrors.Count > 0)
+            {
+                throw new InvalidOperationException($"Strings validation failed for Japanese: {string.Join(", ", jaErrors)}");
+            }
+            var enErrors = Strings.ValidateTranslations(AppLanguage.English);
+            if (enErrors.Count > 0)
+            {
+                throw new InvalidOperationException($"Strings validation failed for English: {string.Join(", ", enErrors)}");
+            }
+
+            // --- 2. 不均一間隔における一次線形回帰 & 閾値到達予測の検証 ---
+            // Day 0: 100GB, Day 2: 120GB, Day 7: 170GB, Day 14: 240GB (傾き 10GB/day)
+            var baseDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Local);
+            const long GB = 1024L * 1024L * 1024L;
+
+            var history = new List<ScanSnapshot>
+            {
+                new() { Timestamp = baseDate, TotalBytes = 100 * GB },
+                new() { Timestamp = baseDate.AddDays(2), TotalBytes = 120 * GB },
+                new() { Timestamp = baseDate.AddDays(7), TotalBytes = 170 * GB },
+                new() { Timestamp = baseDate.AddDays(14), TotalBytes = 240 * GB }
+            };
+
+            long targetThreshold = 300 * GB;
+            var report = StorageForecastingService.Instance.Analyze(history, targetThreshold);
+
+            if (report.LinearRegression == null)
+                throw new InvalidOperationException("LinearRegression result should not be null.");
+
+            double slopeGB = report.LinearRegression.Slope / GB;
+            if (Math.Abs(slopeGB - 10.0) > 0.1)
+                throw new InvalidOperationException($"Slope expected ~10 GB/day, got {slopeGB:F2} GB/day");
+
+            if (report.LinearRegression.RSquared < 0.99)
+                throw new InvalidOperationException($"RSquared expected > 0.99 for perfectly linear data, got {report.LinearRegression.RSquared:F3}");
+
+            // 100 + 10 * X = 300 => X = 20日目。最新は14日目なので、残り日数は 6 日
+            if (Math.Abs(report.LinearRegression.DaysToTarget - 6.0) > 0.1)
+                throw new InvalidOperationException($"DaysToTarget expected ~6 days, got {report.LinearRegression.DaysToTarget:F2}");
+
+            if (!report.LinearRegression.TargetDate.HasValue ||
+                report.LinearRegression.TargetDate.Value.Date != baseDate.AddDays(20).Date)
+            {
+                throw new InvalidOperationException($"TargetDate expected {baseDate.AddDays(20):yyyy/MM/dd}, got {report.LinearRegression.TargetDate}");
+            }
+
+            // --- 3. 時間減衰型 Holt の線形トレンド二重指数平滑法の検証 ---
+            if (report.HoltSmoothing == null)
+                throw new InvalidOperationException("HoltSmoothing result should not be null.");
+
+            if (report.HoltSmoothing.CurrentTrend <= 0)
+                throw new InvalidOperationException($"Holt CurrentTrend should be positive, got {report.HoltSmoothing.CurrentTrend}");
+
+            if (report.HoltSmoothing.ForecastPoints.Count != 3)
+                throw new InvalidOperationException($"Holt ForecastPoints count expected 3 (30, 60, 90 days), got {report.HoltSmoothing.ForecastPoints.Count}");
+
+            // --- 4. ロバスト MAD 異常検知 & 500MBフロア & 急増主因特定の検証 ---
+            // 毎日の増分が 5MB 前後（平穏）な環境で、1回だけ +2GB の急増が発生するシナリオ
+            var anomalyHistory = new List<ScanSnapshot>();
+            DateTime dt = baseDate;
+            long currentBytes = 50 * GB;
+
+            // 5日間の平穏期間 (毎日 +5MB)
+            for (int i = 0; i < 5; i++)
+            {
+                anomalyHistory.Add(new ScanSnapshot
+                {
+                    Timestamp = dt,
+                    TotalBytes = currentBytes,
+                    SubFolders = new List<FolderSnapshot>
+                    {
+                        new() { Name = "Projects", Size = currentBytes - 10 * GB },
+                        new() { Name = "Archive", Size = 10 * GB }
+                    }
+                });
+                dt = dt.AddDays(1);
+                currentBytes += 5L * 1024 * 1024; // +5MB
+            }
+
+            // 6日目: 突然 +2GB 急増 (Projects が +1.8GB、Archive が +200MB)
+            long surgeBytes = 2L * 1024 * 1024 * 1024;
+            currentBytes += surgeBytes;
+            anomalyHistory.Add(new ScanSnapshot
+            {
+                Timestamp = dt,
+                TotalBytes = currentBytes,
+                SubFolders = new List<FolderSnapshot>
+                {
+                    new() { Name = "Projects", Size = currentBytes - 10 * GB - 200L * 1024 * 1024 },
+                    new() { Name = "Archive", Size = 10 * GB + 200L * 1024 * 1024 }
+                }
+            });
+
+            var anomalyReport = StorageForecastingService.Instance.Analyze(anomalyHistory);
+            var lastPoint = anomalyReport.AnomalyPoints.Last();
+
+            if (!lastPoint.IsAnomaly)
+                throw new InvalidOperationException("Surge point (+2GB) should be detected as an anomaly.");
+
+            if (lastPoint.ModifiedZScore <= StorageForecastingService.AnomalyZScoreThreshold)
+                throw new InvalidOperationException($"Surge point ModifiedZScore expected > {StorageForecastingService.AnomalyZScoreThreshold}, got {lastPoint.ModifiedZScore:F2}");
+
+            // 平穏期間のポイントが誤って異常判定されていないことの検証
+            int anomalyCount = anomalyReport.AnomalyPoints.Count(p => p.IsAnomaly);
+            if (anomalyCount != 1)
+                throw new InvalidOperationException($"Expected exactly 1 anomaly point, but found {anomalyCount}");
+
+            // 急増主因特定 (Projects が第1位かつ寄与率 > 80%)
+            if (lastPoint.TopContributors.Count == 0)
+                throw new InvalidOperationException("TopContributors should not be empty for an anomaly.");
+
+            var topContributor = lastPoint.TopContributors[0];
+            if (topContributor.Name != "Projects")
+                throw new InvalidOperationException($"Expected top contributor to be 'Projects', got '{topContributor.Name}'");
+
+            if (topContributor.ContributionPercent < 80.0)
+                throw new InvalidOperationException($"Expected 'Projects' contribution > 80%, got {topContributor.ContributionPercent}%");
         }
     }
 }

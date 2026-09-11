@@ -35,10 +35,39 @@ namespace AstraSize
             };
         }
 
+        public static bool IsClientMode { get; private set; } = false;
+
         protected override void OnStartup(StartupEventArgs e)
         {
             File.AppendAllText(LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] OnStartup fired.\n");
             base.OnStartup(e);
+
+            // クライアントモード（FolderCleaner）判定: プロセス名または起動引数
+            try
+            {
+                var exeName = Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? "");
+                bool nameSuggestsClient = exeName.Contains("Clean", StringComparison.OrdinalIgnoreCase);
+                bool argSuggestsClient = false;
+                bool argForcesAdmin = false;
+
+                foreach (var arg in e.Args)
+                {
+                    if (string.Equals(arg, "--client", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(arg, "--cleaner", StringComparison.OrdinalIgnoreCase))
+                    {
+                        argSuggestsClient = true;
+                    }
+                    else if (string.Equals(arg, "--admin", StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(arg, "--pro", StringComparison.OrdinalIgnoreCase))
+                    {
+                        argForcesAdmin = true;
+                    }
+                }
+
+                IsClientMode = !argForcesAdmin && (nameSuggestsClient || argSuggestsClient);
+                File.AppendAllText(LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] App Mode: {(IsClientMode ? "FolderCleaner (Client)" : "FolderMorpher (Admin)")}\n");
+            }
+            catch { }
 
             string? snapshotPath = null;
             bool collapseSidebar = false;

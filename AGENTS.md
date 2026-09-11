@@ -397,6 +397,24 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
       - `TestBilingualLocalizationFidelity` を新設し、JA/EN 切替時の全モデルプロパティ・ヘルパー出力の翻訳整合性を自動検証。**全26回帰テスト 100% PASS**（26/26）。
       - GitHub Actions CI（windows-latest）でもビルド・全26テスト・単一自己完結EXE生成・GitHub Release公開が完全成功。
 
+43. **連続時間容量予測（回帰＋Holt法） ＆ ロバストMAD異常検知 ＆ FolderCleanerクライアントモード ＆ i18n静的辞書化 (v1.8.0)**:
+    - **不均一スキャン間隔に対応した連続時間数理モデル (`StorageForecastingService`)**:
+      - 日常運用においてスキャンが毎日行われない（不定期・週1・月数回）実態に対応するため、インデックス基準ではなく実経過日数 `(Timestamp - T0).TotalDays` を $x$ 軸とする連続時間モデルを確立。
+      - **一次線形回帰 (OLS)**: 最小二乗法により日あたり増加ペース（Bytes/Day）、切片、決定係数 $R^2$ を算出。目標上限閾値（既定で最新容量の120%または手動指定）への到達予定日数・日時を自動推計。
+      - **時間減衰型 Holt の線形トレンド法**: スキャン間隔の実日数 $\Delta t$ に応じて平滑化を動的正規化。最新の水準 $L_t$ とトレンド $T_t$ から 30日/60日/90日後の将来容量を予測。
+    - **ロバスト MAD（中央値絶対偏差）異常検知 ＆ 500MBフロア ＆ 急増主因インスペクター**:
+      - 日換算増加ペース $\Delta \text{Bytes} / \Delta t$ の中央値および MAD（中央値絶対偏差）を算出。
+      - **静穏フォルダ誤爆防止フロア**: 数MBの微小な変動が異常扱いされる過剰アラートを防ぐため、実増分 $\ge 500\text{MB}$ かつ Modified Z-score > 3.5 を異常急増（Surge）の確定条件とし、\(\max(\text{MAD}, 10\text{MB}/\text{day})\) のフロアガードを配備。
+      - **急増主因特定（Top 5）＆ Wクリック現場直行**: 異常検知時またはスキャン行選択時、直前スキャンとの `SubFolders` 差分から急増に寄与した上位フォルダと寄与率（%）を特定。Wクリックでエクスプローラーを直接開く。
+    - **単一バイナリによるリネーム式クライアントモード (`FolderCleaner`)**:
+      - 同一の単一EXEバイナリ（`FolderMorpher.exe`）のファイル名を `FolderCleaner.exe` にリネーム（または `--client` 引数で起動）するだけで、一般社員向けに安全なクリーンアップ専用ツールとして起動。
+      - 管理者専用タブ（Live ACL、Simulation Studio、LinkFixer）を自動非表示化し、容量分析・断捨離・写真軽量化に特化。ビルド構成やコードブランチを分岐させず、運用保守コストを最小化。
+    - **全UI文言の型安全インメモリ辞書化 (`AppStrings.cs` / `Strings.*`)**:
+      - 散在していたインライン三項演算子のハードコードを排し、単一静的クラス `Strings` へ一元化（Single Source of Truth）。
+      - 未翻訳プロパティの自動検査メソッド `ValidateTranslations(lang)` を備え、リグレッションテストから機械的に未翻訳ゼロを保証。
+    - **回帰テスト Test 27 新設**:
+      - `TestForecastingAndLocalizationDictionary` を追加。数理モデル（一次回帰、Holt法、MADフロア検知、急増主因特定）および日英辞書完全性を自動検証し、**全27回帰テスト 100% PASS**（27/27）。
+
 ---
 
 ## 4. ビルド・実行・検証コマンド
@@ -413,7 +431,7 @@ Copy-Item -Path ".\bin\Publish\FolderMorpher.exe" -Destination ".\FolderMorpher.
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 26/26 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 27/27 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

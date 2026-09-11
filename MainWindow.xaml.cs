@@ -3437,6 +3437,20 @@ namespace AstraSize
             LocalizationService.Instance.ToggleLanguage();
         }
 
+        private void ApplyClientModeLayout()
+        {
+            if (!App.IsClientMode) return;
+
+            // クライアントモード（FolderCleaner）では管理者専用タブを非表示
+            if (NavTabLiveAcl != null) NavTabLiveAcl.Visibility = Visibility.Collapsed;
+            if (NavTabSimulation != null) NavTabSimulation.Visibility = Visibility.Collapsed;
+            if (NavTabLinkFix != null) NavTabLinkFix.Visibility = Visibility.Collapsed;
+
+            Title = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                ? "FolderCleaner - 容量分析 & 断捨離・写真軽量化 クライアント"
+                : "FolderCleaner - Storage Analyzer & Cleanup Client";
+        }
+
         private void ApplyLocalization()
         {
             if (!Dispatcher.CheckAccess())
@@ -3452,32 +3466,38 @@ namespace AstraSize
             {
                 var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
                 string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v1.7.0";
-                SidebarVersionText.Text = $"FolderMorpher {verStr}";
+                SidebarVersionText.Text = App.IsClientMode
+                    ? $"FolderCleaner {verStr}"
+                    : $"FolderMorpher {verStr}";
             }
             if (SidebarSubtitleText != null)
             {
-                SidebarSubtitleText.Text = isJa ? "ストレージ ＆ 移行スタジオ" : "Storage & Migration Studio";
+                SidebarSubtitleText.Text = App.IsClientMode
+                    ? Strings.AppSubtitleCleaner
+                    : Strings.AppSubtitle;
             }
 
+            ApplyClientModeLayout();
+
             // 言語切り替えボタン自体の表示（次に切り替わる言語を提示）
-            LanguageToggleButton.Content = isJa ? "🌐 EN" : "🌐 JA";
-            LanguageToggleButton.ToolTip = isJa ? "英語に切り替え / Switch to English" : "日本語に切り替え / Switch to Japanese";
+            LanguageToggleButton.Content = Strings.LanguageToggleText;
+            LanguageToggleButton.ToolTip = Strings.LanguageToggleToolTip;
             LanguageToggleButtonMini.ToolTip = LanguageToggleButton.ToolTip;
 
             // サイドバー 開閉ボタン & タブ名 & ToolTip
-            if (SidebarToggleButton != null) SidebarToggleButton.ToolTip = isJa ? "サイドバーの開閉 (収縮 / 展開)" : "Toggle Sidebar (Collapse / Expand)";
-            NavTabStorage.Content = isJa ? "容量分析 & 監視" : "Storage Explorer";
-            NavTabStorage.ToolTip = isJa ? "📊 容量分析 & 監視 (Storage Explorer)" : "📊 Storage Explorer";
-            NavTabLiveAcl.Content = isJa ? "権限コントロール" : "Live ACL";
-            NavTabLiveAcl.ToolTip = isJa ? "🛡️ 実環境 権限コントロール (Live ACL)" : "🛡️ Live ACL Control";
-            NavTabSimulation.Content = isJa ? "移行スタジオ" : "Simulation Studio";
-            NavTabSimulation.ToolTip = isJa ? "🚀 移行シミュレーション (Simulation Studio)" : "🚀 Migration Studio";
-            NavTabLinkFix.Content = isJa ? "リンク一括修復" : "LinkFixer";
-            NavTabLinkFix.ToolTip = isJa ? "🔗 ショートカット・Office修復 (LinkFixer)" : "🔗 LinkFixer";
-            NavTabAudit.Content = isJa ? "断捨離・健全化" : "Audit & Hygiene";
-            NavTabAudit.ToolTip = isJa ? "🧹 重複・休眠・パス長チェック (Audit & Hygiene)" : "🧹 Audit & Hygiene";
-            NavTabMedia.Content = isJa ? "メディア最適化" : "Media Optimizer";
-            NavTabMedia.ToolTip = isJa ? "🖼️ 写真軽量化 & 巨大動画抽出 (Media Optimizer)" : "🖼️ Media Optimizer";
+            if (SidebarToggleButton != null) SidebarToggleButton.ToolTip = Strings.ToggleSidebarToolTip;
+            NavTabStorage.Content = Strings.TabStorage;
+            NavTabStorage.ToolTip = Strings.TabStorageToolTip;
+            NavTabLiveAcl.Content = Strings.TabLiveAcl;
+            NavTabLiveAcl.ToolTip = Strings.TabLiveAclToolTip;
+            NavTabSimulation.Content = Strings.TabSimulation;
+            NavTabSimulation.ToolTip = Strings.TabSimulationToolTip;
+            NavTabLinkFix.Content = Strings.TabLinkFix;
+            NavTabLinkFix.ToolTip = Strings.TabLinkFixToolTip;
+            NavTabAudit.Content = Strings.TabAudit;
+            NavTabAudit.ToolTip = Strings.TabAuditToolTip;
+            NavTabMedia.Content = Strings.TabMedia;
+            NavTabMedia.ToolTip = Strings.TabMediaToolTip;
 
             // ==========================================
             // Tab 0 (Storage Explorer)
