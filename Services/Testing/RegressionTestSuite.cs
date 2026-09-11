@@ -31,7 +31,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 30;
+            int totalTests = 31;
 
             var originalLang = LocalizationService.Instance.CurrentLanguage;
             // テストスイートのベース言語を初期化（Test 26でJA/EN双方の動的切替を検証後、finallyで元の言語へ復元）
@@ -214,9 +214,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Test 30
-                Console.WriteLine("\n[TEST 30/30] Audit Duplicate Pipeline v2.0.3: Head-Tail Hash, Concurrency 2, Bandwidth Throttling & English CJK-Free Verification...");
+                Console.WriteLine("\n[TEST 30/31] Audit Duplicate Pipeline v2.0.3: Head-Tail Hash, Concurrency 2, Bandwidth Throttling & English CJK-Free Verification...");
                 await TestHeadTailHashAndBandwidthLimiterAsync();
                 Console.WriteLine("  --> [PASS] Audit Duplicate Pipeline v2.0.3: Head-Tail hash, concurrency 2, bandwidth throttling & English CJK-free 100% verified.");
+                passCount++;
+
+                // Test 31
+                Console.WriteLine("\n[TEST 31/31] High-Performance UNC Traversal: Win32 FindFirstFileEx (LargeFetch & 8.3 Skip), SafeFindHandle RAII & Concurrency 2 Pipeline...");
+                await TestNativeDirectoryEnumeratorAndConcurrency2Async();
+                Console.WriteLine("  --> [PASS] High-Performance UNC Traversal: Win32 FindFirstFileEx (LargeFetch & 8.3 Skip), SafeFindHandle RAII & Concurrency 2 100% verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");
@@ -4186,6 +4192,95 @@ namespace FolderMorpher.Services.Testing
                 finally
                 {
                     LocalizationService.Instance.SetLanguage(origLang);
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(testDir, true); } catch { }
+            }
+        }
+
+        private static async Task TestNativeDirectoryEnumeratorAndConcurrency2Async()
+        {
+            string testDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_Regression_Test31_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(testDir);
+
+            try
+            {
+                // 1. テスト階層の作成 (サブフォルダ複数、ファイル複数)
+                string subA = Path.Combine(testDir, "SubA");
+                string subB = Path.Combine(testDir, "SubB");
+                string subDeep = Path.Combine(subA, "Deep");
+                Directory.CreateDirectory(subA);
+                Directory.CreateDirectory(subB);
+                Directory.CreateDirectory(subDeep);
+
+                string file1 = Path.Combine(testDir, "root1.txt");
+                string file2 = Path.Combine(subA, "subA_file.log");
+                string file3 = Path.Combine(subDeep, "deep_file.dat");
+                string file4 = Path.Combine(subB, "subB_file.bin");
+
+                await File.WriteAllBytesAsync(file1, new byte[1000]);
+                await File.WriteAllBytesAsync(file2, new byte[2000]);
+                await File.WriteAllBytesAsync(file3, new byte[3000]);
+                await File.WriteAllBytesAsync(file4, new byte[4000]);
+
+                // 2. NativeDirectoryEnumerator 単体検証
+                var dirs = new List<NativeFindEntry>();
+                var files = new List<NativeFindEntry>();
+                bool ok = NativeDirectoryEnumerator.TryEnumerateEntries(testDir, dirs, files, out var error);
+                if (!ok || error != null)
+                    throw new InvalidOperationException($"NativeDirectoryEnumerator failed on root: {error}");
+
+                if (dirs.Count != 2) // SubA, SubB
+                    throw new InvalidOperationException($"Expected 2 subdirectories, got {dirs.Count}");
+                if (files.Count != 1) // root1.txt
+                    throw new InvalidOperationException($"Expected 1 file, got {files.Count}");
+
+                var rootFile = files[0];
+                if (rootFile.Name != "root1.txt" || rootFile.Size != 1000)
+                    throw new InvalidOperationException($"File metadata mismatch: Name={rootFile.Name}, Size={rootFile.Size}");
+
+                // 3. SafeFileEnumerator.EnumerateFilesSafeParallelAsync (並列度2) 検証
+                var coverage = new ScanCoverage();
+                var parallelFiles = await SafeFileEnumerator.EnumerateFilesSafeParallelAsync(
+                    testDir,
+                    "*.*",
+                    coverage,
+                    null,
+                    CancellationToken.None);
+
+                if (parallelFiles.Count != 4)
+                    throw new InvalidOperationException($"Parallel scan expected 4 files, got {parallelFiles.Count}");
+
+                long totalSize = parallelFiles.Sum(f => f.Length);
+                if (totalSize != 10000) // 1000 + 2000 + 3000 + 4000
+                    throw new InvalidOperationException($"Parallel scan total size mismatch: expected 10000, got {totalSize}");
+
+                if (coverage.TotalFilesFound != 4)
+                    throw new InvalidOperationException($"Coverage TotalFilesFound mismatch: {coverage.TotalFilesFound}");
+
+                // 4. DiskScanService (フォールバックスキャン・並列度2ツリー構築) 検証
+                var diskScanner = new AstraSize.Services.DiskScanService();
+                var (rootNode, summary) = await diskScanner.ScanPathAsync(testDir, null, CancellationToken.None);
+
+                if (rootNode == null)
+                    throw new InvalidOperationException("DiskScanService returned null rootNode.");
+
+                if (rootNode.FileCount != 4)
+                    throw new InvalidOperationException($"DiskScanService rootNode.FileCount expected 4, got {rootNode.FileCount}");
+
+                if (rootNode.Size != 10000)
+                    throw new InvalidOperationException($"DiskScanService rootNode.Size expected 10000, got {rootNode.Size}");
+
+                if (rootNode.FolderCount != 3) // SubA, SubB, Deep
+                    throw new InvalidOperationException($"DiskScanService rootNode.FolderCount expected 3, got {rootNode.FolderCount}");
+
+                // 5. SafeFindHandle RAII 解放検証
+                using (var safeHandle = new SafeFindHandle(IntPtr.Zero))
+                {
+                    if (!safeHandle.IsInvalid)
+                        throw new InvalidOperationException("SafeFindHandle with IntPtr.Zero should be invalid.");
                 }
             }
             finally

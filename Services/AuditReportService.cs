@@ -34,22 +34,18 @@ namespace FolderMorpher.Services
             summary.Coverage = coverage;
             progress?.Report(new AuditProgress { CurrentStatus = "ファイル一覧を走査中...", ScannedFilesCount = 0, IssueCount = 0 });
 
-            await Task.Run(() =>
-            {
-                int scanned = 0;
-                foreach (var file in SafeFileEnumerator.EnumerateFilesSafe(options.TargetDirectory, "*.*", coverage, ct))
+            scannedFiles = await SafeFileEnumerator.EnumerateFilesSafeParallelAsync(
+                options.TargetDirectory,
+                "*.*",
+                coverage,
+                onProgress: count =>
                 {
-                    scannedFiles.Add(file);
-                    scanned++;
-                    if (scanned % 100 == 0)
-                    {
-                        string status = coverage.AccessDeniedFolders > 0
-                            ? $"ファイル走査中 ({scanned:N0} 件 / ⚠️アクセス拒否: {coverage.AccessDeniedFolders} 箇所)..."
-                            : $"ファイル走査中 ({scanned:N0} 件)...";
-                        progress?.Report(new AuditProgress { CurrentStatus = status, ScannedFilesCount = scanned });
-                    }
-                }
-            }, ct);
+                    string status = coverage.AccessDeniedFolders > 0
+                        ? $"ファイル走査中 ({count:N0} 件 / ⚠️アクセス拒否: {coverage.AccessDeniedFolders} 箇所)..."
+                        : $"ファイル走査中 ({count:N0} 件)...";
+                    progress?.Report(new AuditProgress { CurrentStatus = status, ScannedFilesCount = count });
+                },
+                ct);
 
             summary.TotalFilesScanned = scannedFiles.Count;
             long processedCount = 0;

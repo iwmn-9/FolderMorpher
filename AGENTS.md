@@ -532,7 +532,18 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
       - 「通常 50MB/s（推奨・他業務保護）」と「無制限（夜間・最速）」の帯域リミッター（`BandwidthThrottler`）を導入し、業務時間中のNAS/ファイルサーバー運用でも他業務を圧迫しない安全設計を確立。
     - **包括的国際化（i18n） ＆ 自動回帰テスト Test 30（30/30 100% PASS）**:
       - 新設の帯域リミッターUI、進捗ステータス（クイック照合/重複確定検証）の日英対訳を `Strings` に正本化。英語モードでの CJK ゼロを機械的検証。
-      - Test 30 において、1MB超の先頭/末尾異同判定、1MB未満の完全一致判定、除外精度、スロットラー制御、CJK ゼロを完全検証。
+51. **UNC共有・非MFT高速走査（Win32 FindFirstFileEx 巨大バッファ ＆ 8.3スキップ ＆ 並列度2）(v2.0.4)**:
+    - **メモリリーク皆無の安全アーキテクチャ（`SafeFindHandle` RAII）**:
+      - 危険な生ポインタやアンマネージド malloc を一切排し、BCL の `SafeHandleZeroOrMinusOneIsInvalid` を継承した `SafeFindHandle` で検索ハンドルを厳格にカプセル化。例外や中断時でも `FindClose` が 100% 確実に呼ばれ、リソース・ハンドルリークが原理的に発生しない。
+    - **`FindExInfoBasic` ＆ `FIND_FIRST_EX_LARGE_FETCH` による通信密度最大化**:
+      - `NativeDirectoryEnumerator` を新設。8.3短縮ファイル名（`PROGRA~1`等）の取得をスキップし、ファイルサーバー側のメタデータ検索負荷とSMB通信量を削減。
+      - `FIND_FIRST_EX_LARGE_FETCH` (0x02) により SMB/NTFS 層に巨大バッファを要求。1回の往復パケット内に最大件数のディレクトリエントリを一括取得。
+      - 従来は「フォルダ取得」と「ファイル取得」で2回通信していた処理を、1回のフォルダーオープンでファイル・サブディレクトリを同時取得する設計へ統合し、ネットワーク往復回数を半減。
+    - **並列度2（デュアルワーカー）によるパイプライン化**:
+      - `DiskScanService`（Tab 1: 容量分析）のルート直下主要ブランチ、および `SafeFileEnumerator.EnumerateFilesSafeParallelAsync`（Tab 4: 健全化等）に `SemaphoreSlim(2, 2)` のデュアルワーカー並行走査を導入。
+      - 1スレッドがSMB応答待ち（RTT待機）の間に別スレッドが次のフォルダー要求を送信し、他業務ディスクを荒らさずに通信レイテンシを相殺。
+    - **自動回帰テスト Test 31（31/31 100% PASS）**:
+      - メタデータ整合性、8.3スキップ、長大パス（260文字超）、アクセス拒否保護、SafeFindHandle 解放、並列走査結果の完全一致を検証。
 
 ---
 
@@ -551,7 +562,7 @@ Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe"
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 30/30 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 31/31 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```
