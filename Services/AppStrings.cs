@@ -98,25 +98,46 @@ namespace FolderMorpher.Services
         // ==========================================
         // 容量推移グラフ & 数理予測 (History & Forecasting)
         // ==========================================
-        public static string HistoryWindowTitle => IsJa ? "容量推移グラフ & スキャン履歴" : "Storage Trend Graph & History";
-        public static string HistoryChartTitle => IsJa ? "📊 容量変化タイムライン & 数理予測" : "📊 Capacity Timeline & Predictive Forecasting";
+        public static string HistoryWindowTitle => IsJa ? "容量推移グラフ & 数理予測" : "Storage Trend Graph & Predictive Forecasting";
+        public static string HistoryChartTitle => IsJa ? "📊 容量変化タイムライン ＆ 一次線形・Holtトレンド予測" : "📊 Capacity Timeline & Linear / Holt Trend Forecast";
         public static string HistoryRequireTwoScans => IsJa ? "グラフを描画するには2回以上のスキャン履歴が必要です" : "At least 2 scans are required to plot trends";
+        public static string HistoryRequireThreeScans => IsJa ? "予測には3回以上のスキャン履歴が必要です" : "At least 3 scans are required for forecasting";
         public static string HistoryNoData => IsJa ? "このパスに関する過去のスキャン履歴はありません。" : "No scan history recorded for this path.";
+        public static string HistoryTargetPathPrefix => IsJa ? "対象パス: " : "Target Path: ";
+        public static string HistoryRecalculate => IsJa ? "再計算" : "Recalculate";
+        public static string HistoryLegendMeasured => IsJa ? "実測容量" : "Measured";
+        public static string HistoryLegendRegression => IsJa ? "一次線形回帰" : "Linear Fit";
+        public static string HistoryLegendTarget => IsJa ? "目標上限" : "Threshold";
+        public static string HistoryLegendAnomaly => IsJa ? "⚠️ 異常急増 (MAD)" : "⚠️ Surge (MAD)";
         public static string HistoryColDate => IsJa ? "スキャン日時" : "Scan Date";
         public static string HistoryColSize => IsJa ? "総容量" : "Total Size";
         public static string HistoryColItems => IsJa ? "項目数" : "Item Count";
         public static string HistoryColGrowth => IsJa ? "前回との増減" : "Growth";
+        public static string HistoryColAnomalyStatus => IsJa ? "異常判定 / 状態" : "Anomaly / Status";
         public static string HistoryRegressionForecast => IsJa ? "一次線形回帰" : "Linear Regression";
-        public static string HistoryHoltTrend => IsJa ? "Holt平滑トレンド" : "Holt Trend";
+        public static string HistoryHoltTrend => IsJa ? "Holtトレンド" : "Holt Trend";
         public static string HistoryTargetThreshold => IsJa ? "目標上限閾値:" : "Target Threshold:";
         public static string HistoryTargetReachedIn => IsJa ? "閾値到達予測: " : "Est. Threshold Reach: ";
+        public static string HistoryTargetAlreadyExceeded => IsJa ? "⚠️ 既に目標上限を超過しています" : "⚠️ Already exceeded target threshold";
         public static string HistoryDaysSuffix => IsJa ? " 日後" : " days";
-        public static string HistoryNeverReach => IsJa ? "到達予測なし (減少/微増)" : "No reach expected (Decreasing/Flat)";
+        public static string HistoryNeverReach => IsJa ? "到達予測なし (減少/横ばい傾向)" : "No reach expected (Decreasing/Flat)";
         public static string HistoryAnomalyDetected => IsJa ? "⚠️ 異常急増検知 (MAD > 3.5)" : "⚠️ Surge Detected (MAD > 3.5)";
-        public static string HistoryContributorsTitle => IsJa ? "💡 急増主因フォルダー (Top 5)" : "💡 Surge Contributors (Top 5)";
+        public static string HistoryInsufficientBaseline => IsJa ? "判定基準蓄積中 (5回未満)" : "Warming up (< 5 scans)";
+        public static string HistoryContributorsTitle => IsJa ? "💡 急増主因 内訳 (Top 5)" : "💡 Surge Contributors (Top 5)";
+        public static string HistoryClickRowHint => IsJa ? "スキャン行をクリックして選択" : "Click a row to inspect breakdown";
+        public static string HistoryNoContributors => IsJa ? "急増なし、または比較データがありません" : "No surge or comparison data available";
+        public static string HistoryContributorDoubleClickToolTip => IsJa ? "ダブルクリックで該当フォルダへドリルダウンまたは開く" : "Double-click to open in Explorer or drill down";
         public static string HistoryColContribName => IsJa ? "フォルダー名" : "Folder Name";
         public static string HistoryColContribGrowth => IsJa ? "増加量" : "Growth";
         public static string HistoryColContribRatio => IsJa ? "寄与率" : "Contribution";
+        public static string HistoryGrowthPrefix => IsJa ? "増加: " : "Growth: ";
+        public static string HistoryCurrentPrefix => IsJa ? "現在: " : "Current: ";
+        public static string HistoryRecordCountSingle => IsJa ? "記録 1 件: " : "1 Scan: ";
+        public static string HistoryTargetLabelPrefix => IsJa ? "上限: " : "Limit: ";
+        public static string HistoryPacePrefix => IsJa ? "ペース: " : "Pace: ";
+        public static string HistoryRSquaredLabel => IsJa ? "決定係数" : "R²";
+        public static string HistoryMadFloorLabel => IsJa ? "MADフロア: " : "MAD Floor: ";
+        public static string HistoryItemsUnit => IsJa ? "項目" : "Items";
 
 
         // ==========================================

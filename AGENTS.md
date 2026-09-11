@@ -415,6 +415,24 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
     - **回帰テスト Test 27 新設**:
       - `TestForecastingAndLocalizationDictionary` を追加。数理モデル（一次回帰、Holt法、MADフロア検知、急増主因特定）および日英辞書完全性を自動検証し、**全27回帰テスト 100% PASS**（27/27）。
 
+44. **予測・異常検知の因果律保護（Look-Ahead排除） ＆ 最低サンプル数ガード ＆ クライアントモード裏初期化完全遮断 (v1.8.1)**:
+    - **因果律の保護（Look-Ahead Bias 排除）**:
+      - 過去の各スキャン時点の異常判定において、全期間のデータを使って中央値・MADを算出すると「未来のデータ増加によって過去の判定が通常に書き換わる」タイムパラドックスが生じる。
+      - 各時点の判定は「その時点以前の履歴（Expanding Window: `historicalRates[0..i-1]`）」のみを母集団として計算する因果的アルゴリズム（`CalculateCausalAnomalyDetection`）へ刷新。過去の確定判定の恒久的な安定性を保証。
+    - **最低サンプル数・差分履歴ガード**:
+      - 線形回帰および到達日数の推計は、最低3回以上のスキャン履歴（`MinScansForForecasting = 3`）が存在する場合のみ有効化（2回スキャンでの $R^2=1.00$ 過信・短絡予測を防止）。
+      - ロバストMAD異常検知は、最低5回以上の差分履歴（`MinDeltasForAnomaly = 5`、スナップショット6点以上）が蓄積されるまで保留し、過学習・過剰アラートを防止。
+    - **閾値の最新容量基準 ＆ 3状態セマンティクス**:
+      - 初期閾値を過去最大値ではなく「最新スナップショット容量の120%」に是正。
+      - `ThresholdReachStatus`（`NotEnoughData`, `AlreadyExceeded`, `DecreasingOrFlat`, `Reachable`）による厳格な状態管理。現在容量 $\ge$ 閾値のときは「⚠️ 既に目標上限を超過しています」、傾き $\le 0$ のときは「到達予測なし（減少/横ばい傾向）」と正しく表示。
+    - **FolderCleaner（クライアントモード）の裏初期化完全遮断**:
+      - `MainWindow_Loaded` において `if (!App.IsClientMode)` ガードを配備。
+      - 単にUIを非表示にするだけでなく、バックグラウンドでの `InitializeSimulationStudio()` および `LoadAdPrincipalsAsync()`（AD LDAP通信）の実行を完全スキップ。非ドメイン環境や一般PCでの不要なネットワークトラフィック・フリーズを根絶。
+    - **HistoryWindow の完全日英ローカライズ (i18n)**:
+      - 凡例、ヘッダー、列名、インスペクター見出し、急増主因行（`ContributorRowViewModel`）の ToolTip・プレフィックスに至るまで、残存していたハードコード日本語を完全排除し `AppStrings.cs`（`Strings.*`）へ統合。
+    - **回帰テスト Test 27 強化**:
+      - 因果的MAD判定、最低サンプル数ガード、閾値超過状態、未来データ流入時の過去判定不変性を自動検証。**全27回帰テスト 100% PASS**（27/27）。
+
 ---
 
 ## 4. ビルド・実行・検証コマンド

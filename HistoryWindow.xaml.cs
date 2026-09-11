@@ -18,7 +18,7 @@ namespace AstraSize
         public ScanSnapshot Snapshot { get; set; } = null!;
         public string FormattedDate => Snapshot.FormattedDate;
         public string FormattedSize => Snapshot.FormattedSize;
-        public string FormattedFiles => $"{Snapshot.TotalFiles:N0} 項目";
+        public string FormattedFiles => $"{Snapshot.TotalFiles:N0} {Strings.HistoryItemsUnit}";
         public string FormattedDiff { get; set; } = "―";
         public Brush DiffBrush { get; set; } = Brushes.SlateGray;
         public Brush StatusDotBrush { get; set; } = new SolidColorBrush(Color.FromRgb(2, 132, 199)); // Sky-600
@@ -27,6 +27,18 @@ namespace AstraSize
         public Brush BadgeBackgroundBrush { get; set; } = Brushes.Transparent;
         public Brush BadgeForegroundBrush { get; set; } = Brushes.Transparent;
         public AnomalyDetectionPoint? AnomalyData { get; set; }
+    }
+
+    public class ContributorRowViewModel
+    {
+        public SubfolderGrowthItem Model { get; set; } = null!;
+        public string Name => Model.Name;
+        public double ContributionPercent => Model.ContributionPercent;
+        public string FormattedDelta => Model.FormattedDelta;
+        public string FormattedCurrentSize => Model.FormattedCurrentSize;
+        public string GrowthPrefixText => Strings.HistoryGrowthPrefix;
+        public string CurrentPrefixText => Strings.HistoryCurrentPrefix;
+        public string DoubleClickToolTip => Strings.HistoryContributorDoubleClickToolTip;
     }
 
     public partial class HistoryWindow : Window
@@ -43,10 +55,9 @@ namespace AstraSize
             _targetPath = targetPath ?? string.Empty;
             _history = history ?? new List<ScanSnapshot>();
 
-            TargetPathText.Text = $"対象パス: {_targetPath}";
-
-            // 初期閾値: 最新スナップショットの 120% (最低でも +10GB)
-            long latestBytes = _history.Count > 0 ? _history.Max(h => h.TotalBytes) : 10L * 1024 * 1024 * 1024;
+            // 初期閾値: 「最新」スナップショットの 120% (最低でも +10GB) - 過去最大(Max)ではなく最新容量を基準とする
+            var sorted = _history.OrderBy(h => h.Timestamp).ToList();
+            long latestBytes = sorted.Count > 0 ? sorted.Last().TotalBytes : 10L * 1024 * 1024 * 1024;
             _targetThresholdBytes = Math.Max(latestBytes + 10L * 1024L * 1024L * 1024L, (long)(latestBytes * 1.2));
             ThresholdInputTextBox.Text = FormatBytesToInputString(_targetThresholdBytes);
 
@@ -69,11 +80,32 @@ namespace AstraSize
         {
             Title = Strings.HistoryWindowTitle;
             HistoryWindowTitleText.Text = Strings.HistoryWindowTitle;
+            TargetPathText.Text = $"{Strings.HistoryTargetPathPrefix}{_targetPath}";
+            TargetThresholdLabel.Text = Strings.HistoryTargetThreshold;
+            ApplyThresholdButton.Content = Strings.HistoryRecalculate;
+
             ChartTitleTextBlock.Text = Strings.HistoryChartTitle;
             NoChartDataText.Text = Strings.HistoryRequireTwoScans;
             EmptyHistoryText.Text = Strings.HistoryNoData;
-            TargetThresholdLabel.Text = Strings.HistoryTargetThreshold;
+
+            // 凡例
+            LegendMeasuredText.Text = Strings.HistoryLegendMeasured;
+            LegendRegressionText.Text = Strings.HistoryLegendRegression;
+            LegendTargetText.Text = Strings.HistoryLegendTarget;
+            LegendAnomalyText.Text = Strings.HistoryLegendAnomaly;
+
+            // 列見出し
+            ColHeaderDate.Text = Strings.HistoryColDate;
+            ColHeaderSize.Text = Strings.HistoryColSize;
+            ColHeaderItems.Text = Strings.HistoryColItems;
+            ColHeaderGrowth.Text = Strings.HistoryColGrowth;
+            ColHeaderAnomaly.Text = Strings.HistoryColAnomalyStatus;
+
+            // インスペクター
             InspectorTitleText.Text = Strings.HistoryContributorsTitle;
+            InspectorDateText.Text = Strings.HistoryClickRowHint;
+            NoContributorsText.Text = Strings.HistoryNoContributors;
+
             CloseButton.Content = Strings.Close;
         }
 
@@ -160,7 +192,7 @@ namespace AstraSize
             if (_history.Count < 2 || _currentReport == null)
             {
                 NoChartDataText.Visibility = Visibility.Visible;
-                ChartStatsTextBlock.Text = _history.Count == 1 ? $"記録 1 件: {_history[0].FormattedSize}" : "";
+                ChartStatsTextBlock.Text = _history.Count == 1 ? $"{Strings.HistoryRecordCountSingle}{_history[0].FormattedSize}" : "";
                 return;
             }
 
@@ -230,7 +262,7 @@ namespace AstraSize
 
                 var targetLabel = new TextBlock
                 {
-                    Text = $"上限: {FileItemNode.FormatBytes(_targetThresholdBytes)}",
+                    Text = $"{Strings.HistoryTargetLabelPrefix}{FileItemNode.FormatBytes(_targetThresholdBytes)}",
                     FontSize = 9.5,
                     FontWeight = FontWeights.Bold,
                     Foreground = new SolidColorBrush(Color.FromRgb(220, 38, 38))
@@ -286,9 +318,9 @@ namespace AstraSize
             };
             TrendCanvas.Children.Add(polyline);
 
-            // 6. 一次線形回帰トレンド線 (紫の破線)
+            // 6. 一次線形回帰トレンド線 (紫の破線: 最低3スキャン以上の場合のみ描画)
             var reg = _currentReport.LinearRegression;
-            if (reg != null)
+            if (reg != null && _currentReport.HasSufficientDataForForecast)
             {
                 double y0Estimate = reg.Intercept;
                 double yEndEstimate = reg.Intercept + reg.Slope * totalDays;
@@ -402,9 +434,16 @@ namespace AstraSize
                 }
             }
 
-            // チャート右上サマリー
-            var regSlope = reg != null ? reg.FormattedDailyRate : "+0 B/day";
-            ChartStatsTextBlock.Text = $"ペース: {regSlope} | 決定係数 R²={reg?.RSquared:F2}";
+            // チャート右上サマリー (3スキャン未満のときは「予測には3回以上のスキャンが必要」)
+            if (!_currentReport.HasSufficientDataForForecast)
+            {
+                ChartStatsTextBlock.Text = Strings.HistoryRequireThreeScans;
+            }
+            else
+            {
+                var regSlope = reg != null ? reg.FormattedDailyRate : "+0 B/day";
+                ChartStatsTextBlock.Text = $"{Strings.HistoryPacePrefix}{regSlope} | {Strings.HistoryRSquaredLabel}={reg?.RSquared:F2}";
+            }
         }
 
         private void UpdateSummaryText()
@@ -413,7 +452,20 @@ namespace AstraSize
 
             var reg = _currentReport.LinearRegression;
             string targetText;
-            if (reg != null && reg.DaysToTarget > 0 && reg.TargetDate.HasValue)
+
+            if (reg == null || reg.Status == ThresholdReachStatus.NotEnoughData)
+            {
+                targetText = Strings.HistoryRequireThreeScans;
+            }
+            else if (reg.Status == ThresholdReachStatus.AlreadyExceeded)
+            {
+                targetText = Strings.HistoryTargetAlreadyExceeded;
+            }
+            else if (reg.Status == ThresholdReachStatus.DecreasingOrFlat)
+            {
+                targetText = Strings.HistoryNeverReach;
+            }
+            else if (reg.Status == ThresholdReachStatus.Reachable && reg.DaysToTarget >= 0 && reg.TargetDate.HasValue)
             {
                 targetText = $"{Strings.HistoryTargetReachedIn}約 {(int)Math.Ceiling(reg.DaysToTarget)}{Strings.HistoryDaysSuffix} ({reg.TargetDate.Value:yyyy/MM/dd})";
             }
@@ -422,11 +474,11 @@ namespace AstraSize
                 targetText = Strings.HistoryNeverReach;
             }
 
-            string holtTrend = _currentReport.HoltSmoothing != null
+            string holtTrend = _currentReport.HoltSmoothing != null && _currentReport.HasSufficientDataForForecast
                 ? $" | {Strings.HistoryHoltTrend}: {_currentReport.HoltSmoothing.FormattedTrend}"
                 : "";
 
-            ForecastSummaryFooterText.Text = $"📊 {targetText}{holtTrend} (MADフロア: {FileItemNode.FormatBytes((long)_currentReport.EffectiveMAD)}/day)";
+            ForecastSummaryFooterText.Text = $"📊 {targetText}{holtTrend} ({Strings.HistoryMadFloorLabel}{FileItemNode.FormatBytes((long)_currentReport.EffectiveMAD)}/day)";
         }
 
         private void SelectInitialRow()
@@ -465,7 +517,7 @@ namespace AstraSize
             if (contributors.Count > 0)
             {
                 NoContributorsText.Visibility = Visibility.Collapsed;
-                ContributorsItemsControl.ItemsSource = contributors;
+                ContributorsItemsControl.ItemsSource = contributors.Select(c => new ContributorRowViewModel { Model = c }).ToList();
             }
             else
             {
@@ -541,7 +593,20 @@ namespace AstraSize
         private void ContributorItem_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (e.ClickCount != 2) return;
-            if (sender is FrameworkElement elem && elem.DataContext is SubfolderGrowthItem item)
+            SubfolderGrowthItem? item = null;
+            if (sender is FrameworkElement elem)
+            {
+                if (elem.DataContext is ContributorRowViewModel vm)
+                {
+                    item = vm.Model;
+                }
+                else if (elem.DataContext is SubfolderGrowthItem sgi)
+                {
+                    item = sgi;
+                }
+            }
+
+            if (item != null)
             {
                 if (string.IsNullOrEmpty(_targetPath) || string.IsNullOrEmpty(item.Name)) return;
 

@@ -129,8 +129,11 @@ namespace AstraSize
             try
             {
                 InitializeStorageTabs();
-                InitializeSimulationStudio();
-                await LoadAdPrincipalsAsync();
+                if (!App.IsClientMode)
+                {
+                    InitializeSimulationStudio();
+                    await LoadAdPrincipalsAsync();
+                }
 
                 LocalizationService.Instance.LanguageChanged += ApplyLocalization;
                 ApplyLocalization();

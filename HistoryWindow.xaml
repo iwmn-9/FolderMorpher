@@ -71,16 +71,16 @@
                 <!-- Chart Legend -->
                 <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
                     <Rectangle Width="12" Height="3" Fill="#0284C7" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBlock Text="実測容量" FontSize="10.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <TextBlock x:Name="LegendMeasuredText" Text="実測容量" FontSize="10.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,12,0"/>
 
                     <Rectangle Width="12" Height="2" Fill="#8B5CF6" StrokeDashArray="3,2" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBlock Text="一次線形回帰" FontSize="10.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <TextBlock x:Name="LegendRegressionText" Text="一次線形回帰" FontSize="10.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,12,0"/>
 
                     <Rectangle Width="12" Height="2" Fill="#EF4444" StrokeDashArray="2,2" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBlock Text="目標上限" FontSize="10.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                    <TextBlock x:Name="LegendTargetText" Text="目標上限" FontSize="10.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,12,0"/>
 
                     <Border Width="8" Height="8" CornerRadius="4" Background="#F59E0B" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBlock Text="⚠️ 異常急増 (MAD)" FontSize="10.5" Foreground="#64748B" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="LegendAnomalyText" Text="⚠️ 異常急増 (MAD)" FontSize="10.5" Foreground="#64748B" VerticalAlignment="Center"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -110,11 +110,11 @@
                                 <ColumnDefinition Width="120"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="スキャン日時" FontWeight="SemiBold" FontSize="11" Foreground="#475569"/>
-                            <TextBlock Grid.Column="1" Text="総容量" FontWeight="SemiBold" FontSize="11" Foreground="#475569" TextAlignment="Right"/>
-                            <TextBlock Grid.Column="2" Text="項目数" FontWeight="SemiBold" FontSize="11" Foreground="#475569" Margin="14,0,0,0"/>
-                            <TextBlock Grid.Column="3" Text="前回との増減" FontWeight="SemiBold" FontSize="11" Foreground="#475569" TextAlignment="Right"/>
-                            <TextBlock Grid.Column="4" Text="異常判定 / 状態" FontWeight="SemiBold" FontSize="11" Foreground="#475569" Margin="16,0,0,0"/>
+                            <TextBlock x:Name="ColHeaderDate" Grid.Column="0" Text="スキャン日時" FontWeight="SemiBold" FontSize="11" Foreground="#475569"/>
+                            <TextBlock x:Name="ColHeaderSize" Grid.Column="1" Text="総容量" FontWeight="SemiBold" FontSize="11" Foreground="#475569" TextAlignment="Right"/>
+                            <TextBlock x:Name="ColHeaderItems" Grid.Column="2" Text="項目数" FontWeight="SemiBold" FontSize="11" Foreground="#475569" Margin="14,0,0,0"/>
+                            <TextBlock x:Name="ColHeaderGrowth" Grid.Column="3" Text="前回との増減" FontWeight="SemiBold" FontSize="11" Foreground="#475569" TextAlignment="Right"/>
+                            <TextBlock x:Name="ColHeaderAnomaly" Grid.Column="4" Text="異常判定 / 状態" FontWeight="SemiBold" FontSize="11" Foreground="#475569" Margin="16,0,0,0"/>
                         </Grid>
                     </Border>
 
@@ -188,7 +188,7 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border Margin="0,0,0,6" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="8,6"
-                                            MouseLeftButtonDown="ContributorItem_MouseLeftButtonDown" Cursor="Hand" ToolTip="ダブルクリックで該当フォルダへドリルダウンまたは開く">
+                                            MouseLeftButtonDown="ContributorItem_MouseLeftButtonDown" Cursor="Hand" ToolTip="{Binding DoubleClickToolTip}">
                                         <Grid>
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto"/>
@@ -209,9 +209,9 @@
 
                                             <!-- Sub details -->
                                             <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,4,0,0">
-                                                <TextBlock Text="増加: " FontSize="10" Foreground="#64748B"/>
+                                                <TextBlock Text="{Binding GrowthPrefixText}" FontSize="10" Foreground="#64748B"/>
                                                 <TextBlock Text="{Binding FormattedDelta}" FontSize="10.5" FontWeight="SemiBold" Foreground="#E11D48" Margin="0,0,8,0"/>
-                                                <TextBlock Text="現在: " FontSize="10" Foreground="#64748B"/>
+                                                <TextBlock Text="{Binding CurrentPrefixText}" FontSize="10" Foreground="#64748B"/>
                                                 <TextBlock Text="{Binding FormattedCurrentSize}" FontSize="10.5" Foreground="#334155"/>
                                             </StackPanel>
                                         </Grid>
