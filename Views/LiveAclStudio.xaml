@@ -529,53 +529,81 @@
                                     <RowDefinition Height="Auto"/> <!-- Status / Progress -->
                                 </Grid.RowDefinitions>
 
-                                <!-- KPI Cards -->
+                                <!-- KPI Cards (6枚構成: 飛び地・遮断・権限レベル) -->
                                 <Grid Grid.Row="0" Margin="0,0,0,12">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="6"/>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="6"/>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="8"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="6"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="6"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
 
-                                    <Border Grid.Column="0" Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                                    <!-- 1. アクセス可能 -->
+                                    <Border Grid.Column="0" Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="8" Padding="8,6">
                                         <StackPanel>
-                                            <TextBlock x:Name="RevKpiTotalTitle" Text="アクセス可能" FontSize="10" Foreground="#1E40AF"/>
-                                            <TextBlock x:Name="RevKpiTotal" Text="0 箇所" FontSize="14" FontWeight="Bold" Foreground="#1D4ED8"/>
+                                            <TextBlock x:Name="RevKpiTotalTitle" Text="アクセス可能" FontSize="9.5" Foreground="#1E40AF"/>
+                                            <TextBlock x:Name="RevKpiTotal" Text="0 箇所" FontSize="13.5" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#1D4ED8"/>
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Column="2" Background="#FEF2F2" BorderBrush="#FECACA" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                                    <!-- 2. 飛び地 (獲得) -->
+                                    <Border Grid.Column="2" Background="#FEF2F2" BorderBrush="#FCA5A5" BorderThickness="1" CornerRadius="8" Padding="8,6">
                                         <StackPanel>
-                                            <TextBlock x:Name="RevKpiFullTitle" Text="フルコントロール" FontSize="10" Foreground="#991B1B"/>
-                                            <TextBlock x:Name="RevKpiFull" Text="0 箇所" FontSize="14" FontWeight="Bold" Foreground="#DC2626"/>
+                                            <TextBlock x:Name="RevKpiEnclaveTitle" Text="🚨 飛び地 (獲得)" FontSize="9.5" FontWeight="SemiBold" Foreground="#991B1B"/>
+                                            <TextBlock x:Name="RevKpiEnclave" Text="0 箇所" FontSize="13.5" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#DC2626"/>
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Column="4" Background="#FFFBEB" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                                    <!-- 3. 遮断 (消失) -->
+                                    <Border Grid.Column="4" Background="#FFF1F2" BorderBrush="#FDA4AF" BorderThickness="1" CornerRadius="8" Padding="8,6">
                                         <StackPanel>
-                                            <TextBlock x:Name="RevKpiModTitle" Text="変更 (Modify)" FontSize="10" Foreground="#92400E"/>
-                                            <TextBlock x:Name="RevKpiMod" Text="0 箇所" FontSize="14" FontWeight="Bold" Foreground="#D97706"/>
+                                            <TextBlock x:Name="RevKpiSeveredTitle" Text="⛔ 遮断 (消失)" FontSize="9.5" FontWeight="SemiBold" Foreground="#9F1239"/>
+                                            <TextBlock x:Name="RevKpiSevered" Text="0 箇所" FontSize="13.5" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#E11D48"/>
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Grid.Column="6" Background="#ECFDF5" BorderBrush="#A7F3D0" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                                    <!-- 4. フルコントロール -->
+                                    <Border Grid.Column="6" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="8,6">
                                         <StackPanel>
-                                            <TextBlock x:Name="RevKpiReadTitle" Text="読み取り専用" FontSize="10" Foreground="#065F46"/>
-                                            <TextBlock x:Name="RevKpiRead" Text="0 箇所" FontSize="14" FontWeight="Bold" Foreground="#059669"/>
+                                            <TextBlock x:Name="RevKpiFullTitle" Text="フルコントロール" FontSize="9.5" Foreground="#64748B"/>
+                                            <TextBlock x:Name="RevKpiFull" Text="0 箇所" FontSize="13.5" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#DC2626"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- 5. 変更 (Modify) -->
+                                    <Border Grid.Column="8" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="8,6">
+                                        <StackPanel>
+                                            <TextBlock x:Name="RevKpiModTitle" Text="変更 (Modify)" FontSize="9.5" Foreground="#64748B"/>
+                                            <TextBlock x:Name="RevKpiMod" Text="0 箇所" FontSize="13.5" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#D97706"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- 6. 読み取り専用 -->
+                                    <Border Grid.Column="10" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="8,6">
+                                        <StackPanel>
+                                            <TextBlock x:Name="RevKpiReadTitle" Text="読み取り専用" FontSize="9.5" Foreground="#64748B"/>
+                                            <TextBlock x:Name="RevKpiRead" Text="0 箇所" FontSize="13.5" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#059669"/>
                                         </StackPanel>
                                     </Border>
                                 </Grid>
 
-                                <!-- Table Header with Quick Filter -->
+                                <!-- Table Header with Quick Filter & Changes Only Toggle -->
                                 <Grid Grid.Row="1" Margin="0,0,0,8">
-                                    <TextBlock x:Name="RevFoldersTableTitle" Text="📂 アクセス可能フォルダー一覧 (Wクリックでエクスプローラー直行)" FontWeight="Bold" FontSize="11" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="RevFoldersTableTitle" Text="📂 監査フォルダー一覧 (Wクリックでエクスプローラー直行)" FontWeight="SemiBold" FontSize="11.5" Foreground="#1E293B" VerticalAlignment="Center"/>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <CheckBox x:Name="RevFilterChangesOnlyCheckBox" Content="⚡ 変化点（飛び地・遮断）のみ" IsChecked="True"
+                                                  FontSize="10.5" FontWeight="SemiBold" Foreground="#2563EB" VerticalAlignment="Center" Margin="0,0,12,0"
+                                                  Click="RevFilterChangesOnlyCheckBox_Click"
+                                                  ToolTip="親からそのまま継承された同一権限フォルダーを非表示にし、権限が獲得された『飛び地』や切断された『遮断』のみを表示します"/>
                                         <TextBlock x:Name="RevFolderFilterLabel" Text="絞り込み:" FontSize="10" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="26" Width="180" Padding="6,0">
+                                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="26" Width="160" Padding="6,0">
                                             <TextBox x:Name="RevFolderFilterTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="10" TextChanged="RevFolderFilterTextBox_TextChanged"/>
                                         </Border>
                                     </StackPanel>
@@ -587,17 +615,27 @@
                                           HeadersVisibility="Column"
                                           MouseDoubleClick="RevFoldersDataGrid_MouseDoubleClick" SelectionMode="Single">
                                     <DataGrid.Columns>
-                                        <DataGridTextColumn x:Name="ColRevFolderName" Header="フォルダー名" Binding="{Binding FolderName}" Width="160" FontWeight="Bold"/>
-                                        <DataGridTemplateColumn x:Name="ColRevRights" Header="実効アクセス権" Width="130">
+                                        <DataGridTextColumn x:Name="ColRevFolderName" Header="フォルダー名" Binding="{Binding FolderName}" Width="150" FontWeight="SemiBold"/>
+                                        <DataGridTemplateColumn x:Name="ColRevChangeType" Header="変化点 / 状態" Width="120">
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
-                                                    <Border Background="{Binding RightsBadgeBackground}" CornerRadius="4" Padding="6,2" HorizontalAlignment="Center">
-                                                        <TextBlock Text="{Binding FormattedRights}" FontSize="10" FontWeight="Bold" Foreground="{Binding RightsBadgeForeground}"/>
+                                                    <Border Background="{Binding ChangeBadgeBackground}" BorderBrush="{Binding ChangeBadgeBorder}" BorderThickness="1" CornerRadius="4" Padding="5,2" HorizontalAlignment="Center">
+                                                        <TextBlock Text="{Binding ChangeBadgeText}" FontSize="9.5" FontWeight="SemiBold" Foreground="{Binding ChangeBadgeForeground}"/>
                                                     </Border>
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
-                                        <DataGridTextColumn x:Name="ColRevGrantSource" Header="付与形態 / 経由グループ" Binding="{Binding GrantSource}" Width="200"/>
+                                        <DataGridTemplateColumn x:Name="ColRevRights" Header="実効アクセス権" Width="120">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="{Binding RightsBadgeBackground}" CornerRadius="4" Padding="5,2" HorizontalAlignment="Center">
+                                                        <TextBlock Text="{Binding FormattedRights}" FontSize="9.5" FontWeight="SemiBold" Foreground="{Binding RightsBadgeForeground}"/>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn x:Name="ColRevGrantSource" Header="付与形態 / 経由グループ" Binding="{Binding GrantSource}" Width="160"/>
+                                        <DataGridTextColumn x:Name="ColRevGrantTrace" Header="詳細トレース / 理由" Binding="{Binding GrantPathTrace}" Width="220" FontSize="10"/>
                                         <DataGridTextColumn x:Name="ColRevFullPath" Header="完全パス" Binding="{Binding FolderPath}" Width="*" FontFamily="{StaticResource MonoFont}" FontSize="10"/>
                                     </DataGrid.Columns>
                                 </DataGrid>

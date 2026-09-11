@@ -126,58 +126,83 @@ namespace FolderMorpher.Services
                         }
                         else if (item.FileType.Contains(".lnk") && wsh is not null)
                         {
-                            // バックアップ作成
+                            // 1. 楽観ロック (Optimistic Lock): 書き込み直前に現在の実態 TargetPath を再照合
+                            dynamic currentShortcut = wsh.CreateShortcut(item.FilePath);
+                            string currentTarget = currentShortcut.TargetPath;
+                            if (!string.IsNullOrWhiteSpace(item.OldTarget) &&
+                                !string.Equals(currentTarget?.TrimEnd('\\'), item.OldTarget.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                            {
+                                item.Status = $"外部変更検知のためスキップ (現在値: {currentTarget})";
+                                progress?.Report((item.FilePath, false));
+                                continue;
+                            }
+
+                            // 2. 人間用初回永続バックアップ (.bak)
                             string bakPath = item.FilePath + ".bak";
                             if (!File.Exists(bakPath))
                             {
                                 File.Copy(item.FilePath, bakPath);
                             }
 
-                            dynamic shortcut = wsh.CreateShortcut(item.FilePath);
-                            shortcut.TargetPath = item.NewTarget;
-                            shortcut.Save();
+                            // 3. 直前一時ロールバック用スナップショット (世代分離: 過去の.bak巻き戻し事故を完全根絶)
+                            string rollbackPath = item.FilePath + $".rollback_{Guid.NewGuid():N}";
+                            File.Copy(item.FilePath, rollbackPath, overwrite: true);
 
-                            // Verify: 保存した .lnk を再度開き直して TargetPath が意図通り更新されたかを本番検証
-                            dynamic verifyShortcut = wsh.CreateShortcut(item.FilePath);
-                            string verifiedTarget = verifyShortcut.TargetPath;
-                            if (string.Equals(verifiedTarget?.TrimEnd('\\'), item.NewTarget.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                            try
                             {
-                                item.IsFixed = true;
-                                item.Status = "修復完了 (検証済・バックアップ済)";
-                                successCount++;
-                                progress?.Report((item.FilePath, true));
+                                currentShortcut.TargetPath = item.NewTarget;
+                                currentShortcut.Save();
+
+                                // 4. Verify: 保存した .lnk を再度開き直して TargetPath が意図通り更新されたかを本番検証
+                                dynamic verifyShortcut = wsh.CreateShortcut(item.FilePath);
+                                string verifiedTarget = verifyShortcut.TargetPath;
+                                if (string.Equals(verifiedTarget?.TrimEnd('\\'), item.NewTarget.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                                {
+                                    item.IsFixed = true;
+                                    item.Status = "修復完了 (検証済・バックアップ済)";
+                                    successCount++;
+                                    progress?.Report((item.FilePath, true));
+
+                                    // Verify 成功時は一時ロールバックファイルを安全に削除
+                                    try { if (File.Exists(rollbackPath)) File.Delete(rollbackPath); } catch { }
+                                }
+                                else
+                                {
+                                    // Verify NG: 意図したパスに書き換わっていないため、直前のスナップショットから原子的復元
+                                    try
+                                    {
+                                        if (File.Exists(rollbackPath))
+                                        {
+                                            File.Copy(rollbackPath, item.FilePath, overwrite: true);
+                                            File.Delete(rollbackPath);
+                                        }
+                                    }
+                                    catch { }
+
+                                    item.Status = $"修復検証失敗 (直前復元済, 書込値: {verifiedTarget})";
+                                    progress?.Report((item.FilePath, false));
+                                }
                             }
-                            else
+                            catch
                             {
-                                // Verify NG: 意図したパスに書き換わっていないため、直前の .bak から即座に自動ロールバック
+                                // 書き込み中例外発生時も直前のスナップショットから原子的復元
                                 try
                                 {
-                                    if (File.Exists(bakPath))
+                                    if (File.Exists(rollbackPath))
                                     {
-                                        File.Copy(bakPath, item.FilePath, overwrite: true);
+                                        File.Copy(rollbackPath, item.FilePath, overwrite: true);
+                                        File.Delete(rollbackPath);
                                     }
                                 }
                                 catch { }
 
-                                item.Status = $"修復検証失敗 (自動復元済, 書込値: {verifiedTarget})";
-                                progress?.Report((item.FilePath, false));
+                                throw;
                             }
                         }
                     }
                     catch
                     {
-                        // 例外発生時もバックアップから自動ロールバック
-                        try
-                        {
-                            string bakPath = item.FilePath + ".bak";
-                            if (File.Exists(bakPath))
-                            {
-                                File.Copy(bakPath, item.FilePath, overwrite: true);
-                            }
-                        }
-                        catch { }
-
-                        item.Status = "修復失敗 (自動復元済)";
+                        item.Status = "修復失敗 (直前復元済)";
                         progress?.Report((item.FilePath, false));
                     }
                 }

@@ -297,7 +297,7 @@ namespace FolderMorpher.Services
                 int scannedCount = 0;
                 int foundCount = 0;
 
-                void Traverse(DirectoryInfo currentDir, int depth)
+                void Traverse(DirectoryInfo currentDir, int depth, EffectiveFolderAccessItem? parentItem)
                 {
                     if (ct.IsCancellationRequested) return;
 
@@ -307,25 +307,80 @@ namespace FolderMorpher.Services
                         progress?.Report((scannedCount, foundCount));
                     }
 
+                    EffectiveFolderAccessItem? currentItem = null;
+                    bool scanFailed = false;
+
                     try
                     {
                         var sec = currentDir.GetAccessControl(AccessControlSections.Access);
-                        var item = EvaluateEffectiveAccessOnAcl(sec, targetAccount, targetNames, groupMap, currentDir.FullName, currentDir.Name);
-                        if (item != null)
-                        {
-                            lock (report.AccessibleFolders)
-                            {
-                                report.AccessibleFolders.Add(item);
-                                foundCount++;
-                                if (item.PermissionLevel == EffectivePermissionLevel.FullControl) report.FullControlCount++;
-                                else if (item.PermissionLevel == EffectivePermissionLevel.Modify) report.ModifyCount++;
-                                else report.ReadOnlyCount++;
-                            }
-                        }
+                        currentItem = EvaluateEffectiveAccessOnAcl(sec, targetAccount, targetNames, groupMap, currentDir.FullName, currentDir.Name);
                     }
                     catch
                     {
-                        // Skip inaccessible / restricted folders
+                        // アクセス権取得失敗 (UnauthorizedAccessException または Restricted)
+                        scanFailed = true;
+                    }
+
+                    // 変化点（飛び地・遮断・権限変更・通常継承）の判定
+                    if (currentItem != null)
+                    {
+                        if (parentItem == null || parentItem.PermissionLevel == EffectivePermissionLevel.None)
+                        {
+                            // 親はアクセス不可 (またはルート) だが、このフォルダでアクセス権を獲得！
+                            currentItem.ChangeType = (depth == 0 && currentItem.IsInherited)
+                                ? EffectiveAccessChangeType.InheritedSame
+                                : EffectiveAccessChangeType.EnclaveGranted;
+
+                            if (currentItem.ChangeType == EffectiveAccessChangeType.EnclaveGranted)
+                            {
+                                lock (report.AccessibleFolders) { report.EnclaveCount++; }
+                            }
+                        }
+                        else
+                        {
+                            // 親もアクセス可能
+                            if (currentItem.IsInherited &&
+                                currentItem.PermissionLevel == parentItem.PermissionLevel &&
+                                currentItem.AllowedRights == parentItem.AllowedRights)
+                            {
+                                currentItem.ChangeType = EffectiveAccessChangeType.InheritedSame;
+                            }
+                            else
+                            {
+                                currentItem.ChangeType = EffectiveAccessChangeType.PermissionChanged;
+                            }
+                        }
+
+                        lock (report.AccessibleFolders)
+                        {
+                            report.AccessibleFolders.Add(currentItem);
+                            foundCount++;
+                            if (currentItem.PermissionLevel == EffectivePermissionLevel.FullControl) report.FullControlCount++;
+                            else if (currentItem.PermissionLevel == EffectivePermissionLevel.Modify) report.ModifyCount++;
+                            else report.ReadOnlyCount++;
+                        }
+                    }
+                    else if (parentItem != null && parentItem.PermissionLevel != EffectivePermissionLevel.None)
+                    {
+                        // ⛔ 遮断（権限消失）: 親ではアクセスできたのに、この階層で継承切断またはDeny、あるいは権限剥奪された！
+                        var severedItem = new EffectiveFolderAccessItem
+                        {
+                            FolderPath = currentDir.FullName,
+                            FolderName = currentDir.Name,
+                            PermissionLevel = EffectivePermissionLevel.None,
+                            AllowedRights = 0,
+                            DeniedRights = 0,
+                            HasDeny = true,
+                            IsInherited = false,
+                            ChangeType = EffectiveAccessChangeType.InheritanceSevered,
+                            GrantSource = scanFailed ? "アクセス拒否 (Deny / 権限なし)" : "継承遮断 (親権限消失)",
+                            GrantPathTrace = $"親({parentItem.FolderName}: {parentItem.FormattedRights})ではアクセス可能でしたが、この階層で継承切断または拒否によりアクセス権が消失しています"
+                        };
+
+                        lock (report.SeveredFolders)
+                        {
+                            report.SeveredFolders.Add(severedItem);
+                        }
                     }
 
                     if (depth >= maxDepth) return;
@@ -342,13 +397,13 @@ namespace FolderMorpher.Services
                                 continue;
                             }
 
-                            Traverse(sub, depth + 1);
+                            Traverse(sub, depth + 1, currentItem);
                         }
                     }
                     catch { }
                 }
 
-                Traverse(dir, 0);
+                Traverse(dir, 0, null);
 
                 report.TotalFoldersScanned = scannedCount;
                 progress?.Report((scannedCount, foundCount));

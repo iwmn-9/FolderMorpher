@@ -931,6 +931,8 @@ namespace AstraSize.Views
             _revFolders.Clear();
             _revAllFoldersCache.Clear();
             RevKpiTotal.Text = "0 箇所";
+            RevKpiEnclave.Text = "0 箇所";
+            RevKpiSevered.Text = "0 箇所";
             RevKpiFull.Text = "0 箇所";
             RevKpiMod.Text = "0 箇所";
             RevKpiRead.Text = "0 箇所";
@@ -968,15 +970,19 @@ namespace AstraSize.Views
                 report.ResolutionStatusText = resStatus;
 
                 _currentEffectiveReport = report;
-                _revAllFoldersCache.AddRange(report.AccessibleFolders);
-                foreach (var f in report.AccessibleFolders) _revFolders.Add(f);
+                _revAllFoldersCache.AddRange(report.AllAuditItems);
+
+                // フィルター（変化点・テキスト）を適用して一覧に反映
+                ApplyRevFilter();
 
                 RevKpiTotal.Text = $"{report.AccessibleFolders.Count:N0} 箇所";
+                RevKpiEnclave.Text = $"{report.EnclaveCount:N0} 箇所";
+                RevKpiSevered.Text = $"{report.SeveredCount:N0} 箇所";
                 RevKpiFull.Text = $"{report.FullControlCount:N0} 箇所";
                 RevKpiMod.Text = $"{report.ModifyCount:N0} 箇所";
                 RevKpiRead.Text = $"{report.ReadOnlyCount:N0} 箇所";
 
-                RevStatusText.Text = $"監査完了: 総走査 {report.TotalFoldersScanned:N0} フォルダ中、{report.AccessibleFolders.Count:N0} 箇所のフォルダーにアクセス権があります。";
+                RevStatusText.Text = $"監査完了: 総走査 {report.TotalFoldersScanned:N0} フォルダ中、{report.AccessibleFolders.Count:N0} 箇所のフォルダーを検出 (飛び地: {report.EnclaveCount}件, 遮断: {report.SeveredCount}件)";
                 RevExportExcelButton.IsEnabled = report.AccessibleFolders.Count > 0;
                 ShowToast($"🔍 「{targetAccount}」の逆引き監査が完了しました ({report.AccessibleFolders.Count:N0} 箇所)");
             }
@@ -1047,18 +1053,39 @@ namespace AstraSize.Views
             }
         }
 
+        private void RevFilterChangesOnlyCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            ApplyRevFilter();
+        }
+
         private void RevFolderFilterTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            var filter = RevFolderFilterTextBox.Text.Trim();
+            ApplyRevFilter();
+        }
+
+        private void ApplyRevFilter()
+        {
+            var filter = RevFolderFilterTextBox?.Text?.Trim() ?? string.Empty;
+            bool changesOnly = RevFilterChangesOnlyCheckBox?.IsChecked == true;
+
             _revFolders.Clear();
 
-            var source = string.IsNullOrWhiteSpace(filter)
-                ? _revAllFoldersCache
-                : _revAllFoldersCache.Where(f =>
+            var source = _revAllFoldersCache.AsEnumerable();
+
+            if (changesOnly)
+            {
+                source = source.Where(f => f.IsChangePoint);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                source = source.Where(f =>
                     f.FolderName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
                     f.FolderPath.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
                     f.GrantSource.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-                    f.FormattedRights.Contains(filter, StringComparison.OrdinalIgnoreCase));
+                    f.FormattedRights.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                    f.ChangeBadgeText.Contains(filter, StringComparison.OrdinalIgnoreCase));
+            }
 
             foreach (var item in source)
             {

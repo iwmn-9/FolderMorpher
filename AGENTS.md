@@ -468,6 +468,30 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
     - **回帰テスト Test 28 強化**:
       - 上記のディープコピー凍結、外部競合検知、.lnk 自動ロールバック、同一FS置換、共有スナップショット同期を網羅し、**全28回帰テスト 100% PASS**（28/28）。
 
+47. **タイポグラフィ現代化・AD逆引き変化点（飛び地・遮断）フィルター ＆ 安全文法完備 (v2.0.0)**:
+    - **AD逆引き権限（Effective Access）の「変化点（飛び地・遮断）」フィルター新設**:
+      - 親フォルダと子フォルダの実効権限（Effective Access）を走査時に自動比較し、階層変化点を分類（`EffectiveAccessChangeType`）:
+        - 🚨 **飛び地（EnclaveGranted: 権限獲得）**: 親はアクセス不可なのに、下層フォルダで突如アクセス可能になった権限の獲得点。
+        - ⛔ **遮断（InheritanceSevered: 権限消失）**: 親ではアクセスできたのに、下層フォルダで継承切断（継承無効化）やDeny等によりアクセス不能になった遮断点（`report.SeveredFolders` へ安全分離）。
+        - ⚡ **権限変更（PermissionChanged）**: 親とは異なる権限レベルへの昇格・変更点。
+        - 🔗 **通常継承（InheritedSame）**: 親からそのまま継承された同一権限。
+      - 「⚡ 変化点（飛び地・遮断）のみ」フィルター（既定ON）により、通常継承による膨大なノイズを排除し、管理者が最も警戒すべき飛び地と遮断をピンポイント抽出。Excel レポートにも完全出力。
+    - **タイポグラフィの現代化（Windows 11 Fluent 基準）**:
+      - `App.xaml` の `MainFont` を `Segoe UI Variable Display, Segoe UI Variable Text, "Yu Gothic UI", "Segoe UI", sans-serif` に更新。
+      - 游ゴシックUI特有の文字潰れ・野暮ったさの原因となっていた `FontWeight="Bold"`（ウェイト700）を、Fluent UI 標準の `FontWeight="SemiBold"`（ウェイト600）に適正化。
+      - 数値表示セルに `Typography.NumeralAlignment="Tabular"` を導入し、数値を等幅で美しく整列。
+    - **右ペインヘッダー文字被りの完全解消（2行スタック化 ＆ スマートトリム）**:
+      - `StorageTabPanel` の「Top 10 容量上位」および「直下シェア」のヘッダーにおいて、長大UNCパスでもタイトルと重ならないよう2行スタック構造＋`TextTrimming="CharacterEllipsis"`＋ToolTip 化。
+    - **移行スタジオ初期ダミーツリー撤廃 ＆ エンプティステート導入**:
+      - ハードコードされていたダミーツリー（東京本社・総務部等）を完全撤去し、未作成時のエンプティステート案内表示を導入。
+    - **LinkFixer の楽観ロック（Optimistic Lock）＆ 直前一時ロールバック世代分離**:
+      - 実行直前に現在のショートカットの `TargetPath` を再照合し、スキャン時の `OldTarget` と不一致なら外部変更として安全にスキップ。
+      - 人間用初回永続 `.bak` とは別に直前一時スナップショット（`rollback_{Guid}`）を作成し、Verify 失敗時は直前から原子的復元（過去の古い `.bak` 巻き戻し事故を完全根絶）。
+    - **Skeleton Deploy の外部競合 UI トースト反映**:
+      - 計画先行の事後検証において、`deployResult.ConflictCount > 0` を検知した場合は「外部変更検知によるスキップ」として警告トーストを明確に通知。
+    - **回帰テスト Test 29 新設**:
+      - 楽観ロック、直前ロールバック、飛び地・遮断の自動判定、Skeleton 競合UI判定を網羅し、**全29回帰テスト 100% PASS**（29/29）。
+
 ---
 
 ## 4. ビルド・実行・検証コマンド
@@ -484,7 +508,7 @@ Copy-Item -Path ".\bin\Publish\FolderMorpher.exe" -Destination ".\FolderMorpher.
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 28/28 ALL PASSED であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 29/29 ALL PASSED であることを確認すること。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

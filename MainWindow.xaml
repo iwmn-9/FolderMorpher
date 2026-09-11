@@ -79,7 +79,7 @@
                         <!-- Expanded Footer (2-tier layout: Brand on top, Controls below) -->
                         <StackPanel x:Name="SidebarFooterExpandedPanel" Margin="14,8,14,10">
                             <StackPanel Margin="0,0,0,8">
-                                <TextBlock x:Name="SidebarVersionText" Text="FolderMorpher v1.7.0" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock x:Name="SidebarVersionText" Text="FolderMorpher v2.0.0" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                                 <TextBlock x:Name="SidebarSubtitleText" Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#94A3B8" Margin="0,1,0,0"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal">
@@ -231,7 +231,7 @@
                                         <TextBlock Text="⚡ MFT Boost" FontSize="11" FontWeight="Bold" Foreground="#1D4ED8"/>
                                     </Border>
                                 </Grid>
-                                <TextBlock x:Name="ScannedSizeTextBlock" Text="0.00 GB" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0"/>
+                                <TextBlock x:Name="ScannedSizeTextBlock" Text="0.00 GB" FontSize="22" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0"/>
                                 <TextBlock x:Name="TotalFilesTextBlock" Text="0 ファイル / 0 フォルダ" FontSize="11.5" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0"/>
                             </StackPanel>
                         </Border>
@@ -239,7 +239,7 @@
                         <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
                             <StackPanel>
                                 <TextBlock x:Name="StorageKpiLargestFileTitle" Text="最大ファイル (Top 1)" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
-                                <TextBlock x:Name="LargestFileSizeTextBlock" Text="--" FontSize="22" FontWeight="Bold" Foreground="#E11D48" Margin="0,2,0,0"/>
+                                <TextBlock x:Name="LargestFileSizeTextBlock" Text="--" FontSize="22" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#E11D48" Margin="0,2,0,0"/>
                                 <TextBlock x:Name="LargestFileNameTextBlock" Text="--" FontSize="11.5" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
@@ -247,7 +247,7 @@
                         <Border Grid.Column="4" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
                             <StackPanel>
                                 <TextBlock x:Name="StorageKpiDiffTrendTitle" Text="前回スキャンとの差分推移" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
-                                <TextBlock x:Name="TrendDiffTextBlock" Text="比較データなし" FontSize="22" FontWeight="Bold" Foreground="{StaticResource AccentSky}" Margin="0,2,0,0"/>
+                                <TextBlock x:Name="TrendDiffTextBlock" Text="比較データなし" FontSize="22" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="{StaticResource AccentSky}" Margin="0,2,0,0"/>
                                 <TextBlock x:Name="LastScanDateTextBlock" Text="初回スキャン" FontSize="11.5" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0"/>
                             </StackPanel>
                         </Border>
@@ -364,12 +364,11 @@
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
-                            <!-- Top 10 Header -->
+                            <!-- Top 10 Header (2行スタック構造で長大パスでも文字被りを完全防止) -->
                             <StackPanel Grid.Row="0" Margin="0,0,0,6">
-                                <Grid>
-                                    <TextBlock x:Name="StorageTopFilesTitleText" Text="💡 容量上位ファイル (Top 10)" FontWeight="Bold" FontSize="13" Foreground="#1E293B"/>
-                                    <TextBlock x:Name="InsightsTargetScopeTextBlock" Text="スコープ: 全体" FontSize="11" Foreground="#0284C7" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"/>
-                                </Grid>
+                                <TextBlock x:Name="StorageTopFilesTitleText" Text="💡 容量上位ファイル (Top 10)" FontWeight="SemiBold" FontSize="12.5" Foreground="#1E293B"/>
+                                <TextBlock x:Name="InsightsTargetScopeTextBlock" Text="スコープ: 全体" FontSize="11" Foreground="#0284C7" Margin="0,2,0,0"
+                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
                             </StackPanel>
 
                             <!-- Top 10 Largest Files DataGrid -->
@@ -388,11 +387,11 @@
                                 </DataGrid.Columns>
                             </DataGrid>
 
-                            <!-- Folder Direct Children Shares Header -->
-                            <Grid Grid.Row="2" Margin="0,6,0,6">
-                                <TextBlock x:Name="StorageDirectSharesTitleText" Text="📁 選択フォルダの内訳 (直下シェア)" FontWeight="Bold" FontSize="13" Foreground="#1E293B"/>
-                                <TextBlock x:Name="StorageDirectSharesSubText" Text="Wクリックでツリー連動 ➔" FontSize="11" Foreground="#0284C7" HorizontalAlignment="Right"/>
-                            </Grid>
+                            <!-- Folder Direct Children Shares Header (2行スタック構造) -->
+                            <StackPanel Grid.Row="2" Margin="0,8,0,6">
+                                <TextBlock x:Name="StorageDirectSharesTitleText" Text="📁 選択フォルダの内訳 (直下シェア)" FontWeight="SemiBold" FontSize="12.5" Foreground="#1E293B"/>
+                                <TextBlock x:Name="StorageDirectSharesSubText" Text="Wクリックでツリー連動 ➔" FontSize="11" Foreground="#0284C7" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
 
                             <!-- Folder Direct Children Shares DataGrid -->
                             <DataGrid x:Name="FolderChildSharesDataGrid" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True"
@@ -606,19 +605,20 @@
 
                             <!-- Mock TreeView with Drop & ContextMenu (Smooth Scroll & Smooth Drag) -->
                             <Border Grid.Row="1" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Background="#FFFFFF">
-                                <TreeView x:Name="SimMockTreeView" BorderThickness="0" Background="Transparent"
-                                          ScrollViewer.CanContentScroll="False"
-                                          SelectedItemChanged="SimMockTreeView_SelectedItemChanged"
-                                          AllowDrop="True"
-                                          Drop="SimMockTreeView_Drop"
-                                          DragOver="SimMockTreeView_DragOver"
-                                          PreviewMouseLeftButtonDown="SimMockTreeView_PreviewMouseLeftButtonDown"
-                                          PreviewMouseMove="SimMockTreeView_PreviewMouseMove">
-                                    <TreeView.ItemContainerStyle>
-                                        <Style TargetType="{x:Type TreeViewItem}">
-                                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
-                                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
-                                        </Style>
+                                <Grid>
+                                    <TreeView x:Name="SimMockTreeView" BorderThickness="0" Background="Transparent"
+                                              ScrollViewer.CanContentScroll="False"
+                                              SelectedItemChanged="SimMockTreeView_SelectedItemChanged"
+                                              AllowDrop="True"
+                                              Drop="SimMockTreeView_Drop"
+                                              DragOver="SimMockTreeView_DragOver"
+                                              PreviewMouseLeftButtonDown="SimMockTreeView_PreviewMouseLeftButtonDown"
+                                              PreviewMouseMove="SimMockTreeView_PreviewMouseMove">
+                                        <TreeView.ItemContainerStyle>
+                                            <Style TargetType="{x:Type TreeViewItem}">
+                                                <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                                <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                                            </Style>
                                     </TreeView.ItemContainerStyle>
                                     <TreeView.ContextMenu>
                                         <ContextMenu>
@@ -672,7 +672,19 @@
                                         </HierarchicalDataTemplate>
                                     </TreeView.ItemTemplate>
                                 </TreeView>
-                            </Border>
+
+                                <!-- Empty State Indicator -->
+                                <Border x:Name="SimEmptyStateBorder" Background="Transparent" IsHitTestVisible="False"
+                                        VerticalAlignment="Center" HorizontalAlignment="Center" Padding="20" Visibility="Collapsed">
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <TextBlock Text="📁" FontSize="28" HorizontalAlignment="Center" Margin="0,0,0,8" Opacity="0.6"/>
+                                        <TextBlock x:Name="SimEmptyStateTitleText" Text="仮想ツリーが未作成です" FontWeight="SemiBold" FontSize="12.5" Foreground="#64748B" HorizontalAlignment="Center"/>
+                                        <TextBlock x:Name="SimEmptyStateDescText" Text="左側の現行フォルダを選択して『新設配置』を押すか、&#x0a;上部の『＋ ルート新設』ボタンから設計を開始してください。"
+                                                   FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap" TextAlignment="Center" Margin="0,4,0,0" LineHeight="16"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </Border>
                         </Grid>
                     </Border>
 
@@ -1071,28 +1083,28 @@
                     <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
                         <StackPanel>
                             <TextBlock x:Name="AuditKpiTotalFilesTitle" Text="総走査ファイル数" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="AuditKpiTotalFiles" Text="0 件" FontSize="18" FontWeight="Bold" Foreground="#0F172A" Margin="0,4,0,0"/>
+                            <TextBlock x:Name="AuditKpiTotalFiles" Text="0 件" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#0F172A" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 
                     <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
                         <StackPanel>
                             <TextBlock x:Name="AuditKpiDupWastedTitle" Text="重複ファイルによる無駄" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="AuditKpiDupWasted" Text="0 B" FontSize="18" FontWeight="Bold" Foreground="#DC2626" Margin="0,4,0,0"/>
+                            <TextBlock x:Name="AuditKpiDupWasted" Text="0 B" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#DC2626" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 
                     <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
                         <StackPanel>
                             <TextBlock x:Name="AuditKpiDormantSizeTitle" Text="休眠ファイル容量 (3年超)" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="AuditKpiDormantSize" Text="0 B" FontSize="18" FontWeight="Bold" Foreground="#D97706" Margin="0,4,0,0"/>
+                            <TextBlock x:Name="AuditKpiDormantSize" Text="0 B" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#D97706" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 
                     <Border Grid.Column="3" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12">
                         <StackPanel>
-                            <TextBlock x:Name="AuditKpiPathLimitsTitle" Text="パス長超過 / 禁則文字" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="AuditKpiPathLimits" Text="0 件" FontSize="18" FontWeight="Bold" Foreground="#2563EB" Margin="0,4,0,0"/>
+                            <TextBlock x:Name="AuditKpiPathLimitsTitle" Text="パス長・禁則文字 違反" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="AuditKpiPathLimits" Text="0 件" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#2563EB" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
                 </Grid>
@@ -1312,28 +1324,28 @@
                     <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
                         <StackPanel>
                             <TextBlock x:Name="MediaKpiImagesCountTitle" Text="走査対象 画像数" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="MediaKpiImagesCount" Text="0 枚" FontSize="18" FontWeight="Bold" Foreground="#0F172A" Margin="0,4,0,0"/>
+                            <TextBlock x:Name="MediaKpiImagesCount" Text="0 枚" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#0F172A" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 
                     <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
                         <StackPanel>
                             <TextBlock x:Name="MediaKpiVideosCountTitle" Text="巨大動画 ファイル数" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="MediaKpiVideosCount" Text="0 本" FontSize="18" FontWeight="Bold" Foreground="#2563EB" Margin="0,4,0,0"/>
+                            <TextBlock x:Name="MediaKpiVideosCount" Text="0 本" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#2563EB" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 
                     <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
                         <StackPanel>
                             <TextBlock x:Name="MediaKpiOptimizedCountTitle" Text="軽量化 完了数" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="MediaKpiOptimizedCount" Text="0 枚" FontSize="18" FontWeight="Bold" Foreground="#059669" Margin="0,4,0,0"/>
+                            <TextBlock x:Name="MediaKpiOptimizedCount" Text="0 枚" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#059669" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
 
                     <Border Grid.Column="3" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12">
                         <StackPanel>
                             <TextBlock x:Name="MediaKpiSavedSizeTitle" Text="総削減容量 (解放された空き)" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="MediaKpiSavedSize" Text="0 B" FontSize="18" FontWeight="Bold" Foreground="#059669" Margin="0,4,0,0"/>
+                            <TextBlock x:Name="MediaKpiSavedSize" Text="0 B" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#059669" Margin="0,4,0,0"/>
                         </StackPanel>
                     </Border>
                 </Grid>

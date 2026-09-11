@@ -962,22 +962,9 @@ namespace AstraSize
             SimMockTreeView.ItemsSource = _simRootFolders;
             AdPrincipalsItemsControl.ItemsSource = _adPrincipals;
 
-            if (_simRootFolders.Count == 0)
-            {
-                var root = new SimFolderNode { Name = "新共有サーバー_Share [新設ルート]", InheritAcl = true, Level = 0 };
-                var sub1 = new SimFolderNode { Name = "01_経営企画・総務統括", InheritAcl = true, Level = 1, Parent = root };
-                var sub2 = new SimFolderNode { Name = "01-1_役員会議・機密資料", InheritAcl = true, Level = 2, Parent = sub1 };
-                var sub3 = new SimFolderNode { Name = "2025年度_議事録アーカイブ", InheritAcl = true, Level = 3, Parent = sub2 };
-
-                sub2.Children.Add(sub3);
-                sub1.Children.Add(sub2);
-                root.Children.Add(sub1);
-                _simRootFolders.Add(root);
-
-                sub1.MappedSourcePaths.Add(@"\\OldServer\Share\01_総務部");
-                sub1.MappedSourcePaths.Add(@"\\OldServer\Share\01_総務部\株主総会");
-                sub1.NotifyMappingChanged();
-            }
+            // 空ツリー時のエンプティステート表示を連動
+            _simRootFolders.CollectionChanged += (s, e) => UpdateSimEmptyState();
+            UpdateSimEmptyState();
 
             if (_adService.IsDomainJoined)
             {
@@ -989,6 +976,14 @@ namespace AstraSize
                 DomainStatusText.Text = "🟡 ローカル環境 (AD未接続)";
                 DomainStatusBadge.Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FEF3C7")!;
                 DomainStatusText.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#B45309")!;
+            }
+        }
+
+        private void UpdateSimEmptyState()
+        {
+            if (SimEmptyStateBorder != null)
+            {
+                SimEmptyStateBorder.Visibility = _simRootFolders.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             }
         }
 
@@ -2174,13 +2169,17 @@ namespace AstraSize
                 // Verify: 展開先ルートおよび新規作成された全フォルダーの実在検証 ＆ エラー件数照合
                 bool allPathsExist = Directory.Exists(plan.DestinationRoot) &&
                                      deployResult.DeployedFolderPaths.All(p => Directory.Exists(p));
-                bool isCleanSuccess = deployResult.FailedCount == 0 && allPathsExist;
+                bool isCleanSuccess = deployResult.FailedCount == 0 && deployResult.ConflictCount == 0 && allPathsExist;
                 DiffModalOverlay.Visibility = Visibility.Collapsed;
 
                 if (isCleanSuccess)
                 {
                     string skippedMsg = deployResult.SkippedExistingCount > 0 ? $" ({deployResult.SkippedExistingCount} 既存保護)" : "";
                     ShowToast($"✅ スケルトン作成完了 (Plan-First全階層検証済): {deployResult.CreatedCount} フォルダ作成{skippedMsg}");
+                }
+                else if (deployResult.ConflictCount > 0)
+                {
+                    ShowToast($"⚠️ 外部変更を検知 ({deployResult.ConflictCount}件スキップ): {deployResult.CreatedCount} フォルダ作成。ツリーを再確認してください");
                 }
                 else if (allPathsExist && deployResult.FailedCount > 0)
                 {
@@ -3472,7 +3471,7 @@ namespace AstraSize
             if (SidebarVersionText != null)
             {
                 var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-                string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v1.7.0";
+                string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v2.0.0";
                 SidebarVersionText.Text = App.IsClientMode
                     ? $"FolderCleaner {verStr}"
                     : $"FolderMorpher {verStr}";

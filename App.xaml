@@ -22,15 +22,16 @@
             <SolidColorBrush x:Key="AccentSky" Color="#0284C7"/>
             <SolidColorBrush x:Key="AccentHover" Color="#F1F5F9"/>
 
-            <!-- Global Font -->
-            <FontFamily x:Key="MainFont">Segoe UI Variable Text, Segoe UI, "Yu Gothic UI", "Meiryo UI", sans-serif</FontFamily>
-            <FontFamily x:Key="MonoFont">Consolas, JetBrains Mono, monospace</FontFamily>
+            <!-- Global Font: Windows 11 Fluent Typography -->
+            <FontFamily x:Key="MainFont">Segoe UI Variable Display, Segoe UI Variable Text, "Yu Gothic UI", "Segoe UI", sans-serif</FontFamily>
+            <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas, JetBrains Mono, monospace</FontFamily>
 
-            <!-- DataGrid Text Cell Alignments -->
+            <!-- DataGrid Text Cell Alignments (Tabular Numerals for beautiful alignment) -->
             <Style x:Key="RightAlignedCell" TargetType="TextBlock">
                 <Setter Property="HorizontalAlignment" Value="Right"/>
                 <Setter Property="VerticalAlignment" Value="Center"/>
                 <Setter Property="Margin" Value="0,0,10,0"/>
+                <Setter Property="Typography.NumeralAlignment" Value="Tabular"/>
             </Style>
             <Style x:Key="LeftAlignedCell" TargetType="TextBlock">
                 <Setter Property="HorizontalAlignment" Value="Left"/>

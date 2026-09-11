@@ -278,10 +278,12 @@ namespace FolderMorpher.Services
             }
 
             // KPI Cards
-            DrawKpiCard(ws, "B5", "C6", "アクセス可能フォルダ数", $"{report.AccessibleFolders.Count:N0} 箇所", "#2563EB");
-            DrawKpiCard(ws, "D5", "E6", "フルコントロール", $"{report.FullControlCount:N0} 箇所", "#DC2626");
-            DrawKpiCard(ws, "F5", "G6", "変更 (Modify)", $"{report.ModifyCount:N0} 箇所", "#D97706");
-            DrawKpiCard(ws, "H5", "I6", "読み取り専用", $"{report.ReadOnlyCount:N0} 箇所", "#059669");
+            DrawKpiCard(ws, "B5", "C6", "総検出フォルダ数", $"{report.AccessibleFolders.Count:N0} 箇所", "#2563EB");
+            DrawKpiCard(ws, "D5", "E6", "🚨 飛び地 (獲得)", $"{report.EnclaveCount:N0} 箇所", "#DC2626");
+            DrawKpiCard(ws, "F5", "G6", "⛔ 遮断 (消失)", $"{report.SeveredCount:N0} 箇所", "#E11D48");
+            DrawKpiCard(ws, "H5", "I6", "フルコントロール", $"{report.FullControlCount:N0} 箇所", "#DC2626");
+            DrawKpiCard(ws, "J5", "K6", "変更 (Modify)", $"{report.ModifyCount:N0} 箇所", "#D97706");
+            DrawKpiCard(ws, "L5", "M6", "読み取り専用", $"{report.ReadOnlyCount:N0} 箇所", "#059669");
 
             // Group Memberships Section
             int row = 8;
@@ -335,7 +337,7 @@ namespace FolderMorpher.Services
             row++;
 
             int folderHeaderRow = row;
-            string[] folderHeaders = { "No.", "フォルダー名", "実効アクセス権", "権限付与元 / 経由グループ", "継承状態", "完全パス (クリックで開く)" };
+            string[] folderHeaders = { "No.", "フォルダー名", "変化点 / 状態", "実効アクセス権", "権限付与元 / 経由グループ", "詳細トレース / 理由", "継承状態", "完全パス (クリックで開く)" };
             for (int i = 0; i < folderHeaders.Length; i++)
             {
                 var cell = ws.Cell(row, 2 + i);
@@ -348,7 +350,7 @@ namespace FolderMorpher.Services
             row++;
 
             int folderIndex = 1;
-            foreach (var item in report.AccessibleFolders)
+            foreach (var item in report.AllAuditItems)
             {
                 ws.Cell(row, 2).Value = folderIndex++;
                 ws.Cell(row, 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
@@ -356,17 +358,24 @@ namespace FolderMorpher.Services
                 ws.Cell(row, 3).Value = item.FolderName;
                 ws.Cell(row, 3).Style.Font.Bold = true;
 
-                var permCell = ws.Cell(row, 4);
+                var changeCell = ws.Cell(row, 4);
+                changeCell.Value = item.ChangeBadgeText;
+                changeCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                changeCell.Style.Font.Bold = true;
+                changeCell.Style.Font.FontColor = XLColor.FromHtml(item.ChangeBadgeForeground);
+
+                var permCell = ws.Cell(row, 5);
                 permCell.Value = item.FormattedRights;
                 permCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                 permCell.Style.Font.Bold = true;
                 permCell.Style.Font.FontColor = XLColor.FromHtml(item.RightsBadgeBackground);
 
-                ws.Cell(row, 5).Value = item.GrantSource;
-                ws.Cell(row, 6).Value = item.InheritanceBadgeText;
-                ws.Cell(row, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                ws.Cell(row, 6).Value = item.GrantSource;
+                ws.Cell(row, 7).Value = item.GrantPathTrace;
+                ws.Cell(row, 8).Value = item.InheritanceBadgeText;
+                ws.Cell(row, 8).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-                var pathCell = ws.Cell(row, 7);
+                var pathCell = ws.Cell(row, 9);
                 pathCell.Value = item.FolderPath;
                 try
                 {
