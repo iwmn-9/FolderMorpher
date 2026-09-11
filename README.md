@@ -80,7 +80,7 @@ FolderMorpher enforces a strict operational dualism designed to keep SysAdmins f
 ![Tab 4: Audit & Hygiene](docs/screenshots/tab4_audit.png)
 - **Cryptographic Duplicate Detection**: Size pre-filtering followed by SHA256 cryptographic verification.
 - **Dormant Files**: Identifies stale files unmodified for 3+ years (LastWriteTime basis).
-- **Path Limits (260+ Chars) & Invalid Character Audit**: Catches paths and illegal characters (`* : < > ? \ / | " # % { } ~ &`) that break Windows Explorer or Cloud migrations (SharePoint/Box).
+- **Danger-Zone Path Limits (240+ Chars) & Invalid Character Audit**: Catches long paths (>=240 chars) and illegal characters (`* : < > ? \ / | "`, trailing spaces/dots, control chars) that break Windows Explorer or Cloud migrations (SharePoint/Box).
 - **Smart Selection & Original Candidate Sanctum**: Safely select duplicate copies while strictly protecting original candidate files (`IsOriginalCandidate`).
 - **Safety First**: Zero automated silent deletions. Generates audit inventory sheets (Excel/CSV), safe staged archive scripts (`move /Y` to archive shares), and guarded physical deletion with original file warnings.
 

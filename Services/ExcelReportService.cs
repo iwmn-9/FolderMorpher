@@ -97,7 +97,7 @@ namespace FolderMorpher.Services
             ws.Cell(row, 5).Value = "各部署へ要否確認・別NAS/クラウドへ退避";
 
             row++;
-            ws.Cell(row, 2).Value = "パス長超過 (260文字以上)";
+            ws.Cell(row, 2).Value = "パス長危険域 (240文字以上)";
             ws.Cell(row, 3).Value = audit?.PathTooLongCount ?? 0;
             ws.Cell(row, 4).Value = "―";
             ws.Cell(row, 5).Value = "フォルダ階層の浅層化・リネーム";

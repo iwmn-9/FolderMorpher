@@ -3683,7 +3683,7 @@ namespace AstraSize
                 AuditKpiPathLimits.Text = isJa ? "0 件" : "0 Items";
             }
             AuditHeaderTitle.Text = isJa ? "🧹 ファイルサーバー健全化 ＆ 断捨離（衛生監査・容量削減）" : "🧹 File Server Hygiene & Cleanup";
-            AuditHeaderDesc.Text = isJa ? "重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長260文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳や退避スクリプトを生成します。" : "Batch detects duplicates (SHA256), dormant files (3+ years), paths > 260 chars, and migration-invalid characters. Generates safe audit ledgers and archive batches.";
+            AuditHeaderDesc.Text = isJa ? "重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長240文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳や退避スクリプトを生成します。" : "Batch detects duplicates (SHA256), dormant files (3+ years), paths > 240 chars, and migration-invalid characters. Generates safe audit ledgers and archive batches.";
             AuditTargetFolderLabel.Text = isJa ? "監査対象ディレクトリ (UNC / ローカル)" : "Target Audit Directory (UNC / Local)";
             AuditKpiTotalFilesTitle.Text = isJa ? "総走査ファイル数" : "Total Files Scanned";
             AuditKpiDupWastedTitle.Text = isJa ? "重複ファイルによる無駄" : "Wasted by Duplicates";
@@ -3728,7 +3728,7 @@ namespace AstraSize
             if (AuditHeaderCheckBox != null) AuditHeaderCheckBox.ToolTip = isJa ? "すべて選択 / すべて解除" : "Select All / Deselect All";
             AuditCheckDuplicatesCheckBox.Content = isJa ? "重複ファイル (SHA256)" : "Duplicates (SHA256)";
             AuditCheckDormantCheckBox.Content = isJa ? "休眠ファイル (3年以上)" : "Dormant (3+ Years)";
-            AuditCheckPathLimitsCheckBox.Content = isJa ? "パス長260字超/禁則文字" : "Path Limits / Invalid Chars";
+            AuditCheckPathLimitsCheckBox.Content = isJa ? "パス長危険域(240字超)/禁則文字" : "Long Paths (>240 chars) / Invalid Chars";
             if (AuditBandwidthLabel != null) AuditBandwidthLabel.Text = Strings.AuditBandwidthLimitLabel;
             if (AuditBandwidthStandardItem != null) AuditBandwidthStandardItem.Content = Strings.AuditBandwidthStandard;
             if (AuditBandwidthUnlimitedItem != null) AuditBandwidthUnlimitedItem.Content = Strings.AuditBandwidthUnlimited;

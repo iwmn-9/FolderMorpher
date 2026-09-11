@@ -8,7 +8,7 @@ namespace FolderMorpher.Models
     {
         Duplicate,     // 重複ファイル（SHA256完全一致）
         Dormant,       // 休眠ファイル（X年以上未更新）
-        PathTooLong,   // パス長260文字超
+        PathTooLong,   // パス長危険域 (240文字以上)
         InvalidChar    // 移行禁則文字
     }
 

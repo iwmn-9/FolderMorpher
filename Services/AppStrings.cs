@@ -207,7 +207,7 @@ namespace FolderMorpher.Services
         // Tab 4: 断捨離・健全化 (Audit & Hygiene)
         // ==========================================
         public static string AuditHeaderTitle => IsJa ? "🧹 ファイルサーバー健全化 ＆ 断捨離（衛生監査・容量削減）" : "🧹 File Server Hygiene & Cleanup";
-        public static string AuditHeaderDesc => IsJa ? "重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長260文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳や退避スクリプトを生成します。" : "Batch detects duplicates (SHA256), dormant files (3+ years), paths > 260 chars, and migration-invalid characters. Generates safe audit ledgers and archive batches.";
+        public static string AuditHeaderDesc => IsJa ? "重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長240文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳や退避スクリプトを生成します。" : "Batch detects duplicates (SHA256), dormant files (3+ years), paths > 240 chars, and migration-invalid characters. Generates safe audit ledgers and archive batches.";
         public static string AuditTargetFolderLabel => IsJa ? "監査対象ディレクトリ (UNC / ローカル)" : "Target Audit Directory (UNC / Local)";
         public static string AuditKpiTotalFilesTitle => IsJa ? "総走査ファイル数" : "Total Files Scanned";
         public static string AuditKpiDupWastedTitle => IsJa ? "重複ファイルによる無駄" : "Wasted by Duplicates";
@@ -235,7 +235,7 @@ namespace FolderMorpher.Services
         public static string AuditHeaderCheckToolTip => IsJa ? "すべて選択 / すべて解除" : "Select All / Deselect All";
         public static string AuditCheckDuplicates => IsJa ? "重複ファイル (SHA256)" : "Duplicates (SHA256)";
         public static string AuditCheckDormant => IsJa ? "休眠ファイル (3年以上)" : "Dormant (3+ Years)";
-        public static string AuditCheckPathLimits => IsJa ? "パス長260字超/禁則文字" : "Path Limits / Invalid Chars";
+        public static string AuditCheckPathLimits => IsJa ? "パス長危険域(240字超)/禁則文字" : "Long Paths (>240 chars) / Invalid Chars";
         public static string ColAuditIssueType => IsJa ? "問題種別" : "Issue Type";
         public static string ColAuditDupGroup => IsJa ? "重複グループ" : "Duplicate Group";
         public static string ColAuditFileName => IsJa ? "ファイル名" : "File Name";
