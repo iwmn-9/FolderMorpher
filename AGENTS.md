@@ -49,6 +49,7 @@
 - **依存パッケージ**: `System.DirectoryServices` (8.0.0, AD通信用)
 - **ビルド形態**: `Release win-x64` の **自己完結型（Self-Contained）単一実行可能ファイル (`FolderMorpher.exe`)**
   - ネイティブWPFエンジンDLL（D3DCompiler, wpfgfx等）はすべてEXE内部にバンドルされる。ルートに個別DLLを展開・配置してはならない。
+  - `-p:EnableCompressionInSingleFile=true` による Deflate 圧縮を標準採用し、ファイルサイズは約74.5MB（配布・共有に最適化）。
 
 ---
 
@@ -528,10 +529,11 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
 & "$HOME\.dotnet\dotnet.exe" build
 ```
 
-### 配布用単一EXEの生成（Release self-contained）
+### 配布用単一EXEの生成（Release self-contained・圧縮約74.5MB）
 ```powershell
-& "$HOME\.dotnet\dotnet.exe" publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-Copy-Item -Path ".\bin\Publish\FolderMorpher.exe" -Destination ".\FolderMorpher.exe" -Force
+$env:PATH = "C:\Users\iwakura\.dotnet;" + $env:PATH
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
+Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe" -Destination ".\FolderMorpher.exe" -Force
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
