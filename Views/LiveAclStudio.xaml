@@ -98,6 +98,7 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="28" Padding="6,0">
                                         <TextBox x:Name="LiveAclPathTextBox" BorderThickness="0" Background="Transparent"
@@ -106,7 +107,9 @@
                                     </Border>
                                     <Button x:Name="LiveAclBrowseButton" Grid.Column="1" Content="参照" Height="28" Margin="4,0,0,0"
                                             Style="{StaticResource FluentButtonSecondary}" Padding="6,2" FontSize="10.5" Click="LiveAclBrowseButton_Click"/>
-                                    <Button x:Name="LiveAclReloadButton" Grid.Column="2" Content="🔄" Height="28" Margin="4,0,0,0"
+                                    <Button x:Name="LiveAclNewFolderButton" Grid.Column="2" Content="📁＋" Height="28" Margin="4,0,0,0"
+                                            Style="{StaticResource FluentButtonSecondary}" Padding="6,2" FontSize="11" Click="LiveAclNewFolderButton_Click" ToolTip="選択中フォルダ内に新規フォルダを作成"/>
+                                    <Button x:Name="LiveAclReloadButton" Grid.Column="3" Content="🔄" Height="28" Margin="4,0,0,0"
                                             Style="{StaticResource FluentButtonSecondary}" Padding="6,2" FontSize="11" Click="LiveAclReloadButton_Click" ToolTip="フォルダ階層を展開"/>
                                 </Grid>
                                 <!-- Folder Browser TreeView -->
@@ -114,7 +117,17 @@
                                     <TreeView x:Name="LiveAclFolderTreeView" BorderThickness="0" Background="Transparent"
                                               MouseDoubleClick="LiveAclFolderTreeView_MouseDoubleClick"
                                               PreviewMouseLeftButtonDown="LiveAclFolderTreeView_PreviewMouseLeftButtonDown"
+                                              PreviewMouseRightButtonDown="LiveAclFolderTreeView_PreviewMouseRightButtonDown"
                                               PreviewMouseMove="LiveAclFolderTreeView_PreviewMouseMove">
+                                        <TreeView.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem x:Name="LiveAclCtxNewFolder" Header="📁 新規フォルダー作成..." Click="LiveAclCtxNewFolder_Click"/>
+                                                <Separator/>
+                                                <MenuItem x:Name="LiveAclCtxOpenPanel" Header="🛡️ 権限パネルを開く" Click="LiveAclCtxOpenPanel_Click"/>
+                                                <MenuItem x:Name="LiveAclCtxOpenExplorer" Header="📂 エクスプローラーで開く" Click="LiveAclCtxOpenExplorer_Click"/>
+                                                <MenuItem x:Name="LiveAclCtxCopyPath" Header="📋 パスをコピー" Click="LiveAclCtxCopyPath_Click"/>
+                                            </ContextMenu>
+                                        </TreeView.ContextMenu>
                                         <TreeView.ItemContainerStyle>
                                             <Style TargetType="{x:Type TreeViewItem}">
                                                 <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
@@ -303,7 +316,22 @@
                                     <RowDefinition Height="*"/>
                                 </Grid.RowDefinitions>
 
-                                <TextBlock x:Name="LiveAclPrincipalsHeaderTitle" Grid.Row="0" Text="👥 Active Directory / ローカル" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,8"/>
+                                <Grid Grid.Row="0" Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="LiveAclPrincipalsHeaderTitle" Grid.Column="0" Text="👥 Active Directory / ローカル" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,4,0"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Border x:Name="AdSyncBadgeBorder" Background="#DCFCE7" CornerRadius="4" Padding="6,1" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                ToolTip="30秒ごとにドメイン/ローカルのアカウント変化を自動チェック">
+                                            <TextBlock x:Name="AdSyncBadgeText" Text="🟢 自動同期 (30s)" FontSize="9.5" FontWeight="SemiBold" Foreground="#15803D"/>
+                                        </Border>
+                                        <Button x:Name="AdRefreshButton" Content="🔄" Width="22" Height="22" Padding="0" FontSize="11"
+                                                Style="{StaticResource FluentButtonSecondary}" ToolTip="ADアカウントを今すぐ最新に更新"
+                                                Click="AdRefreshButton_Click"/>
+                                    </StackPanel>
+                                </Grid>
 
                                 <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Padding="8,0" Margin="0,0,0,8">
                                     <TextBox x:Name="LiveAclPrincipalSearchTextBox" BorderThickness="0" Background="Transparent"
@@ -311,10 +339,28 @@
                                 </Border>
 
                                 <ListBox x:Name="LiveAclPrincipalsListBox" Grid.Row="2" BorderThickness="0" Background="Transparent"
+                                         HorizontalContentAlignment="Stretch"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                          PreviewMouseMove="LiveAclPrincipalsListBox_PreviewMouseMove">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="{x:Type ListBoxItem}">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="Margin" Value="0,0,0,4"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                                        <ContentPresenter HorizontalAlignment="Stretch"/>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
                                     <ListBox.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:AdPrincipalItem}">
-                                            <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="8,5" Margin="0,2" Cursor="Hand">
+                                            <Border Background="{Binding BadgeBackground}" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="8,5" Cursor="Hand">
                                                 <Grid>
                                                     <Grid.RowDefinitions>
                                                         <RowDefinition Height="Auto"/>
@@ -327,7 +373,7 @@
                                                             <ColumnDefinition Width="*"/>
                                                         </Grid.ColumnDefinitions>
                                                         <TextBlock Grid.Column="0" Text="{Binding IconGlyph}" FontSize="12.5" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                                                        <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11.5" Foreground="#1E293B" 
+                                                        <TextBlock Grid.Column="1" Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11.5" Foreground="#0F172A" 
                                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}"/>
                                                     </Grid>
                                                     <!-- Row 1: アカウント名 (sAMAccountName) ＋ 種別バッジ -->
@@ -907,6 +953,47 @@
                                     Style="{StaticResource FluentButtonPrimary}" Click="LiveAclDiffModalExecute_Click"/>
                         </StackPanel>
                     </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- MODAL: NEW FOLDER CREATION (新規フォルダー作成ダイアログ) -->
+        <Grid x:Name="NewFolderModalOverlay" Background="#80000000" Visibility="Collapsed">
+            <Border Width="460" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="12" Padding="20">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="20" ShadowDepth="4" Direction="270" Color="#000000" Opacity="0.15"/>
+                </Border.Effect>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Header -->
+                    <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                        <TextBlock x:Name="NewFolderModalTitle" Text="📁 新規フォルダー作成" FontWeight="Bold" FontSize="14" Foreground="#0F172A"/>
+                        <TextBlock x:Name="NewFolderModalParentPath" Text="作成先: --" FontSize="11" Foreground="#64748B" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+
+                    <!-- Input Box -->
+                    <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="36" Padding="10,0" Margin="0,0,0,6">
+                        <TextBox x:Name="NewFolderNameTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center"
+                                 FontSize="12" KeyDown="NewFolderNameTextBox_KeyDown"/>
+                    </Border>
+
+                    <!-- Error text -->
+                    <TextBlock x:Name="NewFolderModalErrorText" Grid.Row="2" Text="" FontSize="11" Foreground="#E11D48" Margin="0,0,0,10" Visibility="Collapsed"/>
+
+                    <!-- Footer Actions -->
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
+                        <Button x:Name="NewFolderModalCancelButton" Content="キャンセル" Height="32" Width="90" Margin="0,0,8,0"
+                                Style="{StaticResource FluentButtonSecondary}" Click="NewFolderModalCancel_Click"/>
+                        <Button x:Name="NewFolderModalCreateButton" Content="作成 ＆ 権限編集" Height="32" Padding="16,4"
+                                Style="{StaticResource FluentButtonPrimary}" Click="NewFolderModalCreate_Click"/>
+                    </StackPanel>
                 </Grid>
             </Border>
         </Grid>

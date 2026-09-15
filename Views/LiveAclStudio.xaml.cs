@@ -46,6 +46,11 @@ namespace AstraSize.Views
         private bool _droppedInSelfContainer = false;
         private bool _dragCancelled = false;
 
+        // AD自動同期 ＆ 新規フォルダー作成 状態管理
+        private System.Windows.Threading.DispatcherTimer? _adSyncTimer;
+        private List<AdPrincipalItem> _rawPrincipalsCache = new();
+        private string _targetParentFolderForNewFolder = string.Empty;
+
         // 逆引き監査 (Effective Access) 状態管理
         private EffectiveAccessAuditReport? _currentEffectiveReport;
         private readonly ObservableCollection<PrincipalGroupMembership> _revGroups = new();
@@ -84,6 +89,9 @@ namespace AstraSize.Views
 
             _liveAclPanels.CollectionChanged += (s, e) => UpdateLiveAclPanelsBanner();
 
+            Loaded += (s, e) => _adSyncTimer?.Start();
+            Unloaded += (s, e) => _adSyncTimer?.Stop();
+
             UpdateLiveAclNoticeState();
             UpdateLiveAclPanelsBanner();
         }
@@ -93,10 +101,13 @@ namespace AstraSize.Views
             _aclService = aclService;
             _adService = adService;
             _effectiveAccessService = effectiveAccessService;
+            StartAdSyncTimer();
+            _ = CheckAdChangesAsync(forceRefresh: true);
         }
 
         public void SetPrincipals(IEnumerable<AdPrincipalItem> principals)
         {
+            _rawPrincipalsCache = principals.ToList();
             _liveAclPrincipals.Clear();
             foreach (var p in principals)
             {
@@ -311,6 +322,213 @@ namespace AstraSize.Views
         private void LiveAclFolderTreeView_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             _liveAclFolderDragStart = e.GetPosition(null);
+        }
+
+        private void LiveAclFolderTreeView_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.OriginalSource is DependencyObject dep)
+            {
+                var tvi = FindVisualParent<TreeViewItem>(dep);
+                if (tvi != null)
+                {
+                    tvi.Focus();
+                    tvi.IsSelected = true;
+                }
+            }
+        }
+
+        private static T? FindVisualParent<T>(DependencyObject child) where T : DependencyObject
+        {
+            var parentObject = VisualTreeHelper.GetParent(child);
+            if (parentObject == null) return null;
+            if (parentObject is T parent) return parent;
+            return FindVisualParent<T>(parentObject);
+        }
+
+        private void LiveAclCtxNewFolder_Click(object sender, RoutedEventArgs e)
+        {
+            PromptNewFolderCreation();
+        }
+
+        private void LiveAclNewFolderButton_Click(object sender, RoutedEventArgs e)
+        {
+            PromptNewFolderCreation();
+        }
+
+        private void LiveAclCtxOpenPanel_Click(object sender, RoutedEventArgs e)
+        {
+            if (LiveAclFolderTreeView.SelectedItem is FileItemNode node && node.IsDirectory)
+            {
+                AddLiveAclPanel(node.FullPath);
+            }
+        }
+
+        private void LiveAclCtxOpenExplorer_Click(object sender, RoutedEventArgs e)
+        {
+            if (LiveAclFolderTreeView.SelectedItem is FileItemNode node)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = Directory.Exists(node.FullPath) ? $"\"{node.FullPath}\"" : $"/select,\"{node.FullPath}\"",
+                        UseShellExecute = true
+                    });
+                }
+                catch { }
+            }
+        }
+
+        private void LiveAclCtxCopyPath_Click(object sender, RoutedEventArgs e)
+        {
+            if (LiveAclFolderTreeView.SelectedItem is FileItemNode node)
+            {
+                try
+                {
+                    Clipboard.SetText(node.FullPath);
+                    ShowToast($"📋 パスをコピーしました: {node.FullPath}");
+                }
+                catch { }
+            }
+        }
+
+        private void PromptNewFolderCreation()
+        {
+            string parentPath = string.Empty;
+            if (LiveAclFolderTreeView.SelectedItem is FileItemNode selectedNode && selectedNode.IsDirectory)
+            {
+                parentPath = selectedNode.FullPath;
+            }
+            else if (!string.IsNullOrWhiteSpace(LiveAclPathTextBox.Text) && Directory.Exists(LiveAclPathTextBox.Text))
+            {
+                parentPath = LiveAclPathTextBox.Text;
+            }
+
+            if (string.IsNullOrWhiteSpace(parentPath) || !Directory.Exists(parentPath))
+            {
+                ShowToast("⚠️ 新規フォルダーの作成先（親フォルダー）が存在しません。先にフォルダーを参照または展開してください。");
+                return;
+            }
+
+            _targetParentFolderForNewFolder = parentPath;
+            NewFolderModalParentPath.Text = $"作成先: {_targetParentFolderForNewFolder}";
+            NewFolderNameTextBox.Text = "新しいフォルダー";
+            NewFolderModalErrorText.Visibility = Visibility.Collapsed;
+            NewFolderModalOverlay.Visibility = Visibility.Visible;
+            NewFolderNameTextBox.Focus();
+            NewFolderNameTextBox.SelectAll();
+        }
+
+        private void NewFolderModalCancel_Click(object sender, RoutedEventArgs e)
+        {
+            NewFolderModalOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private void NewFolderNameTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                NewFolderModalCreate_Click(sender, e);
+            }
+            else if (e.Key == Key.Escape)
+            {
+                NewFolderModalCancel_Click(sender, e);
+            }
+        }
+
+        private void NewFolderModalCreate_Click(object sender, RoutedEventArgs e)
+        {
+            string folderName = NewFolderNameTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(folderName))
+            {
+                NewFolderModalErrorText.Text = "フォルダー名を入力してください。";
+                NewFolderModalErrorText.Visibility = Visibility.Visible;
+                return;
+            }
+
+            char[] invalidChars = Path.GetInvalidFileNameChars();
+            if (folderName.IndexOfAny(invalidChars) >= 0)
+            {
+                NewFolderModalErrorText.Text = "フォルダー名に使用できない文字 (\\ / : * ? \" < > | 等) が含まれています。";
+                NewFolderModalErrorText.Visibility = Visibility.Visible;
+                return;
+            }
+
+            string newPath = Path.Combine(_targetParentFolderForNewFolder, folderName);
+            if (Directory.Exists(newPath))
+            {
+                NewFolderModalErrorText.Text = "同名のフォルダーが既に存在します。";
+                NewFolderModalErrorText.Visibility = Visibility.Visible;
+                return;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(newPath);
+                NewFolderModalOverlay.Visibility = Visibility.Collapsed;
+
+                // 親ノードの子リストに新しいノードを追加
+                InsertNewNodeIntoTree(_targetParentFolderForNewFolder, newPath, folderName);
+
+                // 即座に権限編集パネルを開く
+                AddLiveAclPanel(newPath);
+
+                ShowToast($"📁 新規フォルダーを作成し権限パネルを開きました: {folderName}");
+            }
+            catch (Exception ex)
+            {
+                NewFolderModalErrorText.Text = $"作成に失敗しました: {ex.Message}";
+                NewFolderModalErrorText.Visibility = Visibility.Visible;
+            }
+        }
+
+        private void InsertNewNodeIntoTree(string parentPath, string newPath, string folderName)
+        {
+            FileItemNode? parentNode = null;
+            if (LiveAclFolderTreeView.SelectedItem is FileItemNode selectedNode &&
+                string.Equals(selectedNode.FullPath, parentPath, StringComparison.OrdinalIgnoreCase))
+            {
+                parentNode = selectedNode;
+            }
+            else
+            {
+                parentNode = FindNodeByPath(_liveAclFolderTreeRoots, parentPath);
+            }
+
+            var newNode = new FileItemNode
+            {
+                Name = folderName,
+                FullPath = newPath,
+                IsDirectory = true,
+                IsSelected = true
+            };
+
+            if (parentNode != null)
+            {
+                parentNode.IsExpanded = true;
+                parentNode.Children.Add(newNode);
+            }
+            else if (_liveAclFolderTreeRoots.Count > 0)
+            {
+                _liveAclFolderTreeRoots[0].Children.Add(newNode);
+            }
+            else
+            {
+                _liveAclFolderTreeRoots.Add(newNode);
+            }
+        }
+
+        private static FileItemNode? FindNodeByPath(IEnumerable<FileItemNode> nodes, string path)
+        {
+            foreach (var node in nodes)
+            {
+                if (string.Equals(node.FullPath, path, StringComparison.OrdinalIgnoreCase))
+                    return node;
+                var found = FindNodeByPath(node.Children, path);
+                if (found != null) return found;
+            }
+            return null;
         }
 
         private void LiveAclFolderTreeView_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -867,6 +1085,67 @@ namespace AstraSize.Views
             {
                 DragDrop.DoDragDrop(LiveAclPrincipalsListBox, item, DragDropEffects.Copy);
             }
+        }
+
+        private void AdRefreshButton_Click(object sender, RoutedEventArgs e)
+        {
+            _ = CheckAdChangesAsync(forceRefresh: true);
+        }
+
+        private void StartAdSyncTimer()
+        {
+            if (_adSyncTimer != null) return;
+            _adSyncTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(30)
+            };
+            _adSyncTimer.Tick += async (s, e) => await CheckAdChangesAsync();
+            _adSyncTimer.Start();
+        }
+
+        private async Task CheckAdChangesAsync(bool forceRefresh = false)
+        {
+            if (_adService == null) return;
+
+            try
+            {
+                var currentQuery = LiveAclPrincipalSearchTextBox?.Text?.Trim() ?? "";
+                var latestPrincipals = await _adService.SearchPrincipalsAsync(currentQuery);
+
+                if (forceRefresh || HasPrincipalsChanged(_rawPrincipalsCache, latestPrincipals))
+                {
+                    _rawPrincipalsCache = latestPrincipals;
+                    _liveAclPrincipals.Clear();
+                    foreach (var p in latestPrincipals)
+                    {
+                        _liveAclPrincipals.Add(p);
+                    }
+                    UpdateLiveAclNoticeState();
+                    if (forceRefresh)
+                    {
+                        ShowToast("🔄 AD/ローカル アカウント一覧を最新に更新しました");
+                    }
+                }
+            }
+            catch
+            {
+                // バックグラウンド同期での一時的エラーはサイレントに処理
+            }
+        }
+
+        private static bool HasPrincipalsChanged(List<AdPrincipalItem> oldList, List<AdPrincipalItem> newList)
+        {
+            if (oldList.Count != newList.Count) return true;
+            for (int i = 0; i < oldList.Count; i++)
+            {
+                if (!string.Equals(oldList[i].AccountName, newList[i].AccountName, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(oldList[i].DisplayName, newList[i].DisplayName, StringComparison.OrdinalIgnoreCase) ||
+                    oldList[i].PrincipalType != newList[i].PrincipalType)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
         #endregion
 

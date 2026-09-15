@@ -69,6 +69,7 @@ namespace AstraSize
                 NoChartDataText.Visibility = Visibility.Visible;
                 ChartStatsTextBlock.Text = "";
                 ForecastSummaryFooterText.Text = Strings.HistoryNoData;
+                UpdateKpiCards();
             }
             else
             {
@@ -87,6 +88,11 @@ namespace AstraSize
             ChartTitleTextBlock.Text = Strings.HistoryChartTitle;
             NoChartDataText.Text = Strings.HistoryRequireTwoScans;
             EmptyHistoryText.Text = Strings.HistoryNoData;
+
+            // KPI ハイライトカード
+            KpiTargetHeaderTitle.Text = Strings.HistoryKpiTargetTitle;
+            KpiDailyRateHeaderTitle.Text = Strings.HistoryKpiDailyRateTitle;
+            KpiModelHeaderTitle.Text = Strings.HistoryKpiModelTitle;
 
             // 凡例
             LegendMeasuredText.Text = Strings.HistoryLegendMeasured;
@@ -479,6 +485,126 @@ namespace AstraSize
                 : "";
 
             ForecastSummaryFooterText.Text = $"📊 {targetText}{holtTrend} ({Strings.HistoryMadFloorLabel}{FileItemNode.FormatBytes((long)_currentReport.EffectiveMAD)}/day)";
+
+            UpdateKpiCards();
+        }
+
+        private void UpdateKpiCards()
+        {
+            if (_currentReport == null || _history.Count < 2)
+            {
+                KpiTargetMainValue.Text = "--";
+                KpiTargetMainValue.Foreground = Brushes.SlateGray;
+                KpiTargetSubText.Text = Strings.HistoryRequireTwoScans;
+
+                KpiDailyRateMainValue.Text = "--";
+                KpiDailyRateMainValue.Foreground = Brushes.SlateGray;
+                KpiDailyRateSubText.Text = Strings.HistoryRequireTwoScans;
+
+                KpiModelMainValue.Text = "--";
+                KpiModelBadgeText.Text = "--";
+                KpiModelSubText.Text = Strings.HistoryRequireTwoScans;
+                return;
+            }
+
+            var reg = _currentReport.LinearRegression;
+
+            // 1. 上限到達予測カード
+            if (_targetThresholdBytes <= 0)
+            {
+                KpiTargetMainValue.Text = Strings.HistoryKpiTargetNotSet;
+                KpiTargetMainValue.Foreground = Brushes.SlateGray;
+                KpiTargetSubText.Text = Strings.HistoryTargetThreshold;
+            }
+            else if (reg == null || reg.Status == ThresholdReachStatus.NotEnoughData)
+            {
+                KpiTargetMainValue.Text = Strings.HistoryRequireThreeScans;
+                KpiTargetMainValue.Foreground = Brushes.SlateGray;
+                KpiTargetSubText.Text = $"{Strings.HistoryTargetThreshold} {FileItemNode.FormatBytes(_targetThresholdBytes)}";
+            }
+            else if (reg.Status == ThresholdReachStatus.AlreadyExceeded)
+            {
+                KpiTargetMainValue.Text = Strings.HistoryTargetAlreadyExceeded;
+                KpiTargetMainValue.Foreground = new SolidColorBrush(Color.FromRgb(225, 29, 72)); // Rose-600
+                KpiTargetSubText.Text = $"{Strings.HistoryTargetThreshold} {FileItemNode.FormatBytes(_targetThresholdBytes)}";
+            }
+            else if (reg.Status == ThresholdReachStatus.DecreasingOrFlat)
+            {
+                KpiTargetMainValue.Text = Strings.HistoryNeverReach;
+                KpiTargetMainValue.Foreground = new SolidColorBrush(Color.FromRgb(16, 185, 129)); // Emerald-600
+                KpiTargetSubText.Text = $"{Strings.HistoryTargetThreshold} {FileItemNode.FormatBytes(_targetThresholdBytes)}";
+            }
+            else if (reg.Status == ThresholdReachStatus.Reachable && reg.DaysToTarget >= 0 && reg.TargetDate.HasValue)
+            {
+                KpiTargetMainValue.Text = reg.TargetDate.Value.ToString("yyyy/MM/dd");
+                KpiTargetMainValue.Foreground = new SolidColorBrush(Color.FromRgb(225, 29, 72)); // Rose-600
+                int days = (int)Math.Ceiling(reg.DaysToTarget);
+                KpiTargetSubText.Text = $"{Strings.HistoryTargetReachedIn}約 {days}{Strings.HistoryDaysSuffix} (上限: {FileItemNode.FormatBytes(_targetThresholdBytes)})";
+            }
+            else
+            {
+                KpiTargetMainValue.Text = Strings.HistoryNeverReach;
+                KpiTargetMainValue.Foreground = Brushes.SlateGray;
+                KpiTargetSubText.Text = $"{Strings.HistoryTargetThreshold} {FileItemNode.FormatBytes(_targetThresholdBytes)}";
+            }
+
+            // 2. 日次増加ペースカード
+            if (reg != null && reg.Status != ThresholdReachStatus.NotEnoughData)
+            {
+                double dailyBytes = reg.Slope;
+                KpiDailyRateMainValue.Text = reg.FormattedDailyRate;
+                KpiDailyRateMainValue.Foreground = dailyBytes > 0
+                    ? new SolidColorBrush(Color.FromRgb(2, 132, 199)) // Sky-600
+                    : dailyBytes < 0
+                        ? new SolidColorBrush(Color.FromRgb(16, 185, 129)) // Emerald-600
+                        : new SolidColorBrush(Color.FromRgb(100, 116, 139));
+
+                double monthlyBytes = dailyBytes * 30.4375;
+                KpiDailyRateSubText.Text = $"{Strings.HistoryKpiMonthlyEst}{(monthlyBytes > 0 ? "+" : "")}{FileItemNode.FormatBytes((long)monthlyBytes)}";
+            }
+            else
+            {
+                KpiDailyRateMainValue.Text = "--";
+                KpiDailyRateMainValue.Foreground = Brushes.SlateGray;
+                KpiDailyRateSubText.Text = Strings.HistoryRequireThreeScans;
+            }
+
+            // 3. 予測モデル・信頼度カード
+            if (reg != null && reg.Status != ThresholdReachStatus.NotEnoughData)
+            {
+                double r2 = Math.Max(0, Math.Min(1, reg.RSquared));
+                KpiModelMainValue.Text = $"R² = {r2:F2}";
+
+                if (r2 >= 0.8)
+                {
+                    KpiModelBadgeText.Text = Strings.HistoryKpiHighConfidence;
+                    KpiModelBadgeBorder.Background = new SolidColorBrush(Color.FromArgb(40, 16, 185, 129)); // Emerald light
+                    KpiModelBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(5, 150, 105));
+                }
+                else if (r2 >= 0.5)
+                {
+                    KpiModelBadgeText.Text = Strings.HistoryKpiMedConfidence;
+                    KpiModelBadgeBorder.Background = new SolidColorBrush(Color.FromArgb(40, 245, 158, 11)); // Amber light
+                    KpiModelBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(217, 119, 6));
+                }
+                else
+                {
+                    KpiModelBadgeText.Text = Strings.HistoryKpiLowConfidence;
+                    KpiModelBadgeBorder.Background = new SolidColorBrush(Color.FromArgb(40, 148, 163, 184)); // Slate light
+                    KpiModelBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(100, 116, 139));
+                }
+
+                string holtInfo = _currentReport.HoltSmoothing != null && _currentReport.HasSufficientDataForForecast
+                    ? $"{Strings.HistoryHoltTrend}: {_currentReport.HoltSmoothing.FormattedTrend}"
+                    : Strings.HistoryRegressionForecast;
+                KpiModelSubText.Text = holtInfo;
+            }
+            else
+            {
+                KpiModelMainValue.Text = "--";
+                KpiModelBadgeText.Text = "--";
+                KpiModelSubText.Text = Strings.HistoryRequireThreeScans;
+            }
         }
 
         private void SelectInitialRow()

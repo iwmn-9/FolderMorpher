@@ -138,6 +138,14 @@ namespace FolderMorpher.Services
         public static string HistoryRSquaredLabel => IsJa ? "決定係数" : "R²";
         public static string HistoryMadFloorLabel => IsJa ? "MADフロア: " : "MAD Floor: ";
         public static string HistoryItemsUnit => IsJa ? "項目" : "Items";
+        public static string HistoryKpiTargetTitle => IsJa ? "📅 目標上限 到達予測" : "📅 Target Threshold Reach";
+        public static string HistoryKpiDailyRateTitle => IsJa ? "📈 日次増加ペース" : "📈 Daily Growth Pace";
+        public static string HistoryKpiModelTitle => IsJa ? "🎯 予測モデル・信頼度" : "🎯 Model & Confidence";
+        public static string HistoryKpiHighConfidence => IsJa ? "高信頼度" : "High Confidence";
+        public static string HistoryKpiMedConfidence => IsJa ? "中信頼度" : "Moderate Confidence";
+        public static string HistoryKpiLowConfidence => IsJa ? "低信頼度" : "Low Confidence";
+        public static string HistoryKpiMonthlyEst => IsJa ? "月換算 約 " : "Monthly Est. ~";
+        public static string HistoryKpiTargetNotSet => IsJa ? "上限未設定" : "No Limit Set";
 
 
         // ==========================================

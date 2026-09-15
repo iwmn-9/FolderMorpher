@@ -236,6 +236,43 @@ namespace AstraSize
                             else if (selectTab == 3) mw.NavTabLinkFix.IsChecked = true;
                             else if (selectTab == 4) mw.NavTabAudit.IsChecked = true;
                             else if (selectTab == 5) mw.NavTabMedia.IsChecked = true;
+                            else if (selectTab == 98)
+                            {
+                                var testSnapshots = new List<AstraSize.Models.ScanSnapshot>
+                                {
+                                    new AstraSize.Models.ScanSnapshot { Id = "s1", Timestamp = DateTime.Now.AddDays(-30), TotalBytes = 100L * 1024 * 1024 * 1024, TotalFiles = 50000 },
+                                    new AstraSize.Models.ScanSnapshot { Id = "s2", Timestamp = DateTime.Now.AddDays(-20), TotalBytes = 105L * 1024 * 1024 * 1024, TotalFiles = 52000 },
+                                    new AstraSize.Models.ScanSnapshot { Id = "s3", Timestamp = DateTime.Now.AddDays(-10), TotalBytes = 112L * 1024 * 1024 * 1024, TotalFiles = 55000 },
+                                    new AstraSize.Models.ScanSnapshot { Id = "s4", Timestamp = DateTime.Now, TotalBytes = 120L * 1024 * 1024 * 1024, TotalFiles = 58000 }
+                                };
+                                var hw = new AstraSize.HistoryWindow(@"D:\SharedData", testSnapshots)
+                                {
+                                    Width = 980,
+                                    Height = 720,
+                                    WindowStartupLocation = WindowStartupLocation.CenterScreen
+                                };
+                                hw.Show();
+                                await System.Threading.Tasks.Task.Delay(600);
+                                hw.UpdateLayout();
+
+                                int hwW = (int)hw.ActualWidth;
+                                int hwH = (int)hw.ActualHeight;
+                                if (hwW <= 0) hwW = 980;
+                                if (hwH <= 0) hwH = 720;
+
+                                var hwRtb = new System.Windows.Media.Imaging.RenderTargetBitmap(hwW, hwH, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                                hwRtb.Render(hw);
+
+                                var hwEnc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                                hwEnc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(hwRtb));
+                                using (var fs = File.Create(snapshotPath))
+                                {
+                                    hwEnc.Save(fs);
+                                }
+                                hw.Close();
+                                Shutdown(0);
+                                return;
+                            }
                             else if (selectTab == 99)
                             {
                                 mw.NavTabStorage.IsChecked = true;

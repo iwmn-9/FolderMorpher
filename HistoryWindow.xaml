@@ -52,6 +52,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 
                 <!-- Chart Top Bar -->
@@ -82,6 +83,64 @@
                     <Border Width="8" Height="8" CornerRadius="4" Background="#F59E0B" VerticalAlignment="Center" Margin="0,0,4,0"/>
                     <TextBlock x:Name="LegendAnomalyText" Text="⚠️ 異常急増 (MAD)" FontSize="10.5" Foreground="#64748B" VerticalAlignment="Center"/>
                 </StackPanel>
+
+                <!-- KPI Highlight Cards (グラフ直下に結論・予測・ペースを明快に提示) -->
+                <Grid Grid.Row="3" Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Card 1: 上限到達予測 -->
+                    <Border Grid.Column="0" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="12,8">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Name="KpiTargetHeaderTitle" Text="📅 目標上限 到達予測" FontSize="10.5" FontWeight="SemiBold" Foreground="#64748B"/>
+                            <TextBlock x:Name="KpiTargetMainValue" Grid.Row="1" Text="--" FontSize="15" FontWeight="Bold" Foreground="#E11D48" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="KpiTargetSubText" Grid.Row="2" Text="--" FontSize="10" Foreground="#64748B" Margin="0,1,0,0" TextTrimming="CharacterEllipsis"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Card 2: 日次増加ペース -->
+                    <Border Grid.Column="2" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="12,8">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Name="KpiDailyRateHeaderTitle" Text="📈 日次増加ペース" FontSize="10.5" FontWeight="SemiBold" Foreground="#64748B"/>
+                            <TextBlock x:Name="KpiDailyRateMainValue" Grid.Row="1" Text="--" FontSize="15" FontWeight="Bold" Foreground="#0284C7" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="KpiDailyRateSubText" Grid.Row="2" Text="--" FontSize="10" Foreground="#64748B" Margin="0,1,0,0" TextTrimming="CharacterEllipsis"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Card 3: 予測モデル・信頼度 -->
+                    <Border Grid.Column="4" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="12,8">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Name="KpiModelHeaderTitle" Text="🎯 予測モデル・信頼度" FontSize="10.5" FontWeight="SemiBold" Foreground="#64748B"/>
+                            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,2,0,0" VerticalAlignment="Center">
+                                <TextBlock x:Name="KpiModelMainValue" Text="--" FontSize="15" FontWeight="Bold" Foreground="#7C3AED" VerticalAlignment="Center"/>
+                                <Border x:Name="KpiModelBadgeBorder" CornerRadius="3" Background="#EDE9FE" Padding="4,1" Margin="6,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock x:Name="KpiModelBadgeText" Text="--" FontSize="9.5" FontWeight="SemiBold" Foreground="#6D28D9"/>
+                                </Border>
+                            </StackPanel>
+                            <TextBlock x:Name="KpiModelSubText" Grid.Row="2" Text="--" FontSize="10" Foreground="#64748B" Margin="0,1,0,0" TextTrimming="CharacterEllipsis"/>
+                        </Grid>
+                    </Border>
+                </Grid>
             </Grid>
         </Border>
 
