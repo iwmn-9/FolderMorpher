@@ -660,8 +660,16 @@ namespace AstraSize.Services
             }
 
             // 2. 明示ACEの突合 (expectedExplicit vs actualExplicit)
+            // 継承OFFの場合は、元々継承フラグが付いていたACEも明示ACEとして昇格適用されるため期待値に含める
             var actualExplicit = actualEntries.Where(e => !e.IsInherited).ToList();
-            var expectedExplicit = expectedEntries.Where(e => !e.IsInherited).ToList();
+            var expectedExplicit = expectedInherit
+                ? expectedEntries.Where(e => !e.IsInherited).ToList()
+                : expectedEntries.Select(e =>
+                {
+                    var c = e.Clone();
+                    c.IsInherited = false;
+                    return c;
+                }).ToList();
 
             var remainingActual = new List<SimAclEntry>(actualExplicit);
             foreach (var exp in expectedExplicit)

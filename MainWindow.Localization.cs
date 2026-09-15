@@ -40,7 +40,7 @@ namespace AstraSize
             if (NavTabLinkFix != null) NavTabLinkFix.Visibility = Visibility.Collapsed;
 
             Title = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
-                ? "FolderCleaner - 容量分析 & 断捨離・写真軽量化 クライアント"
+                ? "FolderCleaner - 容量分析 & ファイル監査・写真軽量化 クライアント"
                 : "FolderCleaner - Storage Analyzer & Cleanup Client";
         }
 
@@ -268,7 +268,7 @@ namespace AstraSize
             {
                 AuditKpiPathLimits.Text = isJa ? "0 件" : "0 Items";
             }
-            AuditHeaderTitle.Text = isJa ? "🧹 ファイルサーバー健全化 ＆ 断捨離（衛生監査・容量削減）" : "🧹 File Server Hygiene & Cleanup";
+            AuditHeaderTitle.Text = Strings.AuditHeaderTitle;
             AuditHeaderDesc.Text = Strings.AuditHeaderDesc;
             AuditTargetFolderLabel.Text = isJa ? "監査対象ディレクトリ (UNC / ローカル)" : "Target Audit Directory (UNC / Local)";
             if (AuditExcludeFoldersLabel != null) AuditExcludeFoldersLabel.Text = Strings.AuditExcludeFoldersLabel;
@@ -277,7 +277,7 @@ namespace AstraSize
             AuditKpiDupWastedTitle.Text = isJa ? "重複ファイルによる無駄" : "Wasted by Duplicates";
             AuditKpiDormantSizeTitle.Text = isJa ? "休眠ファイル容量 (3年超)" : "Dormant Capacity (3+ Yrs)";
             if (AuditKpiPathLimitsTitle != null) AuditKpiPathLimitsTitle.Text = isJa ? "パス長超過 / 禁則文字" : "Path Limit / Invalid Chars";
-            string auditBaseTitle = isJa ? "検出された課題・断捨離候補一覧" : "Detected Issues & Cleanup Candidates";
+            string auditBaseTitle = isJa ? "検出された課題・整理候補一覧" : "Detected Issues & Cleanup Candidates";
             AuditTableTitleText.Text = _lastAuditItems.Count > 0
                 ? $"{auditBaseTitle} ({_auditVisibleItems.Count:N0} / {_lastAuditItems.Count:N0} 件)"
                 : auditBaseTitle;
@@ -347,22 +347,22 @@ namespace AstraSize
             {
                 MediaKpiOptimizedCount.Text = isJa ? "0 枚" : "0 Items";
             }
-            MediaHeaderTitle.Text = isJa ? "🖼️ メディア・オプティマイザ（写真・画像最適化 ＆ 巨大動画攻略）" : "🖼️ Media Optimizer (Photo Optimization & Video Nightly Batch)";
-            MediaHeaderDesc.Text = isJa ? "聖域（_Master、印刷用、RAW等）を自動保護しながら、大容量写真（2MB超）を最適化（長辺2560px超は縮小/85%品質/Exif・日時保持）で上書き軽量化し、巨大動画のTop抽出と夜間圧縮バッチを出力します。" : "Protects sanctuary folders (_Master, Print, RAW), optimizes large photos (>2MB) in-place with high quality (resizes if >2560px, preserves Exif & timestamps), and extracts large videos for nightly GPU H.265 compression.";
+            MediaHeaderTitle.Text = Strings.MediaHeaderTitle;
+            MediaHeaderDesc.Text = Strings.MediaHeaderDesc;
             MediaTargetDirLabel.Text = isJa ? "走査対象ディレクトリ (UNC / ローカル)" : "Target Directory (UNC / Local)";
             MediaMaxDimLabel.Text = isJa ? "最大長辺 (px)" : "Max Dimension (px)";
             MediaQualityLabel.Text = isJa ? "画質 (%)" : "Quality (%)";
             MediaMinSizeLabel.Text = isJa ? "最小サイズ (MB)" : "Min Size (MB)";
             MediaKpiImagesCountTitle.Text = isJa ? "走査対象 画像数" : "Photos Found";
-            MediaKpiVideosCountTitle.Text = isJa ? "巨大動画 ファイル数" : "Large Videos";
+            MediaKpiVideosCountTitle.Text = isJa ? "大容量動画 ファイル数" : "Large Videos";
             MediaKpiOptimizedCountTitle.Text = isJa ? "軽量化 完了数" : "Photos Compressed";
             MediaKpiSavedSizeTitle.Text = isJa ? "総削減容量 (解放された空き)" : "Total Capacity Freed";
-            MediaTableTitleText.Text = isJa ? "メディア一覧（画像 ＆ 巨大動画）" : "Media List (Images & Large Videos)";
+            MediaTableTitleText.Text = isJa ? "メディア一覧（画像 ＆ 大容量動画）" : "Media List (Images & Large Videos)";
 
             MediaScanButton.Content = isJa ? "🔍 メディア走査" : "🔍 Scan Media";
             MediaOptimizeButton.Content = isJa ? "🔍 チェック" : "🔍 Check";
             MediaOptimizeButton.ToolTip = isJa ? "軽量化対象の写真一覧と設定差分をチェック" : "Check photos to optimize and preview changes";
-            MediaGenVideoBatchButton.Content = isJa ? "🎬 巨大動画 夜間圧縮バッチ出力 (.bat)" : "🎬 Export Nightly Video Batch (.bat)";
+            MediaGenVideoBatchButton.Content = isJa ? "🎬 大容量動画 夜間圧縮バッチ出力 (.bat)" : "🎬 Export Nightly Video Batch (.bat)";
             MediaGenVideoBatchButton.ToolTip = isJa ? "GPUハードウェアエンコード (H.265) で動画を一括軽量化するスクリプトを出力" : "Generate GPU H.265 compression batch script for large videos";
             MediaExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
 
@@ -371,7 +371,7 @@ namespace AstraSize
             ColMediaOriginalSize.Header = isJa ? "元容量" : "Original Size";
             ColMediaOptimizedSize.Header = isJa ? "軽量化後" : "Compressed Size";
             ColMediaSavedSize.Header = isJa ? "削減容量" : "Saved Size";
-            ColMediaStatus.Header = isJa ? "状態 / 聖域保護" : "Status / Sanctuary";
+            ColMediaStatus.Header = isJa ? "状態 / 保護" : "Status / Protection";
             ColMediaFullPath.Header = isJa ? "完全パス" : "Full Path";
 
             // ==========================================

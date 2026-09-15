@@ -317,24 +317,34 @@
                                 </Grid.RowDefinitions>
 
                                 <Grid Grid.Row="0" Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock x:Name="LiveAclPrincipalsHeaderTitle" Grid.Column="0" Text="👥 Active Directory / ローカル" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,4,0"/>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                        <Border x:Name="LiveAclDomainStatusBadge" Background="#DCFCE7" CornerRadius="4" Padding="6,1" Margin="0,0,6,0" VerticalAlignment="Center"
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Row 0: Title & Refresh Button -->
+                                    <Grid Grid.Row="0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="LiveAclPrincipalsHeaderTitle" Grid.Column="0" Text="👥 Active Directory / ローカル" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,4,0"/>
+                                        <Button x:Name="AdRefreshButton" Grid.Column="1" Content="🔄" Width="22" Height="22" Padding="0" FontSize="11"
+                                                Style="{StaticResource FluentButtonSecondary}" ToolTip="ADアカウントを今すぐ最新に更新"
+                                                VerticalAlignment="Center" Click="AdRefreshButton_Click"/>
+                                    </Grid>
+
+                                    <!-- Row 1: Badges WrapPanel -->
+                                    <WrapPanel Grid.Row="1" Margin="0,6,0,0" VerticalAlignment="Center">
+                                        <Border x:Name="LiveAclDomainStatusBadge" Background="#DCFCE7" CornerRadius="4" Padding="6,1" Margin="0,0,6,4" VerticalAlignment="Center"
                                                 ToolTip="接続中のActive Directoryドメイン">
                                             <TextBlock x:Name="LiveAclDomainStatusText" Text="🟢 CORP.LOCAL" FontSize="9.5" FontWeight="SemiBold" Foreground="#15803D"/>
                                         </Border>
-                                        <Border x:Name="AdSyncBadgeBorder" Background="#DCFCE7" CornerRadius="4" Padding="6,1" Margin="0,0,6,0" VerticalAlignment="Center"
+                                        <Border x:Name="AdSyncBadgeBorder" Background="#DCFCE7" CornerRadius="4" Padding="6,1" Margin="0,0,6,4" VerticalAlignment="Center"
                                                 ToolTip="30秒ごとにドメイン/ローカルのアカウント変化を自動チェック">
                                             <TextBlock x:Name="AdSyncBadgeText" Text="🟢 自動同期 (30s)" FontSize="9.5" FontWeight="SemiBold" Foreground="#15803D"/>
                                         </Border>
-                                        <Button x:Name="AdRefreshButton" Content="🔄" Width="22" Height="22" Padding="0" FontSize="11"
-                                                Style="{StaticResource FluentButtonSecondary}" ToolTip="ADアカウントを今すぐ最新に更新"
-                                                Click="AdRefreshButton_Click"/>
-                                    </StackPanel>
+                                    </WrapPanel>
                                 </Grid>
 
                                 <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Padding="6,0" Margin="0,0,0,8">

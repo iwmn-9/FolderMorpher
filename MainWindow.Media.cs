@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -126,7 +126,7 @@ namespace AstraSize
 
             _lastMediaTargets = targets;
             MediaDiffDataGrid.ItemsSource = targets;
-            MediaDiffSummaryText.Text = $"📊 対象: {targets.Count}枚 / 設定: 長辺 {maxDim}px超・品質 {quality}% (🛡️ 聖域保護: {excludedCount}枚スキップ)";
+            MediaDiffSummaryText.Text = $"📊 対象: {targets.Count}枚 / 設定: 長辺 {maxDim}px超・品質 {quality}% (🛡️ 保護対象: {excludedCount}枚スキップ)";
             MediaDiffModalOverlay.Visibility = Visibility.Visible;
         }
 
@@ -206,7 +206,7 @@ namespace AstraSize
 
             var dialog = new SaveFileDialog
             {
-                Title = "巨大動画 夜間圧縮バッチの保存先",
+                Title = "大容量動画 夜間圧縮バッチの保存先",
                 Filter = "バッチファイル (*.bat)|*.bat",
                 FileName = "Compress-Videos-Nightly.bat"
             };

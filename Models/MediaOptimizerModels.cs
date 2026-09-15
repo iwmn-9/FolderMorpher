@@ -23,6 +23,7 @@ namespace FolderMorpher.Models
         public bool IsVideo { get; set; }
         public bool IsExcluded { get; set; }
         public string ExclusionReason { get; set; } = string.Empty;
+        public DateTime ExpectedLastWriteTimeUtc { get; set; }
         public string Status { get; set; } = "待機";
         public bool IsProcessed { get; set; }
     }

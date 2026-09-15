@@ -39,6 +39,8 @@ namespace FolderMorpher.Services
         public OfficeLinkCategory Categories { get; set; } = OfficeLinkCategory.None;
         public string LinkType { get; set; } = string.Empty; // UI表示用
         public OfficeFixStatus FixStatus { get; set; } = OfficeFixStatus.Detected;
+        public long ExpectedLength { get; set; }
+        public DateTime ExpectedLastWriteTimeUtc { get; set; }
         public string Status { get; set; } = "検出";
         public bool IsFixed { get; set; }
     }
@@ -108,6 +110,8 @@ namespace FolderMorpher.Services
                                 LockUser = lockUser,
                                 Categories = categories,
                                 LinkType = string.Join(", ", foundTypes),
+                                ExpectedLength = fi.Length,
+                                ExpectedLastWriteTimeUtc = fi.LastWriteTimeUtc,
                                 Status = isLocked ? $"ロック中 ({lockUser})" : "置換候補"
                             });
                         }
@@ -128,6 +132,8 @@ namespace FolderMorpher.Services
                                 IsLocked = isLocked,
                                 LockUser = lockUser,
                                 LinkType = "Excel97-2003 バイナリリンク",
+                                ExpectedLength = fi.Length,
+                                ExpectedLastWriteTimeUtc = fi.LastWriteTimeUtc,
                                 Status = isLocked ? $"ロック中 ({lockUser})" : "検出 (手動/xlsx変換推奨)"
                             });
                         }
@@ -162,6 +168,17 @@ namespace FolderMorpher.Services
                         // .xls はバイナリ破損リスク回避のため自動置換対象外
                         item.Status = "スキップ (旧xls形式は非破壊保護)";
                         progress?.Report((item.FilePath, false, "旧xls形式は非破壊保護のためスキップ"));
+                        continue;
+                    }
+
+                    // Sol指摘: 楽観ロック (スキャン時とファイルサイズ・更新日時が一致しているか照合)
+                    var curFi = new FileInfo(item.FilePath);
+                    if (!curFi.Exists || (item.ExpectedLength > 0 && curFi.Length != item.ExpectedLength) ||
+                        (item.ExpectedLastWriteTimeUtc != default && curFi.LastWriteTimeUtc != item.ExpectedLastWriteTimeUtc))
+                    {
+                        item.FixStatus = OfficeFixStatus.Skipped;
+                        item.Status = "スキップ (スキャン後に外部変更検知)";
+                        progress?.Report((item.FilePath, false, "スキャン後に外部で変更されたため安全にスキップしました"));
                         continue;
                     }
 

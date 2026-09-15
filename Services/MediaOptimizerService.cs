@@ -69,10 +69,11 @@ namespace FolderMorpher.Services
                             DirectoryPath = fi.DirectoryName ?? string.Empty,
                             Extension = ext,
                             OriginalSizeBytes = fi.Length,
+                            ExpectedLastWriteTimeUtc = fi.LastWriteTimeUtc,
                             IsVideo = false,
                             IsExcluded = isExcluded,
                             ExclusionReason = reason,
-                            Status = isExcluded ? $"聖域保護 ({reason})" : "最適化対象"
+                            Status = isExcluded ? $"保護 ({reason})" : "最適化対象"
                         });
                     }
                     // 動画ファイル
@@ -85,15 +86,16 @@ namespace FolderMorpher.Services
                             DirectoryPath = fi.DirectoryName ?? string.Empty,
                             Extension = ext,
                             OriginalSizeBytes = fi.Length,
+                            ExpectedLastWriteTimeUtc = fi.LastWriteTimeUtc,
                             IsVideo = true,
                             IsExcluded = isExcluded,
                             ExclusionReason = reason,
-                            Status = isExcluded ? $"聖域保護 ({reason})" : "巨大動画"
+                            Status = isExcluded ? $"保護 ({reason})" : "大容量動画"
                         });
                     }
                 }
 
-                // 動画はサイズ降順にソート（モンスター動画を上位に）
+                // 動画はサイズ降順にソート（大容量動画を上位に）
                 videos = videos.OrderByDescending(v => v.OriginalSizeBytes).ToList();
 
                 return (images, videos);
@@ -117,8 +119,18 @@ namespace FolderMorpher.Services
                 {
                     ct.ThrowIfCancellationRequested();
 
-                    // 聖域保護または処理済みはスキップ
+                    // 保護対象または処理済みはスキップ
                     if (item.IsExcluded || item.IsProcessed) continue;
+
+                    // Sol指摘: 楽観ロック (スキャン時とファイルサイズ・更新日時が一致しているか照合)
+                    var curFi = new FileInfo(item.FullPath);
+                    if (!curFi.Exists || curFi.Length != item.OriginalSizeBytes ||
+                        (item.ExpectedLastWriteTimeUtc != default && curFi.LastWriteTimeUtc != item.ExpectedLastWriteTimeUtc))
+                    {
+                        item.Status = "スキップ (スキャン後に外部変更検知)";
+                        progress?.Report((item.FileName, false, "スキャン後に外部で変更されたため安全にスキップしました"));
+                        continue;
+                    }
 
                     summary.TotalOriginalBytes += item.OriginalSizeBytes;
 
@@ -320,7 +332,7 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// 巨大動画の一括夜間GPU圧縮（H.265）用バッチスクリプトを生成する
+        /// 大容量動画の一括夜間GPU圧縮（H.265）用バッチスクリプトを生成する
         /// </summary>
         public void GenerateVideoCompressBatch(string scriptPath, IEnumerable<MediaItem> videos)
         {
@@ -328,12 +340,12 @@ namespace FolderMorpher.Services
             sb.AppendLine("@echo off");
             sb.AppendLine("chcp 65001 > nul");
             sb.AppendLine("rem ==========================================================================");
-            sb.AppendLine("rem FolderMorpher - 巨大動画 夜間GPU一括圧縮スクリプト (H.265 / HEVC)");
+            sb.AppendLine("rem FolderMorpher - 大容量動画 夜間GPU一括圧縮スクリプト (H.265 / HEVC)");
             sb.AppendLine("rem ※ FFmpeg (ffmpeg.exe) がPATHにあるか、同一フォルダに存在する必要があります。");
             sb.AppendLine($"rem 生成日時: {DateTime.Now:yyyy/MM/dd HH:mm:ss}");
             sb.AppendLine("rem ==========================================================================");
             sb.AppendLine();
-            sb.AppendLine("echo === 巨大動画の夜間再エンコードを開始します ===");
+            sb.AppendLine("echo === 大容量動画の夜間再エンコードを開始します ===");
             sb.AppendLine("echo ※ GPUハードウェアエンコード (NVIDIA / Intel) を優先試行します。");
             sb.AppendLine("pause");
             sb.AppendLine();

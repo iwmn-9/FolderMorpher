@@ -30,8 +30,29 @@ namespace AstraSize
 
             DispatcherUnhandledException += (s, args) =>
             {
-                File.AppendAllText(LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Dispatcher Unhandled: {args.Exception}\n");
-                args.Handled = true;
+                try
+                {
+                    File.AppendAllText(LogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] FATAL Dispatcher Unhandled: {args.Exception}\n");
+                    
+                    // ヘッドレス実行やテスト実行でない場合はエラーダイアログを表示
+                    bool isHeadless = Environment.CommandLine.Contains("--test-regression") ||
+                                      Environment.CommandLine.Contains("--snapshot") ||
+                                      Environment.CommandLine.Contains("--test-suite");
+                    if (!isHeadless)
+                    {
+                        MessageBox.Show(
+                            $"予期せぬ重大なエラーが発生したため、データ保護のため安全に終了します。\n\n詳細: {args.Exception.Message}\nログ: {LogPath}",
+                            "FolderMorpher - 致命的エラー",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Error);
+                    }
+                }
+                catch { }
+                finally
+                {
+                    args.Handled = true;
+                    Environment.Exit(1);
+                }
             };
         }
 

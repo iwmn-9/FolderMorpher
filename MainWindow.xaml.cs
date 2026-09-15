@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -220,7 +220,7 @@ namespace AstraSize
             else if (NavTabAudit.IsChecked == true)
             {
                 AuditTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: ファイルサーバー健全化 ＆ 断捨離 (衛生監査・容量削減)" : "Mode: Audit & Hygiene";
+                StatusTextBlock.Text = isJa ? "モード: ファイルサーバー健全化 ＆ ファイル監査 (重複整理・容量削減)" : "Mode: Audit & Hygiene";
                 if (string.IsNullOrWhiteSpace(AuditPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     AuditPathTextBox.Text = PathTextBox.Text;
@@ -229,7 +229,7 @@ namespace AstraSize
             else if (NavTabMedia.IsChecked == true)
             {
                 MediaTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: メディア・オプティマイザ (写真軽量化 ＆ 巨大動画攻略)" : "Mode: Media Optimizer";
+                StatusTextBlock.Text = isJa ? "モード: メディア・オプティマイザ (写真軽量化 ＆ 大容量動画抽出)" : "Mode: Media Optimizer";
                 if (string.IsNullOrWhiteSpace(MediaPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     MediaPathTextBox.Text = PathTextBox.Text;

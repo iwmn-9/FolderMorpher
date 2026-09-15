@@ -799,6 +799,29 @@ namespace FolderMorpher.Services.Testing
                     throw new InvalidOperationException(
                         $"重大欠陥: 不一致理由に余計な実機ルールの検知が含まれていません！ 出力: {string.Join("; ", verifyResult.Discrepancies)}");
                 }
+
+                // 継承元ACE（IsInherited = true）を含む設計で InheritAcl = false にした場合のACE昇格Verify検証
+                var subNode = new SimFolderNode
+                {
+                    Name = "PromotedSubfolder",
+                    InheritAcl = false
+                };
+                subNode.AclEntries.Add(new SimAclEntry
+                {
+                    AccountName = currentUser,
+                    Rights = FileSystemRights.ReadAndExecute,
+                    AccessType = AccessControlType.Allow,
+                    InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    PropagationFlags = PropagationFlags.None,
+                    IsInherited = true // 元々は親から継承されていたACE
+                });
+                var subPlan = simService.BuildDeployPlan(new[] { subNode }, tempDir);
+                var subResult = await simService.DeploySkeletonAsync(subPlan);
+                if (!subResult.IsSuccess || subResult.VerificationFailedCount != 0)
+                {
+                    throw new InvalidOperationException(
+                        $"重大欠陥: 継承OFF時の継承元ACE昇格展開において、VerifyFolderDaclが誤って不一致と判定しました！ Discrepancies: {string.Join(", ", subResult.VerificationErrors)}");
+                }
             }
             finally
             {

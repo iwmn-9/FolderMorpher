@@ -31,7 +31,7 @@ FolderMorpher enforces a strict operational dualism designed to keep SysAdmins f
 
 | Category | Targeted Actions | UX Behavior |
 | :--- | :--- | :--- |
-| **Observation & Generation**<br>*(Read-Only & Script Export)* | • Storage scanning & 0s tree navigation<br>• AD reverse effective access auditing<br>• Dormant & duplicate file inventory<br>• Executive Excel / CSV ledger export<br>• Archive script (.bat) & GPO script (.ps1) export | **Instant Execution**<br>(No blocking dialogs or dry-run steps — zero friction during administrative exploration) |
+| **Observation & Generation**<br>*(Read-Only & Script Export)* | • Storage scanning & 0s tree navigation<br>• AD reverse effective access auditing<br>• Dormant & duplicate file inventory<br>• Executive Excel / CSV ledger export<br>• GPO script (.ps1) export | **Instant Execution**<br>(No blocking dialogs or dry-run steps — zero friction during administrative exploration) |
 | **Mutation & Intervention**<br>*(State-Altering Disk Writes)* | • **Live ACL Direct Commit**<br>• **Skeleton Tree Deployment**<br>• **Direct Shortcut In-Place Repair**<br>• **Photo Overwrite Optimization** | **Plan First (3-Stage Rocket)**<br>`[ Check ]` ➔ Modal **`⚖️ Changes`** (Before/After preview) ➔ `[ Apply ]` ➔ Automatic Semantic **Verify** |
 
 ---
@@ -71,7 +71,7 @@ FolderMorpher enforces a strict operational dualism designed to keep SysAdmins f
 ### 4. 🔗 LinkFixer (Broken Shortcuts & Office Link Repair)
 ![Tab 3: LinkFixer](docs/screenshots/tab3_linkfix.png)
 - **Batch Shortcut (`.lnk`) In-Place Healing**: Review targeted shortcuts and old-to-new path replacements in the **`⚖️ Changes`** modal, then batch-rewrite with automatic `.bak` safety backups.
-- **Headless Office Deep Inspection (`.xlsx`, `.xlsm`)**: Scans OpenXML packages and legacy BIFF streams without launching Office COM. Fixes broken external formula workbook links, worksheet references, and detects hardcoded VBA UNC paths with `~$` lock detection.
+- **Headless Office Deep Inspection & Macro Preservation (`.xlsx`, `.xlsm`)**: Scans OpenXML packages and legacy BIFF streams without launching Office COM. Fixes broken external formula workbook links, worksheet references, and detects hardcoded VBA UNC paths with `~$` lock detection (preserves VBA macro binaries to avoid corruption).
 - **Domain-Wide GPO Logon Script Generator (`.ps1`)**: Outputs ready-to-deploy PowerShell logon scripts to fix client PCs automatically at next login.
 
 ---
@@ -79,19 +79,19 @@ FolderMorpher enforces a strict operational dualism designed to keep SysAdmins f
 ### 5. 🧹 Audit & Hygiene (Deduplication & Storage Governance)
 ![Tab 4: Audit & Hygiene](docs/screenshots/tab4_audit.png)
 - **Cryptographic Duplicate Detection**: Size pre-filtering followed by SHA256 cryptographic verification.
-- **Dormant Files**: Identifies stale files unmodified for 3+ years (LastWriteTime basis).
+- **Dormant Files**: Identifies stale files unmodified for 3+ years (LastWriteTime basis) while protecting files accessed within the last 365 days.
 - **Danger-Zone Path Limits (240+ Chars) & Invalid Character Audit**: Catches long paths (>=240 chars) and illegal characters (`* : < > ? \ / | "`, trailing spaces/dots, control chars) that break Windows Explorer or Cloud migrations (SharePoint/Box).
-- **Smart Selection & Original Candidate Sanctum**: Safely select duplicate copies while strictly protecting original candidate files (`IsOriginalCandidate`).
-- **Safety First**: Zero automated silent deletions. Generates audit inventory sheets (Excel/CSV), safe staged archive scripts (`move /Y` to archive shares), and guarded physical deletion with original file warnings.
+- **Smart Selection & Original Candidate Protection**: Safely select duplicate copies while strictly protecting original candidate files (`IsOriginalCandidate`).
+- **Safety First**: Zero automated silent deletions. Generates hyperlinked audit inventory sheets (Excel/CSV) and guarded physical deletion with original candidate protection.
 
 ---
 
 ### 6. 🖼️ Media Optimizer (In-Place Image Slimmer & GPU Video Batch)
 ![Tab 5: Media Optimizer](docs/screenshots/tab5_media.png)
-- **Sanctuary Protection (Auto-Skip)**: Automatically protects designated master folders (`_Master`, `_Original`, `RAW`, `印刷用`) and professional formats (`.psd`, `.ai`, `.raw`).
+- **Master & Protection Folders (Auto-Skip)**: Automatically protects designated master folders (`_Master`, `_Original`, `RAW`, `印刷用`) and professional formats (`.psd`, `.ai`, `.raw`).
 - **In-Place Image Optimization**: Resizes 10MB+ camera snapshots to 2560px max dimension at 85% JPEG quality directly in-place, and optimizes PNGs while preserving 100% alpha transparency. **Reduces photo weight by up to 90%** while preserving EXIF metadata, timestamps, and orientation.
-- **Dry-Run Changes Inspection**: Review affected files, settings, and sanctuary exclusions in the **`⚖️ Changes`** modal before commit.
-- **Giant Video Ranker & Nightly GPU Batch**: Extracts multi-gigabyte video files and generates GPU-accelerated (NVENC/QSV H.265) overnight encoding batch scripts.
+- **Dry-Run Changes Inspection**: Review affected files, settings, and protection exclusions in the **`⚖️ Changes`** modal before commit.
+- **Large Video Ranker & Nightly GPU Batch**: Extracts multi-gigabyte video files and generates GPU-accelerated (NVENC/QSV H.265) overnight encoding batch scripts.
 
 ---
 

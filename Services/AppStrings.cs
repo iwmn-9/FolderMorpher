@@ -56,10 +56,10 @@ namespace FolderMorpher.Services
         public static string TabSimulationToolTip => IsJa ? "🚀 移行シミュレーション (Simulation Studio)" : "🚀 Migration Studio";
         public static string TabLinkFix => IsJa ? "リンク一括修復" : "LinkFixer";
         public static string TabLinkFixToolTip => IsJa ? "🔗 ショートカット・Office修復 (LinkFixer)" : "🔗 LinkFixer";
-        public static string TabAudit => IsJa ? "断捨離・健全化" : "Audit & Hygiene";
+        public static string TabAudit => IsJa ? "ファイル監査・整理" : "Audit & Hygiene";
         public static string TabAuditToolTip => IsJa ? "🧹 重複・休眠・パス長チェック (Audit & Hygiene)" : "🧹 Audit & Hygiene";
         public static string TabMedia => IsJa ? "メディア最適化" : "Media Optimizer";
-        public static string TabMediaToolTip => IsJa ? "🖼️ 写真軽量化 & 巨大動画抽出 (Media Optimizer)" : "🖼️ Media Optimizer";
+        public static string TabMediaToolTip => IsJa ? "🖼️ 写真軽量化 & 大容量動画抽出 (Media Optimizer)" : "🖼️ Media Optimizer";
         public static string SettingsToolTip => IsJa ? "環境設定 / Settings" : "Settings";
         public static string LanguageToggleText => IsJa ? "🌐 EN" : "🌐 JA";
         public static string LanguageToggleToolTip => IsJa ? "英語に切り替え / Switch to English" : "日本語に切り替え / Switch to Japanese";
@@ -223,9 +223,9 @@ namespace FolderMorpher.Services
         public static string ColLinkStatus => IsJa ? "状態" : "Status";
 
         // ==========================================
-        // Tab 4: 断捨離・健全化 (Audit & Hygiene)
+        // Tab 4: ファイル監査・整理 (Audit & Hygiene)
         // ==========================================
-        public static string AuditHeaderTitle => IsJa ? "🧹 ファイルサーバー健全化 ＆ 断捨離（衛生監査・容量削減）" : "🧹 File Server Hygiene & Cleanup";
+        public static string AuditHeaderTitle => IsJa ? "🧹 ファイルサーバー健全化 ＆ ファイル監査（重複整理・容量削減）" : "🧹 File Server Hygiene & Cleanup";
         public static string AuditHeaderDesc => IsJa ? "重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長240文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳を出力します。" : "Batch detects duplicates (SHA256), dormant files (3+ years), paths > 240 chars, and migration-invalid characters. Generates safe audit ledgers (Excel/CSV).";
         public static string AuditTargetFolderLabel => IsJa ? "監査対象ディレクトリ (UNC / ローカル)" : "Target Audit Directory (UNC / Local)";
         public static string AuditExcludeFoldersLabel => IsJa ? "除外フォルダー名 (部分一致 / カンマ区切り):" : "Exclude Folders (Partial match / Comma-separated):";
@@ -234,7 +234,7 @@ namespace FolderMorpher.Services
         public static string AuditKpiDupWastedTitle => IsJa ? "重複ファイルによる無駄" : "Wasted by Duplicates";
         public static string AuditKpiDormantSizeTitle => IsJa ? "休眠ファイル容量 (3年超)" : "Dormant Capacity (3+ Yrs)";
         public static string AuditKpiPathLimitsTitle => IsJa ? "パス長超過 / 禁則文字" : "Path Limit / Invalid Chars";
-        public static string AuditTableTitle => IsJa ? "検出された課題・断捨離候補一覧" : "Detected Issues & Cleanup Candidates";
+        public static string AuditTableTitle => IsJa ? "検出された課題・整理候補一覧" : "Detected Issues & Cleanup Candidates";
         public static string AuditLiveReductionLabel => IsJa ? "選択中の削減見込み: " : "Est. Space Reclaimed: ";
         public static string AuditSmartSelectLabel => IsJa ? "☑️ 一括選択:" : "☑️ Smart Select:";
         public static string AuditSmartPreset => IsJa ? "選択プリセット..." : "Select Preset...";
@@ -266,27 +266,27 @@ namespace FolderMorpher.Services
         // ==========================================
         // Tab 5: メディア最適化 (Media Optimizer)
         // ==========================================
-        public static string MediaHeaderTitle => IsJa ? "🖼️ メディア・オプティマイザ（写真・画像最適化 ＆ 巨大動画攻略）" : "🖼️ Media Optimizer (Photo Optimization & Video Nightly Batch)";
-        public static string MediaHeaderDesc => IsJa ? "聖域（_Master、印刷用、RAW等）を自動保護しながら、大容量写真（2MB超）を最適化（長辺2560px超は縮小/85%品質/Exif・日時保持）で上書き軽量化し、巨大動画のTop抽出と夜間圧縮バッチを出力します。" : "Protects sanctuary folders (_Master, Print, RAW), optimizes large photos (>2MB) in-place with high quality (resizes if >2560px, preserves Exif & timestamps), and extracts large videos for nightly GPU H.265 compression.";
+        public static string MediaHeaderTitle => IsJa ? "🖼️ メディア・オプティマイザ（写真・画像最適化 ＆ 大容量動画抽出）" : "🖼️ Media Optimizer (Photo Optimization & Video Nightly Batch)";
+        public static string MediaHeaderDesc => IsJa ? "保護対象（_Master、印刷用、RAW等）を自動スキップしながら、大容量写真（2MB超）を最適化（長辺2560px超は縮小/85%品質/Exif・日時保持）で上書き軽量化し、大容量動画のTop抽出と夜間圧縮バッチを出力します。" : "Protects designated master folders (_Master, Print, RAW), optimizes large photos (>2MB) in-place with high quality (resizes if >2560px, preserves Exif & timestamps), and extracts large videos for nightly GPU H.265 compression.";
         public static string MediaTargetDirLabel => IsJa ? "走査対象ディレクトリ (UNC / ローカル)" : "Target Directory (UNC / Local)";
         public static string MediaMaxDimLabel => IsJa ? "最大長辺 (px)" : "Max Dimension (px)";
         public static string MediaQualityLabel => IsJa ? "画質 (%)" : "Quality (%)";
         public static string MediaMinSizeLabel => IsJa ? "最小サイズ (MB)" : "Min Size (MB)";
         public static string MediaKpiImagesCountTitle => IsJa ? "走査対象 画像数" : "Photos Found";
-        public static string MediaKpiVideosCountTitle => IsJa ? "巨大動画 ファイル数" : "Large Videos";
+        public static string MediaKpiVideosCountTitle => IsJa ? "大容量動画 ファイル数" : "Large Videos";
         public static string MediaKpiOptimizedCountTitle => IsJa ? "軽量化 完了数" : "Photos Compressed";
         public static string MediaKpiSavedSizeTitle => IsJa ? "総削減容量 (解放された空き)" : "Total Capacity Freed";
-        public static string MediaTableTitle => IsJa ? "メディア一覧（画像 ＆ 巨大動画）" : "Media List (Images & Large Videos)";
+        public static string MediaTableTitle => IsJa ? "メディア一覧（画像 ＆ 大容量動画）" : "Media List (Images & Large Videos)";
         public static string MediaScanButton => IsJa ? "🔍 メディア走査" : "🔍 Scan Media";
         public static string MediaOptimizeButtonToolTip => IsJa ? "軽量化対象の写真一覧と設定差分をチェック" : "Check photos to optimize and preview changes";
-        public static string MediaGenVideoBatch => IsJa ? "🎬 巨大動画 夜間圧縮バッチ出力 (.bat)" : "🎬 Export Nightly Video Batch (.bat)";
+        public static string MediaGenVideoBatch => IsJa ? "🎬 大容量動画 夜間圧縮バッチ出力 (.bat)" : "🎬 Export Nightly Video Batch (.bat)";
         public static string MediaGenVideoBatchToolTip => IsJa ? "GPUハードウェアエンコード (H.265) で動画を一括軽量化するスクリプトを出力" : "Generate GPU H.265 compression batch script for large videos";
         public static string ColMediaType => IsJa ? "種別" : "Type";
         public static string ColMediaFileName => IsJa ? "ファイル名" : "File Name";
         public static string ColMediaOriginalSize => IsJa ? "元容量" : "Original Size";
         public static string ColMediaOptimizedSize => IsJa ? "軽量化後" : "Compressed Size";
         public static string ColMediaSavedSize => IsJa ? "削減容量" : "Saved Size";
-        public static string ColMediaStatus => IsJa ? "状態 / 聖域保護" : "Status / Sanctuary";
+        public static string ColMediaStatus => IsJa ? "状態 / 保護" : "Status / Protection";
         public static string ColMediaFullPath => IsJa ? "完全パス" : "Full Path";
 
         // ==========================================

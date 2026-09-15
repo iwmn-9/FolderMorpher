@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -438,7 +438,7 @@ namespace AstraSize
 
                         // 枠外ドロップ削除の判定:
                         // ツリー内の別ノードや余白・サブフォルダゾーンに正常ドロップされず（_simNodeDroppedInTree == false）
-                        // かつ Escキーによるキャンセルでもない場合、枠外ポイ捨て削除として扱う
+                        // かつ Escキーによるキャンセルでもない場合、枠外ドロップによる解除として扱う
                         if (!_simNodeDroppedInTree && !_simDragCancelled)
                         {
                             Point endPoint = Mouse.GetPosition(SimMockTreeView);
