@@ -25,6 +25,8 @@ namespace FolderMorpher.Services.Testing
         public static async Task TestDomain_SimulationStudioAsync()
         {
             TestSimulationAclRobocopyAndEffectiveAccessInheritOnly();
+            TestPowerShellAclScriptTargetRootDollarEscaping();
+            await TestSkeletonDeploySemanticDaclVerificationAsync();
             TestSimulationStudioLazyLoadingAndDropOutside();
             await TestUniversalPlanFirstAndMutationVerifyAsync();
             await TestArchitecturalUnificationAsync();
@@ -703,8 +705,83 @@ namespace FolderMorpher.Services.Testing
         }
 
         /// <summary>
-        /// Test 29: Effective Access 実サービス走査（実NTFS ACLツリーによるBaseline/Inherited/Boundary/Elevated/Severed/Enclaveの網羅検証）、
-        /// Skeleton Deploy 競合判定、LinkFixer 楽観ロック ＆ 直前ロールバック、および英語モード時日本語残留機械的検知
+        /// PowerShell スクリプト生成において、$ を含む TargetRoot パスが安全にシングルクォートエスケープされ、
+        /// 変数展開が起きないことを検証する。
         /// </summary>
+        public static void TestPowerShellAclScriptTargetRootDollarEscaping()
+        {
+            var simService = new SimulationProjectService();
+            string specialTargetRoot = @"D:\Dept$Share\Finance";
+
+            var node = new SimFolderNode { Name = "Budget", InheritAcl = true };
+            var script = simService.GeneratePowerShellAclScript(new[] { node }, specialTargetRoot);
+
+            // $TargetRoot = 'D:\Dept$Share\Finance' とシングルクォートで安全にエスケープされていること
+            string expectedLine = "$TargetRoot = 'D:\\Dept$Share\\Finance'";
+            if (!script.Contains(expectedLine))
+            {
+                throw new InvalidOperationException(
+                    $"PowerShell スクリプト生成バグ: TargetRoot の $ が安全にエスケープされていません。\n期待行: {expectedLine}\n出力:\n{script}");
+            }
+        }
+
+        /// <summary>
+        /// スケルトン展開（DeploySkeletonAsync）において、展開後にOSの実態DACLと計画ACEが完全一致することを
+        /// セマンティックVerifyで検証する。
+        /// </summary>
+        public static async Task TestSkeletonDeploySemanticDaclVerificationAsync()
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_SkelVerify_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            try
+            {
+                var simService = new SimulationProjectService();
+                string currentUser = Environment.UserDomainName + "\\" + Environment.UserName;
+
+                var rootNode = new SimFolderNode
+                {
+                    Name = "ProjectRoot",
+                    InheritAcl = false
+                };
+                rootNode.AclEntries.Add(new SimAclEntry
+                {
+                    AccountName = currentUser,
+                    Rights = FileSystemRights.Modify,
+                    AccessType = AccessControlType.Allow,
+                    InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    PropagationFlags = PropagationFlags.None,
+                    IsInherited = false
+                });
+
+                var plan = simService.BuildDeployPlan(new[] { rootNode }, tempDir);
+                var result = await simService.DeploySkeletonAsync(plan);
+
+                if (!result.IsSuccess)
+                {
+                    throw new InvalidOperationException(
+                        $"DeploySkeletonAsync failed! Errors: {string.Join(", ", result.Errors)}, VerifyErrors: {string.Join(", ", result.VerificationErrors)}");
+                }
+
+                if (result.VerifiedCount != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"Expected VerifiedCount == 1, but got {result.VerifiedCount}");
+                }
+
+                if (result.VerificationFailedCount != 0)
+                {
+                    throw new InvalidOperationException(
+                        $"VerificationFailedCount must be 0, but got {result.VerificationFailedCount}. Discrepancies: {string.Join(", ", result.VerificationErrors)}");
+                }
+            }
+            finally
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    try { Directory.Delete(tempDir, true); } catch { }
+                }
+            }
+        }
     }
 }

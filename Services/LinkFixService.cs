@@ -114,7 +114,7 @@ namespace FolderMorpher.Services
                             if (offResult > 0)
                             {
                                 item.IsFixed = true;
-                                item.Status = "修復完了 (バックアップ済)";
+                                item.Status = item.AssociatedOfficeItem.Status;
                                 successCount++;
                                 progress?.Report((item.FilePath, true));
                             }

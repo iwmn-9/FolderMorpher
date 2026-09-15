@@ -555,3 +555,24 @@
       - **⑦ [Cleanup] 廃止バックエンドメソッドの完全削除**:
         - `AuditReportService.GenerateArchiveRobocopyScript` をコードベースから完全に削除し、デッドコードを排除。
 
+59. **Sol再レビュー対応：評価9.0点到達のための4大境界安全柵、実機DACLセマンティックVerify、およびMainWindow partial class分割 (v2.1.0)**:
+    - **背景**:
+      - Solの全体再レビューにより評価が 7.6 ➔ 8.6 / 10 に大幅上昇。9.0点以上の製品品質到達に向けて指摘された「残る4大境界安全柵」の塞ぎ込み、未配線だったLinkFixer回帰テストの配線、および保守性向上のための `MainWindow.xaml.cs` partial class 物理分割を実施。
+    - **実装内容**:
+      - **① [Scripting] PowerShell ACLスクリプトの `$TargetRoot` エスケープ徹底**:
+        - `SimulationProjectService.GeneratePowerShellAclScript` の `$TargetRoot = "{targetRoot}"` を `$TargetRoot = {ScriptEscaper.EscapePowerShellLiteral(targetRoot)}` に置換。PowerShell変数展開 `$TargetRoot` へのパス代入時に特殊文字（`$`, `` ` ``, `"`）が含まれても構文破壊や意図しない変数展開が発生しないよう完全防御。
+      - **② [LinkFixer] Officeリンク修復の型安全スキップ ＆ 混在時の部分成功対応 ＆ 回帰テスト本線配線**:
+        - `OfficeLinkFixService` に `OfficeLinkCategory`（Flags）と `OfficeFixStatus` を新設。
+        - `FixOfficeLinksAsync` において、`item.Categories == OfficeLinkCategory.VbaMacro`（純粋VBAのみ）は型安全にスキップ（`OfficeFixStatus.Skipped`）。
+        - 通常リンク（XML）とVBAマクロが同一ファイル内に混在する場合、XMLリンクのみ安全に修復し `OfficeFixStatus.PartiallyFixed`（`一部修復 (XML修復済 / VBAマクロは未修復)`）を設定。VBA破損をゼロに抑えつつ修復可能なリンクを確実に修復。
+        - `RegressionTestSuite.LinkFix.cs` を新設し、混在ケースの部分成功とVBA非破壊保護を自動検証するテストを `TestDomain_MediaOptimizerAndLinkFixerAsync` に正式配線。
+      - **③ [Simulation Studio] スケルトン展開（ガワ先行作成）の実機DACLセマンティックVerify**:
+        - `DeploySkeletonAsync` において、空フォルダ作成・ACL適用後に `AclService.GetSimAclForFolder` で実機DACLを再読み込みし、設計マトリクス（`targetNode.AclEntries`）と完全に一致（`MatchesExact`）しているかを全フォルダ検証。
+        - `DeploySkeletonResult` に `VerifiedCount`, `VerificationFailedCount`, `VerificationErrors` を追加し、展開後のアクセス権実態が設計通りであることを100%保証。
+        - `TestSkeletonDeploySemanticDaclVerificationAsync` による回帰テストを追加。
+      - **④ [Live ACL] スナップショット全失敗時のコミット拒否回帰テスト追加**:
+        - `TestLiveAclSnapshotPersistenceFailureRejectionAsync` を実装し、万一スナップショット保存先が全滅した場合に確実にコミットが中断されロールバック保護が保たれることをCIゲートで担保。
+      - **⑤ [Maintainability] MainWindow.xaml.cs の partial class 物理分割**:
+        - 4,100行に達していた `MainWindow.xaml.cs` を、同一名前空間 `AstraSize` / 同一クラス `MainWindow` のまま 6 つの機能別 partial class（`MainWindow.Storage.cs`, `MainWindow.Simulation.cs`, `MainWindow.LinkFix.cs`, `MainWindow.Audit.cs`, `MainWindow.Media.cs`, `MainWindow.Localization.cs`）に物理分割。
+        - C#コンパイラ挙動・ILバイナリ・WPFバインディングを100%維持しながら、各ファイルの行数を数百行〜1500行程度に収め、AIの読解トークン消費削減と保守性を劇的に向上。
+

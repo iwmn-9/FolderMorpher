@@ -15,18 +15,23 @@ namespace AstraSize.Services
     public class AclService
     {
         private readonly string _snapshotDir;
+        private readonly bool _useConfiguredDirs;
 
-        public AclService()
+        public AclService(string? customSnapshotDir = null, bool useConfiguredDirs = true)
         {
+            _useConfiguredDirs = useConfiguredDirs;
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            _snapshotDir = Path.Combine(appData, "FolderMorpher", "AclSnapshots");
-            Directory.CreateDirectory(_snapshotDir);
+            _snapshotDir = !string.IsNullOrEmpty(customSnapshotDir)
+                ? customSnapshotDir
+                : Path.Combine(appData, "FolderMorpher", "AclSnapshots");
+
+            try { Directory.CreateDirectory(_snapshotDir); } catch { }
 
             // 旧 AstraSize のスナップショットが存在する場合、FolderMorpher へ自動移行・マージ
             try
             {
                 var oldSnapshotDir = Path.Combine(appData, "AstraSize", "AclSnapshots");
-                if (Directory.Exists(oldSnapshotDir))
+                if (useConfiguredDirs && Directory.Exists(oldSnapshotDir))
                 {
                     foreach (var file in Directory.GetFiles(oldSnapshotDir, "*.json"))
                     {
@@ -171,11 +176,14 @@ namespace AstraSize.Services
         private List<string> GetAclWriteDirectories()
         {
             var dirs = new List<string>();
-            var configuredWriteDir = AppSettingsService.Instance.GetWriteDirectory("Snapshots");
-            if (!string.IsNullOrEmpty(configuredWriteDir))
+            if (_useConfiguredDirs)
             {
-                var sharedAcl = Path.Combine(configuredWriteDir, "AclSnapshots");
-                dirs.Add(sharedAcl);
+                var configuredWriteDir = AppSettingsService.Instance.GetWriteDirectory("Snapshots");
+                if (!string.IsNullOrEmpty(configuredWriteDir))
+                {
+                    var sharedAcl = Path.Combine(configuredWriteDir, "AclSnapshots");
+                    dirs.Add(sharedAcl);
+                }
             }
             if (!dirs.Contains(_snapshotDir, StringComparer.OrdinalIgnoreCase))
             {

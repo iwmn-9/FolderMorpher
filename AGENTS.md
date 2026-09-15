@@ -55,26 +55,26 @@
 
 ## 2. システム鳥瞰マップ（機能とソースコードの対応表）
 
-UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネント `Views/LiveAclStudio.xaml` / `LiveAclStudio.xaml.cs` で構成され、内部ロジックは `Services` と `Models` に完全に分離されている。
+UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class 分割）および独立コンポーネント `Views/LiveAclStudio.xaml` / `LiveAclStudio.xaml.cs` で構成され、内部ロジックは `Services` と `Models` に完全に分離されている。
 
 | 機能領域 / タブ | XAML (MainWindow / View) | C# コードビハインド | 関連 Service / Model | 責務と概要 |
 | :--- | :--- | :--- | :--- | :--- |
-| **全体共通 / 左サイドバー** | `SidebarBorder`, `SidebarToggleButton` (L22-75) | `SidebarToggleButton_Click`<br>`NavTab_Checked` | `Converters/ValueConverters.cs` | 収縮対応ナビゲーション（幅220px ⇄ 58px）、グローバルステータスバー、通知トースト |
-| **Tab 1: 容量分析 & 監視**<br>(Storage Explorer) | `StorageTabPanel` (L82-410)<br>`HistoryWindow.xaml` | `ScanButton_Click`<br>`StorageTreeView_SelectedItemChanged`<br>`SubfolderShareGrid_MouseDoubleClick`<br>`HistoryWindow.xaml.cs` | `DiskScanService.cs`<br>`DriveInfoService.cs`<br>`StorageHistoryService.cs`<br>`StorageForecastingService.cs`<br>`ScanTabModel.cs`<br>`FileItemNode.cs` | 複数タブスキャン、ドライブ空き容量メーター、全体占有率メーター（案A）、容量上位Top10（Explorer起動連動）、直下シェア内訳、**推移グラフ直下の3連KPIハイライトカード（上限到達予測・日次ペース・R²信頼度）** |
-| **Tab 2: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `Views/LiveAclStudio.xaml`<br>(`LiveAclFolderView`, `LiveAclReverseView`, `LiveAclDiffModalOverlay`, `NewFolderModalOverlay`) | `Views/LiveAclStudio.xaml.cs`<br>(`LiveAclPanelApplyDeltaButton_Click`<br>`LiveAclDiffModalExecute_Click`<br>`RevStartScan_Click`<br>`LiveAclCtxNewFolder_Click`) | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACL可視化・編集、**Dry-Run差分チェックモーダル（AclChangePlan貫通・継承変更警告・セマンティックVerify・SDDLロールバック）**、AD逆引き権限監査、**均一幅ADアカウントカード**、**ADパレットUI統一（ドメインバッジ・同期バッジ・更新ボタン）**、**ADバックグラウンド自動同期（30s周期・MainWindow集約・双方向連動）**、**ツリーインライン新規フォルダー作成（📁＋ / 右クリック）** |
-| **Tab 3: 移行スタジオ**<br>(Simulation Studio) | `SimulationTabPanel` (L608-995) | `SimSourceLoadButton_Click`<br>`SimMockTreeView_Drop`<br>`SimDiffReviewButton_Click`<br>`SimDeploySkeletonButton_Click` | `SimulationProjectService.cs`<br>`MigrationService.cs`<br>`SimModels.cs` | 現行ファイルサーバーから新環境への仮想ツリー設計（N:1マッピング）、ACL引き継ぎ設計、**ADパレット完全統一（Tab 2と同一UI構造・30s自動同期連動）**、**全画面・全出力完全日英両対応（Diffインスペクター・設計マトリクスExcel/CSV・UIテキスト・多言語リソース正本化）**、ヘッダーレイアウト整線（重なり防止）、ガワ先行作成（空フォルダ+ACL一括展開）、Robocopy生成 |
-| **Tab 4: リンク一括修復**<br>(LinkFixer) | `LinkFixTabPanel` (L998-1094) | `LinkScanButton_Click`<br>`LinkFixExecuteButton_Click`<br>`LinkGenerateGpoButton_Click` | `LinkFixService.cs`<br>`OfficeLinkFixService.cs` | サーバー移行後の切断ショートカット（.lnk）およびOffice内部リンク（.xlsx/.xlsm）一括検出・修復、全社配布用GPOログオンスクリプト（.ps1）生成 |
-| **Tab 5: 断捨離・健全化**<br>(Audit & Hygiene) | `AuditTabPanel` (L1097-1240) | `AuditStartButton_Click`<br>`AuditExportExcelButton_Click`<br>`AuditExportCsvButton_Click`<br>`AuditDeleteSelectedButton_Click` | `AuditReportService.cs`<br>`ExcelReportService.cs`<br>`AuditModels.cs` | GDMS完全代替。重複ファイル（SHA256）、休眠ファイル（3年超・1年閲覧保護）、パス長危険域（240字超）・禁則文字検出、フォルダー名部分一致除外（カンマ区切り）。ハイパーリンク付きExcel/CSVレポート出力、選択ファイル完全削除 |
-| **Tab 6: メディア最適化**<br>(Media Optimizer) | `MediaTabPanel` (L1243-1380) | `MediaScanButton_Click`<br>`MediaOptimizeButton_Click`<br>`MediaGenVideoBatchButton_Click`<br>`MediaExportExcelButton_Click` | `MediaOptimizerService.cs`<br>`ExcelReportService.cs`<br>`MediaOptimizerModels.cs` | 聖域保護（_Master/RAW等）付き写真・画像軽量化（長辺2560px超縮小/85%品質/日時・Exif完全保持/直接上書きで最大90%削減）、巨大動画Topランキング抽出、夜間GPU圧縮（H.265）バッチ生成 |
-| **詳細権限モーダル** | `SecModalOverlay` | `SecModalApply_Click`<br>`SecModalCancel_Click` | `AclModels.cs` | Windows標準セキュリティ詳細設定（14項目のNTFS詳細パーミッションビット）の完全再現・編集 |
-| **変化点差分モーダル** | `DiffModalOverlay` | `DiffModalClose_Click`<br>`DiffExportExcel_Click` | `SimModels.cs` | 移行前後（Before/After）の変化点（新規・移動・統合・ACL差分）の一覧レビューとExcel出力 |
+| **全体共通 / 左サイドバー** | `SidebarBorder`, `SidebarToggleButton` (L22-75) | `MainWindow.xaml.cs`<br>`MainWindow.Localization.cs` | `Converters/ValueConverters.cs` | 収縮対応ナビゲーション（幅220px ⇄ 58px）、グローバルステータスバー、通知トースト、言語切替（日英）、環境設定モーダル |
+| **Tab 1: 容量分析 & 監視**<br>(Storage Explorer) | `StorageTabPanel` (L82-410)<br>`HistoryWindow.xaml` | `MainWindow.Storage.cs`<br>`HistoryWindow.xaml.cs` | `DiskScanService.cs`<br>`DriveInfoService.cs`<br>`StorageHistoryService.cs`<br>`StorageForecastingService.cs`<br>`ScanTabModel.cs`<br>`FileItemNode.cs` | 複数タブスキャン、ドライブ空き容量メーター、全体占有率メーター（案A）、容量上位Top10（Explorer起動連動）、直下シェア内訳、**推移グラフ直下の3連KPIハイライトカード（上限到達予測・日次ペース・R²信頼度）** |
+| **Tab 2: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `Views/LiveAclStudio.xaml`<br>(`LiveAclFolderView`, `LiveAclReverseView`, `LiveAclDiffModalOverlay`, `NewFolderModalOverlay`) | `Views/LiveAclStudio.xaml.cs` | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACL可視化・編集、**Dry-Run差分チェックモーダル（AclChangePlan貫通・継承変更警告・セマンティックVerify・SDDLロールバック）**、AD逆引き権限監査、**均一幅ADアカウントカード**、**ADパレットUI統一（ドメインバッジ・同期バッジ・更新ボタン）**、**ADバックグラウンド自動同期（30s周期・MainWindow集約・双方向連動）**、**ツリーインライン新規フォルダー作成（📁＋ / 右クリック）** |
+| **Tab 3: 移行スタジオ**<br>(Simulation Studio) | `SimulationTabPanel` (L608-995) | `MainWindow.Simulation.cs` | `SimulationProjectService.cs`<br>`MigrationService.cs`<br>`SimModels.cs` | 現行ファイルサーバーから新環境への仮想ツリー設計（N:1マッピング）、ACL引き継ぎ設計、**ADパレット完全統一（Tab 2と同一UI構造・30s自動同期連動）**、**全画面・全出力完全日英両対応（Diffインスペクター・設計マトリクスExcel/CSV・UIテキスト・多言語リソース正本化）**、ヘッダーレイアウト整線（重なり防止）、**ガワ先行作成の実機DACLセマンティックVerify**、Robocopy生成、**PowerShell ACL安全エスケープ** |
+| **Tab 4: リンク一括修復**<br>(LinkFixer) | `LinkFixTabPanel` (L998-1094) | `MainWindow.LinkFix.cs` | `LinkFixService.cs`<br>`OfficeLinkFixService.cs` | サーバー移行後の切断ショートカット（.lnk）およびOffice内部リンク（.xlsx/.xlsm）一括検出・修復、**VBAマクロ非破壊保護＆通常XML混在時の部分修復（PartiallyFixed）**、全社配布用GPOログオンスクリプト（.ps1）生成 |
+| **Tab 5: 断捨離・健全化**<br>(Audit & Hygiene) | `AuditTabPanel` (L1097-1240) | `MainWindow.Audit.cs` | `AuditReportService.cs`<br>`ExcelReportService.cs`<br>`AuditModels.cs` | GDMS完全代替。重複ファイル（SHA256）、休眠ファイル（3年超・1年閲覧保護）、パス長危険域（240字超）・禁則文字検出、フォルダー名部分一致除外（カンマ区切り）。ハイパーリンク付きExcel/CSVレポート出力、**原本絶対保護＆削除直前SHA-256再照合付き完全削除** |
+| **Tab 6: メディア最適化**<br>(Media Optimizer) | `MediaTabPanel` (L1243-1380) | `MainWindow.Media.cs` | `MediaOptimizerService.cs`<br>`ExcelReportService.cs`<br>`MediaOptimizerModels.cs` | 聖域保護（_Master/RAW等）付き写真・画像軽量化（長辺2560px超縮小/85%品質/日時・Exif完全保持/直接上書きで最大90%削減）、巨大動画Topランキング抽出、夜間GPU圧縮（H.265）バッチ生成 |
+| **詳細権限モーダル** | `SecModalOverlay` | `MainWindow.Simulation.cs` | `AclModels.cs` | Windows標準セキュリティ詳細設定（14項目のNTFS詳細パーミッションビット）の完全再現・編集 |
+| **変化点差分モーダル** | `DiffModalOverlay` | `MainWindow.Simulation.cs` | `SimModels.cs` | 移行前後（Before/After）の変化点（新規・移動・統合・ACL差分）の一覧レビューとExcel出力 |
 
 ---
 
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの全 58 項目に及ぶ詳細な設計判断記録（ADR 1〜58）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの全 59 項目に及ぶ詳細な設計判断記録（ADR 1〜59）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 
@@ -90,8 +90,8 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
    - **フォルダー単位RPCの完全根絶（ゼロI/O化）**: 親フォルダーの列挙タイムスタンプを子ノード生成時に直結し、`Directory.GetLastWriteTime` による数千回のネットワーク往復を完全ゼロ化。
    - `ScannedFileEntry` によるメタデータ直結（Audit走査時の個別属性 stat 再問い合わせ完全根絶）。
    - **全階層並列度2固定（デュアルワーカー）＆ Sol提唱 `pendingWorkCount` レース根絶 ＆ インメモリ・ボトムアップ集計**: サーバー負荷と他業務を100%保護しながら、全階層2車線化でSMB往復遅延を隠蔽し10倍〜20倍の高速化を達成。
-6. **7大安全柵（v2.0.9）**:
-   - 原本候補の絶対保護＆削除直前SHA-256再照合、AD primaryGroupID解決＆Domain Users特殊扱い撤廃、Officeリンク修復の対象XML限定＆意味的Verify＆VBAマクロ保護、ACLスナップショット失敗時のコミット拒否、GitHub Actions常時CIゲート、スクリプトパス生成の安全エスケープ共通化（`ScriptEscaper`）、廃止メソッド完全削除。
+6. **7大安全柵 ＆ 評価9.0点到達（v2.0.9〜v2.1.0）**:
+   - 原本候補の絶対保護＆削除直前SHA-256再照合、AD primaryGroupID解決＆Domain Users特殊扱い撤廃、Officeリンク修復の対象XML限定＆意味的Verify＆VBAマクロ非破壊保護（混在時PartiallyFixed）、ACLスナップショット失敗時のコミット拒否、GitHub Actions常時CIゲート、スクリプトパス生成の安全エスケープ共通化（`ScriptEscaper`、PowerShell `$TargetRoot` 代入含む）、スケルトン展開の実機DACLセマンティックVerify、`MainWindow.xaml.cs` partial class 物理分割。
 
 ---
 

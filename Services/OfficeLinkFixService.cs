@@ -9,6 +9,24 @@ using System.Threading.Tasks;
 
 namespace FolderMorpher.Services
 {
+    [Flags]
+    public enum OfficeLinkCategory
+    {
+        None = 0,
+        ExternalWorkbook = 1 << 0,     // 外部ブック参照 (externalLink)
+        FormulaOrHyperlink = 1 << 1,   // 数式・ハイパーリンク (worksheets, .rels)
+        VbaMacro = 1 << 2             // VBAマクロ (vbaProject.bin - 検出のみ)
+    }
+
+    public enum OfficeFixStatus
+    {
+        Detected = 0,
+        FullyFixed = 1,
+        PartiallyFixed = 2,           // XML修復済 / VBAマクロ未修復
+        Skipped = 3,
+        Failed = 4
+    }
+
     public class OfficeLinkItem
     {
         public string FilePath { get; set; } = string.Empty;
@@ -18,7 +36,9 @@ namespace FolderMorpher.Services
         public string TargetReplacement { get; set; } = string.Empty;
         public bool IsLocked { get; set; }
         public string LockUser { get; set; } = string.Empty;
-        public string LinkType { get; set; } = string.Empty; // 外部ブック参照 / ハイパーリンク / VBAマクロ
+        public OfficeLinkCategory Categories { get; set; } = OfficeLinkCategory.None;
+        public string LinkType { get; set; } = string.Empty; // UI表示用
+        public OfficeFixStatus FixStatus { get; set; } = OfficeFixStatus.Detected;
         public string Status { get; set; } = "検出";
         public bool IsFixed { get; set; }
     }
@@ -74,8 +94,8 @@ namespace FolderMorpher.Services
                     // 1. OpenXML形式 (.xlsx, .xlsm, .docx, .pptx)
                     if (SupportedModernExtensions.Contains(ext))
                     {
-                        var foundTypes = CheckModernOfficeFile(fi.FullName, oldPattern);
-                        if (foundTypes.Count > 0)
+                        var (categories, foundTypes) = CheckModernOfficeFile(fi.FullName, oldPattern);
+                        if (categories != OfficeLinkCategory.None)
                         {
                             results.Add(new OfficeLinkItem
                             {
@@ -86,6 +106,7 @@ namespace FolderMorpher.Services
                                 TargetReplacement = newPattern,
                                 IsLocked = isLocked,
                                 LockUser = lockUser,
+                                Categories = categories,
                                 LinkType = string.Join(", ", foundTypes),
                                 Status = isLocked ? $"ロック中 ({lockUser})" : "置換候補"
                             });
@@ -156,10 +177,11 @@ namespace FolderMorpher.Services
                         // 1. 一時ファイルへ原本を安全コピー（原本直接編集の完全撤廃）
                         File.Copy(item.FilePath, tempPath, overwrite: true);
 
-                        // 2. 一時ファイル内部のXMLエントリを置換
                         // VBAマクロ単体の場合はバイナリ自動修復不可のため安全にスキップ
-                        if (item.LinkType == "VBAマクロ (検出のみ・手動修復)")
+                        // （AGENTS.md 第0項: 文字列判定ではなく型安全な Categories == OfficeLinkCategory.VbaMacro で判定）
+                        if (item.Categories == OfficeLinkCategory.VbaMacro)
                         {
+                            item.FixStatus = OfficeFixStatus.Skipped;
                             item.Status = "スキップ (VBAマクロは手動修復が必要です)";
                             try { File.Delete(tempPath); } catch { }
                             continue;
@@ -284,13 +306,26 @@ namespace FolderMorpher.Services
                         try { File.SetLastWriteTime(item.FilePath, origTime); } catch { }
 
                         item.IsFixed = true;
-                        item.Status = "修復完了 (検証済・バックアップ済)";
-                        successCount++;
-                        progress?.Report((item.FilePath, true, "修復完了 (検証済)"));
+                        if (item.Categories.HasFlag(OfficeLinkCategory.VbaMacro))
+                        {
+                            // Sol指摘: 通常リンクとVBAマクロが混在している場合は部分成功として明示
+                            item.FixStatus = OfficeFixStatus.PartiallyFixed;
+                            item.Status = "一部修復 (XML修復済 / VBAマクロは未修復)";
+                            successCount++;
+                            progress?.Report((item.FilePath, true, "一部修復 (XML修復済 / VBAマクロは未修復)"));
+                        }
+                        else
+                        {
+                            item.FixStatus = OfficeFixStatus.FullyFixed;
+                            item.Status = "修復完了 (検証済・バックアップ済)";
+                            successCount++;
+                            progress?.Report((item.FilePath, true, "修復完了 (検証済)"));
+                        }
                     }
                     catch (Exception ex)
                     {
                         try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+                        item.FixStatus = OfficeFixStatus.Failed;
                         item.Status = $"失敗: {ex.Message}";
                         progress?.Report((item.FilePath, false, ex.Message));
                     }
@@ -300,9 +335,10 @@ namespace FolderMorpher.Services
             }, ct);
         }
 
-        private static List<string> CheckModernOfficeFile(string filePath, string pattern)
+        private static (OfficeLinkCategory categories, List<string> detected) CheckModernOfficeFile(string filePath, string pattern)
         {
             var detected = new List<string>();
+            var categories = OfficeLinkCategory.None;
             try
             {
                 using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
@@ -315,6 +351,7 @@ namespace FolderMorpher.Services
                     {
                         if (EntryContainsText(entry, pattern))
                         {
+                            categories |= OfficeLinkCategory.ExternalWorkbook;
                             if (!detected.Contains("外部ブック参照")) detected.Add("外部ブック参照");
                         }
                     }
@@ -322,6 +359,7 @@ namespace FolderMorpher.Services
                     {
                         if (EntryContainsBinaryText(entry, pattern))
                         {
+                            categories |= OfficeLinkCategory.VbaMacro;
                             if (!detected.Contains("VBAマクロ (検出のみ・手動修復)")) detected.Add("VBAマクロ (検出のみ・手動修復)");
                         }
                     }
@@ -330,6 +368,7 @@ namespace FolderMorpher.Services
                     {
                         if (EntryContainsText(entry, pattern))
                         {
+                            categories |= OfficeLinkCategory.FormulaOrHyperlink;
                             if (!detected.Contains("数式・ハイパーリンク")) detected.Add("数式・ハイパーリンク");
                         }
                     }
@@ -337,7 +376,7 @@ namespace FolderMorpher.Services
             }
             catch { }
 
-            return detected;
+            return (categories, detected);
         }
 
         private static bool EntryContainsText(ZipArchiveEntry entry, string pattern)

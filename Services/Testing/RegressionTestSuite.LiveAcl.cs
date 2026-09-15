@@ -34,6 +34,7 @@ namespace FolderMorpher.Services.Testing
             await TestAclConflictAndInheritanceInitContractAsync();
             await TestAclChangePlanPipelineAndSemanticVerificationAsync();
             await TestOptimisticLockAndEffectiveAccessChangePointsAsync();
+            await TestLiveAclSnapshotPersistenceFailureRejectionAsync();
         }
 
         public static void TestLiveAclDenyAndInheritance()
@@ -1559,5 +1560,47 @@ namespace FolderMorpher.Services.Testing
             }
         }
 
+        /// <summary>
+        /// Sol指摘: ACLスナップショットの永続化が全保存先で失敗した場合、
+        /// ロールバック不能な状態での変更適用事故を防ぐため、確実に例外がスローされCommitが拒否されることを検証する。
+        /// </summary>
+        public static async Task TestLiveAclSnapshotPersistenceFailureRejectionAsync()
+        {
+            string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_AclFailSnap_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempDir);
+
+            try
+            {
+                // 書き込み不能な存在しないドライブパスを指定し、設定保存先も参照させない
+                string impossibleSnapshotDir = @"Z:\NonExistent_Drive_FM_Test\Snapshots";
+                var aclService = new AclService(impossibleSnapshotDir, useConfiguredDirs: false);
+
+                bool caughtException = false;
+                try
+                {
+                    await aclService.CreateSnapshotAsync(tempDir, "テストバックアップ");
+                }
+                catch (InvalidOperationException ex)
+                {
+                    caughtException = true;
+                    if (!ex.Message.Contains("永続化に失敗しました"))
+                    {
+                        throw new InvalidOperationException($"予期しない例外メッセージ: {ex.Message}");
+                    }
+                }
+
+                if (!caughtException)
+                {
+                    throw new InvalidOperationException("重大欠陥: スナップショット永続化が全件失敗したにもかかわらず、例外がスローされず処理が通過してしまいました！");
+                }
+            }
+            finally
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    try { Directory.Delete(tempDir, true); } catch { }
+                }
+            }
+        }
     }
 }

@@ -25,6 +25,7 @@ namespace FolderMorpher.Services.Testing
         public static async Task TestDomain_MediaOptimizerAndLinkFixerAsync()
         {
             await TestMediaOptimizerPngPreservationAsync();
+            await TestOfficeLinkFixMixedXmlAndVbaPartialSuccessAsync();
         }
 
         public static async Task TestMediaOptimizerPngPreservationAsync()

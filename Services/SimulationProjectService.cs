@@ -357,6 +357,69 @@ namespace AstraSize.Services
                             result.Logs.Add($"[エラー] {folderPath}: {ex.Message}");
                         }
                     }
+
+                    // 3. セマンティックVerify（事後検証）: OSから実態DACLを再取得し、計画と完全突合
+                    var aclService = new AclService();
+                    foreach (var action in plan.FolderActions)
+                    {
+                        if (action.IsExisting) continue; // 既存フォルダはACL変更していないので除外
+                        if (!Directory.Exists(action.FullTargetPath)) continue;
+
+                        try
+                        {
+                            var (actualEntries, actualInherit, _) = aclService.GetSimAclForFolder(action.FullTargetPath);
+
+                            // A. 継承フラグの一致確認
+                            if (actualInherit != action.InheritAcl)
+                            {
+                                string err = $"{action.FullTargetPath}: 継承設定不一致 (計画: {action.InheritAcl}, 実態: {actualInherit})";
+                                result.VerificationErrors.Add(err);
+                                result.Logs.Add($"[Verify不一致] {err}");
+                                result.VerificationFailedCount++;
+                                continue;
+                            }
+
+                            // B. 明示ACEの突合 (計画された明示ルール vs 実態の明示ルール)
+                            var expectedExplicit = action.InheritAcl
+                                ? action.AclEntries.Where(a => !a.IsInherited).ToList()
+                                : action.AclEntries;
+                            var actualExplicit = actualEntries.Where(e => !e.IsInherited).ToList();
+
+                            bool folderMatched = true;
+                            var remainingActual = new List<SimAclEntry>(actualExplicit);
+
+                            foreach (var exp in expectedExplicit)
+                            {
+                                var matched = remainingActual.FirstOrDefault(a => a.MatchesExact(exp));
+                                if (matched != null)
+                                {
+                                    remainingActual.Remove(matched);
+                                }
+                                else
+                                {
+                                    folderMatched = false;
+                                    string err = $"{action.FullTargetPath}: 未反映ACE '{exp.DisplayName} ({exp.AccessType} {exp.FormattedRights})'";
+                                    result.VerificationErrors.Add(err);
+                                    result.Logs.Add($"[Verify不一致] {err}");
+                                }
+                            }
+
+                            if (folderMatched)
+                            {
+                                result.VerifiedCount++;
+                            }
+                            else
+                            {
+                                result.VerificationFailedCount++;
+                            }
+                        }
+                        catch (Exception vex)
+                        {
+                            result.VerificationFailedCount++;
+                            result.VerificationErrors.Add($"{action.FullTargetPath} のVerify失敗: {vex.Message}");
+                            result.Logs.Add($"[Verifyエラー] {action.FullTargetPath}: {vex.Message}");
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -491,7 +554,7 @@ namespace AstraSize.Services
             sb.AppendLine($"# TargetRoot : {targetRoot}");
             sb.AppendLine("# ==============================================================================");
             sb.AppendLine();
-            sb.AppendLine($"$TargetRoot = \"{targetRoot}\"");
+            sb.AppendLine($"$TargetRoot = {ScriptEscaper.EscapePowerShellLiteral(targetRoot)}");
             sb.AppendLine();
             sb.AppendLine(@"function Set-FolderMorpherAcl {
     param(

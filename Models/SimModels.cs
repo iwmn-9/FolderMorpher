@@ -845,11 +845,14 @@ namespace AstraSize.Models
         public int SkippedExistingCount { get; set; }
         public int ConflictCount { get; set; }
         public int AclAppliedCount { get; set; }
-        public int FailedCount => Errors.Count;
+        public int VerifiedCount { get; set; }
+        public int VerificationFailedCount { get; set; }
+        public int FailedCount => Errors.Count + VerificationFailedCount;
         public List<string> Errors { get; set; } = new();
+        public List<string> VerificationErrors { get; set; } = new();
         public List<string> Logs { get; set; } = new();
         public List<string> DeployedFolderPaths { get; set; } = new();
-        public bool IsSuccess => FailedCount == 0;
+        public bool IsSuccess => FailedCount == 0 && ConflictCount == 0;
 
         public void Deconstruct(out int createdCount, out List<string> logs)
         {
