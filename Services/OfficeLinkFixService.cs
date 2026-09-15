@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using FolderMorpher.Models;
 
 namespace FolderMorpher.Services
 {
@@ -39,8 +40,17 @@ namespace FolderMorpher.Services
         public OfficeLinkCategory Categories { get; set; } = OfficeLinkCategory.None;
         public string LinkType { get; set; } = string.Empty; // UI表示用
         public OfficeFixStatus FixStatus { get; set; } = OfficeFixStatus.Detected;
-        public long ExpectedLength { get; set; }
-        public DateTime ExpectedLastWriteTimeUtc { get; set; }
+        public FileVersionStamp VersionStamp { get; set; } = FileVersionStamp.Empty;
+        public long ExpectedLength
+        {
+            get => VersionStamp.Length;
+            set => VersionStamp = new FileVersionStamp(value, VersionStamp.LastWriteTimeUtc);
+        }
+        public DateTime ExpectedLastWriteTimeUtc
+        {
+            get => VersionStamp.LastWriteTimeUtc;
+            set => VersionStamp = new FileVersionStamp(VersionStamp.Length, value);
+        }
         public string Status { get; set; } = "検出";
         public bool IsFixed { get; set; }
     }
@@ -172,9 +182,7 @@ namespace FolderMorpher.Services
                     }
 
                     // Sol指摘: 楽観ロック (スキャン時とファイルサイズ・更新日時が一致しているか照合)
-                    var curFi = new FileInfo(item.FilePath);
-                    if (!curFi.Exists || (item.ExpectedLength > 0 && curFi.Length != item.ExpectedLength) ||
-                        (item.ExpectedLastWriteTimeUtc != default && curFi.LastWriteTimeUtc != item.ExpectedLastWriteTimeUtc))
+                    if (!item.VersionStamp.IsEmpty && !item.VersionStamp.Matches(item.FilePath))
                     {
                         item.FixStatus = OfficeFixStatus.Skipped;
                         item.Status = "スキップ (スキャン後に外部変更検知)";
@@ -278,58 +286,23 @@ namespace FolderMorpher.Services
                             }
                         }
 
-                        // Sol指摘: Commit境界での再楽観ロック (Double-Check TOCTOU防御)
-                        var preCommitFi = new FileInfo(item.FilePath);
-                        if (!preCommitFi.Exists || (item.ExpectedLength > 0 && preCommitFi.Length != item.ExpectedLength) ||
-                            (item.ExpectedLastWriteTimeUtc != default && preCommitFi.LastWriteTimeUtc != item.ExpectedLastWriteTimeUtc))
-                        {
-                            item.FixStatus = OfficeFixStatus.Skipped;
-                            item.Status = "スキップ (置換直前に外部変更検知)";
-                            progress?.Report((item.FilePath, false, "置換直前に外部でファイルが更新されたため安全にスキップしました"));
-                            try { File.Delete(tempPath); } catch { }
-                            continue;
-                        }
-
                         // 4. バックアップ作成 (未存在時のみ、安全な永続バックアップとして保持)
                         if (!File.Exists(backupPath))
                         {
                             File.Copy(item.FilePath, backupPath);
                         }
 
-                        // 5. 真のアトミック置換 (同一ボリューム File.Replace または UNC フォールバック) ＆ タイムスタンプ復元
-                        bool replaced = false;
-                        string replaceBakPath = item.FilePath + ".tmp_rep_" + Guid.NewGuid().ToString("N");
+                        // 5. 真のアトミック置換 (同一ボリューム File.Replace または UNC フォールバック、Commit直前Double-Check TOCTOU防御)
                         try
                         {
-                            File.Replace(tempPath, item.FilePath, replaceBakPath);
-                            replaced = true;
-                            try { File.Delete(replaceBakPath); } catch { }
+                            SafeFileReplace.Replace(tempPath, item.FilePath, item.VersionStamp);
                         }
-                        catch
+                        catch (InvalidOperationException)
                         {
-                            replaced = false;
-                        }
-
-                        if (!replaced)
-                        {
-                            // File.Replace 非対応環境 (UNC共有等) での同一FS内アトミック置換フォールバック
-                            string uncBakPath = item.FilePath + ".unc_bak_" + Guid.NewGuid().ToString("N");
-                            bool movedToBak = false;
-                            try
-                            {
-                                File.Move(item.FilePath, uncBakPath);
-                                movedToBak = true;
-                                File.Move(tempPath, item.FilePath);
-                                try { File.Delete(uncBakPath); } catch { }
-                            }
-                            catch
-                            {
-                                if (movedToBak && File.Exists(uncBakPath) && !File.Exists(item.FilePath))
-                                {
-                                    try { File.Move(uncBakPath, item.FilePath); } catch { }
-                                }
-                                throw;
-                            }
+                            item.FixStatus = OfficeFixStatus.Skipped;
+                            item.Status = "スキップ (置換直前に外部変更検知)";
+                            progress?.Report((item.FilePath, false, "置換直前に外部でファイルが更新されたため安全にスキップしました"));
+                            continue;
                         }
 
                         try { File.SetLastWriteTime(item.FilePath, origTime); } catch { }

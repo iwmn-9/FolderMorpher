@@ -10,7 +10,12 @@ namespace FolderMorpher.Models
         public string FileName { get; set; } = string.Empty;
         public string DirectoryPath { get; set; } = string.Empty;
         public string Extension { get; set; } = string.Empty;
-        public long OriginalSizeBytes { get; set; }
+        public FileVersionStamp VersionStamp { get; set; } = FileVersionStamp.Empty;
+        public long OriginalSizeBytes
+        {
+            get => VersionStamp.Length;
+            set => VersionStamp = new FileVersionStamp(value, VersionStamp.LastWriteTimeUtc);
+        }
         public string OriginalSizeFormatted => FormatHelper.FormatBytes(OriginalSizeBytes, 2);
         public long OptimizedSizeBytes { get; set; }
         public string OptimizedSizeFormatted => OptimizedSizeBytes > 0 ? FormatHelper.FormatBytes(OptimizedSizeBytes, 2) : "―";
@@ -23,7 +28,11 @@ namespace FolderMorpher.Models
         public bool IsVideo { get; set; }
         public bool IsExcluded { get; set; }
         public string ExclusionReason { get; set; } = string.Empty;
-        public DateTime ExpectedLastWriteTimeUtc { get; set; }
+        public DateTime ExpectedLastWriteTimeUtc
+        {
+            get => VersionStamp.LastWriteTimeUtc;
+            set => VersionStamp = new FileVersionStamp(VersionStamp.Length, value);
+        }
         public string Status { get; set; } = "待機";
         public bool IsProcessed { get; set; }
     }

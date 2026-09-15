@@ -22,84 +22,89 @@ namespace FolderMorpher.Services
             IProgress<string>? progress,
             CancellationToken ct)
         {
-            return await Task.Run(() =>
-            {
-                var images = new List<MediaItem>();
-                var videos = new List<MediaItem>();
+            var images = new List<MediaItem>();
+            var videos = new List<MediaItem>();
 
-                if (!Directory.Exists(options.TargetDirectory)) return (images, videos);
+            if (!Directory.Exists(options.TargetDirectory)) return (images, videos);
 
-                int scanned = 0;
-                var fileEnumerable = SafeFileEnumerator.EnumerateFilesSafe(options.TargetDirectory, "*.*", coverage: null, ct);
-
-                foreach (var fi in fileEnumerable)
+            int scanned = 0;
+            var fileEntries = await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
+                options.TargetDirectory,
+                "*.*",
+                coverage: null,
+                onProgress: count =>
                 {
-                    ct.ThrowIfCancellationRequested();
-                    scanned++;
-                    if (scanned % 50 == 0) progress?.Report($"メディア走査中: {scanned} 件...");
+                    if (count % 50 == 0) progress?.Report($"メディア走査中: {count} 件...");
+                },
+                ct: ct,
+                excludeFolderPatterns: options.ExcludedFolderKeywords);
 
-                    string ext = fi.Extension.ToLowerInvariant();
-                    string fullLower = fi.FullName.ToLowerInvariant();
+            foreach (var fe in fileEntries)
+            {
+                ct.ThrowIfCancellationRequested();
+                scanned++;
 
-                    // 1. マスター拡張子判定（自動聖域保護）
-                    bool isMasterExt = MasterExtensions.Contains(ext);
+                string ext = Path.GetExtension(fe.Name).ToLowerInvariant();
+                string fullLower = fe.FullPath.ToLowerInvariant();
 
-                    // 2. フォルダ名キーワード判定（聖域保護）
-                    bool isKeywordExcluded = options.ExcludedFolderKeywords.Any(k => fullLower.Contains(k.ToLowerInvariant()));
+                // 1. マスター拡張子判定（自動聖域保護）
+                bool isMasterExt = MasterExtensions.Contains(ext);
 
-                    // 3. カスタム除外パス判定
-                    bool isCustomExcluded = options.CustomExcludedPaths.Any(p => fullLower.StartsWith(p.ToLowerInvariant()));
+                // 2. フォルダ名キーワード判定（聖域保護）
+                bool isKeywordExcluded = options.ExcludedFolderKeywords.Any(k => fullLower.Contains(k.ToLowerInvariant()));
 
-                    bool isExcluded = isMasterExt || isKeywordExcluded || isCustomExcluded;
-                    string reason = string.Empty;
-                    if (isMasterExt) reason = "プロ用マスター拡張子 (.raw/.psd等)";
-                    else if (isKeywordExcluded) reason = "保護フォルダ名 (Master/原稿等)";
-                    else if (isCustomExcluded) reason = "ユーザー指定の除外フォルダ";
+                // 3. カスタム除外パス判定
+                bool isCustomExcluded = options.CustomExcludedPaths.Any(p => fullLower.StartsWith(p.ToLowerInvariant()));
 
-                    // 画像ファイル
-                    if (ImageExtensions.Contains(ext) || isMasterExt)
+                bool isExcluded = isMasterExt || isKeywordExcluded || isCustomExcluded;
+                string reason = string.Empty;
+                if (isMasterExt) reason = "プロ用マスター拡張子 (.raw/.psd等)";
+                else if (isKeywordExcluded) reason = "保護フォルダ名 (Master/原稿等)";
+                else if (isCustomExcluded) reason = "ユーザー指定の除外フォルダ";
+
+                var stamp = new FileVersionStamp(fe.Length, fe.LastWriteTime.ToUniversalTime());
+
+                // 画像ファイル
+                if (ImageExtensions.Contains(ext) || isMasterExt)
+                {
+                    // 指定サイズ未満（例: 2MB未満のアイコンや小画像）はスキップ
+                    if (!isExcluded && fe.Length < options.MinImageSizeBytes) continue;
+
+                    images.Add(new MediaItem
                     {
-                        // 指定サイズ未満（例: 2MB未満のアイコンや小画像）はスキップ
-                        if (!isExcluded && fi.Length < options.MinImageSizeBytes) continue;
-
-                        images.Add(new MediaItem
-                        {
-                            FullPath = fi.FullName,
-                            FileName = fi.Name,
-                            DirectoryPath = fi.DirectoryName ?? string.Empty,
-                            Extension = ext,
-                            OriginalSizeBytes = fi.Length,
-                            ExpectedLastWriteTimeUtc = fi.LastWriteTimeUtc,
-                            IsVideo = false,
-                            IsExcluded = isExcluded,
-                            ExclusionReason = reason,
-                            Status = isExcluded ? $"保護 ({reason})" : "最適化対象"
-                        });
-                    }
-                    // 動画ファイル
-                    else if (VideoExtensions.Contains(ext))
-                    {
-                        videos.Add(new MediaItem
-                        {
-                            FullPath = fi.FullName,
-                            FileName = fi.Name,
-                            DirectoryPath = fi.DirectoryName ?? string.Empty,
-                            Extension = ext,
-                            OriginalSizeBytes = fi.Length,
-                            ExpectedLastWriteTimeUtc = fi.LastWriteTimeUtc,
-                            IsVideo = true,
-                            IsExcluded = isExcluded,
-                            ExclusionReason = reason,
-                            Status = isExcluded ? $"保護 ({reason})" : "大容量動画"
-                        });
-                    }
+                        FullPath = fe.FullPath,
+                        FileName = fe.Name,
+                        DirectoryPath = fe.DirectoryPath,
+                        Extension = ext,
+                        VersionStamp = stamp,
+                        IsVideo = false,
+                        IsExcluded = isExcluded,
+                        ExclusionReason = reason,
+                        Status = isExcluded ? $"保護 ({reason})" : "最適化対象"
+                    });
                 }
+                // 動画ファイル
+                else if (VideoExtensions.Contains(ext))
+                {
+                    videos.Add(new MediaItem
+                    {
+                        FullPath = fe.FullPath,
+                        FileName = fe.Name,
+                        DirectoryPath = fe.DirectoryPath,
+                        Extension = ext,
+                        VersionStamp = stamp,
+                        IsVideo = true,
+                        IsExcluded = isExcluded,
+                        ExclusionReason = reason,
+                        Status = isExcluded ? $"保護 ({reason})" : "大容量動画"
+                    });
+                }
+            }
 
-                // 動画はサイズ降順にソート（大容量動画を上位に）
-                videos = videos.OrderByDescending(v => v.OriginalSizeBytes).ToList();
+            // 動画はサイズ降順にソート（大容量動画を上位に）
+            videos = videos.OrderByDescending(v => v.OriginalSizeBytes).ToList();
 
-                return (images, videos);
-            }, ct);
+            return (images, videos);
         }
 
         public async Task<MediaOptimizeSummary> OptimizeImagesAsync(
@@ -123,9 +128,7 @@ namespace FolderMorpher.Services
                     if (item.IsExcluded || item.IsProcessed) continue;
 
                     // Sol指摘: 楽観ロック (スキャン時とファイルサイズ・更新日時が一致しているか照合)
-                    var curFi = new FileInfo(item.FullPath);
-                    if (!curFi.Exists || curFi.Length != item.OriginalSizeBytes ||
-                        (item.ExpectedLastWriteTimeUtc != default && curFi.LastWriteTimeUtc != item.ExpectedLastWriteTimeUtc))
+                    if (!item.VersionStamp.IsEmpty && !item.VersionStamp.Matches(item.FullPath))
                     {
                         item.Status = "スキップ (スキャン後に外部変更検知)";
                         progress?.Report((item.FileName, false, "スキャン後に外部で変更されたため安全にスキップしました"));
@@ -152,7 +155,7 @@ namespace FolderMorpher.Services
                         }
 
                         // WIC による安全なリサイズ ＆ JPEG再エンコード
-                        long newSize = OptimizeSingleImage(item.FullPath, options.MaxDimension, options.JpegQuality, item.OriginalSizeBytes, item.ExpectedLastWriteTimeUtc);
+                        long newSize = OptimizeSingleImage(item.FullPath, options.MaxDimension, options.JpegQuality, item.VersionStamp);
 
                         // タイムスタンプ復元（重要：日付ソートを維持）
                         File.SetLastWriteTime(item.FullPath, origWriteTime);
@@ -179,7 +182,7 @@ namespace FolderMorpher.Services
             return summary;
         }
 
-        private static long OptimizeSingleImage(string filePath, int maxDimension, int quality, long expectedLength = 0, DateTime expectedLastWriteTimeUtc = default)
+        private static long OptimizeSingleImage(string filePath, int maxDimension, int quality, FileVersionStamp expectedStamp = default)
         {
             byte[] fileBytes = File.ReadAllBytes(filePath);
             using var ms = new MemoryStream(fileBytes);
@@ -269,62 +272,12 @@ namespace FolderMorpher.Services
                 }
             }
 
-            // H3対策: 一時ファイル書き出し ➔ アトミック置換 (途中クラッシュや破損からの完全防護)
+            // 一時ファイル書き出し ➔ SafeFileReplace による原子的置換 (TOCTOU二重防御 + UNCフォールバック)
             string tempPath = filePath + ".tmp_" + Guid.NewGuid().ToString("N");
-            string backupPath = filePath + ".orig_" + Guid.NewGuid().ToString("N");
-
             try
             {
                 File.WriteAllBytes(tempPath, optimizedBytes);
-
-                // Sol指摘: Commit境界での再楽観ロック (Double-Check TOCTOU防御)
-                var preCommitFi = new FileInfo(filePath);
-                if (!preCommitFi.Exists || (expectedLength > 0 && preCommitFi.Length != expectedLength) ||
-                    (expectedLastWriteTimeUtc != default && preCommitFi.LastWriteTimeUtc != expectedLastWriteTimeUtc))
-                {
-                    try { File.Delete(tempPath); } catch { }
-                    throw new InvalidOperationException("置換直前に外部でファイルが変更されたため、安全のため上書きを中断しました。");
-                }
-
-                // H3完全防御: File.Replace (同一ボリューム・ローカル) または .bak 経由の安全アトミック置換 (UNC / 非対応環境)
-                bool replaced = false;
-                try
-                {
-                    // 同一ボリューム内でのアトミック置換
-                    File.Replace(tempPath, filePath, backupPath);
-                    replaced = true;
-                    try { File.Delete(backupPath); } catch { }
-                }
-                catch
-                {
-                    // File.Replace 非対応環境（UNC共有や特定SMB実装など）での安全退避フォールバック
-                    // 元画像に .bak を付けて退避 -> 新ファイルを配置 -> 成功なら .bak 削除 / 失敗なら .bak を元に戻す
-                    replaced = false;
-                }
-
-                if (!replaced)
-                {
-                    string uncBakPath = filePath + ".unc_bak_" + Guid.NewGuid().ToString("N");
-                    bool movedToBak = false;
-                    try
-                    {
-                        File.Move(filePath, uncBakPath);
-                        movedToBak = true;
-                        File.Move(tempPath, filePath);
-                        // 新ファイル配置成功：退避ファイルを安全に破棄
-                        try { File.Delete(uncBakPath); } catch { }
-                    }
-                    catch
-                    {
-                        // 新ファイル配置失敗：元画像を即座に復元
-                        if (movedToBak && File.Exists(uncBakPath) && !File.Exists(filePath))
-                        {
-                            try { File.Move(uncBakPath, filePath); } catch { }
-                        }
-                        throw;
-                    }
-                }
-
+                SafeFileReplace.Replace(tempPath, filePath, expectedStamp);
                 return optimizedBytes.Length;
             }
             finally
@@ -332,10 +285,6 @@ namespace FolderMorpher.Services
                 if (File.Exists(tempPath))
                 {
                     try { File.Delete(tempPath); } catch { }
-                }
-                if (File.Exists(backupPath))
-                {
-                    try { File.Delete(backupPath); } catch { }
                 }
             }
         }
