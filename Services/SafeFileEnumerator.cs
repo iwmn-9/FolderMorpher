@@ -60,11 +60,26 @@ namespace FolderMorpher.Services
     /// </summary>
     public static class SafeFileEnumerator
     {
+        private static bool ShouldExcludeDirectory(string dirName, IReadOnlyList<string>? excludePatterns)
+        {
+            if (excludePatterns == null || excludePatterns.Count == 0) return false;
+            for (int i = 0; i < excludePatterns.Count; i++)
+            {
+                var pattern = excludePatterns[i];
+                if (!string.IsNullOrWhiteSpace(pattern) && dirName.Contains(pattern.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         public static IEnumerable<FileInfo> EnumerateFilesSafe(
             string rootPath,
             string searchPattern = "*.*",
             ScanCoverage? coverage = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            IReadOnlyList<string>? excludeFolderPatterns = null)
         {
             if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath)) yield break;
 
@@ -89,11 +104,12 @@ namespace FolderMorpher.Services
                     continue;
                 }
 
-                // サブディレクトリの安全プッシュ (Junction / ReparsePoint 除外)
+                // サブディレクトリの安全プッシュ (Junction / ReparsePoint 除外 & フォルダ名パターン除外)
                 for (int i = 0; i < subDirs.Count; i++)
                 {
                     var sd = subDirs[i];
                     if (sd.IsReparsePoint) continue;
+                    if (ShouldExcludeDirectory(sd.Name, excludeFolderPatterns)) continue;
                     stack.Push(Path.Combine(currentPath, sd.Name));
                 }
 
@@ -119,9 +135,10 @@ namespace FolderMorpher.Services
             string searchPattern = "*.*",
             ScanCoverage? coverage = null,
             Action<int>? onProgress = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            IReadOnlyList<string>? excludeFolderPatterns = null)
         {
-            var entries = await EnumerateFileEntriesParallelAsync(rootPath, searchPattern, coverage, onProgress, ct);
+            var entries = await EnumerateFileEntriesParallelAsync(rootPath, searchPattern, coverage, onProgress, ct, excludeFolderPatterns: excludeFolderPatterns);
             return entries.Select(e => e.ToFileInfo()).ToList();
         }
 
@@ -134,7 +151,8 @@ namespace FolderMorpher.Services
             string searchPattern = "*.*",
             ScanCoverage? coverage = null,
             Action<int>? onProgress = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            IReadOnlyList<string>? excludeFolderPatterns = null)
         {
             var resultFiles = new System.Collections.Concurrent.ConcurrentBag<ScannedFileEntry>();
             if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath)) return new List<ScannedFileEntry>();
@@ -183,7 +201,7 @@ namespace FolderMorpher.Services
                 for (int i = 0; i < rootSubDirs.Count; i++)
                 {
                     var sd = rootSubDirs[i];
-                    if (!sd.IsReparsePoint)
+                    if (!sd.IsReparsePoint && !ShouldExcludeDirectory(sd.Name, excludeFolderPatterns))
                     {
                         folderQueue.Enqueue(Path.Combine(rootPath, sd.Name));
                     }
@@ -250,6 +268,7 @@ namespace FolderMorpher.Services
                             {
                                 var sd = localSubDirs[i];
                                 if (sd.IsReparsePoint) continue;
+                                if (ShouldExcludeDirectory(sd.Name, excludeFolderPatterns)) continue;
                                 folderQueue.Enqueue(Path.Combine(currentPath, sd.Name));
                             }
 

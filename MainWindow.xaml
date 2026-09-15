@@ -1039,41 +1039,60 @@
 
                         <StackPanel Grid.Row="0" Margin="0,0,0,12">
                             <TextBlock x:Name="AuditHeaderTitle" Text="🧹 ファイルサーバー健全化 ＆ 断捨離（衛生監査・容量削減）" FontSize="15" FontWeight="Bold" Foreground="#0F172A"/>
-                            <TextBlock x:Name="AuditHeaderDesc" Text="重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長240文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳や退避スクリプトを生成します。"
+                            <TextBlock x:Name="AuditHeaderDesc" Text="重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長240文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳を出力します。"
                                        FontSize="11" Foreground="#64748B" Margin="0,4,0,0"/>
                         </StackPanel>
 
                         <Grid Grid.Row="1">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
 
-                            <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                <TextBlock x:Name="AuditTargetFolderLabel" Text="監査対象ディレクトリ (UNC / ローカル)" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="34" Padding="10,0">
-                                        <TextBox x:Name="AuditPathTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="12" FontFamily="{StaticResource MonoFont}"/>
-                                    </Border>
-                                    <Button x:Name="AuditBrowseButton" Grid.Column="1" Content="📁 参照" Width="96" Height="34" Margin="8,0,0,0"
-                                            Style="{StaticResource FluentButtonSecondary}" Click="AuditBrowseButton_Click"/>
-                                </Grid>
-                            </StackPanel>
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
 
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,4">
-                                <CheckBox x:Name="AuditCheckDuplicatesCheckBox" Content="重複ファイル (SHA256)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12" Foreground="#334155"/>
-                                <CheckBox x:Name="AuditCheckDormantCheckBox" Content="休眠ファイル (3年以上)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12" Foreground="#334155"/>
-                                <CheckBox x:Name="AuditCheckPathLimitsCheckBox" Content="パス長危険域(240字超)/禁則文字" IsChecked="True" VerticalAlignment="Center" Margin="0,0,14,0" FontSize="12" Foreground="#334155"/>
-                                <TextBlock x:Name="AuditBandwidthLabel" Text="帯域制限:" VerticalAlignment="Center" FontSize="12" Foreground="#64748B" Margin="0,0,6,0"/>
-                                <ComboBox x:Name="AuditBandwidthComboBox" Height="30" Width="175" VerticalAlignment="Center" FontSize="11.5">
-                                    <ComboBoxItem x:Name="AuditBandwidthStandardItem" Content="通常 50MB/s (他業務保護)" IsSelected="True" Tag="Standard50MB"/>
-                                    <ComboBoxItem x:Name="AuditBandwidthUnlimitedItem" Content="無制限 (夜間・最速)" Tag="Unlimited"/>
-                                </ComboBox>
-                            </StackPanel>
+                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                    <TextBlock x:Name="AuditTargetFolderLabel" Text="監査対象ディレクトリ (UNC / ローカル)" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="34" Padding="10,0">
+                                            <TextBox x:Name="AuditPathTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="12" FontFamily="{StaticResource MonoFont}"/>
+                                        </Border>
+                                        <Button x:Name="AuditBrowseButton" Grid.Column="1" Content="📁 参照" Width="96" Height="34" Margin="8,0,0,0"
+                                                Style="{StaticResource FluentButtonSecondary}" Click="AuditBrowseButton_Click"/>
+                                    </Grid>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,4">
+                                    <CheckBox x:Name="AuditCheckDuplicatesCheckBox" Content="重複ファイル (SHA256)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12" Foreground="#334155"/>
+                                    <CheckBox x:Name="AuditCheckDormantCheckBox" Content="休眠ファイル (3年以上)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12" Foreground="#334155"/>
+                                    <CheckBox x:Name="AuditCheckPathLimitsCheckBox" Content="パス長危険域(240字超)/禁則文字" IsChecked="True" VerticalAlignment="Center" Margin="0,0,14,0" FontSize="12" Foreground="#334155"/>
+                                    <TextBlock x:Name="AuditBandwidthLabel" Text="帯域制限:" VerticalAlignment="Center" FontSize="12" Foreground="#64748B" Margin="0,0,6,0"/>
+                                    <ComboBox x:Name="AuditBandwidthComboBox" Height="30" Width="175" VerticalAlignment="Center" FontSize="11.5">
+                                        <ComboBoxItem x:Name="AuditBandwidthStandardItem" Content="通常 50MB/s (他業務保護)" IsSelected="True" Tag="Standard50MB"/>
+                                        <ComboBoxItem x:Name="AuditBandwidthUnlimitedItem" Content="無制限 (夜間・最速)" Tag="Unlimited"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid Grid.Row="1" Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="AuditExcludeFoldersLabel" Text="除外フォルダー名 (部分一致 / カンマ区切り):" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,10,0"/>
+                                <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Height="32" Padding="10,0">
+                                    <TextBox x:Name="AuditExcludeFoldersTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="12" FontFamily="{StaticResource MonoFont}"
+                                             ToolTip="指定した名前を含むフォルダー全体を走査対象からスキップします (例: .git, node_modules, temp, archive)"/>
+                                </Border>
+                            </Grid>
                         </Grid>
 
                         <Grid Grid.Row="2" Margin="0,16,0,0">
@@ -1085,8 +1104,6 @@
                                         Style="{StaticResource FluentButtonSecondary}" Click="AuditExportExcelButton_Click" ToolTip="上司・各部署提出用の美麗Excelレポートを生成"/>
                                 <Button x:Name="AuditExportCsvButton" Content="📄 CSV台帳出力" Height="32" Margin="0,0,8,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="AuditExportCsvButton_Click"/>
-                                <Button x:Name="AuditGenArchiveScriptButton" Content="📦 安全退避バッチ生成 (.bat)" Height="32" Margin="0,0,8,0"
-                                        Style="{StaticResource FluentButtonSecondary}" Click="AuditGenArchiveScriptButton_Click" ToolTip="休眠・重複ファイルを安全に別フォルダへ退避するスクリプトを出力"/>
                                 <Button x:Name="AuditDeleteSelectedButton" Content="🗑️ 選択ファイルを完全削除" Height="32" Margin="0,0,8,0"
                                         Background="#EF4444" Foreground="#FFFFFF" FontWeight="Bold" BorderThickness="0"
                                         Style="{StaticResource FluentButtonPrimary}" Click="AuditDeleteSelectedButton_Click"

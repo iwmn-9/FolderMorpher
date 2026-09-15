@@ -227,8 +227,10 @@ namespace FolderMorpher.Services
         // Tab 4: 断捨離・健全化 (Audit & Hygiene)
         // ==========================================
         public static string AuditHeaderTitle => IsJa ? "🧹 ファイルサーバー健全化 ＆ 断捨離（衛生監査・容量削減）" : "🧹 File Server Hygiene & Cleanup";
-        public static string AuditHeaderDesc => IsJa ? "重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長240文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳や退避スクリプトを生成します。" : "Batch detects duplicates (SHA256), dormant files (3+ years), paths > 240 chars, and migration-invalid characters. Generates safe audit ledgers and archive batches.";
+        public static string AuditHeaderDesc => IsJa ? "重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長240文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳を出力します。" : "Batch detects duplicates (SHA256), dormant files (3+ years), paths > 240 chars, and migration-invalid characters. Generates safe audit ledgers (Excel/CSV).";
         public static string AuditTargetFolderLabel => IsJa ? "監査対象ディレクトリ (UNC / ローカル)" : "Target Audit Directory (UNC / Local)";
+        public static string AuditExcludeFoldersLabel => IsJa ? "除外フォルダー名 (部分一致 / カンマ区切り):" : "Exclude Folders (Partial match / Comma-separated):";
+        public static string AuditExcludeFoldersToolTip => IsJa ? "指定した名前を含むフォルダー全体を走査対象からスキップします (例: .git, node_modules, temp, archive)" : "Skip folders containing these names from scanning (e.g. .git, node_modules, temp, archive)";
         public static string AuditKpiTotalFilesTitle => IsJa ? "総走査ファイル数" : "Total Files Scanned";
         public static string AuditKpiDupWastedTitle => IsJa ? "重複ファイルによる無駄" : "Wasted by Duplicates";
         public static string AuditKpiDormantSizeTitle => IsJa ? "休眠ファイル容量 (3年超)" : "Dormant Capacity (3+ Yrs)";
@@ -248,8 +250,6 @@ namespace FolderMorpher.Services
         public static string AuditFilterPath => IsJa ? "パス長・禁則のみ" : "Path / Invalid Only";
         public static string AuditStartScan => IsJa ? "🔍 監査スキャン開始" : "🔍 Start Audit Scan";
         public static string AuditExportExcelToolTip => IsJa ? "上司・各部署提出用の美麗Excelレポートを生成" : "Generate executive Excel audit report (.xlsx)";
-        public static string AuditGenArchiveScript => IsJa ? "📦 安全退避バッチ生成 (.bat)" : "📦 Generate Archive Batch (.bat)";
-        public static string AuditGenArchiveScriptToolTip => IsJa ? "休眠・重複ファイルを安全に別フォルダへ退避するスクリプトを出力" : "Generate batch script to safely move dormant/duplicate files to archive";
         public static string AuditDeleteSelected => IsJa ? "🗑️ 選択ファイルを完全削除" : "🗑️ Delete Selected Files";
         public static string AuditDeleteSelectedToolTip => IsJa ? "チェックを入れたファイルを直接完全削除します（※復元不可）" : "Permanently deletes checked files (Cannot be undone)";
         public static string AuditHeaderCheckToolTip => IsJa ? "すべて選択 / すべて解除" : "Select All / Deselect All";

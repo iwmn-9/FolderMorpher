@@ -2709,6 +2709,16 @@ namespace AstraSize
                 BandwidthLimit = limit
             };
 
+            if (AuditExcludeFoldersTextBox != null && !string.IsNullOrWhiteSpace(AuditExcludeFoldersTextBox.Text))
+            {
+                var patterns = AuditExcludeFoldersTextBox.Text
+                    .Split(new[] { ',', ';', '、' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(p => p.Trim())
+                    .Where(p => !string.IsNullOrEmpty(p))
+                    .ToList();
+                options.ExcludeFolderPatterns.AddRange(patterns);
+            }
+
             var progress = new Progress<AuditProgress>(p =>
             {
                 AuditStatusText.Text = $"{p.CurrentStatus} ({p.ScannedFilesCount:N0}件走査 / 課題: {p.IssueCount}件)";
@@ -2822,57 +2832,6 @@ namespace AstraSize
                 catch (Exception ex)
                 {
                     MessageBox.Show($"CSV出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
-        }
-
-        private void AuditGenArchiveScriptButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (_lastAuditItems == null || _lastAuditItems.Count == 0)
-            {
-                MessageBox.Show("対象となる休眠・重複ファイルがありません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
-            // 重複ファイル（原本候補以外）が存在するか確認し、安全オプトインを選択させる
-            bool hasDuplicates = _lastAuditItems.Any(i => i.IssueType == AuditIssueType.Duplicate && !i.IsOriginalCandidate);
-            bool includeDuplicates = false;
-
-            if (hasDuplicates)
-            {
-                var choice = MessageBox.Show(
-                    "検出された重複ファイル（原本候補以外）も退避バッチに含めますか？\n\n" +
-                    "【はい】: 休眠ファイル ＋ 重複ファイル（原本候補以外）を両方退避\n" +
-                    "【いいえ (推奨)】: 休眠ファイル（3年以上未更新）のみを安全に退避\n\n" +
-                    "※別部署や別システムの設定ファイル等の意図しない誤退避を防ぐため、通常は【いいえ】を推奨します。",
-                    "退避対象の選択（重複ファイルの安全確認）",
-                    MessageBoxButton.YesNoCancel,
-                    MessageBoxImage.Question);
-
-                if (choice == MessageBoxResult.Cancel) return;
-                includeDuplicates = (choice == MessageBoxResult.Yes);
-            }
-
-            var dialog = new SaveFileDialog
-            {
-                Title = "安全退避バッチの保存先",
-                Filter = "バッチファイル (*.bat)|*.bat",
-                InitialDirectory = GetDefaultExportDirectory(),
-                FileName = includeDuplicates ? "Archive-Dormant-And-Duplicates.bat" : "Archive-Dormant-Files.bat"
-            };
-
-            if (dialog.ShowDialog() == true)
-            {
-                try
-                {
-                    string dest = Path.Combine(Path.GetDirectoryName(dialog.FileName) ?? @"C:\", "FolderMorpher_Archive");
-                    _auditService.GenerateArchiveRobocopyScript(dialog.FileName, _lastAuditItems, AuditPathTextBox.Text.Trim(), dest, includeDuplicates);
-                    ShowToast("安全退避バッチを生成しました");
-                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"バッチ生成エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -3787,8 +3746,10 @@ namespace AstraSize
                 AuditKpiPathLimits.Text = isJa ? "0 件" : "0 Items";
             }
             AuditHeaderTitle.Text = isJa ? "🧹 ファイルサーバー健全化 ＆ 断捨離（衛生監査・容量削減）" : "🧹 File Server Hygiene & Cleanup";
-            AuditHeaderDesc.Text = isJa ? "重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長240文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳や退避スクリプトを生成します。" : "Batch detects duplicates (SHA256), dormant files (3+ years), paths > 240 chars, and migration-invalid characters. Generates safe audit ledgers and archive batches.";
+            AuditHeaderDesc.Text = Strings.AuditHeaderDesc;
             AuditTargetFolderLabel.Text = isJa ? "監査対象ディレクトリ (UNC / ローカル)" : "Target Audit Directory (UNC / Local)";
+            if (AuditExcludeFoldersLabel != null) AuditExcludeFoldersLabel.Text = Strings.AuditExcludeFoldersLabel;
+            if (AuditExcludeFoldersTextBox != null) AuditExcludeFoldersTextBox.ToolTip = Strings.AuditExcludeFoldersToolTip;
             AuditKpiTotalFilesTitle.Text = isJa ? "総走査ファイル数" : "Total Files Scanned";
             AuditKpiDupWastedTitle.Text = isJa ? "重複ファイルによる無駄" : "Wasted by Duplicates";
             AuditKpiDormantSizeTitle.Text = isJa ? "休眠ファイル容量 (3年超)" : "Dormant Capacity (3+ Yrs)";
@@ -3822,8 +3783,6 @@ namespace AstraSize
             AuditExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
             AuditExportExcelButton.ToolTip = isJa ? "上司・各部署提出用の美麗Excelレポートを生成" : "Generate executive Excel audit report (.xlsx)";
             AuditExportCsvButton.Content = isJa ? "📄 CSV台帳出力" : "📄 Export CSV";
-            AuditGenArchiveScriptButton.Content = isJa ? "📦 安全退避バッチ生成 (.bat)" : "📦 Generate Archive Batch (.bat)";
-            AuditGenArchiveScriptButton.ToolTip = isJa ? "休眠・重複ファイルを安全に別フォルダへ退避するスクリプトを出力" : "Generate batch script to safely move dormant/duplicate files to archive";
             if (AuditDeleteSelectedButton != null)
             {
                 AuditDeleteSelectedButton.Content = isJa ? "🗑️ 選択ファイルを完全削除" : "🗑️ Delete Selected Files";

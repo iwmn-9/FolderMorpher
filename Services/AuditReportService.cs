@@ -45,7 +45,8 @@ namespace FolderMorpher.Services
                         : $"ファイル走査中 ({count:N0} 件)...";
                     progress?.Report(new AuditProgress { CurrentStatus = status, ScannedFilesCount = count });
                 },
-                ct);
+                ct,
+                excludeFolderPatterns: options.ExcludeFolderPatterns);
 
             summary.TotalFilesScanned = scannedFiles.Count;
             long processedCount = 0;

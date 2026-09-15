@@ -32,6 +32,7 @@ namespace FolderMorpher.Services.Testing
             TestAuditHierarchicalSizeSortingWithDuplicateGroups();
             await TestHeadTailHashAndBandwidthLimiterAsync();
             await TestDormantExclusionWithRecentAccessAsync();
+            await TestFolderExclusionInAuditAsync();
         }
 
         public static void TestAuditArchivalOriginalExclusionAndDeduplication()
@@ -869,6 +870,89 @@ namespace FolderMorpher.Services.Testing
                 if (items.Any(i => i.FileName == "referenced_manual_4y.pdf"))
                 {
                     throw new InvalidOperationException("referenced_manual_4y.pdf was accessed within 1 year and MUST NOT be flagged as dormant.");
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(testDir, true); } catch { }
+            }
+        }
+
+        public static async Task TestFolderExclusionInAuditAsync()
+        {
+            string testDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_FolderExclusion_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(testDir);
+
+            try
+            {
+                var auditService = new AuditReportService();
+                var now = DateTime.Now;
+
+                // 1. 通常フォルダー (走査対象)
+                string normalDir = Path.Combine(testDir, "NormalDocs");
+                Directory.CreateDirectory(normalDir);
+                string normalFile = Path.Combine(normalDir, "doc1.pdf");
+                await File.WriteAllBytesAsync(normalFile, new byte[1024]);
+                File.SetLastWriteTime(normalFile, now.AddYears(-4));
+                File.SetLastAccessTime(normalFile, now.AddYears(-4));
+
+                // 2. 除外対象フォルダー (node_modules: 完全一致パターン)
+                string nodeDir = Path.Combine(testDir, "node_modules");
+                Directory.CreateDirectory(nodeDir);
+                string nodeFile = Path.Combine(nodeDir, "package_dormant.json");
+                await File.WriteAllBytesAsync(nodeFile, new byte[1024]);
+                File.SetLastWriteTime(nodeFile, now.AddYears(-4));
+                File.SetLastAccessTime(nodeFile, now.AddYears(-4));
+
+                // 3. 除外対象フォルダー (Project_Backup_2020: "backup" 部分一致)
+                string backupDir = Path.Combine(testDir, "Project_Backup_2020");
+                Directory.CreateDirectory(backupDir);
+                string backupFile = Path.Combine(backupDir, "backup_file.zip");
+                await File.WriteAllBytesAsync(backupFile, new byte[2048]);
+                File.SetLastWriteTime(backupFile, now.AddYears(-4));
+                File.SetLastAccessTime(backupFile, now.AddYears(-4));
+
+                // 4. 深い階層の除外対象フォルダー (Sub\temp_cache: "temp" 部分一致)
+                string deepDir = Path.Combine(testDir, "Sub", "temp_cache");
+                Directory.CreateDirectory(deepDir);
+                string deepFile = Path.Combine(deepDir, "cache.dat");
+                await File.WriteAllBytesAsync(deepFile, new byte[512]);
+                File.SetLastWriteTime(deepFile, now.AddYears(-4));
+                File.SetLastAccessTime(deepFile, now.AddYears(-4));
+
+                var options = new AuditOptions
+                {
+                    TargetDirectory = testDir,
+                    CheckDuplicates = false,
+                    CheckDormant = true,
+                    CheckPathLimits = false,
+                    DormantYearsThreshold = 3.0,
+                    ExcludeFolderPatterns = new List<string> { "node_modules", "backup", "temp" }
+                };
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                var (summary, items) = await auditService.RunAuditAsync(options, null, cts.Token);
+
+                // 除外フォルダー配下のファイルはスキャンすらされず、NormalDocs\doc1.pdf のみ走査・検出されること
+                if (summary.TotalFilesScanned != 1)
+                {
+                    throw new InvalidOperationException($"Expected exactly 1 scanned file, got {summary.TotalFilesScanned}");
+                }
+
+                if (items.Count != 1)
+                {
+                    throw new InvalidOperationException($"Expected 1 audit item, got {items.Count}");
+                }
+
+                if (items[0].FileName != "doc1.pdf")
+                {
+                    throw new InvalidOperationException($"Expected doc1.pdf, got {items[0].FileName}");
+                }
+
+                // 除外対象のファイルが一切混入していないこと
+                if (items.Any(i => i.FileName == "package_dormant.json" || i.FileName == "backup_file.zip" || i.FileName == "cache.dat"))
+                {
+                    throw new InvalidOperationException("Excluded folder files were erroneously included in audit results.");
                 }
             }
             finally

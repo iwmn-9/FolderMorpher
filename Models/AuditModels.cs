@@ -152,6 +152,7 @@ namespace FolderMorpher.Models
         public bool CheckPathLimits { get; set; } = true;
         public long MinFileSizeBytes { get; set; } = 100 * 1024; // デフォルト100KB以上を重複チェック対象
         public AuditBandwidthLimit BandwidthLimit { get; set; } = AuditBandwidthLimit.Standard50MB;
+        public System.Collections.Generic.List<string> ExcludeFolderPatterns { get; set; } = new();
     }
 
     public class AuditProgress
