@@ -480,21 +480,24 @@ namespace FolderMorpher.Services
 
         public void ExportSimDiffReport(string outputPath, IEnumerable<SimDiffItem> diffs)
         {
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             using var wb = new XLWorkbook();
-            var ws = wb.Worksheets.Add("移行変化点・差分対比");
+            var ws = wb.Worksheets.Add(isJa ? "移行変化点・差分対比" : "Migration Diffs");
             ws.ShowGridLines = true;
 
-            ws.Cell("B2").Value = "FolderMorpher — 移行変化点 差分対比レポート";
+            ws.Cell("B2").Value = isJa ? "FolderMorpher — 移行変化点 差分対比レポート" : "FolderMorpher — Architecture Diff Review Report";
             ws.Cell("B2").Style.Font.Bold = true;
             ws.Cell("B2").Style.Font.FontSize = 15;
             ws.Cell("B2").Style.Font.FontColor = XLColor.FromHtml("#1E3A8A");
 
-            ws.Cell("B3").Value = $"出力日時: {DateTime.Now:yyyy/MM/dd HH:mm:ss}";
+            ws.Cell("B3").Value = isJa ? $"出力日時: {DateTime.Now:yyyy/MM/dd HH:mm:ss}" : $"Exported: {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
             ws.Cell("B3").Style.Font.FontSize = 10;
             ws.Cell("B3").Style.Font.FontColor = XLColor.DimGray;
 
             int headerRow = 5;
-            string[] headers = { "変化の種別", "現行サーバー (Before)", "Before詳細", "新環境設計 (After)", "After詳細", "権限差分詳細" };
+            string[] headers = isJa
+                ? new[] { "変化の種別", "現行サーバー (Before)", "Before詳細", "新環境設計 (After)", "After詳細", "権限差分詳細" }
+                : new[] { "Diff Type", "Source Server (Before)", "Before Details", "Target Architecture (After)", "After Details", "ACL Diff Details" };
             for (int col = 0; col < headers.Length; col++)
             {
                 var cell = ws.Cell(headerRow, col + 2);
@@ -548,21 +551,24 @@ namespace FolderMorpher.Services
 
         public void ExportSimulationDesignMatrix(string outputPath, IEnumerable<SimFolderNode> rootNodes)
         {
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             using var wb = new XLWorkbook();
-            var ws = wb.Worksheets.Add("新環境設計マトリクス");
+            var ws = wb.Worksheets.Add(isJa ? "新環境設計マトリクス" : "Design Matrix");
             ws.ShowGridLines = true;
 
-            ws.Cell("B2").Value = "FolderMorpher — 移行設計台帳マトリクス";
+            ws.Cell("B2").Value = isJa ? "FolderMorpher — 移行設計台帳マトリクス" : "FolderMorpher — Migration Design Specification Matrix";
             ws.Cell("B2").Style.Font.Bold = true;
             ws.Cell("B2").Style.Font.FontSize = 15;
             ws.Cell("B2").Style.Font.FontColor = XLColor.FromHtml("#1E3A8A");
 
-            ws.Cell("B3").Value = $"出力日時: {DateTime.Now:yyyy/MM/dd HH:mm:ss}";
+            ws.Cell("B3").Value = isJa ? $"出力日時: {DateTime.Now:yyyy/MM/dd HH:mm:ss}" : $"Exported: {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
             ws.Cell("B3").Style.Font.FontSize = 10;
             ws.Cell("B3").Style.Font.FontColor = XLColor.DimGray;
 
             int headerRow = 5;
-            string[] headers = { "階層パス", "フォルダ名", "階層レベル", "移行元マッピング", "元容量", "継承状態", "アカウント", "権限種別", "アクセス許可" };
+            string[] headers = isJa
+                ? new[] { "階層パス", "フォルダ名", "階層レベル", "移行元マッピング", "元容量", "継承状態", "アカウント", "権限種別", "アクセス許可" }
+                : new[] { "Path", "Folder Name", "Level", "Source Mapping", "Size", "Inheritance", "Account", "Access Type", "Permissions" };
             for (int col = 0; col < headers.Length; col++)
             {
                 var cell = ws.Cell(headerRow, col + 2);
@@ -577,7 +583,7 @@ namespace FolderMorpher.Services
 
             void WriteNode(SimFolderNode node)
             {
-                var mappingStr = node.MappedSourcePaths.Count == 0 ? "(新設)" : string.Join(" | ", node.MappedSourcePaths);
+                var mappingStr = node.MappedSourcePaths.Count == 0 ? (isJa ? "(新設)" : "(New)") : string.Join(" | ", node.MappedSourcePaths);
                 if (node.AclEntries.Count == 0)
                 {
                     ws.Cell(row, 2).Value = node.RelativePath;
@@ -586,7 +592,7 @@ namespace FolderMorpher.Services
                     ws.Cell(row, 5).Value = mappingStr;
                     ws.Cell(row, 6).Value = node.FormattedSize;
                     ws.Cell(row, 7).Value = node.InheritStatusBadge;
-                    ws.Cell(row, 8).Value = "(設定なし)";
+                    ws.Cell(row, 8).Value = isJa ? "(設定なし)" : "(None)";
                     ws.Cell(row, 9).Value = "-";
                     ws.Cell(row, 10).Value = "-";
                     row++;

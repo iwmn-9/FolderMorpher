@@ -47,6 +47,7 @@ namespace AstraSize.Views
         private bool _dragCancelled = false;
 
         // AD自動同期 ＆ 新規フォルダー作成 状態管理
+        public event Action? RefreshAdRequested;
         private System.Windows.Threading.DispatcherTimer? _adSyncTimer;
         private List<AdPrincipalItem> _rawPrincipalsCache = new();
         private string _targetParentFolderForNewFolder = string.Empty;
@@ -74,6 +75,7 @@ namespace AstraSize.Views
         public LiveAclStudio()
         {
             InitializeComponent();
+            DataContext = this;
 
             LiveAclMultiPanelsItemsControl.ItemsSource = _liveAclPanels;
             LiveAclFolderTreeView.ItemsSource = _liveAclFolderTreeRoots;
@@ -101,8 +103,27 @@ namespace AstraSize.Views
             _aclService = aclService;
             _adService = adService;
             _effectiveAccessService = effectiveAccessService;
+            UpdateDomainBadge();
             StartAdSyncTimer();
-            _ = CheckAdChangesAsync(forceRefresh: true);
+            _ = CheckAdChangesAsync(forceRefresh: false);
+        }
+
+        public void UpdateDomainBadge()
+        {
+            if (_adService == null || LiveAclDomainStatusText == null || LiveAclDomainStatusBadge == null) return;
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+            if (_adService.IsDomainJoined)
+            {
+                LiveAclDomainStatusText.Text = $"🟢 {_adService.CurrentDomainName.ToUpperInvariant()}";
+                LiveAclDomainStatusBadge.Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#DCFCE7")!;
+                LiveAclDomainStatusText.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#15803D")!;
+            }
+            else
+            {
+                LiveAclDomainStatusText.Text = Strings.AdDomainLocal;
+                LiveAclDomainStatusBadge.Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FEF3C7")!;
+                LiveAclDomainStatusText.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#B45309")!;
+            }
         }
 
         public void SetPrincipals(IEnumerable<AdPrincipalItem> principals)
@@ -1089,7 +1110,14 @@ namespace AstraSize.Views
 
         private void AdRefreshButton_Click(object sender, RoutedEventArgs e)
         {
-            _ = CheckAdChangesAsync(forceRefresh: true);
+            if (RefreshAdRequested != null)
+            {
+                RefreshAdRequested.Invoke();
+            }
+            else
+            {
+                _ = CheckAdChangesAsync(forceRefresh: true);
+            }
         }
 
         private void StartAdSyncTimer()
@@ -1123,7 +1151,7 @@ namespace AstraSize.Views
                     UpdateLiveAclNoticeState();
                     if (forceRefresh)
                     {
-                        ShowToast("🔄 AD/ローカル アカウント一覧を最新に更新しました");
+                        ShowToast(Strings.AdSyncUpdatedToast);
                     }
                 }
             }
@@ -1528,6 +1556,12 @@ namespace AstraSize.Views
             LiveAclReloadButton.ToolTip = isJa ? "フォルダ階層を展開" : "Expand folder hierarchy";
 
             LiveAclPrincipalsHeaderTitle.Text = isJa ? "👥 Active Directory / ローカル" : "👥 Active Directory / Local";
+            AdSyncBadgeText.Text = Strings.AdSyncBadge;
+            AdSyncBadgeBorder.ToolTip = Strings.AdSyncToolTip;
+            AdRefreshButton.ToolTip = Strings.AdRefreshToolTip;
+            LiveAclDomainStatusBadge.ToolTip = Strings.AdDomainJoinedTooltip;
+            UpdateDomainBadge();
+
             LiveAclLocalPcTitle.Text = isJa ? "⚠️ ローカルPC環境" : "⚠️ Local PC Environment";
             LiveAclLocalPcDesc.Text = isJa ? "※ローカルPC環境のためADプリンシパルは未接続です\n（上部の入力欄から直接アカウント名を入力して追加可能）" : "※Not connected to Active Directory in local PC environment.\n(Direct account name input is available)";
 

@@ -59,6 +59,8 @@ namespace AstraSize
         // Simulation Studio State
         private readonly ObservableCollection<SimFolderNode> _simRootFolders = new();
         private readonly ObservableCollection<AdPrincipalItem> _adPrincipals = new();
+        private List<AdPrincipalItem> _rawAdPrincipalsCache = new();
+        private DispatcherTimer? _adSyncTimer;
         private SimFolderNode? _selectedSimNode;
         private SimAclEntry? _currentEditingAcl;
         private SkeletonDeployPlan? _currentSkeletonPlan;
@@ -966,17 +968,40 @@ namespace AstraSize
             _simRootFolders.CollectionChanged += (s, e) => UpdateSimEmptyState();
             UpdateSimEmptyState();
 
+            // ドメイン状態バッジの初期表示
+            UpdateSimulationDomainBadge();
+
+            // Live ACL との AD 更新連動（双方向連携）
+            LiveAclStudioControl.RefreshAdRequested += () => _ = CheckAndSyncAdPrincipalsAsync(forceRefresh: true);
+
+            // 30秒周期のバックグラウンド自動同期タイマー
+            _adSyncTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(30)
+            };
+            _adSyncTimer.Tick += async (s, e) => await CheckAndSyncAdPrincipalsAsync(forceRefresh: false);
+
+            Loaded += (s, e) => _adSyncTimer?.Start();
+            Closed += (s, e) => _adSyncTimer?.Stop();
+        }
+
+        private void UpdateSimulationDomainBadge()
+        {
+            if (DomainStatusText == null || DomainStatusBadge == null) return;
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             if (_adService.IsDomainJoined)
             {
                 DomainStatusText.Text = $"🟢 {_adService.CurrentDomainName.ToUpperInvariant()}";
                 DomainStatusBadge.Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#DCFCE7")!;
+                DomainStatusText.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#15803D")!;
             }
             else
             {
-                DomainStatusText.Text = "🟡 ローカル環境 (AD未接続)";
+                DomainStatusText.Text = Strings.AdDomainLocal;
                 DomainStatusBadge.Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#FEF3C7")!;
                 DomainStatusText.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#B45309")!;
             }
+            DomainStatusBadge.ToolTip = Strings.AdDomainJoinedTooltip;
         }
 
         private void UpdateSimEmptyState()
@@ -990,9 +1015,55 @@ namespace AstraSize
         private async Task LoadAdPrincipalsAsync(string filter = "")
         {
             var list = await _adService.SearchPrincipalsAsync(filter);
+            _rawAdPrincipalsCache = list;
             _adPrincipals.Clear();
             foreach (var item in list) _adPrincipals.Add(item);
             LiveAclStudioControl.SetPrincipals(_adPrincipals);
+        }
+
+        private async Task CheckAndSyncAdPrincipalsAsync(bool forceRefresh = false)
+        {
+            if (_adService == null) return;
+            try
+            {
+                var currentQuery = AdSearchTextBox?.Text?.Trim() ?? "";
+                var latest = await _adService.SearchPrincipalsAsync(currentQuery);
+                if (forceRefresh || HasPrincipalsChanged(_rawAdPrincipalsCache, latest))
+                {
+                    _rawAdPrincipalsCache = latest;
+                    _adPrincipals.Clear();
+                    foreach (var p in latest) _adPrincipals.Add(p);
+                    LiveAclStudioControl.SetPrincipals(_adPrincipals);
+                    if (forceRefresh)
+                    {
+                        ShowToast(Strings.AdSyncUpdatedToast);
+                    }
+                }
+            }
+            catch
+            {
+                // バックグラウンド同期の一時的ネットワーク例外等はサイレント処理
+            }
+        }
+
+        private static bool HasPrincipalsChanged(List<AdPrincipalItem> oldList, List<AdPrincipalItem> newList)
+        {
+            if (oldList.Count != newList.Count) return true;
+            for (int i = 0; i < oldList.Count; i++)
+            {
+                if (!string.Equals(oldList[i].AccountName, newList[i].AccountName, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(oldList[i].DisplayName, newList[i].DisplayName, StringComparison.OrdinalIgnoreCase) ||
+                    oldList[i].PrincipalType != newList[i].PrincipalType)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void SimAdRefreshButton_Click(object sender, RoutedEventArgs e)
+        {
+            _ = CheckAndSyncAdPrincipalsAsync(forceRefresh: true);
         }
 
         private async void AdSearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -2130,9 +2201,10 @@ namespace AstraSize
             var targetRoot = SimTargetRootTextBox.Text.Trim();
             var diffs = _simService.GenerateDiffReview(_currentTab?.RootNode, _simRootFolders);
             DiffReviewDataGrid.ItemsSource = diffs;
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             DiffSummaryStatsText.Text = string.IsNullOrWhiteSpace(targetRoot)
-                ? $"📊 差分項目: {diffs.Count}件"
-                : $"📊 差分項目: {diffs.Count}件 (展開先: {targetRoot})";
+                ? (isJa ? $"📊 差分項目: {diffs.Count}件" : $"📊 Diff Items: {diffs.Count}")
+                : (isJa ? $"📊 差分項目: {diffs.Count}件 (展開先: {targetRoot})" : $"📊 Diff Items: {diffs.Count} (Target: {targetRoot})");
             DiffModalOverlay.Visibility = Visibility.Visible;
         }
 
@@ -2144,9 +2216,11 @@ namespace AstraSize
         private async void DiffModalApply_Click(object sender, RoutedEventArgs e)
         {
             var targetRoot = SimTargetRootTextBox.Text.Trim();
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             if (string.IsNullOrWhiteSpace(targetRoot))
             {
-                MessageBox.Show("移行先ルートフォルダを入力してください。", "通知", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(isJa ? "移行先ルートフォルダを入力してください。" : "Please enter target root folder.",
+                                isJa ? "通知" : "Notice", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -2158,7 +2232,7 @@ namespace AstraSize
 
             var progress = new Progress<(string Status, int Count)>(p =>
             {
-                StatusTextBlock.Text = $"{p.Status} ({p.Count} 作成済)";
+                StatusTextBlock.Text = isJa ? $"{p.Status} ({p.Count} 作成済)" : $"{p.Status} ({p.Count} created)";
             });
 
             try
@@ -2174,25 +2248,36 @@ namespace AstraSize
 
                 if (isCleanSuccess)
                 {
-                    string skippedMsg = deployResult.SkippedExistingCount > 0 ? $" ({deployResult.SkippedExistingCount} 既存保護)" : "";
-                    ShowToast($"✅ スケルトン作成完了 (Plan-First全階層検証済): {deployResult.CreatedCount} フォルダ作成{skippedMsg}");
+                    string skippedMsg = deployResult.SkippedExistingCount > 0
+                        ? (isJa ? $" ({deployResult.SkippedExistingCount} 既存保護)" : $" ({deployResult.SkippedExistingCount} existing protected)")
+                        : "";
+                    ShowToast(isJa
+                        ? $"✅ スケルトン作成完了 (Plan-First全階層検証済): {deployResult.CreatedCount} フォルダ作成{skippedMsg}"
+                        : $"✅ Skeleton deployment complete: {deployResult.CreatedCount} folders created{skippedMsg}");
                 }
                 else if (deployResult.ConflictCount > 0)
                 {
-                    ShowToast($"⚠️ 外部変更を検知 ({deployResult.ConflictCount}件スキップ): {deployResult.CreatedCount} フォルダ作成。ツリーを再確認してください");
+                    ShowToast(isJa
+                        ? $"⚠️ 外部変更を検知 ({deployResult.ConflictCount}件スキップ): {deployResult.CreatedCount} フォルダ作成。ツリーを再確認してください"
+                        : $"⚠️ External change detected ({deployResult.ConflictCount} skipped): {deployResult.CreatedCount} folders created. Please review tree");
                 }
                 else if (allPathsExist && deployResult.FailedCount > 0)
                 {
-                    ShowToast($"⚠️ スケルトン作成完了 (一部権限警告 {deployResult.FailedCount}件): {deployResult.CreatedCount} フォルダ作成");
+                    ShowToast(isJa
+                        ? $"⚠️ スケルトン作成完了 (一部権限警告 {deployResult.FailedCount}件): {deployResult.CreatedCount} フォルダ作成"
+                        : $"⚠️ Skeleton deployment complete (ACL warnings: {deployResult.FailedCount}): {deployResult.CreatedCount} folders created");
                 }
                 else
                 {
-                    ShowToast($"⚠️ スケルトン作成警告: 一部のフォルダー実在を確認できませんでした (エラー: {deployResult.FailedCount}件)");
+                    ShowToast(isJa
+                        ? $"⚠️ スケルトン作成警告: 一部のフォルダー実在を確認できませんでした (エラー: {deployResult.FailedCount}件)"
+                        : $"⚠️ Skeleton deployment warning: Some folders could not be verified (Errors: {deployResult.FailedCount})");
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"スケルトン作成失敗: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(isJa ? $"スケルトン作成失敗: {ex.Message}" : $"Skeleton deployment failed: {ex.Message}",
+                                isJa ? "エラー" : "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -2311,33 +2396,45 @@ namespace AstraSize
         private void SimDeploySkeletonButton_Click(object sender, RoutedEventArgs e)
         {
             var targetRoot = SimTargetRootTextBox.Text.Trim();
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             if (string.IsNullOrWhiteSpace(targetRoot))
             {
-                MessageBox.Show("移行先ルートフォルダを入力してください。", "通知", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(isJa ? "移行先ルートフォルダを入力してください。" : "Please enter target root folder.",
+                                isJa ? "通知" : "Notice", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             // Plan-First: 実行計画 (SkeletonDeployPlan) を事前構築し、同一インスタンスをプレビュー・コミットで貫通
             _currentSkeletonPlan = _simService.BuildDeployPlan(_simRootFolders, targetRoot, _currentTab?.RootNode);
             DiffReviewDataGrid.ItemsSource = _currentSkeletonPlan.DiffReviews;
-            DiffSummaryStatsText.Text = $"📊 計画項目: 作成予定 {_currentSkeletonPlan.PlannedCreateCount}件 / 既存保護 {_currentSkeletonPlan.PlannedExistingCount}件 (展開先: {targetRoot})";
+            DiffSummaryStatsText.Text = isJa
+                ? $"📊 計画項目: 作成予定 {_currentSkeletonPlan.PlannedCreateCount}件 / 既存保護 {_currentSkeletonPlan.PlannedExistingCount}件 (展開先: {targetRoot})"
+                : $"📊 Planned Items: {_currentSkeletonPlan.PlannedCreateCount} to create / {_currentSkeletonPlan.PlannedExistingCount} protected (Target: {targetRoot})";
             DiffModalOverlay.Visibility = Visibility.Visible;
         }
 
         private void SimExportScriptsButton_Click(object sender, RoutedEventArgs e)
         {
             var targetRoot = SimTargetRootTextBox.Text.Trim();
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
 
-            var modeResult = MessageBox.Show(
-                "Robocopy の転送モードを選択してください：\n\n" +
-                "【はい (推奨)】 新設計ACL維持モード (/COPY:DAT)\n" +
-                "  FolderMorpherで設計・先行展開した新ACLを保護し、データと日時のみ高速転送します。\n\n" +
-                "【いいえ】 旧環境ACL完全維持モード (/COPYALL)\n" +
-                "  FolderMorpherで設計した新ACLは上書きされ、移行元の古いアクセス権をそのまま引き継ぎます。\n\n" +
-                "（キャンセルで出力中止）",
-                "Robocopy 転送モード選択",
-                MessageBoxButton.YesNoCancel,
-                MessageBoxImage.Question);
+            string message = isJa
+                ? "Robocopy の転送モードを選択してください：\n\n" +
+                  "【はい (推奨)】 新設計ACL維持モード (/COPY:DAT)\n" +
+                  "  FolderMorpherで設計・先行展開した新ACLを保護し、データと日時のみ高速転送します。\n\n" +
+                  "【いいえ】 旧環境ACL完全維持モード (/COPYALL)\n" +
+                  "  FolderMorpherで設計した新ACLは上書きされ、移行元の古いアクセス権をそのまま引き継ぎます。\n\n" +
+                  "（キャンセルで出力中止）"
+                : "Select Robocopy Transfer Mode:\n\n" +
+                  "[Yes (Recommended)] Preserve New ACLs (/COPY:DAT)\n" +
+                  "  Protects newly designed & deployed ACLs; transfers data and timestamps only.\n\n" +
+                  "[No] Keep Source ACLs (/COPYALL)\n" +
+                  "  Overwrites designed ACLs with source server permissions.\n\n" +
+                  "(Cancel to abort)";
+
+            string title = isJa ? "Robocopy 転送モード選択" : "Select Robocopy Mode";
+
+            var modeResult = MessageBox.Show(message, title, MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
 
             if (modeResult == MessageBoxResult.Cancel) return;
             bool copyAcl = (modeResult == MessageBoxResult.No);
@@ -3580,62 +3677,69 @@ namespace AstraSize
             // ==========================================
             SimTargetBrowseButton.Content = isJa ? "参照..." : "Browse...";
             SimSourceLoadButton.Content = isJa ? "読込" : "Load";
-            SimCloneSelectedButton.Content = isJa ? "➡️ 選択フォルダを中央へ新設配置" : "➡️ Clone Selected to Center";
-            SimAddRootFolderButton.Content = isJa ? "＋ ルートフォルダ新設" : "＋ Add Root Folder";
-            SimSaveProjectButton.Content = isJa ? "💾 保存" : "💾 Save";
-            SimSaveProjectButton.ToolTip = isJa ? "プロジェクト保存 (.fmorph)" : "Save Project (.fmorph)";
-            SimLoadProjectButton.Content = isJa ? "📂 読込" : "📂 Load";
-            SimLoadProjectButton.ToolTip = isJa ? "プロジェクト読込" : "Load Project";
-            SimDiffReviewButton.Content = isJa ? "⚖️ 差分 (Diff)" : "⚖️ Review Diffs";
-            SimDiffReviewButton.ToolTip = isJa ? "変化点差分インスペクター" : "Review Architecture Diffs";
-            SimDeploySkeletonButton.Content = isJa ? "🚀 スケルトン作成" : "🚀 Deploy Skeleton";
-            SimDeploySkeletonButton.ToolTip = isJa ? "空フォルダ階層と設計済みNTFSアクセス権を新環境へ先行展開" : "Deploy skeleton folders and ACLs to target server";
-            SimExportScriptsButton.Content = isJa ? "⚙️ 移行スクリプト" : "⚙️ Export Scripts";
-            SimExportScriptsButton.ToolTip = isJa ? "Robocopy / FastCopy スクリプト生成" : "Generate Robocopy / FastCopy scripts";
-            SimExportExcelButton.Content = isJa ? "📊 Excel設計書" : "📊 Export Excel";
-            SimExportExcelButton.ToolTip = isJa ? "移行設計書Excel出力" : "Export Migration Specification (.xlsx)";
-            SimInheritCheckBox.Content = isJa ? "親からの権限継承を含める" : "Inherit from parent";
-            SimOpenSecModalButton.Content = isJa ? "⚙️ セキュリティ詳細設定" : "⚙️ Advanced Security";
+            SimCloneSelectedButton.Content = Strings.CloneSelectedToCenter;
+            SimAddRootFolderButton.Content = Strings.AddRootFolder;
+            SimSaveProjectButton.Content = Strings.Save;
+            SimSaveProjectButton.ToolTip = Strings.SaveProjectToolTip;
+            SimLoadProjectButton.Content = Strings.Load;
+            SimLoadProjectButton.ToolTip = Strings.LoadProjectToolTip;
+            SimDiffReviewButton.Content = Strings.ReviewDiffs;
+            SimDiffReviewButton.ToolTip = Strings.ReviewDiffsToolTip;
+            SimDeploySkeletonButton.Content = Strings.DeploySkeleton;
+            SimDeploySkeletonButton.ToolTip = Strings.DeploySkeletonToolTip;
+            SimExportScriptsButton.Content = Strings.ExportScripts;
+            SimExportScriptsButton.ToolTip = Strings.ExportScriptsToolTip;
+            SimExportExcelButton.Content = Strings.ExportSimExcel;
+            SimExportExcelButton.ToolTip = Strings.ExportSimExcelToolTip;
+            SimInheritCheckBox.Content = Strings.InheritFromParent;
+            SimOpenSecModalButton.Content = Strings.AdvancedSecurity;
 
-            if (SimInspectorTitleText != null) SimInspectorTitleText.Text = isJa ? "③ フォルダ詳細 ＆ 権限設定" : "③ Folder Details & Permissions";
+            if (SimInspectorTitleText != null) SimInspectorTitleText.Text = Strings.SimInspectorTitle;
             if (SimSourceBrowseButton != null)
             {
                 SimSourceBrowseButton.Content = isJa ? "参照..." : "Browse...";
-                SimSourceBrowseButton.ToolTip = isJa ? "現行フォルダ（UNCまたはローカル）を参照選択" : "Browse source directory (UNC or local)";
+                SimSourceBrowseButton.ToolTip = Strings.BrowseSourceToolTip;
             }
+
+            if (SimEmptyStateTitleText != null) SimEmptyStateTitleText.Text = Strings.SimEmptyStateTitle;
+            if (SimEmptyStateDescText != null) SimEmptyStateDescText.Text = Strings.SimEmptyStateDesc;
+
+            if (SimAdSyncBadgeText != null) SimAdSyncBadgeText.Text = Strings.AdSyncBadge;
+            if (SimAdSyncBadgeBorder != null) SimAdSyncBadgeBorder.ToolTip = Strings.AdSyncToolTip;
+            if (SimAdRefreshButton != null) SimAdRefreshButton.ToolTip = Strings.AdRefreshToolTip;
+            UpdateSimulationDomainBadge();
 
             if (SimProjectNameTextBox.Text == "新ファイルサーバー移行設計_Ver1" || SimProjectNameTextBox.Text == "New File Server Migration Plan_Ver1")
             {
-                SimProjectNameTextBox.Text = isJa ? "新ファイルサーバー移行設計_Ver1" : "New File Server Migration Plan_Ver1";
+                SimProjectNameTextBox.Text = Strings.DefaultProjectName;
             }
-            if (SimSelectedFolderNameText.Text == "(未選択 - 上のフォルダをクリック)" || SimSelectedFolderNameText.Text == "(None selected - Click a folder above)")
+            if (SimSelectedFolderNameText.Text == "(未選択 - 左のフォルダをクリック)" ||
+                SimSelectedFolderNameText.Text == "(未選択 - 上のフォルダをクリック)" ||
+                SimSelectedFolderNameText.Text == "(None selected - Click a folder on left)" ||
+                SimSelectedFolderNameText.Text == "(None selected - Click a folder above)")
             {
-                SimSelectedFolderNameText.Text = isJa ? "(未選択 - 上のフォルダをクリック)" : "(None selected - Click a folder above)";
-            }
-            if (!_adService.IsDomainJoined)
-            {
-                DomainStatusText.Text = isJa ? "🟡 ローカル環境 (AD未接続)" : "🟡 Local PC (No AD Domain)";
+                SimSelectedFolderNameText.Text = Strings.NoneSelectedClickFolder;
             }
 
-            SimTargetRootLabel.Text = isJa ? "移行先 新サーバーのルートパス (UNC / ローカル)" : "Target Root Path on Destination Server (UNC / Local)";
-            SimSourceTitleText.Text = isJa ? "現行ファイルサーバー (移行元)" : "Source File Server (Existing)";
-            SimSourceSubText.Text = isJa ? "フォルダーを選択して中央へドラッグ＆ドロップ、または下部ボタンで新設ツリーに配置" : "Select folders and drag & drop to center, or use button below";
-            SimMockTreeTitleText.Text = isJa ? "新サーバー仮想ツリー設計 (FolderMorph Studio)" : "Target Virtual Tree Architecture (FolderMorph Studio)";
-            SimMockTreeSubText.Text = isJa ? "N:1 統合・階層再編成・新設計ACLを直感的にデザイン。右クリックでフォルダ追加/削除" : "Intuitive N:1 consolidation, restructuring & ACL design. Right-click to add/remove";
-            SimSelectedFolderPrefixText.Text = isJa ? "選択中: " : "Target: ";
-            SimSubfolderDropHintText.Text = isJa ? "➕ 左の現行サーバーまたはエクスプローラーからフォルダをドロップして追加" : "➕ Drop folders from source server or Explorer to add subfolders";
-            SimMappingTitleText.Text = isJa ? "🔗 移行元マッピング (データ移行元 / N:1統合)" : "🔗 Source Mappings (Data Sources / N:1 Consolidation)";
-            SimAclTitleText.Text = isJa ? "新設計 アクセス権エントリ (ACE)" : "Target Access Control Entries (ACEs)";
-            SimAdHeaderTitle.Text = isJa ? "Active Directory / ローカル候補" : "Active Directory / Local Principals";
-            SimAdHeaderSubText.Text = isJa ? "中央の権限エリアへドラッグ＆ドロップして付与" : "Drag & drop to center permissions area to grant";
+            SimTargetRootLabel.Text = Strings.TargetRootLabel;
+            SimSourceTitleText.Text = Strings.SourceTitle;
+            SimSourceSubText.Text = Strings.SourceSubText;
+            SimMockTreeTitleText.Text = Strings.MockTreeTitle;
+            SimMockTreeSubText.Text = Strings.MockTreeSubText;
+            SimSelectedFolderPrefixText.Text = Strings.SelectedFolderPrefix;
+            SimSubfolderDropHintText.Text = Strings.SubfolderDropHint;
+            SimMappingTitleText.Text = Strings.SimMappingTitle;
+            SimAclTitleText.Text = Strings.SimAclTitle;
+            SimAdHeaderTitle.Text = Strings.SimAdHeaderTitle;
+            SimAdHeaderSubText.Text = Strings.SimAdHeaderSubText;
 
             // Simulation Tree ContextMenu
-            SimCtxNewSubfolder.Header = isJa ? "📁 新規サブフォルダ作成" : "📁 New Subfolder";
-            SimCtxRename.Header = isJa ? "✏️ フォルダ名の変更" : "✏️ Rename Folder";
-            SimCtxPromoteRoot.Header = isJa ? "⏮ 第1階層（ルート）へ昇格" : "⏮ Promote to Root (Level 1)";
-            SimCtxPromote.Header = isJa ? "◀ 1階層昇格" : "◀ Promote 1 Level";
-            SimCtxDemote.Header = isJa ? "▶ 1階層降格 (サブ化)" : "▶ Demote 1 Level (Make Subfolder)";
-            SimCtxDelete.Header = isJa ? "🗑️ 削除" : "🗑️ Delete";
+            SimCtxNewSubfolder.Header = Strings.CtxNewSubfolder;
+            SimCtxRename.Header = Strings.CtxRenameFolder;
+            SimCtxPromoteRoot.Header = Strings.CtxPromoteRoot;
+            SimCtxPromote.Header = Strings.CtxPromote;
+            SimCtxDemote.Header = Strings.CtxDemote;
+            SimCtxDelete.Header = Strings.Delete;
 
             // 仮想ツリーの各ノードの表示言語更新
             foreach (var root in _simRootFolders)

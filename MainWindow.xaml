@@ -593,11 +593,15 @@
                             </Grid.RowDefinitions>
 
                             <Grid Grid.Row="0" Margin="0,0,0,8">
-                                <StackPanel>
-                                    <TextBlock x:Name="SimMockTreeTitleText" Text="② 新環境 仮想フォルダツリー" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
-                                    <TextBlock x:Name="SimMockTreeSubText" Text="💡 フォルダ行にドロップでサブ化 / クイックボタンで階層変更" FontSize="10" Foreground="#0284C7"/>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,8,0" VerticalAlignment="Center">
+                                    <TextBlock x:Name="SimMockTreeTitleText" Text="② 新環境 仮想フォルダツリー" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock x:Name="SimMockTreeSubText" Text="💡 フォルダ行にドロップでサブ化 / クイックボタンで階層変更" FontSize="10" Foreground="#0284C7" TextTrimming="CharacterEllipsis"/>
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                                     <Button x:Name="SimAddRootFolderButton" Content="＋ ルート新設" Height="26" Style="{StaticResource FluentButtonSecondary}"
                                             FontSize="10.5" Padding="6,2" Click="SimAddRootFolderButton_Click"/>
                                 </StackPanel>
@@ -707,11 +711,15 @@
                             <StackPanel Grid.Row="0" Margin="0,0,0,8">
                                 <TextBlock x:Name="SimInspectorTitleText" Text="③ フォルダ詳細 ＆ 権限設定" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
                                 <Grid Margin="0,4,0,0">
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
                                         <TextBlock x:Name="SimSelectedFolderPrefixText" Text="📁 " FontWeight="Bold" FontSize="12" Foreground="#334155"/>
                                         <TextBlock x:Name="SimSelectedFolderNameText" Text="(未選択 - 左のフォルダをクリック)" FontWeight="Bold" FontSize="12" Foreground="#0284C7" TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
-                                    <CheckBox x:Name="SimInheritCheckBox" Content="親の権限継承" HorizontalAlignment="Right"
+                                    <CheckBox Grid.Column="1" x:Name="SimInheritCheckBox" Content="親の権限継承" HorizontalAlignment="Right" VerticalAlignment="Center"
                                               FontSize="11" Checked="SimInheritCheckBox_Changed" Unchecked="SimInheritCheckBox_Changed"/>
                                 </Grid>
                             </StackPanel>
@@ -828,15 +836,29 @@
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
-                            <StackPanel Grid.Row="0" Margin="0,0,0,8">
-                                <Grid>
-                                    <TextBlock x:Name="SimAdHeaderTitle" Text="④ AD パレット" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
-                                    <Border x:Name="DomainStatusBadge" Background="#DCFCE7" CornerRadius="4" Padding="6,1" HorizontalAlignment="Right">
-                                        <TextBlock x:Name="DomainStatusText" Text="🟢 CORP.LOCAL" FontSize="10" FontWeight="SemiBold" Foreground="#15803D"/>
+                            <Grid Grid.Row="0" Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock x:Name="SimAdHeaderTitle" Text="④ AD パレット" FontWeight="Bold" FontSize="12" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock x:Name="SimAdHeaderSubText" Text="カードを中央のフォルダまたは詳細へドラッグ" FontSize="10" Foreground="#64748B" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <Border x:Name="DomainStatusBadge" Background="#DCFCE7" CornerRadius="4" Padding="6,1" Margin="0,0,6,0" VerticalAlignment="Center"
+                                            ToolTip="接続中のActive Directoryドメイン">
+                                        <TextBlock x:Name="DomainStatusText" Text="🟢 CORP.LOCAL" FontSize="9.5" FontWeight="SemiBold" Foreground="#15803D"/>
                                     </Border>
-                                </Grid>
-                                <TextBlock x:Name="SimAdHeaderSubText" Text="カードを中央のフォルダまたは詳細へドラッグ" FontSize="10" Foreground="#64748B" Margin="0,2,0,0"/>
-                            </StackPanel>
+                                    <Border x:Name="SimAdSyncBadgeBorder" Background="#DCFCE7" CornerRadius="4" Padding="6,1" Margin="0,0,6,0" VerticalAlignment="Center"
+                                            ToolTip="30秒ごとにドメイン/ローカルのアカウント変化を自動チェック">
+                                        <TextBlock x:Name="SimAdSyncBadgeText" Text="🟢 自動同期 (30s)" FontSize="9.5" FontWeight="SemiBold" Foreground="#15803D"/>
+                                    </Border>
+                                    <Button x:Name="SimAdRefreshButton" Content="🔄" Width="22" Height="22" Padding="0" FontSize="11"
+                                            Style="{StaticResource FluentButtonSecondary}" ToolTip="ADアカウントを今すぐ最新に更新"
+                                            Click="SimAdRefreshButton_Click"/>
+                                </StackPanel>
+                            </Grid>
 
                             <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Padding="6,0" Margin="0,0,0,8">
                                 <Grid>

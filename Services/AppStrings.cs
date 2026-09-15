@@ -149,31 +149,43 @@ namespace FolderMorpher.Services
 
 
         // ==========================================
+        // Active Directory & 自動同期 (AD & Auto-Sync)
+        // ==========================================
+        public static string AdSyncBadge => IsJa ? "🟢 自動同期 (30s)" : "🟢 Auto-Sync (30s)";
+        public static string AdSyncToolTip => IsJa ? "30秒ごとにドメイン/ローカルのアカウント変化を自動チェック" : "Automatically checks for domain/local account changes every 30s";
+        public static string AdRefreshToolTip => IsJa ? "ADアカウントを今すぐ最新に更新" : "Refresh AD accounts now";
+        public static string AdSyncUpdatedToast => IsJa ? "🔄 AD/ローカル アカウント一覧を最新に更新しました" : "🔄 AD/Local account list refreshed to latest";
+        public static string AdDomainJoinedTooltip => IsJa ? "接続中のActive Directoryドメイン" : "Connected Active Directory Domain";
+        public static string AdDomainLocal => IsJa ? "🟡 ローカル環境" : "🟡 Local PC";
+
+        // ==========================================
         // Tab 2: 移行スタジオ (Simulation Studio)
         // ==========================================
-        public static string CloneSelectedToCenter => IsJa ? "➡️ 選択フォルダを中央へ新設配置" : "➡️ Clone Selected to Center";
-        public static string AddRootFolder => IsJa ? "＋ ルートフォルダ新設" : "＋ Add Root Folder";
-        public static string ReviewDiffs => IsJa ? "⚖️ 差分 (Diff)" : "⚖️ Review Diffs";
+        public static string CloneSelectedToCenter => IsJa ? "➡️ 選択フォルダを新設配置" : "➡️ Clone Selected to Center";
+        public static string AddRootFolder => IsJa ? "＋ ルート新設" : "＋ Add Root Folder";
+        public static string ReviewDiffs => IsJa ? "🔍 チェック" : "🔍 Check";
         public static string DeploySkeleton => IsJa ? "🚀 スケルトン作成" : "🚀 Deploy Skeleton";
         public static string ExportScripts => IsJa ? "⚙️ 移行スクリプト" : "⚙️ Export Scripts";
         public static string ExportSimExcel => IsJa ? "📊 Excel設計書" : "📊 Export Excel";
-        public static string InheritFromParent => IsJa ? "親からの権限継承を含める" : "Inherit from parent";
-        public static string AdvancedSecurity => IsJa ? "⚙️ セキュリティ詳細設定" : "⚙️ Advanced Security";
+        public static string InheritFromParent => IsJa ? "親の権限継承" : "Inherit from parent";
+        public static string AdvancedSecurity => IsJa ? "⚙️ 詳細設定" : "⚙️ Advanced";
         public static string DefaultProjectName => IsJa ? "新ファイルサーバー移行設計_Ver1" : "New File Server Migration Plan_Ver1";
-        public static string NoneSelectedClickFolder => IsJa ? "(未選択 - 上のフォルダをクリック)" : "(None selected - Click a folder above)";
-        public static string LocalPcNoDomain => IsJa ? "🟡 ローカル環境 (AD未接続)" : "🟡 Local PC (No AD Domain)";
-        public static string TargetRootLabel => IsJa ? "移行先 新サーバーのルートパス (UNC / ローカル)" : "Target Root Path on Destination Server (UNC / Local)";
-        public static string SourceTitle => IsJa ? "現行ファイルサーバー (移行元)" : "Source File Server (Existing)";
-        public static string SourceSubText => IsJa ? "フォルダーを選択して中央へドラッグ＆ドロップ、または下部ボタンで新設ツリーに配置" : "Select folders and drag & drop to center, or use button below";
-        public static string MockTreeTitle => IsJa ? "新サーバー仮想ツリー設計 (FolderMorph Studio)" : "Target Virtual Tree Architecture (FolderMorph Studio)";
-        public static string MockTreeSubText => IsJa ? "N:1 統合・階層再編成・新設計ACLを直感的にデザイン。右クリックでフォルダ追加/削除" : "Intuitive N:1 consolidation, restructuring & ACL design. Right-click to add/remove";
-        public static string SelectedFolderPrefix => IsJa ? "選択中: " : "Target: ";
-        public static string SubfolderDropHint => IsJa ? "➕ 左の現行サーバーまたはエクスプローラーからフォルダをドロップして追加" : "➕ Drop folders from source server or Explorer to add subfolders";
+        public static string NoneSelectedClickFolder => IsJa ? "(未選択 - 左のフォルダをクリック)" : "(None selected - Click a folder on left)";
+        public static string LocalPcNoDomain => IsJa ? "🟡 ローカル環境" : "🟡 Local PC";
+        public static string TargetRootLabel => IsJa ? "📁 移行先ルート: " : "📁 Target Root: ";
+        public static string SourceTitle => IsJa ? "① 現行ファイルサーバー (移行元)" : "① Source File Server (Existing)";
+        public static string SourceSubText => IsJa ? "サブフォルダを掴んで新ツリーへ直接ドロップ" : "Drag & drop subfolders directly into new tree";
+        public static string MockTreeTitle => IsJa ? "② 新環境 仮想フォルダツリー" : "② Target Virtual Tree Architecture";
+        public static string MockTreeSubText => IsJa ? "💡 フォルダ行にドロップでサブ化 / クイックボタンで階層変更" : "💡 Drop on folder row to make subfolder / Use quick buttons to adjust levels";
+        public static string SelectedFolderPrefix => IsJa ? "📁 " : "📁 ";
+        public static string SubfolderDropHint => IsJa ? "📥 左の現行フォルダをここにドロップして直下にサブ化" : "📥 Drop source folder here to make direct subfolder";
         public static string SimMappingTitle => IsJa ? "🔗 移行元マッピング (データ移行元 / N:1統合)" : "🔗 Source Mappings (Data Sources / N:1 Consolidation)";
-        public static string SimAclTitle => IsJa ? "新設計 アクセス権エントリ (ACE)" : "Target Access Control Entries (ACEs)";
-        public static string SimAdHeaderTitle => IsJa ? "Active Directory / ローカル候補" : "Active Directory / Local Principals";
-        public static string SimAdHeaderSubText => IsJa ? "中央の権限エリアへドラッグ＆ドロップして付与" : "Drag & drop to center permissions area to grant";
+        public static string SimAclTitle => IsJa ? "🛡️ 割り当てられたADアクセス権" : "🛡️ Assigned AD Permissions";
+        public static string SimAdHeaderTitle => IsJa ? "④ AD パレット" : "④ AD Palette";
+        public static string SimAdHeaderSubText => IsJa ? "カードを中央のフォルダまたは詳細へドラッグ" : "Drag cards to center folders or details area";
         public static string SimInspectorTitle => IsJa ? "③ フォルダ詳細 ＆ 権限設定" : "③ Folder Details & Permissions";
+        public static string SimEmptyStateTitle => IsJa ? "仮想ツリーが未作成です" : "Virtual Tree Not Initialized";
+        public static string SimEmptyStateDesc => IsJa ? "左側の現行フォルダを選択して『新設配置』を押すか、\n上部の『＋ ルート新設』ボタンから設計を開始してください。" : "Select a source folder on the left and click 'Clone Selected',\nor use '＋ Add Root Folder' above to start designing.";
         public static string SaveProjectToolTip => IsJa ? "プロジェクト保存 (.fmorph)" : "Save Project (.fmorph)";
         public static string LoadProjectToolTip => IsJa ? "プロジェクト読込" : "Load Project";
         public static string ReviewDiffsToolTip => IsJa ? "変化点差分インスペクター" : "Review Architecture Diffs";

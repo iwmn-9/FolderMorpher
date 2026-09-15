@@ -484,5 +484,15 @@
       - ツリー右クリック（`PreviewMouseRightButtonDown` で確実選択）のコンテキストメニューおよび上部パスバーの「📁＋」ボタンから、Fluentスタイルの入力モーダルを呼び出し。
       - 禁則文字・重複チェックを経て即座にフォルダーを作成し、ツリーノードを追加した上で**そのフォルダーの権限編集パネルを即時展開**。「フォルダー作成 ➔ 継承切断 ➔ 専用権限付与」を同一画面でシームレスに完結。
 
-
-
+54. **ADパレット完全統一・30秒同期のMainWindow集約＆双方向連動・移行スタジオ完全日英対応 (v2.0.6)**:
+    - **Tab 2 (Live ACL) & Tab 3 (移行スタジオ) ADパレットUIの完全統一**:
+      - 移行スタジオとLive ACLのADパレットヘッダーを「[DomainStatusBadge] + [AdSyncBadge: 🟢 自動同期 (30s) / 🟢 Auto-Sync (30s)] + [RefreshButton: 🔄]」の同一構造に統一。
+      - 非ドメイン参加時はコンパクトな `🟡 ローカル環境` / `🟡 Local PC` バッジ（ToolTipに詳細）として表示し、狭幅レイアウトでもボタンの重なりや文字切れを根絶。
+    - **AD 30秒バックグラウンド自動同期の親集約 ＆ 双方向連動**:
+      - `MainWindow.xaml.cs` に 30秒周期の `_adSyncTimer` を集約配置。`HasPrincipalsChanged` による差分検知で変更時のみ `_adPrincipals` を更新し、`LiveAclStudioControl.SetPrincipals(_adPrincipals)` へ一括配信。
+      - Live ACL の `RefreshAdRequested` イベントを MainWindow で購読し、どちらの `🔄` ボタンを押しても同一の強制同期パイプラインが走るよう配線を整線。
+    - **移行スタジオ（Tab 3）の全画面・全出力完全日英両対応 ＆ レイアウト整線**:
+      - `SimulationProjectService`: 差分種別（統合・集約 / 階層移動 / 構造維持 / 新規作成）、差分詳細、ACL変更文言、設計マトリクスCSVを完全日英対応。
+      - `ExcelReportService`: 差分レビューレポート（`ExportSimDiffReport`）および設計マトリクス（`ExportSimulationDesignMatrix`）のシート名、タイトル、日時書式、ヘッダー行を完全多言語化。
+      - `MainWindow.xaml`: Pane 2 & 3 ヘッダーに `Grid.ColumnDefinitions`（`*` と `Auto`）を導入し、英語モード時のタイトル・フォルダー名と右側ボタン/チェックボックスの干渉・重なりを根本解消。
+      - 多言語リソース（`AppStrings.cs`）に全UI文字列を集約・正本化し、英語モード時の CJK 残存を完全排除。

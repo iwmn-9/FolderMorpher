@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using AstraSize.Models;
+using FolderMorpher.Services;
 
 namespace AstraSize.Services
 {
@@ -115,22 +116,24 @@ namespace AstraSize.Services
             }
             foreach (var r in targetRoots) CollectNodes(r);
 
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+
             // 1. Check all target folders
             foreach (var node in allSimNodes)
             {
                 var item = new SimDiffItem
                 {
                     TargetPath = node.RelativePath,
-                    TargetDetail = $"階層レベル: {node.LevelPillText} ({node.FormattedSize})"
+                    TargetDetail = isJa ? $"階層レベル: {node.LevelPillText} ({node.FormattedSize})" : $"Level: {node.LevelPillText} ({node.FormattedSize})"
                 };
 
                 // Case A: 統合 (N:1)
                 if (node.MappedSourcePaths.Count > 1)
                 {
-                    item.DiffType = "統合・集約";
+                    item.DiffType = isJa ? "統合・集約" : "Consolidation";
                     item.DiffTypeBadgeBackground = "#D97706"; // Amber
                     item.SourcePath = string.Join("\n", node.MappedSourcePaths.Select(p => $"• {p}"));
-                    item.SourceDetail = $"{node.MappedSourcePaths.Count}箇所の現行フォルダを1つに統合";
+                    item.SourceDetail = isJa ? $"{node.MappedSourcePaths.Count}箇所の現行フォルダを1つに統合" : $"Consolidating {node.MappedSourcePaths.Count} source folders";
                 }
                 // Case B: 単一紐づけ (1:1)
                 else if (node.MappedSourcePaths.Count == 1)
@@ -142,24 +145,24 @@ namespace AstraSize.Services
                     var srcLeaf = Path.GetFileName(src.TrimEnd('\\', '/'));
                     if (!string.Equals(srcLeaf, node.Name, StringComparison.OrdinalIgnoreCase) || node.Level > 1)
                     {
-                        item.DiffType = "階層移動";
+                        item.DiffType = isJa ? "階層移動" : "Relocation";
                         item.DiffTypeBadgeBackground = "#2563EB"; // Blue
-                        item.SourceDetail = $"現行: {srcLeaf} ➔ 新階層へリロケート";
+                        item.SourceDetail = isJa ? $"現行: {srcLeaf} ➔ 新階層へリロケート" : $"Source: {srcLeaf} ➔ Relocate to new path";
                     }
                     else
                     {
-                        item.DiffType = "構造維持";
+                        item.DiffType = isJa ? "構造維持" : "Preserved";
                         item.DiffTypeBadgeBackground = "#475569"; // Slate
-                        item.SourceDetail = "同名階層で移行";
+                        item.SourceDetail = isJa ? "同名階層で移行" : "Migrate with same structure";
                     }
                 }
                 // Case C: 新規作成
                 else
                 {
-                    item.DiffType = "新規作成";
+                    item.DiffType = isJa ? "新規作成" : "New Folder";
                     item.DiffTypeBadgeBackground = "#059669"; // Emerald
-                    item.SourcePath = "(現行データなし)";
-                    item.SourceDetail = "新環境で新設される空フォルダ";
+                    item.SourcePath = isJa ? "(現行データなし)" : "(No existing data)";
+                    item.SourceDetail = isJa ? "新環境で新設される空フォルダ" : "New empty folder on target server";
                 }
 
                 // ACL diff details
@@ -167,12 +170,14 @@ namespace AstraSize.Services
                 {
                     foreach (var acl in node.AclEntries)
                     {
-                        item.AclChanges.Add($"＋ {acl.DisplayName}: [{acl.FormattedRights}] を付与");
+                        item.AclChanges.Add(isJa ? $"＋ {acl.DisplayName}: [{acl.FormattedRights}] を付与" : $"＋ Grant {acl.DisplayName}: [{acl.FormattedRights}]");
                     }
                 }
                 else
                 {
-                    item.AclChanges.Add(node.InheritAcl ? "🔗 親フォルダのアクセス権を継承" : "🛡️ 固有権限 (エントリなし)");
+                    item.AclChanges.Add(node.InheritAcl
+                        ? (isJa ? "🔗 親フォルダのアクセス権を継承" : "🔗 Inherit permissions from parent")
+                        : (isJa ? "🛡️ 固有権限 (エントリなし)" : "🛡️ Explicit permissions (Empty)"));
                 }
 
                 diffs.Add(item);
@@ -584,14 +589,19 @@ namespace AstraSize.Services
             var sb = new StringBuilder();
             // UTF-8 BOM
             sb.Append('\uFEFF');
-            sb.AppendLine("階層パス,フォルダ名,階層レベル,移行元マッピング,元容量,継承状態,アカウント,権限種別,アクセス許可");
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+            if (isJa)
+                sb.AppendLine("階層パス,フォルダ名,階層レベル,移行元マッピング,元容量,継承状態,アカウント,権限種別,アクセス許可");
+            else
+                sb.AppendLine("Path,Folder Name,Level,Source Mapping,Size,Inheritance,Account,Access Type,Permissions");
 
             void WriteNode(SimFolderNode node)
             {
-                var mappingStr = node.MappedSourcePaths.Count == 0 ? "(新設)" : string.Join(" | ", node.MappedSourcePaths);
+                var mappingStr = node.MappedSourcePaths.Count == 0 ? (isJa ? "(新設)" : "(New)") : string.Join(" | ", node.MappedSourcePaths);
                 if (node.AclEntries.Count == 0)
                 {
-                    sb.AppendLine($"\"{EscapeCsv(node.RelativePath)}\",\"{EscapeCsv(node.Name)}\",\"{node.LevelPillText}\",\"{EscapeCsv(mappingStr)}\",\"{node.FormattedSize}\",\"{node.InheritStatusBadge}\",\"(設定なし)\",\"-\",\"-\"");
+                    string noneStr = isJa ? "(設定なし)" : "(None)";
+                    sb.AppendLine($"\"{EscapeCsv(node.RelativePath)}\",\"{EscapeCsv(node.Name)}\",\"{node.LevelPillText}\",\"{EscapeCsv(mappingStr)}\",\"{node.FormattedSize}\",\"{node.InheritStatusBadge}\",\"{noneStr}\",\"-\",\"-\"");
                 }
                 else
                 {

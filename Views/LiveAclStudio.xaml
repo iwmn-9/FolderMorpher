@@ -323,6 +323,10 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock x:Name="LiveAclPrincipalsHeaderTitle" Grid.Column="0" Text="👥 Active Directory / ローカル" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,4,0"/>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Border x:Name="LiveAclDomainStatusBadge" Background="#DCFCE7" CornerRadius="4" Padding="6,1" Margin="0,0,6,0" VerticalAlignment="Center"
+                                                ToolTip="接続中のActive Directoryドメイン">
+                                            <TextBlock x:Name="LiveAclDomainStatusText" Text="🟢 CORP.LOCAL" FontSize="9.5" FontWeight="SemiBold" Foreground="#15803D"/>
+                                        </Border>
                                         <Border x:Name="AdSyncBadgeBorder" Background="#DCFCE7" CornerRadius="4" Padding="6,1" Margin="0,0,6,0" VerticalAlignment="Center"
                                                 ToolTip="30秒ごとにドメイン/ローカルのアカウント変化を自動チェック">
                                             <TextBlock x:Name="AdSyncBadgeText" Text="🟢 自動同期 (30s)" FontSize="9.5" FontWeight="SemiBold" Foreground="#15803D"/>
@@ -333,9 +337,16 @@
                                     </StackPanel>
                                 </Grid>
 
-                                <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Padding="8,0" Margin="0,0,0,8">
-                                    <TextBox x:Name="LiveAclPrincipalSearchTextBox" BorderThickness="0" Background="Transparent"
-                                             VerticalAlignment="Center" FontSize="11" TextChanged="LiveAclPrincipalSearchTextBox_TextChanged"/>
+                                <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="30" Padding="6,0" Margin="0,0,0,8">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="🔍 " FontSize="11" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                                        <TextBox x:Name="LiveAclPrincipalSearchTextBox" Grid.Column="1" BorderThickness="0" Background="Transparent"
+                                                 VerticalAlignment="Center" FontSize="11" TextChanged="LiveAclPrincipalSearchTextBox_TextChanged"/>
+                                    </Grid>
                                 </Border>
 
                                 <ListBox x:Name="LiveAclPrincipalsListBox" Grid.Row="2" BorderThickness="0" Background="Transparent"
