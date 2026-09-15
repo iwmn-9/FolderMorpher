@@ -322,6 +322,13 @@ namespace FolderMorpher.Services.Testing
                     if (!safeHandle.IsInvalid)
                         throw new InvalidOperationException("SafeFindHandle with IntPtr.Zero should be invalid.");
                 }
+
+                // 6. 4段自動フォールバック（プレーンUNC / 拡張パス両対応）耐性検証
+                var uncDirs = new List<NativeFindEntry>();
+                var uncFiles = new List<NativeFindEntry>();
+                bool fallbackOk = NativeDirectoryEnumerator.TryEnumerateEntries(testDir, uncDirs, uncFiles, out var fallbackErr);
+                if (!fallbackOk || fallbackErr != null)
+                    throw new InvalidOperationException($"4-stage fallback enumeration failed: {fallbackErr}");
             }
             finally
             {

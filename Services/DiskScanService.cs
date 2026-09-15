@@ -162,131 +162,160 @@ namespace AstraSize.Services
                     }
                 }
 
-                FileItemNode ScanDirectoryInternal(string currentPath, string dirName, int depth, FileItemNode? parentNode)
+                const int concurrency = 2; // 並列度2固定（業務保護・HDDスラッシング抑制）
+
+                DateTime rootLastModified = DateTime.MinValue;
+                try { rootLastModified = rootDir.LastWriteTime; } catch { }
+
+                var rootNode = new FileItemNode
                 {
-                    ct.ThrowIfCancellationRequested();
+                    Name = string.IsNullOrEmpty(rootDir.Name) ? cleanTargetPath : rootDir.Name,
+                    FullPath = cleanTargetPath,
+                    IsDirectory = true,
+                    Parent = null,
+                    Level = 0,
+                    LastModified = rootLastModified
+                };
 
-                    var node = new FileItemNode
+                // Sol提唱: 未処理＋処理中ワークアイテム数を Interlocked で厳密追跡（Worker race 完全根絶）
+                int pendingWorkCount = 0;
+                var folderQueue = new ConcurrentQueue<(FileItemNode node, string currentPath, int depth)>();
+                folderQueue.Enqueue((rootNode, cleanTargetPath, 0));
+                Interlocked.Increment(ref pendingWorkCount);
+
+                var workerTasks = new Task[concurrency];
+
+                for (int w = 0; w < concurrency; w++)
+                {
+                    workerTasks[w] = Task.Run(async () =>
                     {
-                        Name = string.IsNullOrEmpty(dirName) ? currentPath : dirName,
-                        FullPath = currentPath,
-                        IsDirectory = true,
-                        Parent = parentNode,
-                        Level = depth
-                    };
+                        var subDirs = new List<NativeFindEntry>(32);
+                        var files = new List<NativeFindEntry>(64);
 
-                    try
-                    {
-                        node.LastModified = Directory.GetLastWriteTime(currentPath);
-                    }
-                    catch { }
-
-                    long totalDirSize = 0;
-                    int totalDirFiles = 0;
-                    int totalDirFolders = 0;
-
-                    var subDirs = new List<NativeFindEntry>(32);
-                    var files = new List<NativeFindEntry>(64);
-
-                    if (!NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, subDirs, files, out var error))
-                    {
-                        node.ErrorMessage = error ?? "アクセス拒否";
-                        return node;
-                    }
-
-                    var subDirNodes = new List<FileItemNode>(subDirs.Count);
-                    var fileNodes = new List<FileItemNode>(files.Count);
-
-                    for (int i = 0; i < files.Count; i++)
-                    {
-                        if (ct.IsCancellationRequested) break;
-                        var f = files[i];
-                        long fSize = f.Size;
-                        totalDirSize += fSize;
-                        totalDirFiles++;
-
-                        string fPath = Path.Combine(currentPath, f.Name);
-                        string ext = Path.GetExtension(f.Name);
-                        TrackFile(f.Name, fPath, fSize, ext);
-
-                        fileNodes.Add(new FileItemNode
+                        while (!ct.IsCancellationRequested)
                         {
-                            Name = f.Name,
-                            FullPath = fPath,
-                            Size = fSize,
-                            FileCount = 1,
-                            FolderCount = 0,
-                            IsDirectory = false,
-                            LastModified = f.LastWriteTimeUtc.ToLocalTime(),
-                            Parent = node,
-                            Level = depth + 1
-                        });
-                    }
+                            if (!folderQueue.TryDequeue(out var item))
+                            {
+                                // pendingWorkCount が 0 なら全フォルダーの探索が完全に終了
+                                if (Volatile.Read(ref pendingWorkCount) == 0)
+                                {
+                                    break;
+                                }
+                                await Task.Delay(2, ct).ConfigureAwait(false);
+                                continue;
+                            }
 
-                    // サブディレクトリ処理 (Junction / ReparsePoint 除外)
-                    var validSubDirs = new List<NativeFindEntry>(subDirs.Count);
-                    for (int i = 0; i < subDirs.Count; i++)
-                    {
-                        if (!subDirs[i].IsReparsePoint)
-                            validSubDirs.Add(subDirs[i]);
-                    }
-
-                    // ルート直下 (depth == 0) の主要サブフォルダは並列度2（デュアルワーカー）で探索
-                    if (depth == 0 && validSubDirs.Count > 1)
-                    {
-                        using var sem = new SemaphoreSlim(2, 2);
-                        var tasks = validSubDirs.Select(sd => Task.Run(async () =>
-                        {
-                            await sem.WaitAsync(ct).ConfigureAwait(false);
                             try
                             {
-                                return ScanDirectoryInternal(Path.Combine(currentPath, sd.Name), sd.Name, depth + 1, node);
+                                var (node, currentPath, depth) = item;
+
+                                if (!NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, subDirs, files, out var error))
+                                {
+                                    node.ErrorMessage = error ?? "アクセス拒否";
+                                    continue;
+                                }
+
+                                // 1. 直下ファイルのノード生成 ＆ 統計追跡
+                                for (int i = 0; i < files.Count; i++)
+                                {
+                                    if (ct.IsCancellationRequested) break;
+                                    var f = files[i];
+                                    long fSize = f.Size;
+                                    string fPath = Path.Combine(currentPath, f.Name);
+                                    string ext = Path.GetExtension(f.Name);
+                                    TrackFile(f.Name, fPath, fSize, ext);
+
+                                    var fileNode = new FileItemNode
+                                    {
+                                        Name = f.Name,
+                                        FullPath = fPath,
+                                        Size = fSize,
+                                        FileCount = 1,
+                                        FolderCount = 0,
+                                        IsDirectory = false,
+                                        LastModified = f.LastWriteTimeUtc.ToLocalTime(),
+                                        Parent = node,
+                                        Level = depth + 1
+                                    };
+                                    node.Children.Add(fileNode);
+                                }
+
+                                // 2. サブディレクトリのノード生成 ＆ キュー投入 (Junction / ReparsePoint 除外)
+                                for (int i = 0; i < subDirs.Count; i++)
+                                {
+                                    if (ct.IsCancellationRequested) break;
+                                    var sd = subDirs[i];
+                                    if (sd.IsReparsePoint) continue;
+
+                                    string subPath = Path.Combine(currentPath, sd.Name);
+                                    var subNode = new FileItemNode
+                                    {
+                                        Name = sd.Name,
+                                        FullPath = subPath,
+                                        IsDirectory = true,
+                                        Parent = node,
+                                        Level = depth + 1,
+                                        LastModified = sd.LastWriteTimeUtc.ToLocalTime() // ★ 親の列挙から直結（RPCゼロ）
+                                    };
+                                    node.Children.Add(subNode);
+
+                                    Interlocked.Increment(ref pendingWorkCount);
+                                    folderQueue.Enqueue((subNode, subPath, depth + 1));
+                                }
                             }
                             finally
                             {
-                                sem.Release();
+                                Interlocked.Decrement(ref pendingWorkCount);
                             }
-                        }, ct)).ToList();
-
-                        var scannedSubNodes = Task.WhenAll(tasks).GetAwaiter().GetResult();
-                        foreach (var subNode in scannedSubNodes)
-                        {
-                            totalDirSize += subNode.Size;
-                            totalDirFiles += subNode.FileCount;
-                            totalDirFolders += subNode.FolderCount + 1;
-                            subDirNodes.Add(subNode);
                         }
-                    }
-                    else
-                    {
-                        for (int i = 0; i < validSubDirs.Count; i++)
-                        {
-                            if (ct.IsCancellationRequested) break;
-                            var sd = validSubDirs[i];
-                            totalDirFolders++;
-                            var subNode = ScanDirectoryInternal(Path.Combine(currentPath, sd.Name), sd.Name, depth + 1, node);
-                            totalDirSize += subNode.Size;
-                            totalDirFiles += subNode.FileCount;
-                            totalDirFolders += subNode.FolderCount;
-                            subDirNodes.Add(subNode);
-                        }
-                    }
-
-                    node.Size = totalDirSize;
-                    node.FileCount = totalDirFiles;
-                    node.FolderCount = totalDirFolders;
-
-                    // サイズ降順ソート
-                    subDirNodes.Sort((a, b) => b.Size.CompareTo(a.Size));
-                    fileNodes.Sort((a, b) => b.Size.CompareTo(a.Size));
-
-                    foreach (var s in subDirNodes) node.Children.Add(s);
-                    foreach (var f in fileNodes) node.Children.Add(f);
-
-                    return node;
+                    }, ct);
                 }
 
-                var rootNode = ScanDirectoryInternal(cleanTargetPath, rootDir.Name, 0, null);
+                Task.WhenAll(workerTasks).GetAwaiter().GetResult();
+
+                // 3. インメモリ・ボトムアップ高速集計（Phase 2: サイズ・ファイル数・フォルダー数の合算と降順ソート）
+                void AggregateNode(FileItemNode node)
+                {
+                    long totalSize = 0;
+                    int totalFiles = 0;
+                    int totalFolders = 0;
+
+                    var dirChildren = new List<FileItemNode>();
+                    var fileChildren = new List<FileItemNode>();
+
+                    for (int i = 0; i < node.Children.Count; i++)
+                    {
+                        var child = node.Children[i];
+                        if (child.IsDirectory)
+                        {
+                            AggregateNode(child);
+                            totalSize += child.Size;
+                            totalFiles += child.FileCount;
+                            totalFolders += child.FolderCount + 1; // 直下のサブフォルダ自身 + その配下のサブフォルダ数
+                            dirChildren.Add(child);
+                        }
+                        else
+                        {
+                            totalSize += child.Size;
+                            totalFiles++;
+                            fileChildren.Add(child);
+                        }
+                    }
+
+                    node.Size = totalSize;
+                    node.FileCount = totalFiles;
+                    node.FolderCount = totalFolders;
+
+                    // 既存規約: ディレクトリ（サイズ降順）➔ ファイル（サイズ降順）
+                    dirChildren.Sort((a, b) => b.Size.CompareTo(a.Size));
+                    fileChildren.Sort((a, b) => b.Size.CompareTo(a.Size));
+
+                    node.Children.Clear();
+                    foreach (var d in dirChildren) node.Children.Add(d);
+                    foreach (var f in fileChildren) node.Children.Add(f);
+                }
+
+                AggregateNode(rootNode);
 
                 // Calculate percentages relative to root
                 CalculatePercentages(rootNode, rootNode.Size > 0 ? rootNode.Size : 1);

@@ -117,7 +117,7 @@ namespace FolderMorpher.Services
 
         /// <summary>
         /// 指定フォルダー直下のエントリ（ファイルおよびサブディレクトリ）を安全に一括列挙する。
-        /// 3段自動フォールバックにより、特殊なネットワーク環境や権限制約下でも最大限の取得を試みる。
+        /// 4段自動フォールバックにより、NAS (Samba) や特殊なUNCネットワーク環境でもネイティブ一括取得を最大活用する。
         /// </summary>
         public static bool TryEnumerateEntries(
             string folderPath,
@@ -135,10 +135,10 @@ namespace FolderMorpher.Services
                 return false;
             }
 
-            string searchPattern = BuildSearchPattern(folderPath);
+            string primaryPattern = BuildSearchPattern(folderPath);
 
-            // 段数 1: 最速 (FindExInfoBasic + FIND_FIRST_EX_LARGE_FETCH)
-            if (TryEnumerateWin32(searchPattern, FINDEX_INFO_LEVELS.FindExInfoBasic, FIND_FIRST_EX_LARGE_FETCH, subDirectories, files, out errorMessage))
+            // 段数 1: 最速 (拡張パス \\?\ または \\?\UNC\ + FindExInfoBasic + FIND_FIRST_EX_LARGE_FETCH)
+            if (TryEnumerateWin32(primaryPattern, FINDEX_INFO_LEVELS.FindExInfoBasic, FIND_FIRST_EX_LARGE_FETCH, subDirectories, files, out errorMessage))
             {
                 return true;
             }
@@ -149,19 +149,34 @@ namespace FolderMorpher.Services
                 return false;
             }
 
-            // 段数 2: 互換 (FindExInfoStandard, 追加フラグなし)
+            // 段数 2: 互換 (拡張パス + FindExInfoStandard, フラグ0)
             subDirectories.Clear();
             files.Clear();
-            if (TryEnumerateWin32(searchPattern, FINDEX_INFO_LEVELS.FindExInfoStandard, 0, subDirectories, files, out errorMessage))
+            if (TryEnumerateWin32(primaryPattern, FINDEX_INFO_LEVELS.FindExInfoStandard, 0, subDirectories, files, out errorMessage))
             {
                 return true;
             }
 
-            // 段数 3: マネージド .NET DirectoryInfo フォールバック
+            // 段数 3: UNC/NAS互換 (プレーンパス \\server\share\* または C:\path\* での Win32 再試行)
+            // ※SambaやNASアプライアンスは \\?\UNC\ を解釈できない場合があるため、プレーンパスでWin32を再試行してネイティブ高速列挙を救出
+            string plainPattern = folderPath.TrimEnd('\\') + "\\*";
+            if (!string.Equals(primaryPattern, plainPattern, StringComparison.OrdinalIgnoreCase))
+            {
+                subDirectories.Clear();
+                files.Clear();
+                if (TryEnumerateWin32(plainPattern, FINDEX_INFO_LEVELS.FindExInfoStandard, 0, subDirectories, files, out errorMessage))
+                {
+                    return true;
+                }
+            }
+
+            // 段数 4: マネージド .NET DirectoryInfo フォールバック
             subDirectories.Clear();
             files.Clear();
             return TryEnumerateManagedFallback(folderPath, subDirectories, files, out errorMessage);
         }
+
+        private const int ERROR_HANDLE_EOF = 38;
 
         private static bool TryEnumerateWin32(
             string searchPattern,
@@ -217,10 +232,14 @@ namespace FolderMorpher.Services
             }
             while (FindNextFileW(handle, out findData));
 
-            // ★ Sol指摘2: FindNextFileW 終了理由の厳格判定
-            // 正常終了なら ERROR_NO_MORE_FILES (18)。それ以外（SMB切断やI/Oエラー）は異常中断として検出
+            // FindNextFileW 終了理由の判定:
+            // 正常終了なら ERROR_NO_MORE_FILES (18), ERROR_FILE_NOT_FOUND (2), ERROR_HANDLE_EOF (38), 0
+            // それ以外（SMB切断やI/Oエラー）は異常中断として検出
             int finalError = Marshal.GetLastWin32Error();
-            if (finalError != 0 && finalError != ERROR_NO_MORE_FILES && finalError != ERROR_FILE_NOT_FOUND)
+            if (finalError != 0 &&
+                finalError != ERROR_NO_MORE_FILES &&
+                finalError != ERROR_FILE_NOT_FOUND &&
+                finalError != ERROR_HANDLE_EOF)
             {
                 errorMessage = $"列挙途中エラー: {FormatWin32Error(finalError)}";
                 return false;
