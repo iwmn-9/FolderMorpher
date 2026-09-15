@@ -31,6 +31,7 @@ namespace FolderMorpher.Services.Testing
             TestAuditSmartSelectAndSafePermanentDeletion();
             TestAuditHierarchicalSizeSortingWithDuplicateGroups();
             await TestHeadTailHashAndBandwidthLimiterAsync();
+            await TestDormantExclusionWithRecentAccessAsync();
         }
 
         public static void TestAuditArchivalOriginalExclusionAndDeduplication()
@@ -813,5 +814,67 @@ namespace FolderMorpher.Services.Testing
             }
         }
 
+        private static async Task TestDormantExclusionWithRecentAccessAsync()
+        {
+            string testDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_Dormant_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(testDir);
+
+            try
+            {
+                var auditService = new AuditReportService();
+                var now = DateTime.Now;
+
+                // 1. 完全休眠ファイル (更新4年前、アクセス4年前)
+                string dormantFile = Path.Combine(testDir, "dormant_4y.pdf");
+                await File.WriteAllBytesAsync(dormantFile, new byte[1024]);
+                File.SetLastWriteTime(dormantFile, now.AddYears(-4));
+                File.SetLastAccessTime(dormantFile, now.AddYears(-4));
+
+                // 2. 参照中ファイル (更新4年前だが、アクセス半年前 = 過去1年以内)
+                string referencedFile = Path.Combine(testDir, "referenced_manual_4y.pdf");
+                await File.WriteAllBytesAsync(referencedFile, new byte[2048]);
+                File.SetLastWriteTime(referencedFile, now.AddYears(-4));
+                File.SetLastAccessTime(referencedFile, now.AddMonths(-6));
+
+                // 3. 通常の新規ファイル (更新半年前)
+                string activeFile = Path.Combine(testDir, "recent.pdf");
+                await File.WriteAllBytesAsync(activeFile, new byte[512]);
+                File.SetLastWriteTime(activeFile, now.AddMonths(-6));
+                File.SetLastAccessTime(activeFile, now.AddMonths(-6));
+
+                var options = new AuditOptions
+                {
+                    TargetDirectory = testDir,
+                    CheckDuplicates = false,
+                    CheckDormant = true,
+                    CheckPathLimits = false,
+                    DormantYearsThreshold = 3.0
+                };
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                var (summary, items) = await auditService.RunAuditAsync(options, null, cts.Token);
+
+                // 完全休眠ファイルのみが抽出され、過去1年以内に閲覧されたファイルは除外されていること
+                var dormantItems = items.Where(i => i.IssueType == AuditIssueType.Dormant).ToList();
+                if (dormantItems.Count != 1)
+                {
+                    throw new InvalidOperationException($"Expected 1 dormant item, got {dormantItems.Count}");
+                }
+
+                if (dormantItems[0].FileName != "dormant_4y.pdf")
+                {
+                    throw new InvalidOperationException($"Expected dormant_4y.pdf to be detected, got {dormantItems[0].FileName}");
+                }
+
+                if (items.Any(i => i.FileName == "referenced_manual_4y.pdf"))
+                {
+                    throw new InvalidOperationException("referenced_manual_4y.pdf was accessed within 1 year and MUST NOT be flagged as dormant.");
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(testDir, true); } catch { }
+            }
+        }
     }
 }

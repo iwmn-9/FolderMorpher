@@ -53,6 +53,7 @@ namespace FolderMorpher.Services
             // 2. パス長・禁則文字・休眠のチェック
             var now = DateTime.Now;
             var dormantCutoff = now.AddDays(-365.25 * options.DormantYearsThreshold);
+            var recentAccessCutoff = now.AddDays(-365.25); // 過去1年以内に閲覧されたファイルは休眠から除外 (現場の参照ファイルを救済)
 
             progress?.Report(new AuditProgress { CurrentStatus = "パス長・休眠ファイルを点検中...", ScannedFilesCount = summary.TotalFilesScanned, IssueCount = items.Count });
 
@@ -111,12 +112,23 @@ namespace FolderMorpher.Services
                     }
                 }
 
-                // 休眠ファイルチェック (指定年数以上前)
+                // 休眠ファイルチェック (指定年数以上前未更新、かつ過去1年間閲覧されていない)
                 if (options.CheckDormant && fi.LastWriteTime < dormantCutoff)
                 {
+                    // 過去1年以内に閲覧（アクセス）された形跡があるファイルは休眠とみなさない（現場の参照ファイルを保護）
+                    if (fi.LastAccessTime >= recentAccessCutoff && fi.LastAccessTime <= now.AddDays(1))
+                    {
+                        continue;
+                    }
+
                     var yearsOld = (now - fi.LastWriteTime).TotalDays / 365.25;
                     summary.DormantCount++;
                     summary.DormantBytes += fi.Length;
+
+                    string detailText = fi.LastAccessTime > DateTime.MinValue && fi.LastAccessTime < dormantCutoff
+                        ? $"最終更新: {fi.LastWriteTime:yyyy/MM/dd} ({yearsOld:F1}年前) / 最終閲覧: {fi.LastAccessTime:yyyy/MM/dd}"
+                        : $"最終更新: {fi.LastWriteTime:yyyy/MM/dd} ({yearsOld:F1}年前)";
+
                     items.Add(new AuditItem
                     {
                         FullPath = fi.FullPath,
@@ -126,7 +138,7 @@ namespace FolderMorpher.Services
                         LastWriteTime = fi.LastWriteTime,
                         LastAccessTime = fi.LastAccessTime,
                         IssueType = AuditIssueType.Dormant,
-                        Detail = $"最終更新: {fi.LastWriteTime:yyyy/MM/dd} ({yearsOld:F1}年前)"
+                        Detail = detailText
                     });
                 }
 
