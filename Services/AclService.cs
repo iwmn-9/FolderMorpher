@@ -345,8 +345,16 @@ namespace AstraSize.Services
                           || rule.IdentityReference.Value.Contains("Users")
                           || rule.IdentityReference.Value.Contains("Administrators");
 
+                string sidStr = string.Empty;
+                try
+                {
+                    sidStr = rule.IdentityReference.Translate(typeof(SecurityIdentifier)).Value;
+                }
+                catch { }
+
                 var entry = new SimAclEntry
                 {
+                    Sid = sidStr,
                     AccountName = rule.IdentityReference.Value,
                     DisplayName = rule.IdentityReference.Value.Contains('\\')
                         ? rule.IdentityReference.Value.Split('\\')[1]
@@ -626,33 +634,34 @@ namespace AstraSize.Services
         }
 
         /// <summary>
-        /// 適用後の正常性検証 (Verify):
-        /// 予定していた ExpectedAfterEntries および InheritanceAfter と、OSから再取得した実態をセマンティック比較する。
+        /// 単一フォルダーのDACLセマンティック検証 (Verify):
+        /// 予定していた継承設定およびACEコレクションと、OS実機から再取得した実態をセマンティック比較する。
+        /// 継承設定の相違、未反映ACE、および予期せぬ余計なACE（remainingActual > 0）を完全検知する。
         /// </summary>
-        public AclVerificationResult VerifyChangePlan(AclChangePlan plan)
+        public AclVerificationResult VerifyFolderDacl(string folderPath, bool expectedInherit, IEnumerable<SimAclEntry> expectedEntries)
         {
             var result = new AclVerificationResult();
-            var dirInfo = new DirectoryInfo(plan.FolderPath);
+            var dirInfo = new DirectoryInfo(folderPath);
             if (!dirInfo.Exists)
             {
                 result.IsSuccess = false;
                 result.StatusText = "対象不在";
-                result.Discrepancies.Add($"フォルダが存在しません: {plan.FolderPath}");
+                result.Discrepancies.Add($"フォルダが存在しません: {folderPath}");
                 return result;
             }
 
-            var (actualEntries, actualInherit, _) = GetSimAclForFolder(plan.FolderPath);
+            var (actualEntries, actualInherit, _) = GetSimAclForFolder(folderPath);
 
             // 1. 継承フラグの一致確認
-            if (actualInherit != plan.InheritanceAfter)
+            if (actualInherit != expectedInherit)
             {
                 result.IsSuccess = false;
-                result.Discrepancies.Add($"継承設定不一致 (予定: {plan.InheritanceAfter}, 実態: {actualInherit})");
+                result.Discrepancies.Add($"継承設定不一致 (予定: {expectedInherit}, 実態: {actualInherit})");
             }
 
-            // 2. 明示ACEの突合 (ExpectedAfterEntries vs actualEntries の明示ルール)
+            // 2. 明示ACEの突合 (expectedExplicit vs actualExplicit)
             var actualExplicit = actualEntries.Where(e => !e.IsInherited).ToList();
-            var expectedExplicit = plan.ExpectedAfterEntries.Where(e => !e.IsInherited).ToList();
+            var expectedExplicit = expectedEntries.Where(e => !e.IsInherited).ToList();
 
             var remainingActual = new List<SimAclEntry>(actualExplicit);
             foreach (var exp in expectedExplicit)
@@ -669,6 +678,7 @@ namespace AstraSize.Services
                 }
             }
 
+            // 3. 計画にない予期せぬ余計なACEの検知 (完全一致保証)
             foreach (var extra in remainingActual)
             {
                 result.IsSuccess = false;
@@ -677,6 +687,15 @@ namespace AstraSize.Services
 
             result.StatusText = result.IsSuccess ? "正常" : "不一致検知";
             return result;
+        }
+
+        /// <summary>
+        /// 適用後の正常性検証 (Verify):
+        /// 予定していた ExpectedAfterEntries および InheritanceAfter と、OSから再取得した実態をセマンティック比較する。
+        /// </summary>
+        public AclVerificationResult VerifyChangePlan(AclChangePlan plan)
+        {
+            return VerifyFolderDacl(plan.FolderPath, plan.InheritanceAfter, plan.ExpectedAfterEntries);
         }
 
         public void RollbackToSnapshot(string path, AclSnapshot snapshot)

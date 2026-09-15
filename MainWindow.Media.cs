@@ -217,7 +217,7 @@ namespace AstraSize
                 {
                     _mediaService.GenerateVideoCompressBatch(dialog.FileName, _lastMediaVideos);
                     ShowToast("夜間動画圧縮バッチを生成しました");
-                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                    ShellHelper.SelectInExplorer(dialog.FileName);
                 }
                 catch (Exception ex)
                 {
@@ -256,7 +256,7 @@ namespace AstraSize
                         allItems);
 
                     ShowToast("Excelレポートを出力しました");
-                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                    ShellHelper.SelectInExplorer(dialog.FileName);
                 }
                 catch (Exception ex)
                 {
@@ -269,25 +269,7 @@ namespace AstraSize
         {
             if (MediaItemsDataGrid.SelectedItem is not MediaItem item) return;
 
-            try
-            {
-                if (File.Exists(item.FullPath))
-                {
-                    Process.Start("explorer.exe", $"/select,\"{item.FullPath}\"");
-                }
-                else
-                {
-                    var dir = Path.GetDirectoryName(item.FullPath);
-                    if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
-                    {
-                        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Failed to open explorer for media item: {ex.Message}");
-            }
+            ShellHelper.SelectInExplorer(item.FullPath);
         }
         #endregion
     }

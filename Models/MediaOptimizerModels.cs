@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FolderMorpher.Services;
 
 namespace FolderMorpher.Models
 {
@@ -10,11 +11,11 @@ namespace FolderMorpher.Models
         public string DirectoryPath { get; set; } = string.Empty;
         public string Extension { get; set; } = string.Empty;
         public long OriginalSizeBytes { get; set; }
-        public string OriginalSizeFormatted => FormatSize(OriginalSizeBytes);
+        public string OriginalSizeFormatted => FormatHelper.FormatBytes(OriginalSizeBytes, 2);
         public long OptimizedSizeBytes { get; set; }
-        public string OptimizedSizeFormatted => OptimizedSizeBytes > 0 ? FormatSize(OptimizedSizeBytes) : "―";
+        public string OptimizedSizeFormatted => OptimizedSizeBytes > 0 ? FormatHelper.FormatBytes(OptimizedSizeBytes, 2) : "―";
         public long SavedBytes => OriginalSizeBytes > OptimizedSizeBytes ? OriginalSizeBytes - OptimizedSizeBytes : 0;
-        public string SavedSizeFormatted => SavedBytes > 0 ? FormatSize(SavedBytes) : "―";
+        public string SavedSizeFormatted => SavedBytes > 0 ? FormatHelper.FormatBytes(SavedBytes, 2) : "―";
         public double ReductionPercent => OriginalSizeBytes > 0 && SavedBytes > 0 ? (double)SavedBytes / OriginalSizeBytes * 100.0 : 0;
 
         public int Width { get; set; }
@@ -24,17 +25,6 @@ namespace FolderMorpher.Models
         public string ExclusionReason { get; set; } = string.Empty;
         public string Status { get; set; } = "待機";
         public bool IsProcessed { get; set; }
-
-        private static string FormatSize(long bytes)
-        {
-            if (bytes >= 1024L * 1024L * 1024L)
-                return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
-            if (bytes >= 1024L * 1024L)
-                return $"{bytes / (1024.0 * 1024.0):F2} MB";
-            if (bytes >= 1024L)
-                return $"{bytes / 1024.0:F1} KB";
-            return $"{bytes} B";
-        }
     }
 
     public class MediaOptimizeOptions
@@ -59,17 +49,6 @@ namespace FolderMorpher.Models
         public long TotalOriginalBytes { get; set; }
         public long TotalOptimizedBytes { get; set; }
         public long TotalSavedBytes => TotalOriginalBytes > TotalOptimizedBytes ? TotalOriginalBytes - TotalOptimizedBytes : 0;
-        public string TotalSavedSizeFormatted => FormatSize(TotalSavedBytes);
-
-        private static string FormatSize(long bytes)
-        {
-            if (bytes >= 1024L * 1024L * 1024L)
-                return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
-            if (bytes >= 1024L * 1024L)
-                return $"{bytes / (1024.0 * 1024.0):F2} MB";
-            if (bytes >= 1024L)
-                return $"{bytes / 1024.0:F1} KB";
-            return $"{bytes} B";
-        }
+        public string TotalSavedSizeFormatted => FormatHelper.FormatBytes(TotalSavedBytes, 2);
     }
 }

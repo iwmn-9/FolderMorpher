@@ -737,19 +737,7 @@ namespace AstraSize
                 if (string.IsNullOrEmpty(_targetPath) || string.IsNullOrEmpty(item.Name)) return;
 
                 string fullPath = System.IO.Path.Combine(_targetPath, item.Name);
-                if (Directory.Exists(fullPath) || File.Exists(fullPath))
-                {
-                    try
-                    {
-                        Process.Start(new ProcessStartInfo
-                        {
-                            FileName = "explorer.exe",
-                            Arguments = Directory.Exists(fullPath) ? $"\"{fullPath}\"" : $"/select,\"{fullPath}\"",
-                            UseShellExecute = true
-                        });
-                    }
-                    catch { }
-                }
+                ShellHelper.SelectInExplorer(fullPath);
             }
         }
 

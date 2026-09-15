@@ -58,7 +58,7 @@ namespace AstraSize
             if (SidebarVersionText != null)
             {
                 var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-                string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v2.1.0";
+                string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v2.1.1";
                 SidebarVersionText.Text = App.IsClientMode
                     ? $"FolderCleaner {verStr}"
                     : $"FolderMorpher {verStr}";
@@ -114,7 +114,6 @@ namespace AstraSize
             if (FolderChildSharesDataGrid != null) FolderChildSharesDataGrid.ToolTip = isJa ? "ダブルクリックで該当フォルダへドリルダウン" : "Double-click to drill down";
 
             StorageKpiScannedSizeTitle.Text = isJa ? "スキャン対象 容量" : "Scanned Capacity";
-            StorageKpiLargestFileTitle.Text = isJa ? "最大ファイル Top 1" : "Largest File Top 1";
             StorageKpiDiffTrendTitle.Text = isJa ? "前回差分推移" : "Historical Growth";
 
             if (InsightsTargetScopeTextBlock.Text == "スコープ: 全体" || InsightsTargetScopeTextBlock.Text == "Scope: Entire Scan")
@@ -140,15 +139,15 @@ namespace AstraSize
             ColTreeCount.Header = isJa ? "配下ファイル数" : "Item Count";
             ColTreeModified.Header = isJa ? "最終更新日時" : "Last Modified";
 
-            StorageTopFilesTitleText.Text = isJa ? "巨大ファイル Top 10 (直接起動対応)" : "Largest Files Top 10 (Double-Click to Reveal)";
+            StorageTopFilesTitleText.Text = isJa ? "容量上位ファイル Top 10" : "Top 10 Largest Files";
             ColTopFileName.Header = isJa ? "ファイル名" : "File Name";
             ColTopFileSize.Header = isJa ? "容量" : "Size";
 
-            StorageDirectSharesTitleText.Text = isJa ? "選択フォルダーの内訳 (直下シェア)" : "Folder Content Share Breakdown";
+            StorageDirectSharesTitleText.Text = isJa ? "選択フォルダーの内訳" : "Folder Content Breakdown";
             StorageDirectSharesSubText.Text = isJa ? "Wクリックで下層へドリルダウン展開" : "Double-click item to drill down in tree";
             ColShareName.Header = isJa ? "直下アイテム" : "Direct Child Item";
             ColShareSize.Header = isJa ? "容量" : "Size";
-            ColShareRatio.Header = isJa ? "直下比率" : "Share Ratio";
+            ColShareRatio.Header = isJa ? "直下比率" : "Subfolder Share";
 
             // ==========================================
             // Tab 1 (Live ACL & Effective Access)

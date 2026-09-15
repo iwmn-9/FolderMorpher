@@ -35,6 +35,7 @@ namespace FolderMorpher.Services.Testing
             await TestAclChangePlanPipelineAndSemanticVerificationAsync();
             await TestOptimisticLockAndEffectiveAccessChangePointsAsync();
             await TestLiveAclSnapshotPersistenceFailureRejectionAsync();
+            TestSimAclEntrySidFirstMatching();
         }
 
         public static void TestLiveAclDenyAndInheritance()
@@ -1600,6 +1601,67 @@ namespace FolderMorpher.Services.Testing
                 {
                     try { Directory.Delete(tempDir, true); } catch { }
                 }
+            }
+        }
+
+        public static void TestSimAclEntrySidFirstMatching()
+        {
+            // 1. 同一アカウント名だが異なるSID（マルチドメイン・混在環境で別アイデンティティ）
+            var entryA = new SimAclEntry
+            {
+                AccountName = "DOMAIN\\Taro",
+                Sid = "S-1-5-21-11111-22222-33333-1001",
+                AccessType = AccessControlType.Allow,
+                InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags = PropagationFlags.None
+            };
+            var entryB = new SimAclEntry
+            {
+                AccountName = "DOMAIN\\Taro",
+                Sid = "S-1-5-21-99999-88888-77777-1001", // 異なるSID
+                AccessType = AccessControlType.Allow,
+                InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags = PropagationFlags.None
+            };
+            if (entryA.MatchesKey(entryB))
+            {
+                throw new InvalidOperationException("重大欠陥: 異なるSIDを持つエントリが、同名アカウント名という理由だけで一致判定されてしまいました！");
+            }
+
+            // 2. 表記揺れ（アカウント名は大文字小文字やUPN違いなど）だが同一SID
+            var entryC = new SimAclEntry
+            {
+                AccountName = "domain.local\\taro_alias",
+                Sid = "S-1-5-21-11111-22222-33333-1001", // entryA と同一SID
+                AccessType = AccessControlType.Allow,
+                InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags = PropagationFlags.None
+            };
+            if (!entryA.MatchesKey(entryC))
+            {
+                throw new InvalidOperationException("重大欠陥: 同一SIDを持つエントリが、アカウント名表記の違いによって不一致判定されてしまいました！");
+            }
+
+            // 3. SIDが未解決（空）の場合は従来通りアカウント名による一致判定にフォールバック
+            var entryD = new SimAclEntry
+            {
+                AccountName = "DOMAIN\\Hanako",
+                Sid = string.Empty,
+                AccessType = AccessControlType.Allow,
+                InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags = PropagationFlags.None
+            };
+            var entryE = new SimAclEntry
+            {
+                AccountName = "domain\\hanako",
+                Sid = string.Empty,
+                AccessType = AccessControlType.Allow,
+                InheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags = PropagationFlags.None
+            };
+            if (!entryD.MatchesKey(entryE))
+            {
+                throw new InvalidOperationException("重大欠陥: SIDが空の場合のアカウント名フォールバック比較が正しく機能していません！");
             }
         }
     }

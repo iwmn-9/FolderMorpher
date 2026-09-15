@@ -181,7 +181,7 @@ namespace AstraSize
                 {
                     _linkFixService.GenerateGpoLogonScript(dialog.FileName, oldPattern, newPattern);
                     ShowToast("GPOログオンスクリプトを生成しました");
-                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                    ShellHelper.SelectInExplorer(dialog.FileName);
                 }
                 catch (Exception ex)
                 {

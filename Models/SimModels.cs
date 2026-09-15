@@ -44,6 +44,7 @@ namespace AstraSize.Models
     public class SimAclEntry : INotifyPropertyChanged
     {
         private string _accountName = string.Empty;
+        private string _sid = string.Empty;
         private string _displayName = string.Empty;
         private AdPrincipalType _principalType = AdPrincipalType.Group;
         private FileSystemRights _rights = FileSystemRights.ReadAndExecute;
@@ -52,6 +53,12 @@ namespace AstraSize.Models
         private InheritanceFlags _inheritanceFlags = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
         private PropagationFlags _propagationFlags = PropagationFlags.None;
         private string _appliesTo = "このフォルダー、サブフォルダーおよびファイル";
+
+        public string Sid
+        {
+            get => _sid;
+            set { _sid = value; OnPropertyChanged(); }
+        }
 
         public string AccountName
         {
@@ -421,6 +428,7 @@ namespace AstraSize.Models
         {
             return new SimAclEntry
             {
+                Sid = this.Sid,
                 AccountName = this.AccountName,
                 DisplayName = this.DisplayName,
                 PrincipalType = this.PrincipalType,
@@ -430,6 +438,24 @@ namespace AstraSize.Models
                 InheritanceFlags = this.InheritanceFlags,
                 PropagationFlags = this.PropagationFlags
             };
+        }
+
+        /// <summary>
+        /// SIDが両方に存在する場合はSID完全一致を最優先。
+        /// SIDが欠落している場合のみドメイン修飾の有無（DOMAIN\User と User）のアカウント名フォールバック判定を行う。
+        /// </summary>
+        public static bool IsSameAccount(SimAclEntry a, SimAclEntry b)
+        {
+            if (a == null || b == null) return false;
+
+            // 1. SIDが存在する場合はSID比較を正本として判定
+            if (!string.IsNullOrWhiteSpace(a.Sid) && !string.IsNullOrWhiteSpace(b.Sid))
+            {
+                return string.Equals(a.Sid, b.Sid, StringComparison.OrdinalIgnoreCase);
+            }
+
+            // 2. フォールバック: アカウント名文字列比較
+            return IsSameAccount(a.AccountName, b.AccountName);
         }
 
         /// <summary>
@@ -471,7 +497,7 @@ namespace AstraSize.Models
         public bool MatchesKey(SimAclEntry other)
         {
             if (other == null) return false;
-            return IsSameAccount(this.AccountName, other.AccountName) &&
+            return IsSameAccount(this, other) &&
                    this.AccessType == other.AccessType &&
                    this.InheritanceFlags == other.InheritanceFlags &&
                    this.PropagationFlags == other.PropagationFlags;

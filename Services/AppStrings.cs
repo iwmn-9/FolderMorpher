@@ -73,7 +73,6 @@ namespace FolderMorpher.Services
         public static string ExportExcelCsv => IsJa ? "Excel / CSV 出力" : "Export Excel/CSV";
         public static string HistoryGraph => IsJa ? "📈 容量推移グラフ" : "📈 History Graph";
         public static string KpiScannedSizeTitle => IsJa ? "スキャン対象 容量" : "Scanned Capacity";
-        public static string KpiLargestFileTitle => IsJa ? "最大ファイル Top 1" : "Largest File Top 1";
         public static string KpiDiffTrendTitle => IsJa ? "前回差分推移" : "Historical Growth";
         public static string ScopeEntire => IsJa ? "スコープ: 全体" : "Scope: Entire Scan";
         public static string NoComparisonData => IsJa ? "比較データなし" : "No comparison data";
@@ -86,14 +85,14 @@ namespace FolderMorpher.Services
         public static string ColTreeModified => IsJa ? "最終更新日時" : "Last Modified";
         public static string ScanSubtreeAsRoot => IsJa ? "🔍 このフォルダーをルートにしてスキャン" : "🔍 Scan This Subfolder as Root";
         public static string ViewEditAcl => IsJa ? "🛡️ このフォルダーのNTFS権限を確認・編集" : "🛡️ View/Edit NTFS Permissions";
-        public static string TopFilesTitle => IsJa ? "巨大ファイル Top 10 (直接起動対応)" : "Largest Files Top 10 (Double-Click to Reveal)";
+        public static string TopFilesTitle => IsJa ? "容量上位ファイル Top 10" : "Top 10 Largest Files";
         public static string ColTopFileName => IsJa ? "ファイル名" : "File Name";
         public static string ColTopFileSize => IsJa ? "容量" : "Size";
-        public static string DirectSharesTitle => IsJa ? "選択フォルダーの内訳 (直下シェア)" : "Folder Content Share Breakdown";
+        public static string DirectSharesTitle => IsJa ? "選択フォルダーの内訳" : "Folder Content Breakdown";
         public static string DirectSharesSubText => IsJa ? "Wクリックで下層へドリルダウン展開" : "Double-click item to drill down in tree";
         public static string ColShareName => IsJa ? "直下アイテム" : "Direct Child Item";
         public static string ColShareSize => IsJa ? "容量" : "Size";
-        public static string ColShareRatio => IsJa ? "直下比率" : "Share Ratio";
+        public static string ColShareRatio => IsJa ? "直下比率" : "Subfolder Share";
 
         // ==========================================
         // 容量推移グラフ & 数理予測 (History & Forecasting)

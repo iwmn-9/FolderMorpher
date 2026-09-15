@@ -358,7 +358,7 @@ namespace AstraSize.Services
                         }
                     }
 
-                    // 3. セマンティックVerify（事後検証）: OSから実態DACLを再取得し、計画と完全突合
+                    // 3. セマンティックVerify（事後検証）: OSから実態DACLを再取得し、計画と完全突合（正本: AclService.VerifyFolderDacl）
                     var aclService = new AclService();
                     foreach (var action in plan.FolderActions)
                     {
@@ -367,50 +367,20 @@ namespace AstraSize.Services
 
                         try
                         {
-                            var (actualEntries, actualInherit, _) = aclService.GetSimAclForFolder(action.FullTargetPath);
-
-                            // A. 継承フラグの一致確認
-                            if (actualInherit != action.InheritAcl)
-                            {
-                                string err = $"{action.FullTargetPath}: 継承設定不一致 (計画: {action.InheritAcl}, 実態: {actualInherit})";
-                                result.VerificationErrors.Add(err);
-                                result.Logs.Add($"[Verify不一致] {err}");
-                                result.VerificationFailedCount++;
-                                continue;
-                            }
-
-                            // B. 明示ACEの突合 (計画された明示ルール vs 実態の明示ルール)
-                            var expectedExplicit = action.InheritAcl
-                                ? action.AclEntries.Where(a => !a.IsInherited).ToList()
-                                : action.AclEntries;
-                            var actualExplicit = actualEntries.Where(e => !e.IsInherited).ToList();
-
-                            bool folderMatched = true;
-                            var remainingActual = new List<SimAclEntry>(actualExplicit);
-
-                            foreach (var exp in expectedExplicit)
-                            {
-                                var matched = remainingActual.FirstOrDefault(a => a.MatchesExact(exp));
-                                if (matched != null)
-                                {
-                                    remainingActual.Remove(matched);
-                                }
-                                else
-                                {
-                                    folderMatched = false;
-                                    string err = $"{action.FullTargetPath}: 未反映ACE '{exp.DisplayName} ({exp.AccessType} {exp.FormattedRights})'";
-                                    result.VerificationErrors.Add(err);
-                                    result.Logs.Add($"[Verify不一致] {err}");
-                                }
-                            }
-
-                            if (folderMatched)
+                            var verifyResult = aclService.VerifyFolderDacl(action.FullTargetPath, action.InheritAcl, action.AclEntries);
+                            if (verifyResult.IsSuccess)
                             {
                                 result.VerifiedCount++;
                             }
                             else
                             {
                                 result.VerificationFailedCount++;
+                                foreach (var disc in verifyResult.Discrepancies)
+                                {
+                                    string err = $"{action.FullTargetPath}: {disc}";
+                                    result.VerificationErrors.Add(err);
+                                    result.Logs.Add($"[Verify不一致] {err}");
+                                }
                             }
                         }
                         catch (Exception vex)

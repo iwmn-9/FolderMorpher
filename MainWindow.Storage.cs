@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -361,30 +361,6 @@ namespace AstraSize
                 ScannedSizeTextBlock.Text = FileItemNode.FormatBytes(tab.RootNode.SizeBytes);
                 TotalFilesTextBlock.Text = $"{tab.RootNode.FileCount:N0} ファイル / {tab.RootNode.FolderCount:N0} フォルダ";
 
-                // 最大ファイル (Top 1)
-                LargestFileInfo? largest = null;
-                if (tab.RootNode.CachedTopFiles != null && tab.RootNode.CachedTopFiles.Count > 0)
-                {
-                    largest = tab.RootNode.CachedTopFiles.FirstOrDefault();
-                }
-                else
-                {
-                    var (topFiles, _) = DiskScanService.GetInsightsForNode(tab.RootNode);
-                    tab.RootNode.CachedTopFiles = topFiles;
-                    largest = topFiles.FirstOrDefault();
-                }
-
-                if (largest != null)
-                {
-                    LargestFileSizeTextBlock.Text = largest.FormattedSize;
-                    LargestFileNameTextBlock.Text = largest.Name;
-                }
-                else
-                {
-                    LargestFileSizeTextBlock.Text = "--";
-                    LargestFileNameTextBlock.Text = "--";
-                }
-
                 // 前回スキャンとの差分推移
                 if (tab.RootNode.DiffBytes.HasValue && tab.RootNode.DiffBytes.Value != 0)
                 {
@@ -406,8 +382,6 @@ namespace AstraSize
             {
                 ScannedSizeTextBlock.Text = "0.00 GB";
                 TotalFilesTextBlock.Text = "0 ファイル / 0 フォルダ";
-                LargestFileSizeTextBlock.Text = "--";
-                LargestFileNameTextBlock.Text = "--";
                 TrendDiffTextBlock.Text = "比較データなし";
                 LastScanDateTextBlock.Text = "初回スキャン";
             }
@@ -561,29 +535,7 @@ namespace AstraSize
             }
         }
 
-        private void OpenExplorerWithSelection(string filePath)
-        {
-            try
-            {
-                if (File.Exists(filePath) || Directory.Exists(filePath))
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "explorer.exe",
-                        Arguments = $"/select,\"{filePath}\"",
-                        UseShellExecute = true
-                    });
-                }
-                else
-                {
-                    MessageBox.Show($"対象のパスが見つかりません:\n{filePath}", "通知", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"エクスプローラー起動エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
+        private void OpenExplorerWithSelection(string filePath) { ShellHelper.SelectInExplorer(filePath); }
 
         private void CtxOpenLiveAcl_Click(object sender, RoutedEventArgs e)
         {
@@ -612,18 +564,7 @@ namespace AstraSize
             }
         }
 
-        private void OpenInExplorer(string fullPath)
-        {
-            try
-            {
-                if (File.Exists(fullPath)) Process.Start("explorer.exe", $"/select,\"{fullPath}\"");
-                else if (Directory.Exists(fullPath)) Process.Start("explorer.exe", $"\"{fullPath}\"");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"エクスプローラー起動エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
+        private void OpenInExplorer(string fullPath) { ShellHelper.SelectInExplorer(fullPath); }
 
         private void CtxCopyPath_Click(object sender, RoutedEventArgs e)
         {
@@ -695,7 +636,7 @@ namespace AstraSize
                         ShowToast($"📄 {Path.GetFileName(dialog.FileName)} を出力しました");
                     }
 
-                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                    ShellHelper.SelectInExplorer(dialog.FileName);
                 }
                 catch (Exception ex)
                 {

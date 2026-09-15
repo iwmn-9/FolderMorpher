@@ -41,7 +41,7 @@ namespace FolderMorpher.Models
         public string FileName { get; set; } = string.Empty;
         public string DirectoryPath { get; set; } = string.Empty;
         public long Size { get; set; }
-        public string SizeFormatted => FormatSize(Size);
+        public string SizeFormatted => FormatHelper.FormatBytes(Size, 2);
         public DateTime LastWriteTime { get; set; }
         public DateTime LastAccessTime { get; set; }
         public AuditIssueType IssueType { get; set; }
@@ -104,16 +104,6 @@ namespace FolderMorpher.Models
             ? GroupTextPalette[DuplicateGroupColorIndex % GroupTextPalette.Length]
             : "#64748B";
 
-        private static string FormatSize(long bytes)
-        {
-            if (bytes >= 1024L * 1024L * 1024L)
-                return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
-            if (bytes >= 1024L * 1024L)
-                return $"{bytes / (1024.0 * 1024.0):F2} MB";
-            if (bytes >= 1024L)
-                return $"{bytes / 1024.0:F1} KB";
-            return $"{bytes} B";
-        }
     }
 
     public class AuditSummary
@@ -128,19 +118,8 @@ namespace FolderMorpher.Models
         public int PathTooLongCount { get; set; }
         public int InvalidCharCount { get; set; }
 
-        public string DuplicateWastedSizeFormatted => FormatSize(DuplicateWastedBytes);
-        public string DormantSizeFormatted => FormatSize(DormantBytes);
-
-        private static string FormatSize(long bytes)
-        {
-            if (bytes >= 1024L * 1024L * 1024L)
-                return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
-            if (bytes >= 1024L * 1024L)
-                return $"{bytes / (1024.0 * 1024.0):F2} MB";
-            if (bytes >= 1024L)
-                return $"{bytes / 1024.0:F1} KB";
-            return $"{bytes} B";
-        }
+        public string DuplicateWastedSizeFormatted => FormatHelper.FormatBytes(DuplicateWastedBytes, 2);
+        public string DormantSizeFormatted => FormatHelper.FormatBytes(DormantBytes, 2);
     }
 
     public class AuditOptions

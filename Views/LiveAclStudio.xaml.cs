@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -388,16 +388,7 @@ namespace AstraSize.Views
         {
             if (LiveAclFolderTreeView.SelectedItem is FileItemNode node)
             {
-                try
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "explorer.exe",
-                        Arguments = Directory.Exists(node.FullPath) ? $"\"{node.FullPath}\"" : $"/select,\"{node.FullPath}\"",
-                        UseShellExecute = true
-                    });
-                }
-                catch { }
+                ShellHelper.SelectInExplorer(node.FullPath);
             }
         }
 
@@ -1337,7 +1328,7 @@ namespace AstraSize.Views
                 {
                     _excelService.ExportEffectiveAccessReport(sfd.FileName, _currentEffectiveReport);
                     ShowToast($"📋 {Path.GetFileName(sfd.FileName)} を出力しました");
-                    Process.Start("explorer.exe", $"/select,\"{sfd.FileName}\"");
+                    ShellHelper.SelectInExplorer(sfd.FileName);
                     Process.Start(new ProcessStartInfo(sfd.FileName) { UseShellExecute = true });
                 }
                 catch (Exception ex)
@@ -1351,14 +1342,7 @@ namespace AstraSize.Views
         {
             if (RevFoldersDataGrid.SelectedItem is EffectiveFolderAccessItem item && !string.IsNullOrWhiteSpace(item.FolderPath))
             {
-                try
-                {
-                    if (Directory.Exists(item.FolderPath))
-                    {
-                        Process.Start(new ProcessStartInfo("explorer.exe", item.FolderPath) { UseShellExecute = true });
-                    }
-                }
-                catch { }
+                ShellHelper.OpenFolder(item.FolderPath);
             }
         }
 

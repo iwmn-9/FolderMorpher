@@ -774,6 +774,31 @@ namespace FolderMorpher.Services.Testing
                     throw new InvalidOperationException(
                         $"VerificationFailedCount must be 0, but got {result.VerificationFailedCount}. Discrepancies: {string.Join(", ", result.VerificationErrors)}");
                 }
+
+                // 計画にない余計なACE（不法侵入ACE）が存在する場合、VerifyFolderDaclが確実に不一致として検知するかテスト
+                var deployedPath = Path.Combine(tempDir, "ProjectRoot");
+                var dInfo = new DirectoryInfo(deployedPath);
+                var sec = dInfo.GetAccessControl(AccessControlSections.Access);
+                sec.AddAccessRule(new FileSystemAccessRule(
+                    new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+                    FileSystemRights.ReadAndExecute,
+                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    PropagationFlags.None,
+                    AccessControlType.Allow));
+                dInfo.SetAccessControl(sec);
+
+                var aclService = new AclService();
+                var verifyResult = aclService.VerifyFolderDacl(deployedPath, rootNode.InheritAcl, rootNode.AclEntries);
+                if (verifyResult.IsSuccess)
+                {
+                    throw new InvalidOperationException(
+                        "重大欠陥: 計画に存在しない余計なACEが実機に注入されたにもかかわらず、VerifyFolderDaclが完全一致(True)と誤判定しました！");
+                }
+                if (!verifyResult.Discrepancies.Any(d => d.Contains("予期せぬACE")))
+                {
+                    throw new InvalidOperationException(
+                        $"重大欠陥: 不一致理由に余計な実機ルールの検知が含まれていません！ 出力: {string.Join("; ", verifyResult.Discrepancies)}");
+                }
             }
             finally
             {

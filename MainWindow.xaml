@@ -79,7 +79,7 @@
                         <!-- Expanded Footer (2-tier layout: Brand on top, Controls below) -->
                         <StackPanel x:Name="SidebarFooterExpandedPanel" Margin="14,8,14,10">
                             <StackPanel Margin="0,0,0,8">
-                                <TextBlock x:Name="SidebarVersionText" Text="FolderMorpher v2.1.0" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock x:Name="SidebarVersionText" Text="FolderMorpher v2.1.1" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                                 <TextBlock x:Name="SidebarSubtitleText" Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#94A3B8" Margin="0,1,0,0"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal">
@@ -219,8 +219,6 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="16"/>
                             <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="16"/>
-                            <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
                         <Border Grid.Column="0" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
@@ -237,14 +235,6 @@
                         </Border>
 
                         <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
-                            <StackPanel>
-                                <TextBlock x:Name="StorageKpiLargestFileTitle" Text="最大ファイル (Top 1)" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
-                                <TextBlock x:Name="LargestFileSizeTextBlock" Text="--" FontSize="22" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#E11D48" Margin="0,2,0,0"/>
-                                <TextBlock x:Name="LargestFileNameTextBlock" Text="--" FontSize="11.5" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Grid.Column="4" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
                             <StackPanel>
                                 <TextBlock x:Name="StorageKpiDiffTrendTitle" Text="前回スキャンとの差分推移" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
                                 <TextBlock x:Name="TrendDiffTextBlock" Text="比較データなし" FontSize="22" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="{StaticResource AccentSky}" Margin="0,2,0,0"/>
@@ -389,7 +379,7 @@
 
                             <!-- Folder Direct Children Shares Header (2行スタック構造) -->
                             <StackPanel Grid.Row="2" Margin="0,8,0,6">
-                                <TextBlock x:Name="StorageDirectSharesTitleText" Text="📁 選択フォルダの内訳 (直下シェア)" FontWeight="SemiBold" FontSize="12.5" Foreground="#1E293B"/>
+                                <TextBlock x:Name="StorageDirectSharesTitleText" Text="📁 選択フォルダーの内訳" FontWeight="SemiBold" FontSize="12.5" Foreground="#1E293B"/>
                                 <TextBlock x:Name="StorageDirectSharesSubText" Text="Wクリックでツリー連動 ➔" FontSize="11" Foreground="#0284C7" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
 
@@ -409,7 +399,7 @@
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
                                     <DataGridTextColumn x:Name="ColShareSize" Header="容量" Binding="{Binding FormattedSize}" Width="75" ElementStyle="{StaticResource RightAlignedCell}"/>
-                                    <DataGridTemplateColumn x:Name="ColShareRatio" Header="直下シェア" Width="105">
+                                    <DataGridTemplateColumn x:Name="ColShareRatio" Header="直下比率" Width="105">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate DataType="{x:Type models:FolderChildShareItem}">
                                                 <Grid Margin="4,2">

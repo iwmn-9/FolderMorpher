@@ -1386,7 +1386,7 @@ namespace AstraSize
                         ShowToast($"📄 {Path.GetFileName(dialog.FileName)} を出力しました");
                     }
 
-                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                    ShellHelper.SelectInExplorer(dialog.FileName);
                 }
                 catch (Exception ex)
                 {
@@ -1554,7 +1554,7 @@ namespace AstraSize
                         ShowToast($"📄 {Path.GetFileName(dialog.FileName)} を出力しました");
                     }
 
-                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                    ShellHelper.SelectInExplorer(dialog.FileName);
                 }
                 catch (Exception ex)
                 {

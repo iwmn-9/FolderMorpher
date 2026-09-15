@@ -29,101 +29,67 @@ namespace FolderMorpher.Services
 
                 if (!Directory.Exists(options.TargetDirectory)) return (images, videos);
 
-                var rootDir = new DirectoryInfo(options.TargetDirectory);
                 int scanned = 0;
-                var dirStack = new Stack<DirectoryInfo>();
-                dirStack.Push(rootDir);
+                var fileEnumerable = SafeFileEnumerator.EnumerateFilesSafe(options.TargetDirectory, "*.*", coverage: null, ct);
 
-                while (dirStack.Count > 0)
+                foreach (var fi in fileEnumerable)
                 {
                     ct.ThrowIfCancellationRequested();
-                    var currentDir = dirStack.Pop();
+                    scanned++;
+                    if (scanned % 50 == 0) progress?.Report($"メディア走査中: {scanned} 件...");
 
-                    // 1. サブディレクトリをスタックに積む（アクセス権拒否やジャンクションは安全にスキップ）
-                    try
+                    string ext = fi.Extension.ToLowerInvariant();
+                    string fullLower = fi.FullName.ToLowerInvariant();
+
+                    // 1. マスター拡張子判定（自動聖域保護）
+                    bool isMasterExt = MasterExtensions.Contains(ext);
+
+                    // 2. フォルダ名キーワード判定（聖域保護）
+                    bool isKeywordExcluded = options.ExcludedFolderKeywords.Any(k => fullLower.Contains(k.ToLowerInvariant()));
+
+                    // 3. カスタム除外パス判定
+                    bool isCustomExcluded = options.CustomExcludedPaths.Any(p => fullLower.StartsWith(p.ToLowerInvariant()));
+
+                    bool isExcluded = isMasterExt || isKeywordExcluded || isCustomExcluded;
+                    string reason = string.Empty;
+                    if (isMasterExt) reason = "プロ用マスター拡張子 (.raw/.psd等)";
+                    else if (isKeywordExcluded) reason = "保護フォルダ名 (Master/原稿等)";
+                    else if (isCustomExcluded) reason = "ユーザー指定の除外フォルダ";
+
+                    // 画像ファイル
+                    if (ImageExtensions.Contains(ext) || isMasterExt)
                     {
-                        foreach (var sub in currentDir.GetDirectories())
+                        // 指定サイズ未満（例: 2MB未満のアイコンや小画像）はスキップ
+                        if (!isExcluded && fi.Length < options.MinImageSizeBytes) continue;
+
+                        images.Add(new MediaItem
                         {
-                            try
-                            {
-                                if ((sub.Attributes & FileAttributes.ReparsePoint) != 0) continue;
-                            }
-                            catch { }
-                            dirStack.Push(sub);
-                        }
+                            FullPath = fi.FullName,
+                            FileName = fi.Name,
+                            DirectoryPath = fi.DirectoryName ?? string.Empty,
+                            Extension = ext,
+                            OriginalSizeBytes = fi.Length,
+                            IsVideo = false,
+                            IsExcluded = isExcluded,
+                            ExclusionReason = reason,
+                            Status = isExcluded ? $"聖域保護 ({reason})" : "最適化対象"
+                        });
                     }
-                    catch { /* アクセス拒否フォルダは安全にスキップ */ }
-
-                    // 2. カレントディレクトリ内のファイルを走査
-                    FileInfo[] files;
-                    try
+                    // 動画ファイル
+                    else if (VideoExtensions.Contains(ext))
                     {
-                        files = currentDir.GetFiles();
-                    }
-                    catch
-                    {
-                        continue;
-                    }
-
-                    foreach (var fi in files)
-                    {
-                        ct.ThrowIfCancellationRequested();
-                        scanned++;
-                        if (scanned % 50 == 0) progress?.Report($"メディア走査中: {scanned} 件...");
-
-                        string ext = fi.Extension.ToLowerInvariant();
-                        string fullLower = fi.FullName.ToLowerInvariant();
-
-                        // 1. マスター拡張子判定（自動聖域保護）
-                        bool isMasterExt = MasterExtensions.Contains(ext);
-
-                        // 2. フォルダ名キーワード判定（聖域保護）
-                        bool isKeywordExcluded = options.ExcludedFolderKeywords.Any(k => fullLower.Contains(k.ToLowerInvariant()));
-
-                        // 3. カスタム除外パス判定
-                        bool isCustomExcluded = options.CustomExcludedPaths.Any(p => fullLower.StartsWith(p.ToLowerInvariant()));
-
-                        bool isExcluded = isMasterExt || isKeywordExcluded || isCustomExcluded;
-                        string reason = string.Empty;
-                        if (isMasterExt) reason = "プロ用マスター拡張子 (.raw/.psd等)";
-                        else if (isKeywordExcluded) reason = "保護フォルダ名 (Master/原稿等)";
-                        else if (isCustomExcluded) reason = "ユーザー指定の除外フォルダ";
-
-                        // 画像ファイル
-                        if (ImageExtensions.Contains(ext) || isMasterExt)
+                        videos.Add(new MediaItem
                         {
-                            // 指定サイズ未満（例: 2MB未満のアイコンや小画像）はスキップ
-                            if (!isExcluded && fi.Length < options.MinImageSizeBytes) continue;
-
-                            images.Add(new MediaItem
-                            {
-                                FullPath = fi.FullName,
-                                FileName = fi.Name,
-                                DirectoryPath = fi.DirectoryName ?? string.Empty,
-                                Extension = ext,
-                                OriginalSizeBytes = fi.Length,
-                                IsVideo = false,
-                                IsExcluded = isExcluded,
-                                ExclusionReason = reason,
-                                Status = isExcluded ? $"聖域保護 ({reason})" : "最適化対象"
-                            });
-                        }
-                        // 動画ファイル
-                        else if (VideoExtensions.Contains(ext))
-                        {
-                            videos.Add(new MediaItem
-                            {
-                                FullPath = fi.FullName,
-                                FileName = fi.Name,
-                                DirectoryPath = fi.DirectoryName ?? string.Empty,
-                                Extension = ext,
-                                OriginalSizeBytes = fi.Length,
-                                IsVideo = true,
-                                IsExcluded = isExcluded,
-                                ExclusionReason = reason,
-                                Status = isExcluded ? $"聖域保護 ({reason})" : "巨大動画"
-                            });
-                        }
+                            FullPath = fi.FullName,
+                            FileName = fi.Name,
+                            DirectoryPath = fi.DirectoryName ?? string.Empty,
+                            Extension = ext,
+                            OriginalSizeBytes = fi.Length,
+                            IsVideo = true,
+                            IsExcluded = isExcluded,
+                            ExclusionReason = reason,
+                            Status = isExcluded ? $"聖域保護 ({reason})" : "巨大動画"
+                        });
                     }
                 }
 

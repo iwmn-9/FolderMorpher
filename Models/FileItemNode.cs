@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Windows;
+using FolderMorpher.Services;
 
 namespace AstraSize.Models
 {
@@ -239,17 +240,7 @@ namespace AstraSize.Models
             }
         }
 
-        public static string FormatBytes(long bytes)
-        {
-            if (bytes == 0) return "0 B";
-            string sign = bytes < 0 ? "-" : "";
-            long absBytes = Math.Abs(bytes);
-            string[] suf = { "B", "KB", "MB", "GB", "TB", "PB" };
-            int place = Convert.ToInt32(Math.Floor(Math.Log(absBytes, 1024)));
-            if (place >= suf.Length) place = suf.Length - 1;
-            double num = Math.Round(absBytes / Math.Pow(1024, place), 1);
-            return $"{sign}{num:0.#} {suf[place]}";
-        }
+        public static string FormatBytes(long bytes) => FormatHelper.FormatBytes(bytes);
 
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged(string prop) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(prop));

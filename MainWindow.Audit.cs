@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -156,7 +156,7 @@ namespace AstraSize
                         _lastMediaImages.Concat(_lastMediaVideos).ToList());
 
                     ShowToast("Excelレポートを出力しました");
-                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                    ShellHelper.SelectInExplorer(dialog.FileName);
                 }
                 catch (Exception ex)
                 {
@@ -186,7 +186,7 @@ namespace AstraSize
                 {
                     _auditService.ExportAuditCsv(dialog.FileName, _lastAuditItems);
                     ShowToast("CSV台帳を出力しました");
-                    Process.Start("explorer.exe", $"/select,\"{dialog.FileName}\"");
+                    ShellHelper.SelectInExplorer(dialog.FileName);
                 }
                 catch (Exception ex)
                 {
@@ -306,21 +306,7 @@ namespace AstraSize
         {
             if (AuditItemsDataGrid.SelectedItem is not AuditItem item) return;
 
-            try
-            {
-                if (File.Exists(item.FullPath))
-                {
-                    Process.Start("explorer.exe", $"/select,\"{item.FullPath}\"");
-                }
-                else if (Directory.Exists(item.DirectoryPath))
-                {
-                    Process.Start(new ProcessStartInfo("explorer.exe", $"\"{item.DirectoryPath}\"") { UseShellExecute = true });
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Failed to open explorer for audit item: {ex.Message}");
-            }
+            ShellHelper.SelectInExplorer(item.FullPath);
         }
 
         private void AuditSmartSelectComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
