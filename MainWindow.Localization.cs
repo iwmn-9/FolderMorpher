@@ -459,6 +459,27 @@ namespace AstraSize
             MediaDiffModalCloseButton.Content = isJa ? "閉じる" : "Close";
             MediaDiffModalApplyButton.Content = isJa ? "⚡ 適用" : "⚡ Apply";
 
+            // ==========================================
+            // Migration Package Modal (移行パッケージ生成)
+            // ==========================================
+            if (MigPkgTitleText != null) MigPkgTitleText.Text = Strings.MigPkgTitle;
+            if (MigPkgSubtitleText != null) MigPkgSubtitleText.Text = Strings.MigPkgSubtitle;
+            if (MigPolicyHeaderLabel != null) MigPolicyHeaderLabel.Text = Strings.MigPolicyHeader;
+            if (MigPolicyTopLevelText != null) MigPolicyTopLevelText.Text = Strings.MigPolicyTopLevel;
+            if (MigPolicySizeBudgetText != null) MigPolicySizeBudgetText.Text = Strings.MigPolicySizeBudget;
+            if (MigPolicySingleBatchText != null) MigPolicySingleBatchText.Text = Strings.MigPolicySingleBatch;
+            if (MigOptionsHeaderLabel != null) MigOptionsHeaderLabel.Text = Strings.MigOptionsHeader;
+            if (MigModeCopyDatText != null) MigModeCopyDatText.Text = Strings.MigModeCopyDat;
+            if (MigModeCopyAllText != null) MigModeCopyAllText.Text = Strings.MigModeCopyAll;
+            if (MigIncludeExcelCheck != null) MigIncludeExcelCheck.Content = Strings.MigIncludeExcel;
+            if (MigIncludeLockCheck != null) MigIncludeLockCheck.Content = Strings.MigIncludeLock;
+            if (MigKpiTotalSizeLabel != null) MigKpiTotalSizeLabel.Text = Strings.MigKpiTotalSize;
+            if (MigKpiTotalFilesLabel != null) MigKpiTotalFilesLabel.Text = Strings.MigKpiTotalFiles;
+            if (MigKpiFullTimeLabel != null) MigKpiFullTimeLabel.Text = Strings.MigKpiFullTime;
+            if (MigKpiCutoverTimeLabel != null) MigKpiCutoverTimeLabel.Text = Strings.MigKpiCutoverTime;
+            if (MigPkgCancelButton != null) MigPkgCancelButton.Content = Strings.Cancel;
+            if (MigPkgExportButton != null) MigPkgExportButton.Content = Strings.MigExportButton;
+
             // Settings Modal
             SettingsButton.ToolTip = isJa ? "環境設定 / Settings" : "Settings";
             SettingsTitleText.Text = isJa ? "⚙️ 環境設定 (Settings)" : "⚙️ Settings";

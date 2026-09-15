@@ -1479,53 +1479,174 @@ namespace AstraSize
             DiffModalOverlay.Visibility = Visibility.Visible;
         }
 
+        #region Tab 3: Migration Package & Runbook Generation
+        private List<MigrationWavePlan> _currentWavePlans = new();
+
         private void SimExportScriptsButton_Click(object sender, RoutedEventArgs e)
         {
-            var targetRoot = SimTargetRootTextBox.Text.Trim();
-            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-
-            string message = isJa
-                ? "Robocopy の転送モードを選択してください：\n\n" +
-                  "【はい (推奨)】 新設計ACL維持モード (/COPY:DAT)\n" +
-                  "  FolderMorpherで設計・先行展開した新ACLを保護し、データと日時のみ高速転送します。\n\n" +
-                  "【いいえ】 旧環境ACL完全維持モード (/COPYALL)\n" +
-                  "  FolderMorpherで設計した新ACLは上書きされ、移行元の古いアクセス権をそのまま引き継ぎます。\n\n" +
-                  "（キャンセルで出力中止）"
-                : "Select Robocopy Transfer Mode:\n\n" +
-                  "[Yes (Recommended)] Preserve New ACLs (/COPY:DAT)\n" +
-                  "  Protects newly designed & deployed ACLs; transfers data and timestamps only.\n\n" +
-                  "[No] Keep Source ACLs (/COPYALL)\n" +
-                  "  Overwrites designed ACLs with source server permissions.\n\n" +
-                  "(Cancel to abort)";
-
-            string title = isJa ? "Robocopy 転送モード選択" : "Select Robocopy Mode";
-
-            var modeResult = MessageBox.Show(message, title, MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-
-            if (modeResult == MessageBoxResult.Cancel) return;
-            bool copyAcl = (modeResult == MessageBoxResult.No);
-
-            var roboScript = _simService.GenerateRobocopyScript(_simRootFolders, targetRoot, copyAcl: copyAcl);
-            var psScript = _simService.GeneratePowerShellAclScript(_simRootFolders, targetRoot);
-
-            var dialog = new SaveFileDialog
+            if (_simRootFolders.Count == 0)
             {
-                Title = "Robocopy 移行スクリプトを保存",
-                Filter = "バッチファイル (*.bat)|*.bat",
-                FileName = $"Run_Migration_Robocopy_{DateTime.Now:yyyyMMdd}.bat"
-            };
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                MessageBox.Show(
+                    isJa ? "移行設計ツリーが空です。先に移行元フォルダーを配置してください。" : "Migration tree is empty. Please add source folders first.",
+                    isJa ? "移行パッケージ" : "Migration Package",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
 
-            if (dialog.ShowDialog() == true)
+            MigrationPackageOverlay.Visibility = Visibility.Visible;
+            RefreshWavePlanPreview();
+        }
+
+        private void MigPkgModalClose_Click(object sender, RoutedEventArgs e)
+        {
+            MigrationPackageOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        private void MigPolicyRadio_Checked(object sender, RoutedEventArgs e)
+        {
+            if (MigrationPackageOverlay != null && MigrationPackageOverlay.Visibility == Visibility.Visible)
             {
-                File.WriteAllText(dialog.FileName, roboScript, Encoding.UTF8);
-
-                var psPath = Path.ChangeExtension(dialog.FileName, ".ps1");
-                File.WriteAllText(psPath, psScript, Encoding.UTF8);
-
-                ShowToast("移行バッチ & PowerShellスクリプトを生成しました");
-                MessageBox.Show($"移行実行用スクリプトを出力しました:\n\n• {dialog.FileName} (Robocopy)\n• {psPath} (PowerShell ACL)", "スクリプト生成完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                RefreshWavePlanPreview();
             }
         }
+
+        private void MigSizeBudgetText_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (MigrationPackageOverlay != null && MigrationPackageOverlay.Visibility == Visibility.Visible)
+            {
+                RefreshWavePlanPreview();
+            }
+        }
+
+        private void RefreshWavePlanPreview()
+        {
+            if (_simRootFolders.Count == 0) return;
+
+            var options = BuildCurrentMigrationOptions();
+            var service = new MigrationPackageService();
+            _currentWavePlans = service.PlanWaves(_simRootFolders, options);
+
+            MigWavePlanDataGrid.ItemsSource = null;
+            MigWavePlanDataGrid.ItemsSource = _currentWavePlans;
+
+            // KPI 計算
+            long totalBytes = _currentWavePlans.Sum(w => w.TotalSizeBytes);
+            long totalFiles = _currentWavePlans.Sum(w => w.TotalFileCount);
+            double fullSec = (double)totalBytes / (80L * 1024 * 1024);
+            var fullTime = TimeSpan.FromSeconds(Math.Max(5, (int)fullSec));
+            double cutoverSec = (double)(totalBytes * 0.02) / (80L * 1024 * 1024);
+            var cutoverTime = TimeSpan.FromSeconds(Math.Max(5, (int)cutoverSec));
+
+            MigKpiTotalSizeVal.Text = FormatHelper.FormatBytes(totalBytes, 2);
+            MigKpiTotalFilesVal.Text = $"{totalFiles:N0} 件";
+            MigKpiFullTimeVal.Text = FormatTimeSpanForKpi(fullTime);
+            MigKpiCutoverTimeVal.Text = FormatTimeSpanForKpi(cutoverTime);
+
+            string targetRoot = string.IsNullOrWhiteSpace(options.TargetRoot) ? @"\\NewServer\Share" : options.TargetRoot;
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+            MigFooterNoticeText.Text = isJa
+                ? $"※ 新環境ルート: {targetRoot} | 子孫フォルダ (/XD) は自動除外されます"
+                : $"* Target Root: {targetRoot} | Descendant folders are excluded via /XD";
+        }
+
+        private MigrationPackageOptions BuildCurrentMigrationOptions()
+        {
+            var policy = MigrationSplitPolicy.ByTopLevelFolder;
+            if (MigPolicySizeBudgetRadio.IsChecked == true)
+            {
+                policy = MigrationSplitPolicy.BySizeBudget;
+            }
+            else if (MigPolicySingleBatchRadio.IsChecked == true)
+            {
+                policy = MigrationSplitPolicy.SingleBatch;
+            }
+
+            long budgetGb = 500;
+            if (long.TryParse(MigSizeBudgetText.Text.Trim(), out var parsedGb) && parsedGb > 0)
+            {
+                budgetGb = parsedGb;
+            }
+
+            return new MigrationPackageOptions
+            {
+                Policy = policy,
+                SizeBudgetBytes = budgetGb * 1024L * 1024 * 1024,
+                TargetRoot = SimTargetRootTextBox.Text.Trim(),
+                CopyAcl = (MigModeCopyAllRadio.IsChecked == true),
+                IncludeRunbookExcel = (MigIncludeExcelCheck.IsChecked == true),
+                IncludeOldShareLock = (MigIncludeLockCheck.IsChecked == true),
+                Threads = 16
+            };
+        }
+
+        private static string FormatTimeSpanForKpi(TimeSpan ts)
+        {
+            if (ts.TotalDays >= 1.0)
+            {
+                return $"{(int)ts.TotalDays}d {ts.Hours}h {ts.Minutes}m";
+            }
+            if (ts.TotalHours >= 1.0)
+            {
+                return $"{(int)ts.TotalHours}h {ts.Minutes}m";
+            }
+            if (ts.TotalMinutes >= 1.0)
+            {
+                return $"{(int)ts.TotalMinutes}m {ts.Seconds}s";
+            }
+            return $"{Math.Max(1, (int)ts.TotalSeconds)}s";
+        }
+
+        private async void MigPkgExportButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_simRootFolders.Count == 0) return;
+
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+            var dialog = new OpenFolderDialog
+            {
+                Title = isJa ? "移行パッケージの出力先フォルダーを選択" : "Select Destination Folder for Migration Package"
+            };
+
+            if (dialog.ShowDialog() != true) return;
+
+            var options = BuildCurrentMigrationOptions();
+            options.OutputDirectory = dialog.FolderName;
+
+            MigPkgExportButton.IsEnabled = false;
+            MigPkgCancelButton.IsEnabled = false;
+            var origContent = MigPkgExportButton.Content;
+            MigPkgExportButton.Content = isJa ? "⏳ 生成中..." : "⏳ Generating...";
+
+            try
+            {
+                var service = new MigrationPackageService();
+                var progress = new Progress<string>(msg => StatusTextBlock.Text = msg);
+                string packageDir = await service.GeneratePackageAsync(_simRootFolders, options, progress);
+
+                MigrationPackageOverlay.Visibility = Visibility.Collapsed;
+                ShowToast(isJa ? "移行パッケージ一式を出力しました" : "Migration package generated successfully");
+
+                // エクスプローラーで出力先フォルダを開く
+                ShellHelper.OpenFolder(packageDir);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    (isJa ? "移行パッケージ生成中にエラーが発生しました:\n\n" : "Error generating migration package:\n\n") + ex.Message,
+                    isJa ? "生成エラー" : "Generation Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            finally
+            {
+                MigPkgExportButton.IsEnabled = true;
+                MigPkgCancelButton.IsEnabled = true;
+                MigPkgExportButton.Content = origContent;
+                StatusTextBlock.Text = Strings.Ready;
+            }
+        }
+        #endregion
 
         private void SimExportExcelButton_Click(object sender, RoutedEventArgs e)
         {

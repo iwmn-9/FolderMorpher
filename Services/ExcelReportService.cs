@@ -630,5 +630,329 @@ namespace FolderMorpher.Services
             ws.Columns(2, 10).AdjustToContents(3, 100);
             wb.SaveAs(outputPath);
         }
+
+        public void GenerateMigrationRunbook(
+            string outputPath,
+            List<MigrationWavePlan> wavePlans,
+            string targetRoot,
+            MigrationPackageOptions options)
+        {
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+            using var wb = new XLWorkbook();
+
+            // -------------------------------------------------------------
+            // Sheet 1: 概要・Wave計画 (Overview & Wave Plan)
+            // -------------------------------------------------------------
+            var ws1 = wb.Worksheets.Add(isJa ? "1_概要・Wave計画" : "1_Overview_Waves");
+            ws1.ShowGridLines = true;
+
+            ws1.Cell("B2").Value = isJa ? "FolderMorpher — ファイルサーバー移行計画台帳 (Migration Runbook)" : "FolderMorpher — File Server Migration Runbook";
+            ws1.Cell("B2").Style.Font.Bold = true;
+            ws1.Cell("B2").Style.Font.FontSize = 15;
+            ws1.Cell("B2").Style.Font.FontColor = XLColor.FromHtml("#1E3A8A");
+
+            ws1.Cell("B3").Value = isJa
+                ? $"出力日時: {DateTime.Now:yyyy/MM/dd HH:mm:ss}  |  新環境ルート: {targetRoot}  |  転送モード: {(options.CopyAcl ? "旧ACL維持 (/COPYALL)" : "新設計ACL適用・データのみ転送 (/COPY:DAT)")}"
+                : $"Exported: {DateTime.Now:yyyy-MM-dd HH:mm:ss}  |  Target Root: {targetRoot}  |  Mode: {(options.CopyAcl ? "Copy ACLs (/COPYALL)" : "Apply New ACLs / Data Only (/COPY:DAT)")}";
+            ws1.Cell("B3").Style.Font.FontSize = 10;
+            ws1.Cell("B3").Style.Font.FontColor = XLColor.DimGray;
+
+            // KPI Summary Cards
+            long totalBytesAll = wavePlans.Sum(w => w.TotalSizeBytes);
+            long totalFilesAll = wavePlans.Sum(w => w.TotalFileCount);
+            double totalFullSec = (double)totalBytesAll / (80L * 1024 * 1024);
+            var totalFullTime = TimeSpan.FromSeconds(Math.Max(5, (int)totalFullSec));
+            double totalCutoverSec = (double)(totalBytesAll * 0.02) / (80L * 1024 * 1024);
+            var totalCutoverTime = TimeSpan.FromSeconds(Math.Max(5, (int)totalCutoverSec));
+
+            void DrawKpiCard(string cellTopLeft, string title, string val, string sub)
+            {
+                var rng = ws1.Range(cellTopLeft + ":" + (char)(cellTopLeft[0] + 1) + (int.Parse(cellTopLeft.Substring(1)) + 1));
+                rng.Style.Fill.BackgroundColor = XLColor.FromHtml("#F8FAFC");
+                rng.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                rng.Style.Border.OutsideBorderColor = XLColor.FromHtml("#CBD5E1");
+
+                var cTitle = ws1.Cell(cellTopLeft);
+                cTitle.Value = title;
+                cTitle.Style.Font.FontSize = 9;
+                cTitle.Style.Font.FontColor = XLColor.FromHtml("#64748B");
+
+                var cVal = ws1.Cell(int.Parse(cellTopLeft.Substring(1)) + 1, cellTopLeft[0] - 'A' + 1);
+                cVal.Value = val;
+                cVal.Style.Font.FontSize = 14;
+                cVal.Style.Font.Bold = true;
+                cVal.Style.Font.FontColor = XLColor.FromHtml("#0F172A");
+            }
+
+            DrawKpiCard("B5", isJa ? "総移行データ量" : "Total Size", FormatHelper.FormatBytes(totalBytesAll, 2), "");
+            DrawKpiCard("D5", isJa ? "総ファイル件数" : "Total Files", $"{totalFilesAll:N0} 件", "");
+            DrawKpiCard("F5", isJa ? "全体初回フル見積" : "Est. Full Sync", $"{totalFullTime.TotalHours:F1} 時間", "");
+            DrawKpiCard("H5", isJa ? "全体本番切替見積" : "Est. Cutover", $"{totalCutoverTime.TotalMinutes:F1} 分", "");
+
+            // Wave Table
+            int hRow1 = 8;
+            string[] headers1 = isJa
+                ? new[] { "Wave", "波次名称・移行対象", "対象フォルダ数", "想定容量", "ファイル数", "初回フル同期想定 (1Gbps)", "本番カットオーバー想定 (差分2%)", "警告・留意事項" }
+                : new[] { "Wave", "Wave Name / Target", "Folders", "Size", "Files", "Est. Full Sync (1Gbps)", "Est. Cutover (2% Delta)", "Warnings & Notes" };
+
+            for (int col = 0; col < headers1.Length; col++)
+            {
+                var cell = ws1.Cell(hRow1, col + 2);
+                cell.Value = headers1[col];
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1E3A8A");
+                cell.Style.Font.FontColor = XLColor.White;
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            }
+
+            int r1 = hRow1 + 1;
+            foreach (var w in wavePlans)
+            {
+                ws1.Cell(r1, 2).Value = $"Wave {w.WaveNumber}";
+                ws1.Cell(r1, 2).Style.Font.Bold = true;
+                ws1.Cell(r1, 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                ws1.Cell(r1, 3).Value = w.WaveName;
+                ws1.Cell(r1, 4).Value = w.TargetNodes.Count;
+                ws1.Cell(r1, 4).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+
+                ws1.Cell(r1, 5).Value = w.TotalSizeFormatted;
+                ws1.Cell(r1, 5).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+
+                ws1.Cell(r1, 6).Value = w.TotalFileCount;
+                ws1.Cell(r1, 6).Style.NumberFormat.Format = "#,##0";
+                ws1.Cell(r1, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+
+                ws1.Cell(r1, 7).Value = w.FullCopyTimeFormatted;
+                ws1.Cell(r1, 7).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                ws1.Cell(r1, 8).Value = w.CutoverTimeFormatted;
+                ws1.Cell(r1, 8).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                string warn = "";
+                if (w.HasOver48hWarning) warn += isJa ? "⚠️ 週末枠超過リスク " : "⚠️ Over 48h (Weekend Risk) ";
+                if (w.HasHighFileCountWarning) warn += isJa ? "⚠️ 小ファイル過多(/MT:32推奨) " : "⚠️ High File Count (/MT:32 recommended) ";
+                if (string.IsNullOrEmpty(warn)) warn = "-";
+
+                var wCell = ws1.Cell(r1, 9);
+                wCell.Value = warn;
+                if (warn != "-")
+                {
+                    wCell.Style.Font.FontColor = XLColor.FromHtml("#B45309"); // Amber
+                    wCell.Style.Font.Bold = true;
+                }
+                wCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                r1++;
+            }
+
+            var tbl1 = ws1.Range(hRow1, 2, r1 - 1, 9);
+            tbl1.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            tbl1.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            tbl1.SetAutoFilter();
+            ws1.Columns(2, 9).AdjustToContents(3, 100);
+
+            // -------------------------------------------------------------
+            // Sheet 2: 移行WBS・工程表 (Cutover WBS & Tasks)
+            // -------------------------------------------------------------
+            var ws2 = wb.Worksheets.Add(isJa ? "2_移行WBS・工程表" : "2_Cutover_WBS");
+            ws2.ShowGridLines = true;
+
+            ws2.Cell("B2").Value = isJa ? "FolderMorpher — ベンダー標準 移行作業工程・チェックリスト (WBS)" : "FolderMorpher — Migration Cutover WBS & Checklist";
+            ws2.Cell("B2").Style.Font.Bold = true;
+            ws2.Cell("B2").Style.Font.FontSize = 15;
+            ws2.Cell("B2").Style.Font.FontColor = XLColor.FromHtml("#1E3A8A");
+
+            ws2.Cell("B3").Value = isJa ? "各作業の着手前・完了時にステータスを更新し、実績ログを保管してください。" : "Track tasks and log verification results for each phase.";
+            ws2.Cell("B3").Style.Font.FontSize = 10;
+            ws2.Cell("B3").Style.Font.FontColor = XLColor.DimGray;
+
+            int hRow2 = 5;
+            string[] headers2 = isJa
+                ? new[] { "フェーズ", "No", "作業項目名", "実行スクリプト / コマンド", "想定実施時期", "完了条件・確認内容", "進捗状況", "担当者", "実施日時", "備考・ログ結果" }
+                : new[] { "Phase", "No", "Task Name", "Script / Command", "Target Window", "Success Criteria", "Status", "Assignee", "Executed At", "Notes & Log Result" };
+
+            for (int col = 0; col < headers2.Length; col++)
+            {
+                var cell = ws2.Cell(hRow2, col + 2);
+                cell.Value = headers2[col];
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1E3A8A");
+                cell.Style.Font.FontColor = XLColor.White;
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            }
+
+            var wbsRows = isJa ? new (string Phase, string No, string Task, string Script, string Window, string Criteria, string Status)[]
+            {
+                ("事前準備", "0-1", "移行パッケージの配置 & パス確認", "Explorer / コマンドプロンプト", "本番1ヶ月〜2週間前", "作業端末から旧サーバーおよび新環境UNCへ疎通できること", "未着手"),
+                ("事前準備", "0-2", "新環境フォルダー構造（スケルトン）展開", "Simulation Studio: スケルトン展開", "本番2週間前", "新環境に空フォルダーツリーが正常作成されていること", "未着手"),
+                ("事前準備", "0-3", "新環境アクセス権 (ACL) 先行適用", "Simulation Studio: ACL適用", "本番2週間前", "新環境の各部署・親フォルダーに設計通りACLが付与されていること", "未着手"),
+                ("Phase 1", "1-1", "事前フル同期 (Baseline Sync) 実行", "各Wave\\01_Baseline_Sync.bat", "本番2〜3週間前の平日夜間・休日", "全体の約95%以上のファイルが新環境へ転送完了していること", "未着手"),
+                ("Phase 1", "1-2", "初回転送ログ確認 & エラー精査", "Logs\\Baseline_*.log", "Phase 1完了直後", "Robocopy終了コードが 0, 1, 2, 3 のいずれかであること（Error 0件）", "未着手"),
+                ("Phase 2", "2-1", "中間差分同期 (Delta Sync) 実行", "各Wave\\02_Delta_Sync.bat", "本番3日前〜前日夜間", "初回以降の更新差分が転送され、所要時間が短縮していること", "未着手"),
+                ("Phase 2", "2-2", "中間転送ログ確認", "Logs\\Delta_*.log", "Phase 2完了直後", "エラーなく追いついていることを確認", "未着手"),
+                ("本番切替", "3-1", "業務終了確認 & 利用者ログオフ促進", "社内アナウンス / 連絡網", "切替当日 業務終了時刻", "旧共有へのアクセスが停止していること", "未着手"),
+                ("本番切替", "3-2", "旧共有の書き込み封鎖 (Read-Only)", "各Wave\\03_Lock_OldShare_ReadOnly.bat", "切替当日 業務停止直後", "ユーザー権限で旧フォルダーに新規ファイル作成が拒否されること", "未着手"),
+                ("Phase 4", "4-1", "最終カットオーバー同期 (/MIR) 実行", "各Wave\\04_Final_Cutover_Mirror.bat", "切替当日 旧共有封鎖後", "完全同期完了。旧環境の最終差分・削除がミラー反映されること", "未着手"),
+                ("Phase 4", "4-2", "最終転送ログ確認", "Logs\\Cutover_*.log", "Phase 4完了直後", "Robocopy終了コード正常。重大エラーがないこと", "未着手"),
+                ("検証", "5-1", "新環境共有の導通・権限・書き込み検証", "クライアントPC実機テスト", "切替当日 夜間", "各部署のテストアカウントで想定通りアクセス・保存できること", "未着手"),
+                ("完了", "6-1", "新環境サービスイン アナウンス", "全社通知メール / チャット", "切替翌営業日 始業前", "新共有パスでの業務開始案内", "未着手"),
+                ("緊急対応", "9-1", "【切戻し時のみ】旧共有の書き込み復旧", "各Wave\\99_ROLLBACK_RestoreOldShare.bat", "切替中止判断時", "旧共有の書き込み権限が元の状態に復旧すること", "未着手")
+            } : new (string Phase, string No, string Task, string Script, string Window, string Criteria, string Status)[]
+            {
+                ("Prep", "0-1", "Deploy Migration Package & Path Check", "Explorer / CMD", "2-4 weeks before cutover", "Verify network connectivity to both Old & New UNC shares", "Not Started"),
+                ("Prep", "0-2", "Deploy Skeleton Folder Architecture", "Simulation Studio: Skeleton Deploy", "2 weeks before cutover", "Empty folder trees created on target share", "Not Started"),
+                ("Prep", "0-3", "Pre-apply Target ACLs", "Simulation Studio: Apply ACLs", "2 weeks before cutover", "Security permissions configured on new folders as designed", "Not Started"),
+                ("Phase 1", "1-1", "Execute Baseline Full Sync", "Each Wave\\01_Baseline_Sync.bat", "2-3 weeks before (night/weekend)", ">95% of data transferred to new share", "Not Started"),
+                ("Phase 1", "1-2", "Review Baseline Logs", "Logs\\Baseline_*.log", "Immediately after Phase 1", "Robocopy exit code is 0-3 (No fatal errors)", "Not Started"),
+                ("Phase 2", "2-1", "Execute Delta Catch-up Sync", "Each Wave\\02_Delta_Sync.bat", "1-3 days before cutover (night)", "Recent modified files updated swiftly", "Not Started"),
+                ("Phase 2", "2-2", "Review Delta Logs", "Logs\\Delta_*.log", "Immediately after Phase 2", "Verify delta synchronization completed without errors", "Not Started"),
+                ("Cutover", "3-1", "Confirm Business Close & User Logoff", "Internal Notification", "Cutover Day - Business End", "Ensure no active users are editing files", "Not Started"),
+                ("Cutover", "3-2", "Freeze Old Share (Read-Only Lock)", "Each Wave\\03_Lock_OldShare_ReadOnly.bat", "Cutover Day - Business End", "Verify write operations are blocked on old shares", "Not Started"),
+                ("Phase 4", "4-1", "Execute Final Cutover Mirror (/MIR)", "Each Wave\\04_Final_Cutover_Mirror.bat", "Cutover Day - After Share Lock", "Exact mirror completed within minutes/hours", "Not Started"),
+                ("Phase 4", "4-2", "Review Final Cutover Logs", "Logs\\Cutover_*.log", "Immediately after Phase 4", "Robocopy exit code normal", "Not Started"),
+                ("Verify", "5-1", "Verify New Share Access & Permissions", "Client PC Testing", "Cutover Night", "Test users verify read/write access per department", "Not Started"),
+                ("Complete", "6-1", "Service-In Announcement", "Company-wide Email / Chat", "Next Business Day - Before Opening", "Users resume work using the new file server UNC", "Not Started"),
+                ("Rollback", "9-1", "[Rollback Only] Restore Old Share Access", "Each Wave\\99_ROLLBACK_RestoreOldShare.bat", "If cutover is aborted", "Old shares write permissions restored to original state", "Not Started")
+            };
+
+            int r2 = hRow2 + 1;
+            foreach (var item in wbsRows)
+            {
+                ws2.Cell(r2, 2).Value = item.Phase;
+                ws2.Cell(r2, 2).Style.Font.Bold = true;
+                ws2.Cell(r2, 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                ws2.Cell(r2, 3).Value = item.No;
+                ws2.Cell(r2, 3).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                ws2.Cell(r2, 4).Value = item.Task;
+                ws2.Cell(r2, 5).Value = item.Script;
+                ws2.Cell(r2, 6).Value = item.Window;
+                ws2.Cell(r2, 7).Value = item.Criteria;
+
+                var stCell = ws2.Cell(r2, 8);
+                stCell.Value = item.Status;
+                stCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                ws2.Cell(r2, 9).Value = "";  // 担当者
+                ws2.Cell(r2, 10).Value = ""; // 実施日時
+                ws2.Cell(r2, 11).Value = ""; // 備考・ログ結果
+
+                r2++;
+            }
+
+            var tbl2 = ws2.Range(hRow2, 2, r2 - 1, 11);
+            tbl2.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            tbl2.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            tbl2.SetAutoFilter();
+            ws2.Columns(2, 11).AdjustToContents(3, 100);
+
+            // -------------------------------------------------------------
+            // Sheet 3: マッピング・除外詳細 (Mapping & Sync Details)
+            // -------------------------------------------------------------
+            var ws3 = wb.Worksheets.Add(isJa ? "3_マッピング・除外詳細" : "3_Mapping_Details");
+            ws3.ShowGridLines = true;
+
+            ws3.Cell("B2").Value = isJa ? "FolderMorpher — 移行元・先マッピングおよび子孫パス除外 (/XD) 詳細" : "FolderMorpher — Source/Target Mapping & /XD Exclusion Details";
+            ws3.Cell("B2").Style.Font.Bold = true;
+            ws3.Cell("B2").Style.Font.FontSize = 15;
+            ws3.Cell("B2").Style.Font.FontColor = XLColor.FromHtml("#1E3A8A");
+
+            ws3.Cell("B3").Value = isJa ? "新環境フォルダと旧環境フォルダの紐づけ、および多重コピー防止のために自動除外される配下フォルダ一覧です。" : "Detailed list of mapped source paths and automatically excluded descendant folders (/XD).";
+            ws3.Cell("B3").Style.Font.FontSize = 10;
+            ws3.Cell("B3").Style.Font.FontColor = XLColor.DimGray;
+
+            int hRow3 = 5;
+            string[] headers3 = isJa
+                ? new[] { "Wave", "移行先 新フォルダ (Target)", "新フォルダ階層", "移行元 旧フォルダ (Source)", "多重コピー除外対象 (/XD 子孫パス)", "フォルダ容量", "想定ファイル数" }
+                : new[] { "Wave", "Target Folder", "Target Relative Path", "Mapped Source Path", "Excluded Descendants (/XD)", "Folder Size", "Est. Files" };
+
+            for (int col = 0; col < headers3.Length; col++)
+            {
+                var cell = ws3.Cell(hRow3, col + 2);
+                cell.Value = headers3[col];
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#1E3A8A");
+                cell.Style.Font.FontColor = XLColor.White;
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            }
+
+            int r3 = hRow3 + 1;
+            foreach (var wave in wavePlans)
+            {
+                foreach (var node in wave.TargetNodes)
+                {
+                    void WriteNodeMapping(SimFolderNode n)
+                    {
+                        if (n.MappedSourcePaths.Count > 0)
+                        {
+                            foreach (var src in n.MappedSourcePaths)
+                            {
+                                ws3.Cell(r3, 2).Value = $"Wave {wave.WaveNumber}";
+                                ws3.Cell(r3, 2).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                                ws3.Cell(r3, 3).Value = n.Name;
+                                ws3.Cell(r3, 4).Value = n.RelativePath;
+
+                                var srcCell = ws3.Cell(r3, 5);
+                                srcCell.Value = src;
+                                try
+                                {
+                                    string linkUri = "file:///" + src.Replace('\\', '/');
+                                    srcCell.SetHyperlink(new XLHyperlink(linkUri));
+                                    srcCell.Style.Font.FontColor = XLColor.FromHtml("#2563EB");
+                                    srcCell.Style.Font.Underline = XLFontUnderlineValues.Single;
+                                }
+                                catch { }
+
+                                // Descendants mapped under this src
+                                var xdList = new List<string>();
+                                CollectDescendantsForExcel(n, xdList);
+                                ws3.Cell(r3, 6).Value = xdList.Count > 0 ? string.Join(" ; ", xdList) : "-";
+
+                                ws3.Cell(r3, 7).Value = n.FormattedSize;
+                                ws3.Cell(r3, 7).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+
+                                ws3.Cell(r3, 8).Value = Math.Max(1, n.EstimatedSizeBytes / (10L * 1024 * 1024));
+                                ws3.Cell(r3, 8).Style.NumberFormat.Format = "#,##0";
+                                ws3.Cell(r3, 8).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+
+                                r3++;
+                            }
+                        }
+                        foreach (var c in n.Children)
+                        {
+                            WriteNodeMapping(c);
+                        }
+                    }
+
+                    WriteNodeMapping(node);
+                }
+            }
+
+            if (r3 > hRow3 + 1)
+            {
+                var tbl3 = ws3.Range(hRow3, 2, r3 - 1, 8);
+                tbl3.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                tbl3.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+                tbl3.SetAutoFilter();
+                ws3.Columns(2, 8).AdjustToContents(3, 100);
+            }
+
+            wb.SaveAs(outputPath);
+        }
+
+        private static void CollectDescendantsForExcel(SimFolderNode node, List<string> list)
+        {
+            foreach (var child in node.Children)
+            {
+                foreach (var s in child.MappedSourcePaths)
+                {
+                    if (!string.IsNullOrWhiteSpace(s)) list.Add(s);
+                }
+                CollectDescendantsForExcel(child, list);
+            }
+        }
     }
 }

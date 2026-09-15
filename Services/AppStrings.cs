@@ -164,7 +164,7 @@ namespace FolderMorpher.Services
         public static string AddRootFolder => IsJa ? "＋ ルート新設" : "＋ Add Root Folder";
         public static string ReviewDiffs => IsJa ? "🔍 チェック" : "🔍 Check";
         public static string DeploySkeleton => IsJa ? "🚀 スケルトン作成" : "🚀 Deploy Skeleton";
-        public static string ExportScripts => IsJa ? "⚙️ 移行スクリプト" : "⚙️ Export Scripts";
+        public static string ExportScripts => IsJa ? "📦 移行パッケージ" : "📦 Migration Package";
         public static string ExportSimExcel => IsJa ? "📊 Excel設計書" : "📊 Export Excel";
         public static string InheritFromParent => IsJa ? "親の権限継承" : "Inherit from parent";
         public static string AdvancedSecurity => IsJa ? "⚙️ 詳細設定" : "⚙️ Advanced";
@@ -189,7 +189,7 @@ namespace FolderMorpher.Services
         public static string LoadProjectToolTip => IsJa ? "プロジェクト読込" : "Load Project";
         public static string ReviewDiffsToolTip => IsJa ? "変化点差分インスペクター" : "Review Architecture Diffs";
         public static string DeploySkeletonToolTip => IsJa ? "空フォルダ階層と設計済みNTFSアクセス権を新環境へ先行展開" : "Deploy skeleton folders and ACLs to target server";
-        public static string ExportScriptsToolTip => IsJa ? "Robocopy / FastCopy スクリプト生成" : "Generate Robocopy / FastCopy scripts";
+        public static string ExportScriptsToolTip => IsJa ? "ベンダー標準 移行パッケージ一式生成（Wave分割・Runbook台帳・安全弁）" : "Generate Enterprise Migration Package (Waves, Runbook, Safety Batches)";
         public static string ExportSimExcelToolTip => IsJa ? "移行設計書Excel出力" : "Export Migration Specification (.xlsx)";
         public static string BrowseSourceToolTip => IsJa ? "現行フォルダ（UNCまたはローカル）を参照選択" : "Browse source directory (UNC or local)";
         public static string CtxNewSubfolder => IsJa ? "📁 新規サブフォルダ作成" : "📁 New Subfolder";
@@ -409,6 +409,29 @@ namespace FolderMorpher.Services
         public static string AuditBandwidthUnlimited => IsJa ? "無制限 (夜間・最速)" : "Unlimited (Night / Fastest)";
         public static string AuditProgressQuickHash => IsJa ? "クイック照合中 (Head-Tail)..." : "Quick checking (Head-Tail)...";
         public static string AuditProgressFullHash => IsJa ? "重複確定検証中 (SHA256)..." : "Verifying duplicates (SHA256)...";
+
+        // ==========================================
+        // 移行パッケージ (Migration Package & Runbook)
+        // ==========================================
+        public static string MigPkgTitle => IsJa ? "📦 移行パッケージ生成 (Runbook & バッチ一式)" : "📦 Migration Package Generator";
+        public static string MigPkgSubtitle => IsJa ? "ベンダー標準の移行工程（事前フル同期、中間差分、旧共有封鎖、本番切替、切戻し）と進捗管理Excel台帳を一括生成します。" : "Generates vendor-standard migration waves, batch scripts (baseline, delta, lock, cutover, rollback) and Excel Runbook.";
+        public static string MigPolicyHeader => IsJa ? "1. 移行波次 (Wave) 分割ポリシー" : "1. Migration Wave Split Policy";
+        public static string MigPolicyTopLevel => IsJa ? "トップフォルダ・部署ごとに分割 (推奨)" : "Split by Top-Level Folders / Depts (Recommended)";
+        public static string MigPolicySizeBudget => IsJa ? "容量バジェットごと (指定サイズ以下に自動集約)" : "Auto-cluster by Size Budget (Under specified size)";
+        public static string MigPolicySingleBatch => IsJa ? "一括出力 (全社一括バッチ)" : "Single Batch (All units in one batch)";
+        public static string MigOptionsHeader => IsJa ? "2. 転送オプション & 安全弁" : "2. Transfer Options & Safety Features";
+        public static string MigModeCopyDat => IsJa ? "新設計ACL維持 (/COPY:DAT 推奨)" : "Preserve New ACLs (/COPY:DAT recommended)";
+        public static string MigModeCopyAll => IsJa ? "旧環境ACL維持 (/COPYALL)" : "Preserve Source ACLs (/COPYALL)";
+        public static string MigIncludeExcel => IsJa ? "進捗管理Excel手順書 (Migration_Runbook.xlsx) を同梱" : "Include Excel Runbook & WBS (Migration_Runbook.xlsx)";
+        public static string MigIncludeLock => IsJa ? "旧共有の安全封鎖・復旧バッチ (03_Lock / 99_ROLLBACK) を生成" : "Generate Old Share Lock & Rollback Batches";
+        public static string MigThreadsLabel => IsJa ? "スレッド (/MT):" : "Threads (/MT):";
+        public static string MigPreviewHeader => IsJa ? "3. Wave別 計画プレビュー & 判定指標" : "3. Wave Plan Preview & Decision Indicators";
+        public static string MigKpiTotalSize => IsJa ? "総移行データ量" : "Total Size";
+        public static string MigKpiTotalFiles => IsJa ? "総ファイル件数" : "Total Files";
+        public static string MigKpiFullTime => IsJa ? "初回フル同期想定 (1Gbps)" : "Est. Full Sync (1Gbps)";
+        public static string MigKpiCutoverTime => IsJa ? "本番切替想定 (差分2%)" : "Est. Cutover (2% Delta)";
+        public static string MigExportButton => IsJa ? "📦 移行パッケージ一式を出力" : "📦 Generate Migration Package";
+        public static string MigDescNotice => IsJa ? "※ 子孫フォルダ (/XD) は自動除外されます" : "* Mapped descendant folders are automatically excluded via /XD";
 
         /// <summary>
         /// 全プロパティが言語ごとに非空文字列を返すかを自己検証（自動テスト用）

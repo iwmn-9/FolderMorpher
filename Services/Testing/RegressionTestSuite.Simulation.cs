@@ -30,6 +30,7 @@ namespace FolderMorpher.Services.Testing
             TestSimulationStudioLazyLoadingAndDropOutside();
             await TestUniversalPlanFirstAndMutationVerifyAsync();
             await TestArchitecturalUnificationAsync();
+            await TestMigrationPackageAndWavePlanningAsync();
         }
 
         public static void TestSimulationAclRobocopyAndEffectiveAccessInheritOnly()
@@ -828,6 +829,179 @@ namespace FolderMorpher.Services.Testing
                 if (Directory.Exists(tempDir))
                 {
                     try { Directory.Delete(tempDir, true); } catch { }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 移行パッケージ生成 & Wave分割計画 & Runbook Excel & 安全弁の自動回帰テスト
+        /// </summary>
+        public static async Task TestMigrationPackageAndWavePlanningAsync()
+        {
+            var tempBase = Path.Combine(Path.GetTempPath(), "FM_MigPkg_Test_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempBase);
+
+            try
+            {
+                // テスト用の新旧階層ツリー構築 (N:1 マッピング + 子孫入れ子)
+                var salesNode = new SimFolderNode
+                {
+                    Name = "Sales",
+                    EstimatedSizeBytes = 120L * 1024 * 1024 * 1024 // 120GB
+                };
+                salesNode.MappedSourcePaths.Add(@"\\OldServer\Share\SalesHQ");
+
+                var salesChild = new SimFolderNode
+                {
+                    Name = "2024",
+                    Parent = salesNode,
+                    EstimatedSizeBytes = 30L * 1024 * 1024 * 1024 // 30GB
+                };
+                salesChild.MappedSourcePaths.Add(@"\\OldServer\Share\SalesHQ\Archive2024");
+                salesNode.Children.Add(salesChild);
+
+                var devNode = new SimFolderNode
+                {
+                    Name = "Dev",
+                    EstimatedSizeBytes = 20L * 1024 * 1024 * 1024 * 1024 // 20TB (約72.8時間: 48h超警告 & 小ファイル過多トリガー)
+                };
+                devNode.MappedSourcePaths.Add(@"\\OldServer\Share\DevProjects");
+
+                var roots = new List<SimFolderNode> { salesNode, devNode };
+
+                var packageService = new MigrationPackageService();
+
+                // 1. ポリシー別 Wave 計画算定のテスト
+                // (1) ByTopLevelFolder: Sales と Dev で 2つの Wave に分割されること
+                var topLevelOptions = new MigrationPackageOptions
+                {
+                    Policy = MigrationSplitPolicy.ByTopLevelFolder,
+                    TargetRoot = @"\\TargetServer\Public"
+                };
+                var topPlans = packageService.PlanWaves(roots, topLevelOptions);
+                if (topPlans.Count != 2)
+                {
+                    throw new InvalidOperationException($"Wave分割欠陥: ByTopLevelFolder で2波次になるはずが {topPlans.Count} 件でした。");
+                }
+                var devWave = topPlans.FirstOrDefault(w => w.WaveName.Contains("Dev"));
+                if (devWave == null)
+                {
+                    throw new InvalidOperationException("Wave分割欠陥: Dev の Wave 計画が存在しません。");
+                }
+                if (!devWave.HasOver48hWarning)
+                {
+                    throw new InvalidOperationException("Wave警告欠陥: 20TB の Dev が 48時間超過警告になりませんでした。");
+                }
+                if (!devWave.HasHighFileCountWarning)
+                {
+                    throw new InvalidOperationException("Wave警告欠陥: 20TB の Dev が 10万件超小ファイル警告になりませんでした。");
+                }
+
+                // (2) BySizeBudget (25TB): 2つ合わせて 約20.15TB なので 1つの Wave に集約されること
+                var budgetOptions = new MigrationPackageOptions
+                {
+                    Policy = MigrationSplitPolicy.BySizeBudget,
+                    SizeBudgetBytes = 25000L * 1024 * 1024 * 1024,
+                    TargetRoot = @"\\TargetServer\Public"
+                };
+                var budgetPlans = packageService.PlanWaves(roots, budgetOptions);
+                if (budgetPlans.Count != 1)
+                {
+                    throw new InvalidOperationException($"Wave分割欠陥: BySizeBudget(25TB) で1波次になるはずが {budgetPlans.Count} 件でした。");
+                }
+
+                // 2. 移行パッケージ一式（バッチ群・安全弁・Excel手順書・README）の静的生成テスト
+                var genOptions = new MigrationPackageOptions
+                {
+                    Policy = MigrationSplitPolicy.ByTopLevelFolder,
+                    OutputDirectory = tempBase,
+                    TargetRoot = @"\\TargetServer\Public",
+                    CopyAcl = false, // /COPY:DAT
+                    Threads = 16,
+                    IncludeRunbookExcel = true,
+                    IncludeOldShareLock = true
+                };
+
+                string packageDir = await packageService.GeneratePackageAsync(roots, genOptions);
+                if (!Directory.Exists(packageDir))
+                {
+                    throw new InvalidOperationException($"パッケージ生成欠陥: 出力ディレクトリが存在しません: {packageDir}");
+                }
+
+                // Wave フォルダおよびバッチファイルの存在確認
+                string[] expectedWaveSubDirs = { "Wave01_Sales", "Wave02_Dev" };
+                foreach (var waveSub in expectedWaveSubDirs)
+                {
+                    string wavePath = Path.Combine(packageDir, waveSub);
+                    if (!Directory.Exists(wavePath))
+                    {
+                        throw new InvalidOperationException($"パッケージ生成欠陥: Waveフォルダ {waveSub} が作成されていません。");
+                    }
+
+                    string[] expectedBats =
+                    {
+                        "01_Baseline_Sync.bat",
+                        "02_Delta_Sync.bat",
+                        "03_Lock_OldShare_ReadOnly.bat",
+                        "04_Final_Cutover_Mirror.bat",
+                        "99_ROLLBACK_RestoreOldShare.bat"
+                    };
+
+                    foreach (var bat in expectedBats)
+                    {
+                        string batPath = Path.Combine(wavePath, bat);
+                        if (!File.Exists(batPath))
+                        {
+                            throw new InvalidOperationException($"パッケージ生成欠陥: {waveSub} に {bat} が生成されていません。");
+                        }
+                    }
+                }
+
+                // Sales の 01_Baseline_Sync.bat の内容検証 (/XD で子孫 Archive2024 が除外されていること、/COPY:DAT, /MT:16)
+                string salesBaselineBat = Path.Combine(packageDir, "Wave01_Sales", "01_Baseline_Sync.bat");
+                string salesBatContent = File.ReadAllText(salesBaselineBat, System.Text.Encoding.UTF8);
+                if (!salesBatContent.Contains("/XD \"\\\\OldServer\\Share\\SalesHQ\\Archive2024\""))
+                {
+                    throw new InvalidOperationException($"Robocopy多重コピー防止欠陥: 子孫マッピング Archive2024 が /XD に含まれていません！ 内容:\n{salesBatContent}");
+                }
+                if (!salesBatContent.Contains("/COPY:DAT"))
+                {
+                    throw new InvalidOperationException("Robocopy転送モード欠陥: /COPY:DAT が指定されていません。");
+                }
+                if (!salesBatContent.Contains("/MT:16"))
+                {
+                    throw new InvalidOperationException("Robocopyスレッド数欠陥: /MT:16 が指定されていません。");
+                }
+
+                // マスターバッチ & ガイドREADME & Excel手順書の存在検証
+                string masterBat = Path.Combine(packageDir, "00_Run_All_Waves_StepByStep.bat");
+                if (!File.Exists(masterBat))
+                {
+                    throw new InvalidOperationException("パッケージ生成欠陥: 00_Run_All_Waves_StepByStep.bat が存在しません。");
+                }
+
+                string readmeMd = Path.Combine(packageDir, "README_MIGRATION_GUIDE.md");
+                if (!File.Exists(readmeMd))
+                {
+                    throw new InvalidOperationException("パッケージ生成欠陥: README_MIGRATION_GUIDE.md が存在しません。");
+                }
+
+                string excelRunbook = Path.Combine(packageDir, "Migration_Runbook.xlsx");
+                if (!File.Exists(excelRunbook))
+                {
+                    throw new InvalidOperationException("パッケージ生成欠陥: Migration_Runbook.xlsx が存在しません。");
+                }
+                var fi = new FileInfo(excelRunbook);
+                if (fi.Length == 0)
+                {
+                    throw new InvalidOperationException("パッケージ生成欠陥: Migration_Runbook.xlsx のファイルサイズが 0 バイトです。");
+                }
+            }
+            finally
+            {
+                if (Directory.Exists(tempBase))
+                {
+                    try { Directory.Delete(tempBase, true); } catch { }
                 }
             }
         }
