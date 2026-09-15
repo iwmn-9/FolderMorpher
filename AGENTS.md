@@ -68,7 +68,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 | **Tab 6: メディア最適化**<br>(Media Optimizer) | `MediaTabPanel` (L1243-1380) | `MainWindow.Media.cs` | `MediaOptimizerService.cs`<br>`ExcelReportService.cs`<br>`MediaOptimizerModels.cs` | 保護対象（_Master/RAW等）付き写真・画像軽量化（長辺2560px超縮小/85%品質/日時・Exif完全保持/直接上書きで最大90%削減）、大容量動画Topランキング抽出、夜間GPU圧縮（H.265）バッチ生成 |
 | **詳細権限モーダル** | `SecModalOverlay` | `MainWindow.Simulation.cs` | `AclModels.cs` | Windows標準セキュリティ詳細設定（14項目のNTFS詳細パーミッションビット）の完全再現・編集 |
 | **変化点差分モーダル** | `DiffModalOverlay` | `MainWindow.Simulation.cs` | `SimModels.cs` | 移行前後（Before/After）の変化点（新規・移動・統合・ACL差分）の一覧レビューとExcel出力 |
-| **移行パッケージ生成モーダル** | `MigrationPackageOverlay` | `MainWindow.Simulation.cs` | `MigrationPackageService.cs`<br>`MigrationPackageModels.cs`<br>`ExcelReportService.cs` | ベンダー標準移行工程（事前フル同期、中間差分、旧共有封鎖、本番切替、切戻し）の一括静的生成、**波次（Wave）自動分割・容量バジェット算定**、1Gbps/10Gbps想定所要時間算出、週末枠オーバー警告、**Migration_Runbook.xlsx（WBS/進捗台帳・マッピング・除外一覧）** |
+| **移行パッケージ生成モーダル** | `MigrationPackageOverlay` | `MainWindow.Simulation.cs` | `MigrationPackageService.cs`<br>`MigrationPackageModels.cs`<br>`ExcelReportService.cs` | ベンダー標準移行工程（事前フル同期、中間差分、本番切替）の一括静的生成、**波次（Wave）自動分割・容量バジェット算定**、動的転送レート・差分率による所要時間算出、**容量二重加算防止（包括親優先）**、**実測ファイル数引き継ぎ（未計測対応・捏造完全排除）**、**安全停止手順書ガイド（`03_PreCutover_Freeze_Guide.md`：SMB共有権限/セッション切断/切戻し手順）**、週末枠オーバー警告、**Migration_Runbook.xlsx（WBS/進捗台帳・マッピング・除外一覧）** |
 
 ---
 

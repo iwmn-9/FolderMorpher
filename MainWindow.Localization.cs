@@ -473,6 +473,8 @@ namespace AstraSize
             if (MigModeCopyAllText != null) MigModeCopyAllText.Text = Strings.MigModeCopyAll;
             if (MigIncludeExcelCheck != null) MigIncludeExcelCheck.Content = Strings.MigIncludeExcel;
             if (MigIncludeLockCheck != null) MigIncludeLockCheck.Content = Strings.MigIncludeLock;
+            if (MigSpeedLabel != null) MigSpeedLabel.Text = Strings.MigSpeedLabel;
+            if (MigDeltaRatioLabel != null) MigDeltaRatioLabel.Text = Strings.MigDeltaRatioLabel;
             if (MigKpiTotalSizeLabel != null) MigKpiTotalSizeLabel.Text = Strings.MigKpiTotalSize;
             if (MigKpiTotalFilesLabel != null) MigKpiTotalFilesLabel.Text = Strings.MigKpiTotalFiles;
             if (MigKpiFullTimeLabel != null) MigKpiFullTimeLabel.Text = Strings.MigKpiFullTime;

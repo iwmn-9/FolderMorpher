@@ -847,7 +847,7 @@ namespace FolderMorpher.Services.Testing
                 var salesNode = new SimFolderNode
                 {
                     Name = "Sales",
-                    EstimatedSizeBytes = 120L * 1024 * 1024 * 1024 // 120GB
+                    EstimatedSizeBytes = 120L * 1024 * 1024 * 1024 // 親が包括値 120GB を保有 (ファイル数は未計測 null)
                 };
                 salesNode.MappedSourcePaths.Add(@"\\OldServer\Share\SalesHQ");
 
@@ -855,7 +855,7 @@ namespace FolderMorpher.Services.Testing
                 {
                     Name = "2024",
                     Parent = salesNode,
-                    EstimatedSizeBytes = 30L * 1024 * 1024 * 1024 // 30GB
+                    EstimatedSizeBytes = 30L * 1024 * 1024 * 1024 // 子ノード 30GB
                 };
                 salesChild.MappedSourcePaths.Add(@"\\OldServer\Share\SalesHQ\Archive2024");
                 salesNode.Children.Add(salesChild);
@@ -863,7 +863,8 @@ namespace FolderMorpher.Services.Testing
                 var devNode = new SimFolderNode
                 {
                     Name = "Dev",
-                    EstimatedSizeBytes = 20L * 1024 * 1024 * 1024 * 1024 // 20TB (約72.8時間: 48h超警告 & 小ファイル過多トリガー)
+                    EstimatedSizeBytes = 20L * 1024 * 1024 * 1024 * 1024, // 20TB (約72.8時間: 48h超警告トリガー)
+                    EstimatedFileCount = 150_000 // 実測 15万件 (10万件超小ファイル警告トリガー)
                 };
                 devNode.MappedSourcePaths.Add(@"\\OldServer\Share\DevProjects");
 
@@ -876,13 +877,36 @@ namespace FolderMorpher.Services.Testing
                 var topLevelOptions = new MigrationPackageOptions
                 {
                     Policy = MigrationSplitPolicy.ByTopLevelFolder,
-                    TargetRoot = @"\\TargetServer\Public"
+                    TargetRoot = @"\\TargetServer\Public",
+                    TransferRateMBps = 100.0,
+                    DeltaRatioPercent = 5.0
                 };
                 var topPlans = packageService.PlanWaves(roots, topLevelOptions);
                 if (topPlans.Count != 2)
                 {
                     throw new InvalidOperationException($"Wave分割欠陥: ByTopLevelFolder で2波次になるはずが {topPlans.Count} 件でした。");
                 }
+
+                // 二重加算防止の検証: 親120GB + 子30GB の場合、二重加算されずに親包括値 120GB となること
+                var salesWave = topPlans.FirstOrDefault(w => w.WaveName.Contains("Sales"));
+                if (salesWave == null)
+                {
+                    throw new InvalidOperationException("Wave分割欠陥: Sales の Wave 計画が存在しません。");
+                }
+                if (salesWave.TotalSizeBytes != 120L * 1024 * 1024 * 1024)
+                {
+                    throw new InvalidOperationException($"容量二重加算欠陥: 親120GB+子30GBで120GBになるべきが {FormatHelper.FormatBytes(salesWave.TotalSizeBytes)} でした。");
+                }
+                // ファイル数捏造排除の検証: 未計測の Sales は null であること
+                if (salesWave.TotalFileCount.HasValue)
+                {
+                    throw new InvalidOperationException($"ファイル数捏造欠陥: 未計測ノードでファイル数が捏造されています ({salesWave.TotalFileCount.Value})。");
+                }
+                if (salesWave.HasHighFileCountWarning)
+                {
+                    throw new InvalidOperationException("ファイル数警告欠陥: 未計測ノードで10万件警告が発報されています。");
+                }
+
                 var devWave = topPlans.FirstOrDefault(w => w.WaveName.Contains("Dev"));
                 if (devWave == null)
                 {
@@ -892,12 +916,13 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException("Wave警告欠陥: 20TB の Dev が 48時間超過警告になりませんでした。");
                 }
-                if (!devWave.HasHighFileCountWarning)
+                // 実測値に基づく小ファイル警告の検証
+                if (devWave.TotalFileCount != 150_000 || !devWave.HasHighFileCountWarning)
                 {
-                    throw new InvalidOperationException("Wave警告欠陥: 20TB の Dev が 10万件超小ファイル警告になりませんでした。");
+                    throw new InvalidOperationException($"Wave警告欠陥: 実測15万件の Dev で正しく警告になりませんでした。Count={devWave.TotalFileCount}");
                 }
 
-                // (2) BySizeBudget (25TB): 2つ合わせて 約20.15TB なので 1つの Wave に集約されること
+                // (2) BySizeBudget (25TB): 2つ合わせて 約20.12TB なので 1つの Wave に集約されること
                 var budgetOptions = new MigrationPackageOptions
                 {
                     Policy = MigrationSplitPolicy.BySizeBudget,
@@ -910,7 +935,7 @@ namespace FolderMorpher.Services.Testing
                     throw new InvalidOperationException($"Wave分割欠陥: BySizeBudget(25TB) で1波次になるはずが {budgetPlans.Count} 件でした。");
                 }
 
-                // 2. 移行パッケージ一式（バッチ群・安全弁・Excel手順書・README）の静的生成テスト
+                // 2. 移行パッケージ一式（バッチ群・安全停止ガイド・Excel手順書・README）の静的生成テスト
                 var genOptions = new MigrationPackageOptions
                 {
                     Policy = MigrationSplitPolicy.ByTopLevelFolder,
@@ -928,7 +953,7 @@ namespace FolderMorpher.Services.Testing
                     throw new InvalidOperationException($"パッケージ生成欠陥: 出力ディレクトリが存在しません: {packageDir}");
                 }
 
-                // Wave フォルダおよびバッチファイルの存在確認
+                // Wave フォルダおよび生成成果物の存在確認
                 string[] expectedWaveSubDirs = { "Wave01_Sales", "Wave02_Dev" };
                 foreach (var waveSub in expectedWaveSubDirs)
                 {
@@ -938,22 +963,29 @@ namespace FolderMorpher.Services.Testing
                         throw new InvalidOperationException($"パッケージ生成欠陥: Waveフォルダ {waveSub} が作成されていません。");
                     }
 
-                    string[] expectedBats =
+                    string[] expectedFiles =
                     {
                         "01_Baseline_Sync.bat",
                         "02_Delta_Sync.bat",
-                        "03_Lock_OldShare_ReadOnly.bat",
-                        "04_Final_Cutover_Mirror.bat",
-                        "99_ROLLBACK_RestoreOldShare.bat"
+                        "03_PreCutover_Freeze_Guide.md",
+                        "04_Final_Cutover_Mirror.bat"
                     };
 
-                    foreach (var bat in expectedBats)
+                    foreach (var file in expectedFiles)
                     {
-                        string batPath = Path.Combine(wavePath, bat);
-                        if (!File.Exists(batPath))
+                        string filePath = Path.Combine(wavePath, file);
+                        if (!File.Exists(filePath))
                         {
-                            throw new InvalidOperationException($"パッケージ生成欠陥: {waveSub} に {bat} が生成されていません。");
+                            throw new InvalidOperationException($"パッケージ生成欠陥: {waveSub} に {file} が生成されていません。");
                         }
+                    }
+
+                    // 03_PreCutover_Freeze_Guide.md の安全ガイド内容検証
+                    string guidePath = Path.Combine(wavePath, "03_PreCutover_Freeze_Guide.md");
+                    string guideText = File.ReadAllText(guidePath, System.Text.Encoding.UTF8);
+                    if (!guideText.Contains("SMB共有アクセス権") || !guideText.Contains("緊急切戻し手順"))
+                    {
+                        throw new InvalidOperationException($"安全ガイド欠陥: {guidePath} に標準手順が含まれていません。");
                     }
                 }
 

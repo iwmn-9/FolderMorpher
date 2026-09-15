@@ -14,8 +14,6 @@ namespace FolderMorpher.Services
     /// </summary>
     public class MigrationPackageService
     {
-        private const long TransferRateBytesPerSec = 80L * 1024 * 1024; // 1Gbps 実効 約80MB/s
-
         /// <summary>
         /// 設計ツリーとポリシーから移行波次（Wave）計画を自動算定・プレビュー作成します。
         /// </summary>
@@ -40,7 +38,7 @@ namespace FolderMorpher.Services
 
             if (options.Policy == MigrationSplitPolicy.SingleBatch)
             {
-                var p = CreateWavePlan(1, "Wave 1: 全社一括移行 (All Units)", unitNodes);
+                var p = CreateWavePlan(1, "Wave 1: 全社一括移行 (All Units)", unitNodes, options);
                 plans.Add(p);
             }
             else if (options.Policy == MigrationSplitPolicy.BySizeBudget)
@@ -56,7 +54,7 @@ namespace FolderMorpher.Services
                     {
                         string waveName = $"Wave {waveIndex}: {string.Join(" + ", currentBucket.Take(2).Select(n => n.Name))}" +
                                           (currentBucket.Count > 2 ? $" 外{currentBucket.Count - 2}部署" : "");
-                        plans.Add(CreateWavePlan(waveIndex++, waveName, currentBucket));
+                        plans.Add(CreateWavePlan(waveIndex++, waveName, currentBucket, options));
                         currentBucket = new List<SimFolderNode>();
                         currentBucketSize = 0;
                     }
@@ -68,7 +66,7 @@ namespace FolderMorpher.Services
                 {
                     string waveName = $"Wave {waveIndex}: {string.Join(" + ", currentBucket.Take(2).Select(n => n.Name))}" +
                                       (currentBucket.Count > 2 ? $" 外{currentBucket.Count - 2}部署" : "");
-                    plans.Add(CreateWavePlan(waveIndex, waveName, currentBucket));
+                    plans.Add(CreateWavePlan(waveIndex, waveName, currentBucket, options));
                 }
             }
             else // ByTopLevelFolder (既定: 部署・トップフォルダごと)
@@ -77,31 +75,41 @@ namespace FolderMorpher.Services
                 foreach (var node in unitNodes)
                 {
                     string waveName = $"Wave {waveIndex}: {node.Name}";
-                    plans.Add(CreateWavePlan(waveIndex++, waveName, new List<SimFolderNode> { node }));
+                    plans.Add(CreateWavePlan(waveIndex++, waveName, new List<SimFolderNode> { node }, options));
                 }
             }
 
             return plans;
         }
 
-        private static MigrationWavePlan CreateWavePlan(int waveNum, string waveName, List<SimFolderNode> targetNodes)
+        private static MigrationWavePlan CreateWavePlan(
+            int waveNum,
+            string waveName,
+            List<SimFolderNode> targetNodes,
+            MigrationPackageOptions options)
         {
             long totalBytes = 0;
-            long totalFiles = 0;
+            long? totalFiles = null;
             var mappedSources = new List<string>();
 
             foreach (var node in targetNodes)
             {
                 totalBytes += CalculateRecursiveSize(node);
-                totalFiles += CalculateRecursiveFiles(node);
+                var fCount = CalculateRecursiveFiles(node);
+                if (fCount.HasValue)
+                {
+                    totalFiles = (totalFiles ?? 0) + fCount.Value;
+                }
                 CollectAllMappedSources(node, mappedSources);
             }
 
-            double fullSeconds = (double)totalBytes / TransferRateBytesPerSec;
+            long rateBytes = (long)Math.Max(1024.0 * 1024.0, options.TransferRateMBps * 1024.0 * 1024.0);
+            double fullSeconds = (double)totalBytes / rateBytes;
             var fullTime = TimeSpan.FromSeconds(Math.Max(5, (int)fullSeconds));
 
-            // 差分同期（差分2%想定、最小5秒）
-            double cutoverSeconds = (double)(totalBytes * 0.02) / TransferRateBytesPerSec;
+            // 差分同期（指定差分率 想定、最小5秒）
+            double deltaRatio = Math.Clamp(options.DeltaRatioPercent, 0.01, 100.0) / 100.0;
+            double cutoverSeconds = (double)(totalBytes * deltaRatio) / rateBytes;
             var cutoverTime = TimeSpan.FromSeconds(Math.Max(5, (int)cutoverSeconds));
 
             return new MigrationWavePlan
@@ -119,22 +127,36 @@ namespace FolderMorpher.Services
 
         private static long CalculateRecursiveSize(SimFolderNode node)
         {
-            long size = node.EstimatedSizeBytes;
+            if (node.Children.Count == 0) return node.EstimatedSizeBytes;
+            long childrenSum = 0;
             foreach (var child in node.Children)
             {
-                size += CalculateRecursiveSize(child);
+                childrenSum += CalculateRecursiveSize(child);
             }
-            return size;
+            // 親ノードが子孫を含む全体値を持つ場合は childrenSum との大きい方を採用して二重加算を防止
+            return Math.Max(node.EstimatedSizeBytes, childrenSum);
         }
 
-        private static long CalculateRecursiveFiles(SimFolderNode node)
+        private static long? CalculateRecursiveFiles(SimFolderNode node)
         {
-            long count = Math.Max(1, node.EstimatedSizeBytes / (10L * 1024 * 1024));
+            if (node.Children.Count == 0) return node.EstimatedFileCount;
+            long childrenSum = 0;
+            bool hasAnyChild = false;
             foreach (var child in node.Children)
             {
-                count += CalculateRecursiveFiles(child);
+                var c = CalculateRecursiveFiles(child);
+                if (c.HasValue)
+                {
+                    childrenSum += c.Value;
+                    hasAnyChild = true;
+                }
             }
-            return count;
+
+            if (node.EstimatedFileCount.HasValue)
+            {
+                return Math.Max(node.EstimatedFileCount.Value, childrenSum);
+            }
+            return hasAnyChild ? childrenSum : null;
         }
 
         private static void CollectAllMappedSources(SimFolderNode node, List<string> accumulator)
@@ -193,17 +215,12 @@ namespace FolderMorpher.Services
                     string deltaContent = GenerateWaveRobocopyBat(wave, targetRoot, options, mode: "DELTA");
                     File.WriteAllText(deltaBat, deltaContent, new UTF8Encoding(false));
 
-                    // 3. 03_Lock_OldShare_ReadOnly.bat (旧共有書き込み封鎖)
+                    // 3. 03_PreCutover_Freeze_Guide.md (旧共有書き込み停止ガイド手順書)
                     if (options.IncludeOldShareLock)
                     {
-                        string lockBat = Path.Combine(waveDir, "03_Lock_OldShare_ReadOnly.bat");
-                        string lockContent = GenerateOldShareLockBat(wave, isLock: true);
-                        File.WriteAllText(lockBat, lockContent, new UTF8Encoding(false));
-
-                        // 99_ROLLBACK_RestoreOldShare.bat (旧共有書き込み復旧)
-                        string rollbackBat = Path.Combine(waveDir, "99_ROLLBACK_RestoreOldShare.bat");
-                        string rollbackContent = GenerateOldShareLockBat(wave, isLock: false);
-                        File.WriteAllText(rollbackBat, rollbackContent, new UTF8Encoding(false));
+                        string guideDoc = Path.Combine(waveDir, "03_PreCutover_Freeze_Guide.md");
+                        string guideDocContent = GeneratePreCutoverFreezeGuide(wave);
+                        File.WriteAllText(guideDoc, guideDocContent, Encoding.UTF8);
                     }
 
                     // 4. 04_Final_Cutover_Mirror.bat (本番最終ミラー)
@@ -368,52 +385,74 @@ namespace FolderMorpher.Services
             return sb.ToString();
         }
 
-        private static string GenerateOldShareLockBat(MigrationWavePlan wave, bool isLock)
+        private static string GeneratePreCutoverFreezeGuide(MigrationWavePlan wave)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("@echo off");
-            sb.AppendLine("chcp 65001 > nul");
+            sb.AppendLine("# 🔒 本番切替前 旧共有書き込み停止ガイド (Pre-Cutover Freeze Guide)");
             sb.AppendLine();
-            sb.AppendLine("rem ==========================================================================");
-            sb.AppendLine($"rem FolderMorpher - 旧環境アクセス権 {(isLock ? "書き込み停止 (ReadOnly化)" : "緊急切戻し (元のアクセス権復元)")}");
-            sb.AppendLine($"rem Wave: {wave.WaveName}");
-            sb.AppendLine($"rem Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-            sb.AppendLine("rem ==========================================================================");
+            sb.AppendLine($"- **対象 Wave**: {wave.WaveName}");
+            sb.AppendLine($"- **生成日時**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sb.AppendLine();
-            sb.AppendLine($"echo ==================================================================");
-            if (isLock)
-            {
-                sb.AppendLine($"echo   【注意】本番切替直前の「旧共有 書き込み封鎖」を実行します。");
-                sb.AppendLine($"echo   ユーザーが旧環境を更新して先祖返りするのを防ぐため、");
-                sb.AppendLine($"echo   一般ユーザーの書き込み権限を一時的に拒否(Deny)します。");
-            }
-            else
-            {
-                sb.AppendLine($"echo   【緊急切戻し】旧共有の書き込み権限を復旧します。");
-                sb.AppendLine($"echo   封鎖用Deny ACEを削除し、元のアクセス状態へ戻します。");
-            }
-            sb.AppendLine($"echo ==================================================================");
-            sb.AppendLine("pause");
+            sb.AppendLine("---");
             sb.AppendLine();
-
+            sb.AppendLine("## 1. 目的と注意点");
+            sb.AppendLine("本番カットオーバー直前のデータ先祖返りを防ぐため、一般利用者の旧共有への書き込みを停止します。");
+            sb.AppendLine("一括バッチによる安易なアクセス権変更（icacls /deny 等）は、既存アクセス権の意図せぬ喪失や環境依存トラブルの原因となるため推奨されません。");
+            sb.AppendLine("以下のエンタープライズ標準手法から、組織の運用設計に合致する方法を選択して実施してください。");
+            sb.AppendLine();
+            sb.AppendLine("---");
+            sb.AppendLine();
+            sb.AppendLine("## 2. 推奨停止手順（以下のいずれかを実施）");
+            sb.AppendLine();
+            sb.AppendLine("### 【方法 A】SMB共有アクセス権の変更（最も安全・即時反映・NTFS非破壊・推奨）");
+            sb.AppendLine("旧サーバーの共有フォルダ自体のアクセス権（Share Permission）を「読み取り」に変更するか、一般ユーザーグループを削除します。NTFSファイル自体のACLを変更しないため、切戻しも最も安全です。");
+            sb.AppendLine();
+            sb.AppendLine("```powershell");
+            sb.AppendLine("# 例: PowerShell で共有アクセス権を読み取り専用に変更する場合");
+            sb.AppendLine("# Revoke-SmbShareAccess -Name \"<共有名>\" -AccountName \"Domain Users\" -Force");
+            sb.AppendLine("# Grant-SmbShareAccess -Name \"<共有名>\" -AccountName \"Domain Users\" -AccessRight Read -Force");
+            sb.AppendLine("```");
+            sb.AppendLine();
+            sb.AppendLine("### 【方法 B】SMBセッションの強制切断 & ファイルオープン解消");
+            sb.AppendLine("書き込み停止前に、利用者が現在開いているファイルハンドルや接続セッションを切断します。");
+            sb.AppendLine();
+            sb.AppendLine("```powershell");
+            sb.AppendLine("# 既存のSMBセッションを切断 (管理者PowerShell)");
+            sb.AppendLine("Get-SmbSession | Close-SmbSession -Force");
+            sb.AppendLine("# 開いているファイルハンドルを閉じる");
+            sb.AppendLine("Get-SmbOpenFile | Close-SmbOpenFile -Force");
+            sb.AppendLine("```");
+            sb.AppendLine();
+            sb.AppendLine("### 【方法 C】DFS名前空間のターゲット無効化（DFS利用時）");
+            sb.AppendLine("DFSを利用している場合は、旧サーバーのフォルダターゲットを「無効（Offline）」にします。");
+            sb.AppendLine();
+            sb.AppendLine("```powershell");
+            sb.AppendLine("# 例: Set-DfsnFolderTarget -Path \"\\\\domain\\dfs\\target\" -TargetPath \"\\\\OldServer\\Share\" -State Offline");
+            sb.AppendLine("```");
+            sb.AppendLine();
+            sb.AppendLine("---");
+            sb.AppendLine();
+            sb.AppendLine("## 3. 本Waveで移行対象となっている旧共有パス一覧");
+            sb.AppendLine("確認用として、本Waveに含まれる移行元UNCパスを以下に列挙します。");
+            sb.AppendLine();
             foreach (var src in wave.MappedSourcePaths)
             {
-                var escPath = ScriptEscaper.EscapeBatPath(src);
-                if (isLock)
-                {
-                    sb.AppendLine($"echo [{src}] 書き込み停止Denyを適用中...");
-                    sb.AppendLine($"icacls {escPath} /deny \"Domain Users\":(WD,AD,WA) /T /C");
-                }
-                else
-                {
-                    sb.AppendLine($"echo [{src}] 書き込み停止Denyを解除中...");
-                    sb.AppendLine($"icacls {escPath} /remove:d \"Domain Users\" /T /C");
-                }
-                sb.AppendLine();
+                sb.AppendLine($"- `{src}`");
             }
-
-            sb.AppendLine("echo 完了しました。");
-            sb.AppendLine("pause");
+            if (wave.MappedSourcePaths.Count == 0)
+            {
+                sb.AppendLine("- （直接マッピングされた旧環境UNCパスはありません）");
+            }
+            sb.AppendLine();
+            sb.AppendLine("---");
+            sb.AppendLine();
+            sb.AppendLine("## 4. 緊急切戻し手順（Rollback）");
+            sb.AppendLine("万が一、本番切替を中断して旧環境での業務を再開する場合は、上記で変更した共有アクセス権またはDFSターゲットを速やかに元に戻してください。");
+            sb.AppendLine();
+            sb.AppendLine("```powershell");
+            sb.AppendLine("# 方法 A を元に戻す例: 共有アクセス権のフルコントロール/変更を再付与");
+            sb.AppendLine("# Grant-SmbShareAccess -Name \"<共有名>\" -AccountName \"Domain Users\" -AccessRight Change -Force");
+            sb.AppendLine("```");
             return sb.ToString();
         }
 
@@ -498,20 +537,20 @@ namespace FolderMorpher.Services
             sb.AppendLine("- **実行スクリプト**: 各Waveフォルダ直下の `02_Delta_Sync.bat`");
             sb.AppendLine("- **内容**: 初回フルコピー以降に更新・追加された差分データだけを追いつかせます。");
             sb.AppendLine();
-            sb.AppendLine("### Phase 3: 旧共有の安全封鎖（Freeze & Lock）");
+            sb.AppendLine("### Phase 3: 旧共有の安全停止（Freeze & Lock）");
             sb.AppendLine("- **実施時期**: 本番切替当日（業務停止直後）");
-            sb.AppendLine("- **実行スクリプト**: `03_Lock_OldShare_ReadOnly.bat`");
-            sb.AppendLine("- **内容**: ユーザーが旧環境を誤編集して先祖返りするのを防ぐため、書き込み権限を一時的に停止します。");
+            sb.AppendLine("- **参照手順書**: 各Waveフォルダ直下の `03_PreCutover_Freeze_Guide.md`");
+            sb.AppendLine("- **内容**: ユーザーが旧環境を誤編集して先祖返りするのを防ぐため、共有アクセス権の変更またはセッション切断により書き込みを安全に停止します。");
             sb.AppendLine();
             sb.AppendLine("### Phase 4: 最終カットオーバー同期（Final Cutover /MIR）");
-            sb.AppendLine("- **実施時期**: 本番切替当日（旧共有封鎖完了後）");
+            sb.AppendLine("- **実施時期**: 本番切替当日（旧共有停止完了後）");
             sb.AppendLine("- **実行スクリプト**: `04_Final_Cutover_Mirror.bat`");
             sb.AppendLine("- **内容**: `/MIR` により旧環境で削除されたファイルも新環境へ反映し、完全一致（ミラー）化します。事前同期済みのため数分〜数十分で終わります。");
             sb.AppendLine();
             sb.AppendLine("### Emergency: 緊急切り戻し（Rollback）");
             sb.AppendLine("- **実施時期**: 万が一新環境への切替を中止し旧環境で業務再開する場合");
-            sb.AppendLine("- **実行スクリプト**: `99_ROLLBACK_RestoreOldShare.bat`");
-            sb.AppendLine("- **内容**: 旧環境の書き込み権限を元の状態へ即座に復旧します。");
+            sb.AppendLine("- **参照手順書**: `03_PreCutover_Freeze_Guide.md` 内「4. 緊急切戻し手順」");
+            sb.AppendLine("- **内容**: 共有アクセス権またはDFSターゲットを速やかに元に戻し、旧環境での書き込み権限を復旧します。");
             sb.AppendLine();
             sb.AppendLine("---");
             sb.AppendLine();

@@ -525,6 +525,7 @@ namespace AstraSize.Models
         private string _name = "新規フォルダ";
         private int _level = 0;
         private long _estimatedSizeBytes = 0;
+        private long? _estimatedFileCount = null;
         private bool _inheritAcl = true;
         private bool _isExpanded = true;
         private bool _isSelected = false;
@@ -559,6 +560,12 @@ namespace AstraSize.Models
         {
             get => _estimatedSizeBytes;
             set { _estimatedSizeBytes = value; OnPropertyChanged(); OnPropertyChanged(nameof(FormattedSize)); }
+        }
+
+        public long? EstimatedFileCount
+        {
+            get => _estimatedFileCount;
+            set { _estimatedFileCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(FormattedFileCount)); }
         }
 
         public bool InheritAcl
@@ -627,6 +634,18 @@ namespace AstraSize.Models
 
         [JsonIgnore]
         public string FormattedSize => FileItemNode.FormatBytes(EstimatedSizeBytes);
+
+        [JsonIgnore]
+        public string FormattedFileCount
+        {
+            get
+            {
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                return EstimatedFileCount.HasValue
+                    ? (isJa ? $"{EstimatedFileCount.Value:N0} 件" : $"{EstimatedFileCount.Value:N0} files")
+                    : (isJa ? "未計測 (-)" : "Unmeasured (-)");
+            }
+        }
 
         [JsonIgnore]
         public string InheritStatusBadge

@@ -1634,9 +1634,23 @@
                                     </RadioButton>
                                 </StackPanel>
 
+                                <StackPanel Orientation="Horizontal" Margin="0,1,0,4">
+                                    <TextBlock x:Name="MigSpeedLabel" Text="想定速度:" FontSize="11" Foreground="#334155" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="MigSpeedText" Text="80" Width="38" Height="22" Margin="4,0,2,0" FontSize="11"
+                                             VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                                             BorderBrush="#CBD5E1" Background="#FFFFFF" TextChanged="MigParamText_TextChanged"/>
+                                    <TextBlock Text="MB/s" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,10,0"/>
+
+                                    <TextBlock x:Name="MigDeltaRatioLabel" Text="想定差分率:" FontSize="11" Foreground="#334155" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="MigDeltaRatioText" Text="2.0" Width="38" Height="22" Margin="4,0,2,0" FontSize="11"
+                                             VerticalContentAlignment="Center" HorizontalContentAlignment="Center"
+                                             BorderBrush="#CBD5E1" Background="#FFFFFF" TextChanged="MigParamText_TextChanged"/>
+                                    <TextBlock Text="%" FontSize="11" Foreground="#64748B" VerticalAlignment="Center"/>
+                                </StackPanel>
+
                                 <CheckBox x:Name="MigIncludeExcelCheck" Content="進捗管理Excel手順書 (Migration_Runbook.xlsx) を同梱"
-                                          IsChecked="True" FontSize="11" Foreground="#334155" Margin="0,3,0,3"/>
-                                <CheckBox x:Name="MigIncludeLockCheck" Content="旧共有の安全封鎖・復旧スクリプト (03_Lock / 99_ROLLBACK) を生成"
+                                          IsChecked="True" FontSize="11" Foreground="#334155" Margin="0,2,0,2"/>
+                                <CheckBox x:Name="MigIncludeLockCheck" Content="旧共有の安全停止ガイド (03_PreCutover_Freeze_Guide.md) を同梱"
                                           IsChecked="True" FontSize="11" Foreground="#334155" Margin="0,0,0,0"/>
                             </StackPanel>
                         </Border>

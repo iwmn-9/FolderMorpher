@@ -68,6 +68,7 @@ namespace AstraSize.Services
             {
                 Name = sourceNode.Name,
                 EstimatedSizeBytes = sourceNode.SizeBytes,
+                EstimatedFileCount = sourceNode.FileCount,
                 InheritAcl = true,
                 Level = 0
             };
@@ -90,6 +91,7 @@ namespace AstraSize.Services
                 {
                     Name = child.Name,
                     EstimatedSizeBytes = child.SizeBytes,
+                    EstimatedFileCount = child.FileCount,
                     InheritAcl = true,
                     Level = currentLevel,
                     Parent = dst

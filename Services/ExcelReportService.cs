@@ -659,10 +659,14 @@ namespace FolderMorpher.Services
 
             // KPI Summary Cards
             long totalBytesAll = wavePlans.Sum(w => w.TotalSizeBytes);
-            long totalFilesAll = wavePlans.Sum(w => w.TotalFileCount);
-            double totalFullSec = (double)totalBytesAll / (80L * 1024 * 1024);
+            long? totalFilesAll = wavePlans.Any(w => w.TotalFileCount.HasValue)
+                ? wavePlans.Sum(w => w.TotalFileCount ?? 0)
+                : null;
+            long rateBytes = (long)Math.Max(1024.0 * 1024.0, options.TransferRateMBps * 1024.0 * 1024.0);
+            double totalFullSec = (double)totalBytesAll / rateBytes;
             var totalFullTime = TimeSpan.FromSeconds(Math.Max(5, (int)totalFullSec));
-            double totalCutoverSec = (double)(totalBytesAll * 0.02) / (80L * 1024 * 1024);
+            double deltaRatio = Math.Clamp(options.DeltaRatioPercent, 0.01, 100.0) / 100.0;
+            double totalCutoverSec = (double)(totalBytesAll * deltaRatio) / rateBytes;
             var totalCutoverTime = TimeSpan.FromSeconds(Math.Max(5, (int)totalCutoverSec));
 
             void DrawKpiCard(string cellTopLeft, string title, string val, string sub)
@@ -685,15 +689,15 @@ namespace FolderMorpher.Services
             }
 
             DrawKpiCard("B5", isJa ? "総移行データ量" : "Total Size", FormatHelper.FormatBytes(totalBytesAll, 2), "");
-            DrawKpiCard("D5", isJa ? "総ファイル件数" : "Total Files", $"{totalFilesAll:N0} 件", "");
-            DrawKpiCard("F5", isJa ? "全体初回フル見積" : "Est. Full Sync", $"{totalFullTime.TotalHours:F1} 時間", "");
-            DrawKpiCard("H5", isJa ? "全体本番切替見積" : "Est. Cutover", $"{totalCutoverTime.TotalMinutes:F1} 分", "");
+            DrawKpiCard("D5", isJa ? "総ファイル件数" : "Total Files", totalFilesAll.HasValue ? $"{totalFilesAll.Value:N0} 件" : (isJa ? "未計測 (-)" : "Unmeasured (-)"), "");
+            DrawKpiCard("F5", isJa ? $"全体初回フル見積 ({options.TransferRateMBps:G0}MB/s)" : $"Est. Full Sync ({options.TransferRateMBps:G0}MB/s)", $"{totalFullTime.TotalHours:F1} 時間", "");
+            DrawKpiCard("H5", isJa ? $"全体本番切替見積 (差分{options.DeltaRatioPercent:G0}%)" : $"Est. Cutover ({options.DeltaRatioPercent:G0}% Delta)", $"{totalCutoverTime.TotalMinutes:F1} 分", "");
 
             // Wave Table
             int hRow1 = 8;
             string[] headers1 = isJa
-                ? new[] { "Wave", "波次名称・移行対象", "対象フォルダ数", "想定容量", "ファイル数", "初回フル同期想定 (1Gbps)", "本番カットオーバー想定 (差分2%)", "警告・留意事項" }
-                : new[] { "Wave", "Wave Name / Target", "Folders", "Size", "Files", "Est. Full Sync (1Gbps)", "Est. Cutover (2% Delta)", "Warnings & Notes" };
+                ? new[] { "Wave", "波次名称・移行対象", "対象フォルダ数", "想定容量", "ファイル数", $"初回フル同期想定 ({options.TransferRateMBps:G0}MB/s)", $"本番カットオーバー想定 (差分{options.DeltaRatioPercent:G0}%)", "警告・留意事項" }
+                : new[] { "Wave", "Wave Name / Target", "Folders", "Size", "Files", $"Est. Full Sync ({options.TransferRateMBps:G0}MB/s)", $"Est. Cutover ({options.DeltaRatioPercent:G0}% Delta)", "Warnings & Notes" };
 
             for (int col = 0; col < headers1.Length; col++)
             {
@@ -719,8 +723,15 @@ namespace FolderMorpher.Services
                 ws1.Cell(r1, 5).Value = w.TotalSizeFormatted;
                 ws1.Cell(r1, 5).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
-                ws1.Cell(r1, 6).Value = w.TotalFileCount;
-                ws1.Cell(r1, 6).Style.NumberFormat.Format = "#,##0";
+                if (w.TotalFileCount.HasValue)
+                {
+                    ws1.Cell(r1, 6).Value = w.TotalFileCount.Value;
+                    ws1.Cell(r1, 6).Style.NumberFormat.Format = "#,##0";
+                }
+                else
+                {
+                    ws1.Cell(r1, 6).Value = "-";
+                }
                 ws1.Cell(r1, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
                 ws1.Cell(r1, 7).Value = w.FullCopyTimeFormatted;
@@ -792,12 +803,12 @@ namespace FolderMorpher.Services
                 ("Phase 2", "2-1", "中間差分同期 (Delta Sync) 実行", "各Wave\\02_Delta_Sync.bat", "本番3日前〜前日夜間", "初回以降の更新差分が転送され、所要時間が短縮していること", "未着手"),
                 ("Phase 2", "2-2", "中間転送ログ確認", "Logs\\Delta_*.log", "Phase 2完了直後", "エラーなく追いついていることを確認", "未着手"),
                 ("本番切替", "3-1", "業務終了確認 & 利用者ログオフ促進", "社内アナウンス / 連絡網", "切替当日 業務終了時刻", "旧共有へのアクセスが停止していること", "未着手"),
-                ("本番切替", "3-2", "旧共有の書き込み封鎖 (Read-Only)", "各Wave\\03_Lock_OldShare_ReadOnly.bat", "切替当日 業務停止直後", "ユーザー権限で旧フォルダーに新規ファイル作成が拒否されること", "未着手"),
-                ("Phase 4", "4-1", "最終カットオーバー同期 (/MIR) 実行", "各Wave\\04_Final_Cutover_Mirror.bat", "切替当日 旧共有封鎖後", "完全同期完了。旧環境の最終差分・削除がミラー反映されること", "未着手"),
+                ("本番切替", "3-2", "旧共有の安全停止 (Freeze & Lock)", "各Wave\\03_PreCutover_Freeze_Guide.md 参照", "切替当日 業務停止直後", "共有権限またはNTFS拒否により旧フォルダーへの書き込みが停止していること", "未着手"),
+                ("Phase 4", "4-1", "最終カットオーバー同期 (/MIR) 実行", "各Wave\\04_Final_Cutover_Mirror.bat", "切替当日 旧共有停止後", "完全同期完了。旧環境の最終差分・削除がミラー反映されること", "未着手"),
                 ("Phase 4", "4-2", "最終転送ログ確認", "Logs\\Cutover_*.log", "Phase 4完了直後", "Robocopy終了コード正常。重大エラーがないこと", "未着手"),
                 ("検証", "5-1", "新環境共有の導通・権限・書き込み検証", "クライアントPC実機テスト", "切替当日 夜間", "各部署のテストアカウントで想定通りアクセス・保存できること", "未着手"),
                 ("完了", "6-1", "新環境サービスイン アナウンス", "全社通知メール / チャット", "切替翌営業日 始業前", "新共有パスでの業務開始案内", "未着手"),
-                ("緊急対応", "9-1", "【切戻し時のみ】旧共有の書き込み復旧", "各Wave\\99_ROLLBACK_RestoreOldShare.bat", "切替中止判断時", "旧共有の書き込み権限が元の状態に復旧すること", "未着手")
+                ("緊急対応", "9-1", "【切戻し時のみ】旧共有の書き込み復旧", "03_PreCutover_Freeze_Guide.md 参照", "切替中止判断時", "旧共有の書き込み権限が元の状態に復旧すること", "未着手")
             } : new (string Phase, string No, string Task, string Script, string Window, string Criteria, string Status)[]
             {
                 ("Prep", "0-1", "Deploy Migration Package & Path Check", "Explorer / CMD", "2-4 weeks before cutover", "Verify network connectivity to both Old & New UNC shares", "Not Started"),
@@ -808,12 +819,12 @@ namespace FolderMorpher.Services
                 ("Phase 2", "2-1", "Execute Delta Catch-up Sync", "Each Wave\\02_Delta_Sync.bat", "1-3 days before cutover (night)", "Recent modified files updated swiftly", "Not Started"),
                 ("Phase 2", "2-2", "Review Delta Logs", "Logs\\Delta_*.log", "Immediately after Phase 2", "Verify delta synchronization completed without errors", "Not Started"),
                 ("Cutover", "3-1", "Confirm Business Close & User Logoff", "Internal Notification", "Cutover Day - Business End", "Ensure no active users are editing files", "Not Started"),
-                ("Cutover", "3-2", "Freeze Old Share (Read-Only Lock)", "Each Wave\\03_Lock_OldShare_ReadOnly.bat", "Cutover Day - Business End", "Verify write operations are blocked on old shares", "Not Started"),
+                ("Cutover", "3-2", "Freeze Old Share (Read-Only Lock)", "Refer to Each Wave\\03_PreCutover_Freeze_Guide.md", "Cutover Day - Business End", "Verify write operations are blocked on old shares", "Not Started"),
                 ("Phase 4", "4-1", "Execute Final Cutover Mirror (/MIR)", "Each Wave\\04_Final_Cutover_Mirror.bat", "Cutover Day - After Share Lock", "Exact mirror completed within minutes/hours", "Not Started"),
                 ("Phase 4", "4-2", "Review Final Cutover Logs", "Logs\\Cutover_*.log", "Immediately after Phase 4", "Robocopy exit code normal", "Not Started"),
                 ("Verify", "5-1", "Verify New Share Access & Permissions", "Client PC Testing", "Cutover Night", "Test users verify read/write access per department", "Not Started"),
                 ("Complete", "6-1", "Service-In Announcement", "Company-wide Email / Chat", "Next Business Day - Before Opening", "Users resume work using the new file server UNC", "Not Started"),
-                ("Rollback", "9-1", "[Rollback Only] Restore Old Share Access", "Each Wave\\99_ROLLBACK_RestoreOldShare.bat", "If cutover is aborted", "Old shares write permissions restored to original state", "Not Started")
+                ("Rollback", "9-1", "[Rollback Only] Restore Old Share Access", "Refer to 03_PreCutover_Freeze_Guide.md", "If cutover is aborted", "Old shares write permissions restored to original state", "Not Started")
             };
 
             int r2 = hRow2 + 1;

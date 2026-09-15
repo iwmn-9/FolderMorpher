@@ -280,6 +280,7 @@ namespace AstraSize
             {
                 Name = src.Name,
                 EstimatedSizeBytes = src.SizeBytes,
+                EstimatedFileCount = src.FileCount,
                 Level = level,
                 Parent = parent,
                 IsExpanded = true
@@ -1520,6 +1521,14 @@ namespace AstraSize
             }
         }
 
+        private void MigParamText_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (MigrationPackageOverlay != null && MigrationPackageOverlay.Visibility == Visibility.Visible)
+            {
+                RefreshWavePlanPreview();
+            }
+        }
+
         private void RefreshWavePlanPreview()
         {
             if (_simRootFolders.Count == 0) return;
@@ -1531,21 +1540,29 @@ namespace AstraSize
             MigWavePlanDataGrid.ItemsSource = null;
             MigWavePlanDataGrid.ItemsSource = _currentWavePlans;
 
-            // KPI 計算
+            // KPI 計算 (WavePlans の計算結果・正本プロパティを参照)
             long totalBytes = _currentWavePlans.Sum(w => w.TotalSizeBytes);
-            long totalFiles = _currentWavePlans.Sum(w => w.TotalFileCount);
-            double fullSec = (double)totalBytes / (80L * 1024 * 1024);
-            var fullTime = TimeSpan.FromSeconds(Math.Max(5, (int)fullSec));
-            double cutoverSec = (double)(totalBytes * 0.02) / (80L * 1024 * 1024);
-            var cutoverTime = TimeSpan.FromSeconds(Math.Max(5, (int)cutoverSec));
+            bool hasFiles = _currentWavePlans.Any(w => w.TotalFileCount.HasValue);
+            long totalFiles = _currentWavePlans.Sum(w => w.TotalFileCount ?? 0);
+            var totalFullTime = TimeSpan.FromSeconds(_currentWavePlans.Sum(w => w.EstimatedFullCopyTime.TotalSeconds));
+            var totalCutoverTime = TimeSpan.FromSeconds(_currentWavePlans.Sum(w => w.EstimatedCutoverTime.TotalSeconds));
 
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             MigKpiTotalSizeVal.Text = FormatHelper.FormatBytes(totalBytes, 2);
-            MigKpiTotalFilesVal.Text = $"{totalFiles:N0} 件";
-            MigKpiFullTimeVal.Text = FormatTimeSpanForKpi(fullTime);
-            MigKpiCutoverTimeVal.Text = FormatTimeSpanForKpi(cutoverTime);
+            MigKpiTotalFilesVal.Text = hasFiles
+                ? (isJa ? $"{totalFiles:N0} 件" : $"{totalFiles:N0} files")
+                : (isJa ? "未計測 (-)" : "Unmeasured (-)");
+            MigKpiFullTimeVal.Text = FormatTimeSpanForKpi(totalFullTime);
+            MigKpiCutoverTimeVal.Text = FormatTimeSpanForKpi(totalCutoverTime);
+
+            MigKpiFullTimeLabel.Text = isJa
+                ? $"初回フル同期想定 ({options.TransferRateMBps:G0}MB/s)"
+                : $"Est. Full Sync ({options.TransferRateMBps:G0}MB/s)";
+            MigKpiCutoverTimeLabel.Text = isJa
+                ? $"本番切替想定 (差分{options.DeltaRatioPercent:G0}%)"
+                : $"Est. Cutover ({options.DeltaRatioPercent:G0}% Delta)";
 
             string targetRoot = string.IsNullOrWhiteSpace(options.TargetRoot) ? @"\\NewServer\Share" : options.TargetRoot;
-            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             MigFooterNoticeText.Text = isJa
                 ? $"※ 新環境ルート: {targetRoot} | 子孫フォルダ (/XD) は自動除外されます"
                 : $"* Target Root: {targetRoot} | Descendant folders are excluded via /XD";
@@ -1569,10 +1586,24 @@ namespace AstraSize
                 budgetGb = parsedGb;
             }
 
+            double speedMBps = 80.0;
+            if (MigSpeedText != null && double.TryParse(MigSpeedText.Text.Trim(), out var parsedSpeed) && parsedSpeed > 0)
+            {
+                speedMBps = parsedSpeed;
+            }
+
+            double deltaPercent = 2.0;
+            if (MigDeltaRatioText != null && double.TryParse(MigDeltaRatioText.Text.Trim(), out var parsedDelta) && parsedDelta >= 0)
+            {
+                deltaPercent = parsedDelta;
+            }
+
             return new MigrationPackageOptions
             {
                 Policy = policy,
                 SizeBudgetBytes = budgetGb * 1024L * 1024 * 1024,
+                TransferRateMBps = speedMBps,
+                DeltaRatioPercent = deltaPercent,
                 TargetRoot = SimTargetRootTextBox.Text.Trim(),
                 CopyAcl = (MigModeCopyAllRadio.IsChecked == true),
                 IncludeRunbookExcel = (MigIncludeExcelCheck.IsChecked == true),

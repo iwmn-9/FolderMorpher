@@ -423,7 +423,9 @@ namespace FolderMorpher.Services
         public static string MigModeCopyDat => IsJa ? "新設計ACL維持 (/COPY:DAT 推奨)" : "Preserve New ACLs (/COPY:DAT recommended)";
         public static string MigModeCopyAll => IsJa ? "旧環境ACL維持 (/COPYALL)" : "Preserve Source ACLs (/COPYALL)";
         public static string MigIncludeExcel => IsJa ? "進捗管理Excel手順書 (Migration_Runbook.xlsx) を同梱" : "Include Excel Runbook & WBS (Migration_Runbook.xlsx)";
-        public static string MigIncludeLock => IsJa ? "旧共有の安全封鎖・復旧バッチ (03_Lock / 99_ROLLBACK) を生成" : "Generate Old Share Lock & Rollback Batches";
+        public static string MigIncludeLock => IsJa ? "旧共有の安全停止ガイド (03_PreCutover_Freeze_Guide.md) を同梱" : "Include Pre-Cutover Freeze Guide (03_PreCutover_Freeze_Guide.md)";
+        public static string MigSpeedLabel => IsJa ? "想定速度:" : "Speed:";
+        public static string MigDeltaRatioLabel => IsJa ? "想定差分率:" : "Est. Delta:";
         public static string MigThreadsLabel => IsJa ? "スレッド (/MT):" : "Threads (/MT):";
         public static string MigPreviewHeader => IsJa ? "3. Wave別 計画プレビュー & 判定指標" : "3. Wave Plan Preview & Decision Indicators";
         public static string MigKpiTotalSize => IsJa ? "総移行データ量" : "Total Size";

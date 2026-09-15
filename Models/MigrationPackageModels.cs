@@ -37,18 +37,27 @@ namespace FolderMorpher.Models
         public List<SimFolderNode> TargetNodes { get; set; } = new();
 
         public long TotalSizeBytes { get; set; }
-        public long TotalFileCount { get; set; }
+        public long? TotalFileCount { get; set; }
 
         public string TotalSizeFormatted => FormatHelper.FormatBytes(TotalSizeBytes, 2);
-        public string TotalFileCountFormatted => $"{TotalFileCount:N0} 件";
+        public string TotalFileCountFormatted
+        {
+            get
+            {
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                return TotalFileCount.HasValue
+                    ? (isJa ? $"{TotalFileCount.Value:N0} 件" : $"{TotalFileCount.Value:N0} files")
+                    : (isJa ? "未計測 (-)" : "Unmeasured (-)");
+            }
+        }
 
         /// <summary>
-        /// 1Gbps実効 (約80MB/s) 換算の初回フルコピー想定時間
+        /// 初回フル同期想定時間（転送レートに基づく）
         /// </summary>
         public TimeSpan EstimatedFullCopyTime { get; set; }
 
         /// <summary>
-        /// 差分5%換算の本番カットオーバー想定時間
+        /// 本番カットオーバー想定時間（想定差分率に基づく）
         /// </summary>
         public TimeSpan EstimatedCutoverTime { get; set; }
 
@@ -56,9 +65,9 @@ namespace FolderMorpher.Models
         public string CutoverTimeFormatted => FormatTimeSpan(EstimatedCutoverTime);
 
         /// <summary>
-        /// ファイル数が10万件超（ランダムI/O過多警告）
+        /// 実測ファイル数が10万件超（ランダムI/O過多警告）
         /// </summary>
-        public bool HasHighFileCountWarning => TotalFileCount > 100_000;
+        public bool HasHighFileCountWarning => TotalFileCount.HasValue && TotalFileCount.Value > 100_000;
 
         /// <summary>
         /// 初回コピーが48時間超（週末枠オーバー警告）
@@ -99,6 +108,8 @@ namespace FolderMorpher.Models
         public string TargetRoot { get; set; } = string.Empty;
         public bool CopyAcl { get; set; } = false; // 推奨: false (/COPY:DAT)
         public int Threads { get; set; } = 16;
+        public double TransferRateMBps { get; set; } = 80.0; // 既定: 80 MB/s (1Gbps実効目安)
+        public double DeltaRatioPercent { get; set; } = 2.0; // 既定: 2.0 % (想定差分率)
         public bool IncludeRunbookExcel { get; set; } = true;
         public bool IncludeOldShareLock { get; set; } = true;
     }
