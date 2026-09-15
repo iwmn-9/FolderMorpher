@@ -22,12 +22,14 @@ namespace FolderMorpher.Services.Testing
         /// <summary>
         /// [DOMAIN 4/7] Audit & Hygiene 統合テスト
         /// </summary>
+        /// <summary>
+        /// [DOMAIN 4/7] Audit & Hygiene 統合テスト
+        /// </summary>
         public static async Task TestDomain_AuditAndHygieneAsync()
         {
-            TestAuditArchivalOriginalExclusionAndDeduplication();
+            TestAuditOriginalProtectionAndHashVerification();
             await TestDuplicateGroupingAndOuHierarchyAsync();
             await TestSmartOriginalCandidateScoringAsync();
-            TestAuditArchiveScriptOptInAndPropertyFidelity();
             TestAuditSmartSelectAndSafePermanentDeletion();
             TestAuditHierarchicalSizeSortingWithDuplicateGroups();
             await TestHeadTailHashAndBandwidthLimiterAsync();
@@ -35,141 +37,87 @@ namespace FolderMorpher.Services.Testing
             await TestFolderExclusionInAuditAsync();
         }
 
-        public static void TestAuditArchivalOriginalExclusionAndDeduplication()
+        /// <summary>
+        /// Audit: 原本候補の絶対保護（削除拒否）＆ 削除直前SHA-256再照合（誤削除ゼロ保証）の検証
+        /// </summary>
+        public static void TestAuditOriginalProtectionAndHashVerification()
         {
-            string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_Audit_" + Guid.NewGuid().ToString("N"));
+            string tempDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_AuditSafe_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDir);
-            string scriptPath = Path.Combine(tempDir, "archive_test.bat");
 
             try
             {
-                string origPath = @"C:\MockRoot\Department\Contract_Original.pdf";
-                string dupPath1 = @"C:\MockRoot\Backup\Contract_Copy1.pdf";
-                string dupPath2 = @"C:\MockRoot\Archive\Contract_Copy2.pdf";
-                string dormantOnlyPath = @"C:\MockRoot\OldReports\Report2016.xlsx";
+                byte[] contentA = new byte[8192];
+                new Random(42).NextBytes(contentA);
 
-                // 合成データ: 原本および複製が休眠かつ重複の両方に合致するシナリオ
-                var items = new List<AuditItem>
+                string origPath = Path.Combine(tempDir, "original.dat");
+                string dupPath1 = Path.Combine(tempDir, "copy1.dat");
+                string dupPath2 = Path.Combine(tempDir, "copy2.dat");
+
+                File.WriteAllBytes(origPath, contentA);
+                File.WriteAllBytes(dupPath1, contentA);
+                File.WriteAllBytes(dupPath2, contentA);
+
+                // 1. 原本候補の直接投入 ➔ ExecutePlan で確実に拒否され、原本ファイルが保護されること
+                var origPlan = new AuditCleanupPlan
                 {
-                    // 1. 原本候補 (重複レコード)
-                    new AuditItem
-                    {
-                        FullPath = origPath,
-                        FileName = "Contract_Original.pdf",
-                        DirectoryPath = @"C:\MockRoot\Department",
-                        IssueType = AuditIssueType.Duplicate,
-                        IsOriginalCandidate = true,
-                        Detail = "[原本候補] ハッシュ: e3b0c44298fc...",
-                        DuplicateGroupId = "DUP-0001",
-                        Size = 5000000
-                    },
-                    // 2. 原本候補 (休眠レコード) - 原本が古い休眠ファイルでもある場合
-                    new AuditItem
-                    {
-                        FullPath = origPath,
-                        FileName = "Contract_Original.pdf",
-                        DirectoryPath = @"C:\MockRoot\Department",
-                        IssueType = AuditIssueType.Dormant,
-                        Detail = "最終更新: 2017/04/10 (9.4年前)",
-                        Size = 5000000
-                    },
-                    // 3. 重複ファイル1 (重複レコード)
-                    new AuditItem
-                    {
-                        FullPath = dupPath1,
-                        FileName = "Contract_Copy1.pdf",
-                        DirectoryPath = @"C:\MockRoot\Backup",
-                        IssueType = AuditIssueType.Duplicate,
-                        Detail = "[重複] ハッシュ: e3b0c44298fc...",
-                        DuplicateGroupId = "DUP-0001",
-                        Size = 5000000
-                    },
-                    // 4. 重複ファイル1 (休眠レコード) - 同一ファイルが重複と休眠の双方で検出されたケース
-                    new AuditItem
-                    {
-                        FullPath = dupPath1,
-                        FileName = "Contract_Copy1.pdf",
-                        DirectoryPath = @"C:\MockRoot\Backup",
-                        IssueType = AuditIssueType.Dormant,
-                        Detail = "最終更新: 2017/04/10 (9.4年前)",
-                        Size = 5000000
-                    },
-                    // 5. 重複ファイル2 (重複レコードのみ)
-                    new AuditItem
-                    {
-                        FullPath = dupPath2,
-                        FileName = "Contract_Copy2.pdf",
-                        DirectoryPath = @"C:\MockRoot\Archive",
-                        IssueType = AuditIssueType.Duplicate,
-                        Detail = "[重複] ハッシュ: e3b0c44298fc...",
-                        DuplicateGroupId = "DUP-0001",
-                        Size = 5000000
-                    },
-                    // 6. 単なる休眠ファイル (重複ではない)
-                    new AuditItem
-                    {
-                        FullPath = dormantOnlyPath,
-                        FileName = "Report2016.xlsx",
-                        DirectoryPath = @"C:\MockRoot\OldReports",
-                        IssueType = AuditIssueType.Dormant,
-                        Detail = "最終更新: 2016/11/20 (9.8年前)",
-                        Size = 2500000
-                    }
+                    FullPath = origPath,
+                    Size = contentA.Length,
+                    IsOriginalCandidate = true,
+                    OriginalCandidatePath = origPath
                 };
-
-                var auditService = new AuditReportService();
-                auditService.GenerateArchiveRobocopyScript(scriptPath, items, @"C:\MockRoot", @"E:\SafetyArchive");
-
-                if (!File.Exists(scriptPath))
+                var origResult = AuditCleanupService.ExecutePlan(new[] { origPlan });
+                if (origResult.SuccessCount != 0 || origResult.Errors.Count != 1)
                 {
-                    throw new InvalidOperationException("退避バッチスクリプトが出力されませんでした。");
+                    throw new InvalidOperationException($"原本候補の削除拒否に失敗しました。Success: {origResult.SuccessCount}, Errors: {origResult.Errors.Count}");
+                }
+                if (!File.Exists(origPath))
+                {
+                    throw new InvalidOperationException("重大欠陥: 原本候補ファイルが削除されてしまいました！");
                 }
 
-                var scriptLines = File.ReadAllLines(scriptPath);
-
-                // move コマンド行を抽出
-                var moveLines = scriptLines
-                    .Where(l => l.TrimStart().StartsWith("move ", StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-
-                // 1. 原本ごと全退避バグの検証: 原本候補 (Contract_Original.pdf) に対する move が一切含まれていないこと
-                bool originalMoved = moveLines.Any(l => l.Contains("Contract_Original.pdf", StringComparison.OrdinalIgnoreCase));
-                if (originalMoved)
+                // 2. 正常な重複ファイル削除 ➔ 直前SHA-256照合が一致し、正常に削除されること
+                var dup1Plan = new AuditCleanupPlan
                 {
-                    throw new InvalidOperationException(
-                        "原本ごと全退避バグ検出: 重複の [原本候補] である Contract_Original.pdf に対する move コマンドが出力されています。" +
-                        " 休眠状態であっても原本は聖域として保護され、現場に残されなければなりません。");
+                    FullPath = dupPath1,
+                    Size = contentA.Length,
+                    IsOriginalCandidate = false,
+                    OriginalCandidatePath = origPath
+                };
+                var dup1Result = AuditCleanupService.ExecutePlan(new[] { dup1Plan });
+                if (dup1Result.SuccessCount != 1 || dup1Result.Errors.Count != 0)
+                {
+                    throw new InvalidOperationException($"正常な重複ファイルの削除に失敗しました。Errors: {string.Join(", ", dup1Result.Errors)}");
+                }
+                if (File.Exists(dupPath1))
+                {
+                    throw new InvalidOperationException("重複ファイル copy1.dat が削除されていません。");
+                }
+                if (!File.Exists(origPath))
+                {
+                    throw new InvalidOperationException("原本ファイル original.dat が巻き添えで削除されてしまいました！");
                 }
 
-                // 2. move の重複出力排除の検証: dupPath1 に対する move はちょうど 1 行であること
-                int dup1MoveCount = moveLines.Count(l => l.Contains("Contract_Copy1.pdf", StringComparison.OrdinalIgnoreCase));
-                if (dup1MoveCount == 0)
-                {
-                    throw new InvalidOperationException("退避漏れバグ: 重複ファイル Contract_Copy1.pdf の move が出力されていません。");
-                }
-                if (dup1MoveCount > 1)
-                {
-                    throw new InvalidOperationException(
-                        $"重複出力バグ検出: 同一ファイル Contract_Copy1.pdf に対する move コマンドが {dup1MoveCount} 回重複して出力されています。");
-                }
+                // 3. 走査後のファイル改ざん/内容変更 ➔ 直前SHA-256不一致を検知して削除中止（誤削除ゼロ保証）
+                byte[] modifiedContent = new byte[8192];
+                new Random(99).NextBytes(modifiedContent);
+                File.WriteAllBytes(dupPath2, modifiedContent); // copy2の中身が走査後に更新されたと仮定
 
-                // 3. 他の対象も正しく1回ずつ出力されていること
-                int dup2MoveCount = moveLines.Count(l => l.Contains("Contract_Copy2.pdf", StringComparison.OrdinalIgnoreCase));
-                if (dup2MoveCount != 1)
+                var dup2Plan = new AuditCleanupPlan
                 {
-                    throw new InvalidOperationException($"Contract_Copy2.pdf の move 出力回数が不正です: {dup2MoveCount}");
+                    FullPath = dupPath2,
+                    Size = contentA.Length,
+                    IsOriginalCandidate = false,
+                    OriginalCandidatePath = origPath
+                };
+                var dup2Result = AuditCleanupService.ExecutePlan(new[] { dup2Plan });
+                if (dup2Result.SuccessCount != 0 || dup2Result.Errors.Count != 1)
+                {
+                    throw new InvalidOperationException($"内容不一致の重複ファイル削除が阻止されませんでした。Success: {dup2Result.SuccessCount}");
                 }
-
-                int dormantMoveCount = moveLines.Count(l => l.Contains("Report2016.xlsx", StringComparison.OrdinalIgnoreCase));
-                if (dormantMoveCount != 1)
+                if (!File.Exists(dupPath2))
                 {
-                    throw new InvalidOperationException($"Report2016.xlsx の move 出力回数が不正です: {dormantMoveCount}");
-                }
-
-                if (moveLines.Count != 3)
-                {
-                    throw new InvalidOperationException(
-                        $"予期しない move コマンド行数です。期待値: 3, 実際: {moveLines.Count}");
+                    throw new InvalidOperationException("重大欠陥: 内容が不一致になったファイルが誤削除されました！");
                 }
             }
             finally
@@ -330,92 +278,6 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException($"Expected exactly 1 original candidate, but found {originalCount}");
                 }
-            }
-            finally
-            {
-                try { Directory.Delete(tempDir, true); } catch { }
-            }
-        }
-
-        /// <summary>
-        /// 15. Audit: 安全退避スクリプト生成（原本保護の IsOriginalCandidate プロパティ判定 & 重複オプトイン）の検証
-        /// </summary>
-
-        public static void TestAuditArchiveScriptOptInAndPropertyFidelity()
-        {
-            string tempDir = Path.Combine(Path.GetTempPath(), "fm_test_archive_optin_" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tempDir);
-
-            try
-            {
-                string targetRoot = Path.Combine(tempDir, "Source");
-                string archiveRoot = Path.Combine(tempDir, "Archive");
-                Directory.CreateDirectory(targetRoot);
-
-                string fileOriginal = Path.Combine(targetRoot, "important_original.xlsx");
-                string fileCopy = Path.Combine(targetRoot, "important_copy.xlsx");
-                string fileDormant = Path.Combine(targetRoot, "old_dormant_2020.pdf");
-
-                // 意図的に Detail から "[原本候補]" という文字を排除し、IsOriginalCandidate プロパティのみで判定されるかを検証
-                var items = new List<AuditItem>
-                {
-                    new()
-                    {
-                        FullPath = fileOriginal,
-                        FileName = "important_original.xlsx",
-                        IssueType = AuditIssueType.Duplicate,
-                        IsOriginalCandidate = true,
-                        Detail = "推奨マスターファイル (カスタム文言)"
-                    },
-                    new()
-                    {
-                        FullPath = fileCopy,
-                        FileName = "important_copy.xlsx",
-                        IssueType = AuditIssueType.Duplicate,
-                        IsOriginalCandidate = false,
-                        Detail = "重複ファイル (カスタム文言)"
-                    },
-                    new()
-                    {
-                        FullPath = fileDormant,
-                        FileName = "old_dormant_2020.pdf",
-                        IssueType = AuditIssueType.Dormant,
-                        IsOriginalCandidate = false,
-                        Detail = "4.2年間更新なし"
-                    }
-                };
-
-                var auditService = new AuditReportService();
-
-                // 1. includeDuplicates = false (デフォルト/安全推奨: 休眠のみ退避)
-                string scriptDormantOnly = Path.Combine(tempDir, "test_dormant_only.bat");
-                auditService.GenerateArchiveRobocopyScript(scriptDormantOnly, items, targetRoot, archiveRoot, includeDuplicates: false);
-                string contentDormantOnly = File.ReadAllText(scriptDormantOnly);
-
-                // 休眠ファイルは退避対象
-                if (!contentDormantOnly.Contains("old_dormant_2020.pdf"))
-                    throw new InvalidOperationException("Dormant file should be included in archive script");
-
-                // 重複コピーおよび原本は絶対に退避対象外
-                if (contentDormantOnly.Contains("important_copy.xlsx"))
-                    throw new InvalidOperationException("Duplicate copy should NOT be included when includeDuplicates is false");
-                if (contentDormantOnly.Contains("important_original.xlsx"))
-                    throw new InvalidOperationException("Original file should NEVER be included in archive script");
-
-                // 2. includeDuplicates = true (オプトイン: 休眠 + 原本以外の重複を退避)
-                string scriptWithDuplicates = Path.Combine(tempDir, "test_with_duplicates.bat");
-                auditService.GenerateArchiveRobocopyScript(scriptWithDuplicates, items, targetRoot, archiveRoot, includeDuplicates: true);
-                string contentWithDuplicates = File.ReadAllText(scriptWithDuplicates);
-
-                // 休眠ファイルと重複コピーは両方含まれる
-                if (!contentWithDuplicates.Contains("old_dormant_2020.pdf"))
-                    throw new InvalidOperationException("Dormant file should be included when includeDuplicates is true");
-                if (!contentWithDuplicates.Contains("important_copy.xlsx"))
-                    throw new InvalidOperationException("Duplicate copy should be included when includeDuplicates is true");
-
-                // 原本（IsOriginalCandidate == true）は文字列に [原本候補] がなくても絶対に除外されること
-                if (contentWithDuplicates.Contains("important_original.xlsx"))
-                    throw new InvalidOperationException("Original file must NEVER be included in archive script even when includeDuplicates is true");
             }
             finally
             {

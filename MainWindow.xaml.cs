@@ -3121,39 +3121,39 @@ namespace AstraSize
                 return;
             }
 
-            // 2. 原本候補保護の安全ガード（IssueTypeに関係なく、原本候補のFullPathが含まれていれば必ず発動）
+            // 2. 原本候補保護の安全ガード（原本候補は聖域として無条件で保護・自動除外）
             var originalPlans = plans.Where(p => p.IsOriginalCandidate).ToList();
             if (originalPlans.Count > 0)
             {
-                var origResult = MessageBox.Show(
-                    $"⚠️ 警告: 選択項目の中に、重複グループの【原本候補】が {originalPlans.Count:N0} 件含まれています！\n\n" +
-                    "原本を削除すると、そのグループの全データが消失する恐れがあります。\n\n" +
-                    "・[はい (Yes)] : 原本候補を除外して、重複コピーのみ削除する（推奨・安全）\n" +
-                    "・[いいえ (No)] : 原本候補も含め、選択された全ファイルを削除する\n" +
-                    "・[キャンセル] : 処理を中止する",
-                    "原本候補の検出 - 削除安全確認",
-                    MessageBoxButton.YesNoCancel,
-                    MessageBoxImage.Warning);
-
-                if (origResult == MessageBoxResult.Cancel) return;
-
-                if (origResult == MessageBoxResult.Yes)
+                // 原本候補の全関連行（Dormant/Duplicate問わず）のチェックを強制解除
+                foreach (var op in originalPlans)
                 {
-                    // 原本候補の全関連行（Dormant/Duplicate問わず）のチェックを外す
-                    foreach (var op in originalPlans)
+                    foreach (var ai in op.AssociatedItems)
                     {
-                        foreach (var ai in op.AssociatedItems)
-                        {
-                            ai.IsChecked = false;
-                        }
-                    }
-                    plans.RemoveAll(p => p.IsOriginalCandidate);
-                    if (plans.Count == 0)
-                    {
-                        ShowToast("原本候補を除外した結果、削除対象が0件になりました");
-                        return;
+                        ai.IsChecked = false;
                     }
                 }
+                plans.RemoveAll(p => p.IsOriginalCandidate);
+
+                if (plans.Count == 0)
+                {
+                    MessageBox.Show(
+                        $"選択された項目（{originalPlans.Count:N0} 件）はすべて重複グループの【原本候補】です。\n\n" +
+                        "原本全滅事故を防止するため、原本候補ファイルはツール上から削除できません。\n" +
+                        "削除処理を中止しました。",
+                        "原本候補の保護",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return;
+                }
+
+                MessageBox.Show(
+                    $"⚠️ 選択項目の中に重複グループの【原本候補】が {originalPlans.Count:N0} 件含まれていました。\n\n" +
+                    "安全保護規則に従い、原本候補は自動的に保護・除外されました。\n" +
+                    $"残りの複製・休眠ファイル（{plans.Count:N0} 件）に対して削除確認へ進みます。",
+                    "原本候補の保護（自動除外）",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
             }
 
             // 3. 完全削除の最終確認ダイアログ（物理ファイル単位で正確な件数・容量を表示）
@@ -3534,7 +3534,7 @@ namespace AstraSize
             if (SidebarVersionText != null)
             {
                 var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-                string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v2.0.5";
+                string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v2.0.9";
                 SidebarVersionText.Text = App.IsClientMode
                     ? $"FolderCleaner {verStr}"
                     : $"FolderMorpher {verStr}";

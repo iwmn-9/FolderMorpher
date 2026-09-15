@@ -62,7 +62,7 @@ namespace FolderMorpher.Services
                             PageSize = 500,
                             Filter = $"(|(&(objectCategory=person)(sAMAccountName={cleanAccount}))(&(objectCategory=group)(sAMAccountName={cleanAccount})))"
                         };
-                        searcher.PropertiesToLoad.AddRange(new[] { "distinguishedName", "memberOf", "objectSid", "sAMAccountName", "displayName", "objectClass" });
+                        searcher.PropertiesToLoad.AddRange(new[] { "distinguishedName", "memberOf", "objectSid", "sAMAccountName", "displayName", "objectClass", "primaryGroupID" });
 
                         var targetResult = searcher.FindOne();
                         if (targetResult != null)
@@ -118,6 +118,51 @@ namespace FolderMorpher.Services
                                     NestingDepth = 0,
                                     MembershipPath = Strings.RevTargetGroupSelf
                                 });
+                            }
+                            else if (targetResult.Properties.Contains("primaryGroupID") && targetResult.Properties.Contains("objectSid"))
+                            {
+                                // Sol指摘: Windows ADのプライマリグループ（通常 Domain Users）は memberOf に含まれないため、
+                                // primaryGroupID と objectSid からプライマリグループの SID を導出し、正規の直接所属として解決する
+                                try
+                                {
+                                    int primaryGroupId = Convert.ToInt32(targetResult.Properties["primaryGroupID"][0]);
+                                    var userSidBytes = (byte[])targetResult.Properties["objectSid"][0];
+                                    var userSid = new SecurityIdentifier(userSidBytes, 0).Value;
+
+                                    int lastDash = userSid.LastIndexOf('-');
+                                    if (lastDash > 0)
+                                    {
+                                        string primaryGroupSidStr = userSid.Substring(0, lastDash + 1) + primaryGroupId;
+                                        string primaryGroupName = primaryGroupId == 513 ? "Domain Users" : $"Group-{primaryGroupId}";
+                                        string primaryGroupDisp = primaryGroupName;
+
+                                        try
+                                        {
+                                            var pgSid = new SecurityIdentifier(primaryGroupSidStr);
+                                            var ntAcc = (NTAccount)pgSid.Translate(typeof(NTAccount));
+                                            primaryGroupName = ntAcc.Value;
+                                            primaryGroupDisp = ntAcc.Value;
+                                        }
+                                        catch
+                                        {
+                                            if (!string.IsNullOrEmpty(_adService.CurrentDomainName))
+                                            {
+                                                primaryGroupName = $"{_adService.CurrentDomainName.Split('.')[0]}\\{primaryGroupName}";
+                                            }
+                                        }
+
+                                        memberships.Add(new PrincipalGroupMembership
+                                        {
+                                            GroupName = primaryGroupName,
+                                            DisplayName = primaryGroupDisp,
+                                            Sid = primaryGroupSidStr,
+                                            IsDirect = true,
+                                            NestingDepth = 1,
+                                            MembershipPath = Strings.RevDirectMembership
+                                        });
+                                    }
+                                }
+                                catch { }
                             }
 
                             if (!string.IsNullOrEmpty(targetDn))
@@ -698,9 +743,9 @@ namespace FolderMorpher.Services
 
         private static bool IsSpecialWorldPrincipal(string name)
         {
+            // Sol指摘: Domain Users は正規の所属グループ（primaryGroupID）として解決するため、無条件マッチから完全除外
             return name.Equals("Everyone", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("Authenticated Users", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("Domain Users", StringComparison.OrdinalIgnoreCase);
+                || name.Equals("Authenticated Users", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

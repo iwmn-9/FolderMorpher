@@ -528,3 +528,30 @@
     - **安全退避bat作成機能の撤去**:
       - 現場運用においてファイル移動バッチの誤爆懸念や棚卸し台帳（Excel/CSV）による確認フローへの集約要請を受け、UI上の「📦 安全退避バッチ生成 (.bat)」ボタンおよびイベントハンドラを撤去。
       - 断捨離タブの主要アクションを「Excel/CSV棚卸し台帳出力」および「手動オプトインによる選択ファイルの完全削除」に洗練。
+
+58. **Sol全体レビューに基づく7大安全柵の実装と製品化レベルへの引き上げ (v2.0.9)**:
+    - **背景**:
+      - 外部全体コードレビュー（Solレビュー）において、「社内限定ベータとしては十分強い（7.6/10）が、本番ファイルサーバーに対して本番ACL変更・ファイル削除まで任せる製品としては安全柵が数本抜けている」との指摘を受けた。
+      - 本番運用で絶対的なデータ保全と誤爆ゼロを達成するため、7つの具体的安全柵を体系的に実装・検証。
+    - **実装内容**:
+      - **① [Audit] 原本候補の絶対保護（削除拒否）＆ 削除直前SHA-256再照合（誤削除ゼロ保証）**:
+        - `AuditCleanupService.ExecutePlan` において、`plan.IsOriginalCandidate == true` は理由の如何を問わず即座に削除拒否し、エラーリストに記録。
+        - UI（`MainWindow.xaml.cs`）の削除ダイアログから「原本候補も含めて全部削除 (No)」の危険な選択肢を完全撤廃。原本候補が含まれていた場合は自動除外して安全通知。
+        - 重複ファイルの削除実行直前に、`OriginalCandidatePath`（原本）と `plan.FullPath`（削除対象）の両ファイルのSHA-256ハッシュを再計算・照合。走査後に重複ファイル（または原本）が更新・改ざんされていた場合は削除を即座に中止。レース条件やスキャン後の編集によるデータ消失を数学的に防止。
+      - **② [Effective Access] primaryGroupID 対応 ＆ Domain Users 特殊扱い撤廃**:
+        - `EffectiveAccessService` において、ADの `primaryGroupID`（通常 513）とユーザーSIDからプライマリグループSIDを導出し、`memberOf` に現れない `Domain Users` などを正規の直接所属メンバーシップ（`IsDirect = true`）として解決。
+        - `EffectiveAccessService.IsSpecialWorldPrincipal` から `Domain Users` を削除し、ローカルPC環境や非ドメイン参加時の誤爆・誤評価を解消。
+      - **③ [LinkFixer] Officeリンク修復の対象XML絞り込み ＆ 意味的Verify ＆ VBAマクロ保護**:
+        - `OfficeLinkFixService` において、`.xml` 全ファイル置換を撤廃し、`externalLink`, `worksheets`, `externalReferences`, `_rels`, `.rels` に厳格限定。
+        - 置換後の一時ファイル内に新リンクパスが存在することを検証する意味的Verify（`semanticVerified`）を導入。
+        - `vbaProject.bin` はバイナリ破損リスクを防ぐため自動置換対象外とし、「VBAマクロ (検出のみ・手動修復)」として台帳に明記。
+      - **④ [Live ACL] Snapshot 永続化失敗時の Commit 絶対拒否**:
+        - `AclService.CreateSnapshotAsync` でスナップショット保存先（ローカル・UNC）への書き込みがすべて失敗した場合（`savedCount == 0`）、例外 `InvalidOperationException` をスローしてACLコミットを確実に中断。ロールバック不能な状態での変更適用を原理的に禁止。
+      - **⑤ [CI] GitHub Actions による main / PR 常時回帰テストゲート**:
+        - `.github/workflows/ci.yml` を新設し、mainブランチへのプッシュおよびプルリクエスト時に Windows 環境で `dotnet build` + `dotnet run --test-regression`（7/7 ALL PASSED）を自動検証。
+      - **⑥ [Scripting] BAT / PowerShell 生成の文字列エスケープ共通化**:
+        - `Services/ScriptEscaper.cs` を新設（`EscapeBatPath`, `EscapePowerShellString`, `EscapePowerShellLiteral`）。
+        - ロボコピー、PowerShell ACL、GPOログオンスクリプト、動画夜間圧縮バッチの全出力箇所に適用し、パスに含まれる特殊文字（`%`, `$`, `` ` ``, `"`）によるコマンドインジェクションや環境変数誤爆を完全防止。
+      - **⑦ [Cleanup] 廃止バックエンドメソッドの完全削除**:
+        - `AuditReportService.GenerateArchiveRobocopyScript` をコードベースから完全に削除し、デッドコードを排除。
+

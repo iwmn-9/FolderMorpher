@@ -177,12 +177,7 @@ namespace AstraSize
                         auditService.ExportAuditCsv(csvOut, items);
                         Console.WriteLine($"[TEST-CSV] CSV出力: {(File.Exists(csvOut) ? "成功" : "失敗")}");
 
-                        // 3. Robocopy Archive Script Test
-                        string batOut = Path.Combine(testSuiteDir, "test_archive.bat");
-                        auditService.GenerateArchiveRobocopyScript(batOut, items, testSuiteDir, @"C:\Archive_Dest");
-                        Console.WriteLine($"[TEST-BAT] 退避バッチ出力: {(File.Exists(batOut) ? "成功" : "失敗")}");
-
-                        // 4. GPO Script Test
+                        // 3. GPO Script Test
                         var linkFixService = new FolderMorpher.Services.LinkFixService();
                         string gpoOut = Path.Combine(testSuiteDir, "test_gpo.ps1");
                         linkFixService.GenerateGpoLogonScript(gpoOut, @"\\OldServer\Share", @"\\NewServer\Share");

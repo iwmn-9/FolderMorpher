@@ -95,7 +95,9 @@ namespace AstraSize.Services
         public string GenerateRobocopyCommand(string sourcePath, string targetPath, bool copyAcl = true, int threads = 16)
         {
             string copyFlags = copyAcl ? "/COPYALL" : "/COPY:DAT";
-            return $"robocopy \"{sourcePath.TrimEnd('\\')}\" \"{targetPath.TrimEnd('\\')}\" /E {copyFlags} /DCOPY:DAT /R:1 /W:1 /MT:{threads} /NP";
+            var escSrc = FolderMorpher.Services.ScriptEscaper.EscapeBatPath(sourcePath.TrimEnd('\\'));
+            var escDst = FolderMorpher.Services.ScriptEscaper.EscapeBatPath(targetPath.TrimEnd('\\'));
+            return $"robocopy {escSrc} {escDst} /E {copyFlags} /DCOPY:DAT /R:1 /W:1 /MT:{threads} /NP";
         }
     }
 }

@@ -450,12 +450,14 @@ namespace AstraSize.Services
                         .Distinct(StringComparer.OrdinalIgnoreCase)
                         .ToList();
 
+                    var escSrc = ScriptEscaper.EscapeBatPath(src);
+                    var escDst = ScriptEscaper.EscapeBatPath(targetFolder);
                     var xdParam = excludedDirs.Count > 0
-                        ? " /XD " + string.Join(" ", excludedDirs.Select(d => $"\"{d}\""))
+                        ? " /XD " + string.Join(" ", excludedDirs.Select(d => ScriptEscaper.EscapeBatPath(d)))
                         : "";
 
-                    sb.AppendLine($"echo [移行実行] \"{src}\" ➔ \"{targetFolder}\"");
-                    sb.AppendLine($"robocopy \"{src}\" \"{targetFolder}\" /E {copyFlags} /DCOPY:DAT /R:2 /W:3 /MT:{threads} /NP /TEE{xdParam} /LOG+:\"%TEMP%\\FolderMorpher_Robocopy_{DateTime.Now:yyyyMMdd}.log\"");
+                    sb.AppendLine($"echo [移行実行] {escSrc} ➔ {escDst}");
+                    sb.AppendLine($"robocopy {escSrc} {escDst} /E {copyFlags} /DCOPY:DAT /R:2 /W:3 /MT:{threads} /NP /TEE{xdParam} /LOG+:\"%TEMP%\\FolderMorpher_Robocopy_{DateTime.Now:yyyyMMdd}.log\"");
                     sb.AppendLine();
                 }
 
@@ -538,7 +540,7 @@ namespace AstraSize.Services
         private static void AppendAclPsScript(SimFolderNode node, string parentVar, StringBuilder sb)
         {
             var pathVar = $"$p_{Math.Abs(node.Id.GetHashCode())}";
-            sb.AppendLine($"{pathVar} = Join-Path {parentVar} \"{node.Name}\"");
+            sb.AppendLine($"{pathVar} = Join-Path {parentVar} {ScriptEscaper.EscapePowerShellLiteral(node.Name)}");
 
             var inheritParam = node.InheritAcl ? "$true" : "$false";
 
@@ -567,7 +569,7 @@ namespace AstraSize.Services
                     var accTypeStr = acl.AccessType == AccessControlType.Deny ? "Deny" : "Allow";
                     var comment = $"{acl.AccessType} {acl.FormattedRights}";
 
-                    ruleItems.Add($"        [pscustomobject]@{{ Account = \"{acl.AccountName}\"; Rights = {rightsInt}; Inheritance = {inhInt}; Propagation = {propInt}; AccessType = \"{accTypeStr}\" }} # {comment}");
+                    ruleItems.Add($"        [pscustomobject]@{{ Account = \"{ScriptEscaper.EscapePowerShellString(acl.AccountName)}\"; Rights = {rightsInt}; Inheritance = {inhInt}; Propagation = {propInt}; AccessType = \"{accTypeStr}\" }} # {comment}");
                 }
 
                 sb.AppendLine($"Set-FolderMorpherAcl -Path {pathVar} -Inherit {inheritParam} -Rules @(");

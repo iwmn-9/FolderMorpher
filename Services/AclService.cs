@@ -219,6 +219,7 @@ namespace AstraSize.Services
             var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
 
             // ローカルおよび設定された共有ディレクトリの双方へ保存（チーム内での事故復旧共有）
+            int savedCount = 0;
             var writeDirs = GetAclWriteDirectories();
             foreach (var targetDir in writeDirs)
             {
@@ -227,11 +228,22 @@ namespace AstraSize.Services
                     Directory.CreateDirectory(targetDir);
                     var file = Path.Combine(targetDir, $"{snapshot.Id}.json");
                     await File.WriteAllTextAsync(file, json);
+                    if (File.Exists(file) && new FileInfo(file).Length > 0)
+                    {
+                        savedCount++;
+                    }
 
                     // 各保存先で直近10世代を保持し、古い切り戻しバックアップを自動ローテーション削除
                     CleanOldSnapshots(targetDir, path, keepCount: 10);
                 }
                 catch { }
+            }
+
+            // Sol指摘: スナップショットの保存失敗は努力目標ではなくCommitの絶対前提条件
+            // 最低1箇所への永続化成功を確認できなければ、安全保護規則によりACL変更を拒否
+            if (savedCount == 0)
+            {
+                throw new InvalidOperationException($"ACL変更前スナップショットの永続化に失敗しました。事故復旧データ（SDDLバックアップ）をディスクへ安全に書き込めないため、保護規則によりACL変更処理は拒否・中止されました。");
             }
 
             return snapshot;

@@ -229,8 +229,8 @@ namespace FolderMorpher.Services
             sb.AppendLine("$logFile = \"$env:TEMP\\FolderMorpher_LinkFix.log\"");
             sb.AppendLine("function Log($msg) { Add-Content -Path $logFile -Value \"[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $msg\" -Encoding UTF8 }");
             sb.AppendLine();
-            sb.AppendLine($"$oldPath = \"{oldPath.Replace("\"", "`\"")}\"");
-            sb.AppendLine($"$newPath = \"{newPath.Replace("\"", "`\"")}\"");
+            sb.AppendLine($"$oldPath = {ScriptEscaper.EscapePowerShellLiteral(oldPath)}");
+            sb.AppendLine($"$newPath = {ScriptEscaper.EscapePowerShellLiteral(newPath)}");
             sb.AppendLine();
             sb.AppendLine("Log \"=== ショートカット修復スクリプト開始 ===\"");
             sb.AppendLine();

@@ -98,6 +98,14 @@ namespace FolderMorpher.Services
             return plans;
         }
 
+        private static string ComputeFileSha256(string filePath)
+        {
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var hash = sha.ComputeHash(stream);
+            return Convert.ToHexString(hash);
+        }
+
         /// <summary>
         /// 実行計画に基づき、物理ファイルを1回だけ削除する
         /// （読み取り専用属性は一時解除し、失敗時は元の属性を復元する安全機構付き）
@@ -111,6 +119,13 @@ namespace FolderMorpher.Services
                 FileAttributes? originalAttrs = null;
                 try
                 {
+                    // Sol指摘: 原本候補ファイルの削除は無条件で絶対拒否（聖域保護の最終貫通）
+                    if (plan.IsOriginalCandidate)
+                    {
+                        result.Errors.Add($"{plan.FileName}: 原本候補ファイルは聖域として保護されているため、削除は絶対に許可されません。");
+                        continue;
+                    }
+
                     if (!File.Exists(plan.FullPath))
                     {
                         // M4対策: ファイルが存在しない場合は成功カウントせず、警告として記録
@@ -142,6 +157,23 @@ namespace FolderMorpher.Services
                                 result.Errors.Add($"{plan.FileName}: 重複原本（{Path.GetFileName(plan.OriginalCandidatePath)}）の更新日時がスキャン後変更されています。安全のため削除をスキップしました。");
                                 continue;
                             }
+                        }
+
+                        // Sol指摘: 重複削除直前に、原本と削除対象のSHA-256ハッシュを再計算・照合（誤削除ゼロ保証）
+                        try
+                        {
+                            string origHash = ComputeFileSha256(plan.OriginalCandidatePath);
+                            string targetHash = ComputeFileSha256(plan.FullPath);
+                            if (!string.Equals(origHash, targetHash, StringComparison.OrdinalIgnoreCase))
+                            {
+                                result.Errors.Add($"{plan.FileName}: 原本（{Path.GetFileName(plan.OriginalCandidatePath)}）とのハッシュ再照合に失敗しました（内容不一致）。安全のため削除を中止しました。");
+                                continue;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            result.Errors.Add($"{plan.FileName}: 削除直前の整合性ハッシュ計算に失敗しました（{ex.Message}）。安全のため削除をスキップしました。");
+                            continue;
                         }
                     }
 

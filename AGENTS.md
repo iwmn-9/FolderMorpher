@@ -74,22 +74,24 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs` および独立コンポーネ
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの全 52 項目に及ぶ詳細な設計判断記録（ADR 1〜52）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの全 58 項目に及ぶ詳細な設計判断記録（ADR 1〜58）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 
 ### 主要な中核原則サマリー（詳細は `.agents/ADR.md` 参照）
 1. **全体占有率メーター**: 親フォルダに対する直下シェア（右ペイン）と、スキャン対象ルート総容量に対する全体占有率を二重加算防止のため厳格分離。ルート行は `―`（ハイフン）表示。
-2. **Live ACL 安全機構**: 変更前に SDDL を自動スナップショットし、ワンクリックで原子的復元（`ApplyLiveAclWithRollback`）。評価順序は Windows Canonical DACL Ordering（Explicit Allow > Inherited Deny）を厳守。
-3. **断捨離・監査の安全原則**: ツールによるファイル直接削除は手動オプトインによる完全削除に限定。休眠ファイル判定は更新日3年超に加え、直近1年間（365日）に閲覧されたファイル（LastAccessTime）を自動保護・除外。フォルダー名部分一致除外により不要フォルダーをI/Oゼロでスキップ。安全退避batは撤去しExcel/CSV棚卸し台帳出力へ集約。
+2. **Live ACL 安全機構**: 変更前に SDDL を自動スナップショットし、ワンクリックで原子的復元（`ApplyLiveAclWithRollback`）。評価順序は Windows Canonical DACL Ordering（Explicit Allow > Inherited Deny）を厳守。スナップショット永続化が1件も成功しない場合はコミットを絶対拒否。
+3. **断捨離・監査の安全原則**: ツールによるファイル直接削除は手動オプトインによる完全削除に限定。原本候補は無条件で削除拒否。重複削除直前に原本と対象ファイルのSHA-256を再照合し誤削除ゼロ保証。休眠ファイル判定は更新日3年超に加え、直近1年間（365日）に閲覧されたファイル（LastAccessTime）を自動保護・除外。フォルダー名部分一致除外により不要フォルダーをI/Oゼロでスキップ。安全退避batは撤去しExcel/CSV棚卸し台帳出力へ集約。
 4. **メディア最適化**: 聖域フォルダー（`_Master`, `RAW` 等）の保護、日時・Exif・回転情報の 100% 保持、アトミック置換。
 5. **UNC/ネットワーク走査（v2.0.7）**:
    - `FindFirstFileExW` (`FindExInfoBasic` + `FIND_FIRST_EX_LARGE_FETCH`) による巨大バッファ一括取得 & 8.3短縮名スキップ。
-   - `SafeFindHandle` (RAII) によるメモリリーク・ハンドルリークの原理的根絶。
+   - `SafeFindHandle` (RAII) によるメモリリーク・ハンドルリークの原理的根逐。
    - 4段自動フォールバック（拡張UNC+LargeFetch ➔ 拡張UNC+Standard ➔ **プレーンUNC Win32再試行** ➔ .NET DirectoryInfo）。Samba/NAS でのWin32ネイティブ高速一括列挙を100%成功。
    - **フォルダー単位RPCの完全根絶（ゼロI/O化）**: 親フォルダーの列挙タイムスタンプを子ノード生成時に直結し、`Directory.GetLastWriteTime` による数千回のネットワーク往復を完全ゼロ化。
    - `ScannedFileEntry` によるメタデータ直結（Audit走査時の個別属性 stat 再問い合わせ完全根絶）。
    - **全階層並列度2固定（デュアルワーカー）＆ Sol提唱 `pendingWorkCount` レース根絶 ＆ インメモリ・ボトムアップ集計**: サーバー負荷と他業務を100%保護しながら、全階層2車線化でSMB往復遅延を隠蔽し10倍〜20倍の高速化を達成。
+6. **7大安全柵（v2.0.9）**:
+   - 原本候補の絶対保護＆削除直前SHA-256再照合、AD primaryGroupID解決＆Domain Users特殊扱い撤廃、Officeリンク修復の対象XML限定＆意味的Verify＆VBAマクロ保護、ACLスナップショット失敗時のコミット拒否、GitHub Actions常時CIゲート、スクリプトパス生成の安全エスケープ共通化（`ScriptEscaper`）、廃止メソッド完全削除。
 
 ---
 

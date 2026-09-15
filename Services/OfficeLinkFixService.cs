@@ -157,15 +157,24 @@ namespace FolderMorpher.Services
                         File.Copy(item.FilePath, tempPath, overwrite: true);
 
                         // 2. 一時ファイル内部のXMLエントリを置換
+                        // VBAマクロ単体の場合はバイナリ自動修復不可のため安全にスキップ
+                        if (item.LinkType == "VBAマクロ (検出のみ・手動修復)")
+                        {
+                            item.Status = "スキップ (VBAマクロは手動修復が必要です)";
+                            try { File.Delete(tempPath); } catch { }
+                            continue;
+                        }
+
                         bool modified = false;
                         using (var zip = ZipFile.Open(tempPath, ZipArchiveMode.Update))
                         {
-                            // externalLinks, sheets, rels, workbook などを対象に置換
+                            // Sol指摘: 全ての .xml を無差別に巻き込まず、リンク・外部参照・数式・リレーションXMLに厳格限定
                             var targetEntries = zip.Entries.Where(e =>
                                 e.FullName.Contains("externalLink", StringComparison.OrdinalIgnoreCase) ||
                                 e.FullName.Contains("worksheets", StringComparison.OrdinalIgnoreCase) ||
+                                e.FullName.Contains("externalReferences", StringComparison.OrdinalIgnoreCase) ||
                                 e.FullName.Contains("_rels", StringComparison.OrdinalIgnoreCase) ||
-                                e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+                                e.FullName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase)
                             ).ToList();
 
                             foreach (var entry in targetEntries)
@@ -198,20 +207,35 @@ namespace FolderMorpher.Services
                             continue;
                         }
 
-                        // 3. 事後検証 (Verify): 更新後の一時ファイルを読み取りモードで開き直し、ZIP整合性とXML構造を検証
+                        // 3. 事後検証 (Verify): 更新後の一時ファイルを読み取りモードで開き直し、ZIP整合性および新リンク置換を意味的に検証
                         using (var verifyZip = ZipFile.OpenRead(tempPath))
                         {
                             if (verifyZip.Entries.Count == 0)
                             {
                                 throw new InvalidOperationException("更新後のOfficeファイルが空です。");
                             }
-                            // 少なくとも1つのエントリを実際にストリーム解凍して整合性チェック
-                            var testEntry = verifyZip.Entries.FirstOrDefault(e => e.Length > 0);
-                            if (testEntry != null)
+
+                            // Sol指摘: 目的のリンクが正しく新パスに置換されているかを意味的に検証
+                            bool semanticVerified = false;
+                            foreach (var verifyEntry in verifyZip.Entries.Where(e =>
+                                e.FullName.Contains("externalLink", StringComparison.OrdinalIgnoreCase) ||
+                                e.FullName.Contains("worksheets", StringComparison.OrdinalIgnoreCase) ||
+                                e.FullName.Contains("externalReferences", StringComparison.OrdinalIgnoreCase) ||
+                                e.FullName.Contains("_rels", StringComparison.OrdinalIgnoreCase) ||
+                                e.FullName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase)))
                             {
-                                using var testStream = testEntry.Open();
-                                byte[] buf = new byte[64];
-                                testStream.Read(buf, 0, buf.Length);
+                                using var reader = new StreamReader(verifyEntry.Open(), Encoding.UTF8);
+                                string content = reader.ReadToEnd();
+                                if (content.Contains(item.TargetReplacement, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    semanticVerified = true;
+                                    break;
+                                }
+                            }
+
+                            if (!semanticVerified)
+                            {
+                                throw new InvalidOperationException("意味的検証失敗: 更新後のOfficeファイル内に新リンクパスが検出されませんでした。");
                             }
                         }
 
@@ -298,7 +322,7 @@ namespace FolderMorpher.Services
                     {
                         if (EntryContainsBinaryText(entry, pattern))
                         {
-                            if (!detected.Contains("VBAマクロ")) detected.Add("VBAマクロ");
+                            if (!detected.Contains("VBAマクロ (検出のみ・手動修復)")) detected.Add("VBAマクロ (検出のみ・手動修復)");
                         }
                     }
                     else if (entry.FullName.Contains("worksheets", StringComparison.OrdinalIgnoreCase) ||
