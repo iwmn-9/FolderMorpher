@@ -152,7 +152,7 @@ namespace FolderMorpher.Services
                         }
 
                         // WIC による安全なリサイズ ＆ JPEG再エンコード
-                        long newSize = OptimizeSingleImage(item.FullPath, options.MaxDimension, options.JpegQuality);
+                        long newSize = OptimizeSingleImage(item.FullPath, options.MaxDimension, options.JpegQuality, item.OriginalSizeBytes, item.ExpectedLastWriteTimeUtc);
 
                         // タイムスタンプ復元（重要：日付ソートを維持）
                         File.SetLastWriteTime(item.FullPath, origWriteTime);
@@ -179,7 +179,7 @@ namespace FolderMorpher.Services
             return summary;
         }
 
-        private static long OptimizeSingleImage(string filePath, int maxDimension, int quality)
+        private static long OptimizeSingleImage(string filePath, int maxDimension, int quality, long expectedLength = 0, DateTime expectedLastWriteTimeUtc = default)
         {
             byte[] fileBytes = File.ReadAllBytes(filePath);
             using var ms = new MemoryStream(fileBytes);
@@ -276,6 +276,15 @@ namespace FolderMorpher.Services
             try
             {
                 File.WriteAllBytes(tempPath, optimizedBytes);
+
+                // Sol指摘: Commit境界での再楽観ロック (Double-Check TOCTOU防御)
+                var preCommitFi = new FileInfo(filePath);
+                if (!preCommitFi.Exists || (expectedLength > 0 && preCommitFi.Length != expectedLength) ||
+                    (expectedLastWriteTimeUtc != default && preCommitFi.LastWriteTimeUtc != expectedLastWriteTimeUtc))
+                {
+                    try { File.Delete(tempPath); } catch { }
+                    throw new InvalidOperationException("置換直前に外部でファイルが変更されたため、安全のため上書きを中断しました。");
+                }
 
                 // H3完全防御: File.Replace (同一ボリューム・ローカル) または .bak 経由の安全アトミック置換 (UNC / 非対応環境)
                 bool replaced = false;

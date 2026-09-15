@@ -2,7 +2,7 @@
 ### (IT Admin Storage, Audit & Migration Studio)
 
 > **Windows ファイルサーバーの容量分析・NTFSアクセス権監査・フォルダ再編移行を 1 本で完結。**  
-> 大容量ファイルサーバーの0秒ツリー監視から、組織改編・部署名リネーム、新環境への仮想ツリー設計、実環境NTFSアクセス権管理、切断ショートカット・Officeマクロ一括修復、写真の最大90%不可逆軽量化までを**1本の単一EXE（インストール不要）**で完結させるプロフェッショナル向けGUIスタジオです。
+> 大容量ファイルサーバーの0秒ツリー監視から、組織改編・部署名リネーム、新環境への仮想ツリー設計、実環境NTFSアクセス権管理、切断ショートカット・Office内部リンク一括修復（VBAマクロ非破壊保護）、写真の最大90%不可逆軽量化までを**1本の単一EXE（インストール不要）**で完結させるプロフェッショナル向けGUIスタジオです。
 
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20%2F%20Server-blue.svg)
 ![Framework](https://img.shields.io/badge/.NET-8.0%20(Self--Contained)-purple.svg)

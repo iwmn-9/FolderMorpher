@@ -1,7 +1,7 @@
 # 🚀 FolderMorpher — Enterprise IT Storage, Audit & Migration Studio
 
 > **Complete Windows file server storage analysis, NTFS permission auditing, and migration restructuring in a single portable tool.**  
-> An all-in-one, zero-dependency, portable Windows GUI studio built for SysAdmins and IT teams. Handles disk space monitoring with 0-second cache, virtual tree redesign (N:1 mapping), live NTFS permissions with SDDL rollback, broken shortcut/Office link fixes, image optimization with sanctuary guards, and executive Excel audit reporting.
+> An all-in-one, zero-dependency, portable Windows GUI studio built for SysAdmins and IT teams. Handles disk space monitoring with 0-second cache, virtual tree redesign (N:1 mapping), live NTFS permissions with SDDL rollback, broken shortcut/Office link fixes (with VBA macro preservation), image optimization with sanctuary guards, and executive Excel audit reporting.
 
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20%2F%20Server-blue.svg)
 ![Framework](https://img.shields.io/badge/.NET-8.0%20(Self--Contained)-purple.svg)

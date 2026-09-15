@@ -278,6 +278,18 @@ namespace FolderMorpher.Services
                             }
                         }
 
+                        // Sol指摘: Commit境界での再楽観ロック (Double-Check TOCTOU防御)
+                        var preCommitFi = new FileInfo(item.FilePath);
+                        if (!preCommitFi.Exists || (item.ExpectedLength > 0 && preCommitFi.Length != item.ExpectedLength) ||
+                            (item.ExpectedLastWriteTimeUtc != default && preCommitFi.LastWriteTimeUtc != item.ExpectedLastWriteTimeUtc))
+                        {
+                            item.FixStatus = OfficeFixStatus.Skipped;
+                            item.Status = "スキップ (置換直前に外部変更検知)";
+                            progress?.Report((item.FilePath, false, "置換直前に外部でファイルが更新されたため安全にスキップしました"));
+                            try { File.Delete(tempPath); } catch { }
+                            continue;
+                        }
+
                         // 4. バックアップ作成 (未存在時のみ、安全な永続バックアップとして保持)
                         if (!File.Exists(backupPath))
                         {
