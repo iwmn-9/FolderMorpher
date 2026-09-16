@@ -54,6 +54,7 @@ namespace FolderMorpher.Models
         public string? OfficeLinkKeyword { get; set; }
         public Regex? CompiledRegex { get; set; }
         public bool? IsDirectoryOnly { get; set; }
+        public bool IncludeFolders { get; set; } = false;
 
         public bool IsEmpty =>
             Keywords.Count == 0 &&

@@ -44,6 +44,18 @@ namespace AstraSize
                 _searchDebounceTimer.Stop();
                 ExecuteSearch(isIncremental: true);
             };
+
+            if (SearchIncludeFoldersCheckBox != null)
+            {
+                SearchIncludeFoldersCheckBox.Checked += (s, e) => ExecuteSearch(isIncremental: false);
+                SearchIncludeFoldersCheckBox.Unchecked += (s, e) => ExecuteSearch(isIncremental: false);
+            }
+
+            if (SearchContentCheckBox != null)
+            {
+                SearchContentCheckBox.Checked += (s, e) => ExecuteSearch(isIncremental: false);
+                SearchContentCheckBox.Unchecked += (s, e) => ExecuteSearch(isIncremental: false);
+            }
         }
 
         #region Search Input & Debounce
@@ -117,6 +129,11 @@ namespace AstraSize
         {
             string rawQuery = SearchInputBox?.Text?.Trim() ?? string.Empty;
             var query = SearchQueryParser.Parse(rawQuery);
+
+            if (SearchIncludeFoldersCheckBox?.IsChecked == true)
+            {
+                query.IncludeFolders = true;
+            }
 
             if (SearchContentCheckBox?.IsChecked == true)
             {

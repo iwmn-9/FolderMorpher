@@ -138,6 +138,25 @@ namespace FolderMorpher.Services.Testing
                 var hitsC = await searchEngine.SearchInMemoryAsync(roots, qC, null, CancellationToken.None);
                 if (hitsC.Count != 1 || hitsC[0].Name != "BigArchive.zip")
                     throw new Exception($"SearchInMemoryAsync Test C failed: Expected 1 hit (BigArchive.zip), got {hitsC.Count}");
+
+                // テストD: IncludeFolders (既定falseでフォルダー除外、trueでフォルダー含める)
+                var qD1 = SearchQueryParser.Parse("SubArchive"); // IncludeFolders = false (既定)
+                var hitsD1 = await searchEngine.SearchInMemoryAsync(roots, qD1, null, CancellationToken.None);
+                // BigArchive.zip は名前に SubArchive を含まず、フォルダー SubArchive 自体は IncludeFolders=false なので 0 件
+                if (hitsD1.Count != 0)
+                    throw new Exception($"SearchInMemoryAsync Test D1 failed: Expected 0 hits without IncludeFolders, got {hitsD1.Count}");
+
+                var qD2 = SearchQueryParser.Parse("SubArchive");
+                qD2.IncludeFolders = true; // フォルダーも含めるON
+                var hitsD2 = await searchEngine.SearchInMemoryAsync(roots, qD2, null, CancellationToken.None);
+                if (hitsD2.Count != 1 || hitsD2[0].Name != "SubArchive" || !hitsD2[0].IsDirectory)
+                    throw new Exception($"SearchInMemoryAsync Test D2 failed: Expected 1 folder hit (SubArchive), got {hitsD2.Count}");
+
+                // テストE: 親フォルダー名巻き添え防止 (キーワードにパス区切りを含めるか path: 指定時のみパス全体一致)
+                var qE1 = SearchQueryParser.Parse(@"SubArchive\BigArchive");
+                var hitsE1 = await searchEngine.SearchInMemoryAsync(roots, qE1, null, CancellationToken.None);
+                if (hitsE1.Count != 1 || hitsE1[0].Name != "BigArchive.zip")
+                    throw new Exception($"SearchInMemoryAsync Test E1 failed: Expected 1 hit with path separator, got {hitsE1.Count}");
             }
 
             // -------------------------------------------------------------

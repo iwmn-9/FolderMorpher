@@ -497,6 +497,7 @@ namespace AstraSize
             if (SearchExportCsvButton != null) SearchExportCsvButton.Content = isJa ? "📑 CSV" : "📑 Export CSV";
             if (SearchScopeScannedRadio != null) SearchScopeScannedRadio.Content = Strings.SearchScopeScanned;
             if (SearchScopeDirectRadio != null) SearchScopeDirectRadio.Content = Strings.SearchScopeDirect;
+            if (SearchIncludeFoldersCheckBox != null) SearchIncludeFoldersCheckBox.Content = Strings.SearchIncludeFoldersCheck;
             if (SearchContentCheckBox != null) SearchContentCheckBox.Content = Strings.SearchContentCheck;
             if (SearchDirectBrowseButton != null) SearchDirectBrowseButton.Content = Strings.BrowseWithFolder;
             if (SearchKpiHitCountTitle != null) SearchKpiHitCountTitle.Text = Strings.SearchKpiHitCount;

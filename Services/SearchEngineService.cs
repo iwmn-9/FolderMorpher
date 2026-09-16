@@ -216,13 +216,18 @@ namespace FolderMorpher.Services
         private static bool IsMatchBasic(FileItemNode node, SearchQuery query, out string reason)
         {
             reason = string.Empty;
-            if (query.IsEmpty) return true;
 
             if (query.IsDirectoryOnly.HasValue)
             {
                 if (query.IsDirectoryOnly.Value && !node.IsDirectory) return false;
                 if (!query.IsDirectoryOnly.Value && node.IsDirectory) return false;
             }
+            else if (!query.IncludeFolders && node.IsDirectory)
+            {
+                return false;
+            }
+
+            if (query.IsEmpty) return true;
 
             string name = node.Name;
             string fullPath = node.FullPath;
@@ -262,12 +267,14 @@ namespace FolderMorpher.Services
 
             foreach (var exc in query.ExcludedWords)
             {
-                if (fullPath.IndexOf(exc, StringComparison.OrdinalIgnoreCase) >= 0) return false;
+                string target = (exc.IndexOf('\\') >= 0 || exc.IndexOf('/') >= 0) ? fullPath : name;
+                if (target.IndexOf(exc, StringComparison.OrdinalIgnoreCase) >= 0) return false;
             }
 
             foreach (var phr in query.ExactPhrases)
             {
-                if (fullPath.IndexOf(phr, StringComparison.OrdinalIgnoreCase) < 0) return false;
+                string target = (phr.IndexOf('\\') >= 0 || phr.IndexOf('/') >= 0) ? fullPath : name;
+                if (target.IndexOf(phr, StringComparison.OrdinalIgnoreCase) < 0) return false;
             }
 
             // If SearchContentMode is true and ContentKeyword is empty, keywords can match either file name or content later
@@ -275,7 +282,8 @@ namespace FolderMorpher.Services
             {
                 foreach (var kw in query.Keywords)
                 {
-                    if (fullPath.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0) return false;
+                    string target = (kw.IndexOf('\\') >= 0 || kw.IndexOf('/') >= 0) ? fullPath : name;
+                    if (target.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0) return false;
                 }
             }
 
@@ -291,7 +299,6 @@ namespace FolderMorpher.Services
         private static bool IsMatchEntry(ScannedFileEntry entry, SearchQuery query, out string reason)
         {
             reason = string.Empty;
-            if (query.IsEmpty) return true;
 
             bool isDir = entry.Attributes.HasFlag(FileAttributes.Directory);
             if (query.IsDirectoryOnly.HasValue)
@@ -299,6 +306,12 @@ namespace FolderMorpher.Services
                 if (query.IsDirectoryOnly.Value && !isDir) return false;
                 if (!query.IsDirectoryOnly.Value && isDir) return false;
             }
+            else if (!query.IncludeFolders && isDir)
+            {
+                return false;
+            }
+
+            if (query.IsEmpty) return true;
 
             string name = entry.Name;
             string fullPath = entry.FullPath;
@@ -335,19 +348,22 @@ namespace FolderMorpher.Services
 
             foreach (var exc in query.ExcludedWords)
             {
-                if (fullPath.IndexOf(exc, StringComparison.OrdinalIgnoreCase) >= 0) return false;
+                string target = (exc.IndexOf('\\') >= 0 || exc.IndexOf('/') >= 0) ? fullPath : name;
+                if (target.IndexOf(exc, StringComparison.OrdinalIgnoreCase) >= 0) return false;
             }
 
             foreach (var phr in query.ExactPhrases)
             {
-                if (fullPath.IndexOf(phr, StringComparison.OrdinalIgnoreCase) < 0) return false;
+                string target = (phr.IndexOf('\\') >= 0 || phr.IndexOf('/') >= 0) ? fullPath : name;
+                if (target.IndexOf(phr, StringComparison.OrdinalIgnoreCase) < 0) return false;
             }
 
             if (!query.SearchContentMode || !string.IsNullOrEmpty(query.ContentKeyword))
             {
                 foreach (var kw in query.Keywords)
                 {
-                    if (fullPath.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0) return false;
+                    string target = (kw.IndexOf('\\') >= 0 || kw.IndexOf('/') >= 0) ? fullPath : name;
+                    if (target.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0) return false;
                 }
             }
 
