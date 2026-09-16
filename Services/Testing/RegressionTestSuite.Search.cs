@@ -334,6 +334,15 @@ namespace FolderMorpher.Services.Testing
                     var ghostHits = await indexService.SearchIndexedAsync(qDyn, tempDir, CancellationToken.None);
                     if (ghostHits.Any(h => h.FullPath.EndsWith("Dynamic_Doc.txt")))
                         throw new Exception("ContentIndexService Ghost Cleanup failed: Deleted file still appeared in indexed search.");
+
+                    // F. Sol指摘: パス境界の厳格性検証 (近接類似フォルダー tempDir + "_Backup" を巻き込まないこと)
+                    string neighborDir = tempDir + "_Backup";
+                    if (indexService.HasIndexForPath(neighborDir))
+                        throw new Exception($"ContentIndexService Path Boundary failed: Neighbor directory '{neighborDir}' should NOT be considered indexed.");
+
+                    var neighborHits = await indexService.SearchIndexedAsync(qSecret, neighborDir, CancellationToken.None);
+                    if (neighborHits.Count > 0)
+                        throw new Exception($"ContentIndexService Path Boundary failed: Scoped search for '{neighborDir}' should return 0 results.");
                 }
                 finally
                 {

@@ -61,9 +61,9 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 | :--- | :--- | :--- | :--- | :--- |
 | **全体共通 / 左サイドバー** | `SidebarBorder`, `SidebarToggleButton` (L22-75) | `MainWindow.xaml.cs`<br>`MainWindow.Localization.cs` | `Converters/ValueConverters.cs` | 収縮対応ナビゲーション（幅220px ⇄ 58px）、グローバルステータスバー、通知トースト、言語切替（日英）、環境設定モーダル |
 | **Tab 1: 容量分析**<br>(Storage Explorer) | `StorageTabPanel` (L82-410)<br>`HistoryWindow.xaml` | `MainWindow.Storage.cs`<br>`HistoryWindow.xaml.cs` | `DiskScanService.cs`<br>`StorageHistoryService.cs`<br>`StorageForecastingService.cs`<br>`ScanTabModel.cs`<br>`FileItemNode.cs` | 複数タブスキャン、ドライブ空き容量メーター、全体占有率メーター、容量上位Top10（Explorer起動連動）、直下シェア内訳、推移グラフ直下の3連KPIハイライトカード（上限到達予測・日次ペース・R²信頼度） |
-| **Tab 2: ファイル検索**<br>(Search Studio) | `SearchTabPanel`<br>(`MainWindow.xaml`) | `MainWindow.Search.cs` | `SearchEngineService.cs`<br>`ContentIndexService.cs`<br>`SearchQueryParser.cs`<br>`PdfSearchHelper.cs`<br>`SearchModels.cs` | **全自動スマートルーティング（FTS5ミリ秒 ➔ 0秒インメモリ ➔ ライブ走査）**、**バックグラウンド自動インデックス同期**、**SQLite FTS5 trigram ＋ LIKE ハイブリッド全文検索（日本語2文字100%ヒット・差分更新・亡霊クリーンアップ・Small-File First・構文完全貫通）**、**Windows IFilter & 非圧縮対応純C#フォールバックによるPDF全文検索**、**Office / テキスト高速化パイプライン**、**「📄 本文も検索」連動トグル**、Everything互換クエリ構文、右クリックから全スタジオへ連携、Excel/CSV台帳エクスポート |
+| **Tab 2: ファイル検索**<br>(Search Studio) | `SearchTabPanel`<br>(`MainWindow.xaml`) | `MainWindow.Search.cs` | `SearchEngineService.cs`<br>`ContentIndexService.cs`<br>`ContentExtractionService.cs`<br>`SearchQueryParser.cs`<br>`PdfSearchHelper.cs`<br>`SearchModels.cs` | **全自動スマートルーティング（FTS5ミリ秒 ➔ 0秒インメモリ ➔ ライブ走査）**、**バックグラウンド自動インデックス同期**、**SQLite FTS5 trigram ＋ LIKE ハイブリッド全文検索（IndexedRoots完全性保証・日本語2文字100%ヒット・差分更新・亡霊クリーンアップ・Small-File First・ディレクトリ境界厳格化・構文完全貫通）**、**Windows IFilter & 非圧縮対応純C#フォールバックによるPDF全文検索**、**Office / テキスト本文抽出正本化 (`ContentExtractionService`)**、**「📄 本文も検索」連動トグル**、**Quiet Fluent 1行スリムメトリクスバー**、Everything互換クエリ構文、右クリックから全スタジオへ連携、Excel/CSV台帳エクスポート |
 | **Tab 3: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `Views/LiveAclStudio.xaml`<br>(`LiveAclFolderView`, `LiveAclReverseView`, `LiveAclDiffModalOverlay`, `NewFolderModalOverlay`) | `Views/LiveAclStudio.xaml.cs` | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACL可視化・編集、**Dry-Run差分チェックモーダル（AclChangePlan貫通・継承変更警告・セマンティックVerify・SDDLロールバック）**、AD逆引き権限監査、均一幅ADアカウントカード、ADパレットUI統一、ADバックグラウンド自動同期、ツリーインライン新規フォルダー作成 |
-| **Tab 4: 移行スタジオ**<br>(Simulation Studio) | `SimulationTabPanel` (L608-995) | `MainWindow.Simulation.cs` | `SimulationProjectService.cs`<br>`MigrationPackageService.cs`<br>`MigrationPackageModels.cs`<br>`SimModels.cs` | 現行ファイルサーバーから新環境への仮想ツリー設計（N:1マッピング）、ACL引き継ぎ設計、ADパレット統一、全画面・全出力完全日英両対応、ヘッダーレイアウト整線、ガワ先行作成の実機DACLセマンティックVerify、エンタープライズ移行パッケージ出力（Wave分割・Runbook Excel・安全停止手順・多重コピー防止/XD） |
+| **Tab 4: 移行スタジオ**<br>(Simulation Studio) | `SimulationTabPanel` (L608-995) | `MainWindow.Simulation.cs` | `SimulationProjectService.cs`<br>`MigrationPackageService.cs`<br>`MigrationPackageModels.cs`<br>`SimModels.cs` | 現行ファイルサーバーから新環境への仮想ツリー設計（N:1マッピング）、ACL引き継ぎ設計、ADパレット統一、全画面・全出力完全日英両対応、ヘッダーレイアウト整線、ガワ先行作成の実機DACLセマンティックVerify、エンタープライズ移行パッケージ出力（TargetRoot必須検証・Wave分割・Runbook Excel・安全停止手順・多重コピー防止/XD・%~dp0相対ログ・exit /b 1・遅延展開排除・Dry-Run bat同梱） |
 | **Tab 5: リンク修復**<br>(LinkFixer) | `LinkFixTabPanel` (L998-1094) | `MainWindow.LinkFix.cs` | `LinkFixService.cs`<br>`OfficeLinkFixService.cs` | サーバー移行後の切断ショートカット（.lnk）およびOffice内部リンク（.xlsx/.xlsm）検出・修復、**VBAマクロ非破壊保護＆通常XML混在時の部分修復（PartiallyFixed）**、全社配布用GPOログオンスクリプト（.ps1）生成 |
 | **Tab 6: ファイル監査**<br>(Audit & Hygiene) | `AuditTabPanel` (L1097-1240) | `MainWindow.Audit.cs` | `AuditReportService.cs`<br>`ExcelReportService.cs`<br>`AuditModels.cs` | 重複ファイル（SHA256）、休眠ファイル（3年超・1年閲覧保護）、パス長危険域（240字超）・禁則文字検出、フォルダー名部分一致除外（カンマ区切り）。ハイパーリンク付きExcel/CSVレポート出力、**原本保護＆削除直前SHA-256再照合付き完全削除** |
 | **Tab 7: メディア最適化**<br>(Media Optimizer) | `MediaTabPanel` (L1243-1380) | `MainWindow.Media.cs` | `MediaOptimizerService.cs`<br>`ExcelReportService.cs`<br>`MediaOptimizerModels.cs` | 保護対象（_Master/RAW等）付き写真・画像軽量化（長辺2560px超縮小/85%品質/日時・Exif保持/直接上書き）、大容量動画Topランキング抽出、夜間GPU圧縮（H.265）バッチ生成 |
@@ -76,7 +76,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの全 60 項目に及ぶ詳細な設計判断記録（ADR 1〜60）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの全 63 項目に及ぶ詳細な設計判断記録（ADR 1〜63）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 
@@ -98,6 +98,10 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
    - スクリプトパス生成の安全エスケープ共通化（`ScriptEscaper`、PowerShell `$TargetRoot` 代入含む）。
    - `MainWindow.xaml.cs` partial class 物理分割（Storage, Simulation, LinkFix, Audit, Media, Localization）。
    - `.agents/ADR.md` の59項目を12大中核アーキテクチャ原則へ体系的再編・集約。
+7. **Search Index 完全性 ＆ 移行パッケージ硬化 ＆ Quiet Fluent（v2.2.2 / ADR 63）**:
+   - `IndexedRoots` による未完了インデックスの false negative 完全防止、ディレクトリ境界厳格化（近接類似フォルダー巻き込み防止）、`ContentExtractionService` への本文抽出正本一本化。
+   - Migration Studio での TargetRoot 必須バリデーション、`04_Final_Cutover_DRYRUN.bat` 同梱、`%~dp0..\Logs`、`exit /b 1`、`EnableDelayedExpansion` 排除。
+   - Search Studio の 4 KPI カードを 1 行スリムメトリクスバーへ統合、通常カードの重いドロップシャドウを撤去し面と線の Quiet Fluent へ整線。
 
 ---
 

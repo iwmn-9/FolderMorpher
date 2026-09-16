@@ -184,7 +184,11 @@ namespace FolderMorpher.Services
                 var wavePlans = PlanWaves(rootNodes, options);
                 if (wavePlans.Count == 0) throw new InvalidOperationException("移行対象のフォルダーが存在しません。");
 
-                string targetRoot = string.IsNullOrWhiteSpace(options.TargetRoot) ? @"\\NewServer\Share" : options.TargetRoot;
+                if (string.IsNullOrWhiteSpace(options.TargetRoot))
+                {
+                    throw new InvalidOperationException("移行先ルートパス (TargetRoot) が指定されていません。移行先のUNCパスまたは絶対パスを入力してください。");
+                }
+                string targetRoot = options.TargetRoot.Trim();
                 string cleanTargetName = Path.GetFileName(targetRoot.TrimEnd('\\', '/'));
                 if (string.IsNullOrWhiteSpace(cleanTargetName)) cleanTargetName = "Target";
 
@@ -223,9 +227,14 @@ namespace FolderMorpher.Services
                         File.WriteAllText(guideDoc, guideDocContent, Encoding.UTF8);
                     }
 
-                    // 4. 04_Final_Cutover_Mirror.bat (本番最終ミラー)
+                    // 4. 04_Final_Cutover_DRYRUN.bat (本番最終ミラー Dry-Run シミュレーション /L) (Sol指摘)
+                    string dryRunBat = Path.Combine(waveDir, "04_Final_Cutover_DRYRUN.bat");
+                    string dryRunContent = GenerateWaveRobocopyBat(wave, targetRoot, options, mode: "CUTOVER", dryRun: true);
+                    File.WriteAllText(dryRunBat, dryRunContent, new UTF8Encoding(false));
+
+                    // 5. 04_Final_Cutover_Mirror.bat (本番最終ミラー)
                     string cutoverBat = Path.Combine(waveDir, "04_Final_Cutover_Mirror.bat");
-                    string cutoverContent = GenerateWaveRobocopyBat(wave, targetRoot, options, mode: "CUTOVER");
+                    string cutoverContent = GenerateWaveRobocopyBat(wave, targetRoot, options, mode: "CUTOVER", dryRun: false);
                     File.WriteAllText(cutoverBat, cutoverContent, new UTF8Encoding(false));
 
                     waveBatEntries.Add((wave.WaveName, baselineBat, cutoverBat));
@@ -260,24 +269,24 @@ namespace FolderMorpher.Services
             MigrationWavePlan wave,
             string targetRoot,
             MigrationPackageOptions options,
-            string mode)
+            string mode,
+            bool dryRun = false)
         {
             var sb = new StringBuilder();
             sb.AppendLine("@echo off");
             sb.AppendLine("chcp 65001 > nul");
-            sb.AppendLine("setlocal EnableDelayedExpansion");
             sb.AppendLine();
             sb.AppendLine("rem ==========================================================================");
             sb.AppendLine($"rem FolderMorpher Enterprise Migration Suite");
             sb.AppendLine($"rem Wave: {wave.WaveName}");
-            sb.AppendLine($"rem Mode: {mode} ({(mode == "BASELINE" ? "事前フル同期" : mode == "DELTA" ? "中間差分同期" : "最終本番切替ミラー")})");
+            sb.AppendLine($"rem Mode: {mode} ({(mode == "BASELINE" ? "事前フル同期" : mode == "DELTA" ? "中間差分同期" : dryRun ? "最終本番切替 Dry-Run" : "最終本番切替ミラー")})");
             sb.AppendLine($"rem Target Root: {targetRoot}");
             sb.AppendLine($"rem Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sb.AppendLine("rem ==========================================================================");
             sb.AppendLine();
             sb.AppendLine($"echo ==================================================================");
             sb.AppendLine($"echo   [FolderMorpher] {wave.WaveName}");
-            sb.AppendLine($"echo   実行モード: {mode}");
+            sb.AppendLine($"echo   実行モード: {mode}{(dryRun ? " 【DRY-RUN (シミュレーション・書き込みなし)】" : "")}");
             sb.AppendLine($"echo   想定容量  : {wave.TotalSizeFormatted} ({wave.TotalFileCountFormatted})");
             sb.AppendLine($"echo ==================================================================");
             sb.AppendLine("echo.");
@@ -287,13 +296,14 @@ namespace FolderMorpher.Services
 
             string copyFlag = options.CopyAcl ? "/COPYALL" : "/COPY:DAT";
             string modeFlag = mode == "CUTOVER" ? "/MIR" : "/E";
+            string dryRunParam = dryRun ? " /L" : "";
             int retryCount = mode == "BASELINE" ? 1 : 2;
             int waitSec = mode == "BASELINE" ? 1 : (mode == "DELTA" ? 2 : 3);
             int threads = mode == "BASELINE" ? Math.Max(16, options.Threads) : 8;
 
-            sb.AppendLine($"set LOG_DIR=..\\Logs");
+            sb.AppendLine($"set LOG_DIR=%~dp0..\\Logs");
             sb.AppendLine($"if not exist \"%LOG_DIR%\" mkdir \"%LOG_DIR%\"");
-            sb.AppendLine($"set LOG_FILE=%LOG_DIR%\\Robo_{mode}_Wave{wave.WaveNumber:D2}_%date:~0,4%%date:~5,2%%date:~8,2%_%time:~0,2%%time:~3,2%%time:~6,2%.log");
+            sb.AppendLine($"set LOG_FILE=%LOG_DIR%\\Robo_{mode}{(dryRun ? "_DRYRUN" : "")}_Wave{wave.WaveNumber:D2}_%date:~0,4%%date:~5,2%%date:~8,2%_%time:~0,2%%time:~3,2%%time:~6,2%.log");
             sb.AppendLine($"set LOG_FILE=%LOG_FILE: =0%");
             sb.AppendLine();
             sb.AppendLine("set HAS_ERROR=0");
@@ -344,9 +354,9 @@ namespace FolderMorpher.Services
                         : "";
 
                     sb.AppendLine($"echo ------------------------------------------------------------------");
-                    sb.AppendLine($"echo [転送中] {src}  --->  {targetFolder}");
+                    sb.AppendLine($"echo [転送中] {src}  --->  {targetFolder}{(dryRun ? " [DRY-RUN /L]" : "")}");
                     sb.AppendLine($"echo ------------------------------------------------------------------");
-                    sb.AppendLine($"robocopy {escSrc} {escDst} {modeFlag} {copyFlag} /DCOPY:DAT /R:{retryCount} /W:{waitSec} /NP /MT:{threads}{xdParam} /TEE /LOG+:\"%LOG_FILE%\"");
+                    sb.AppendLine($"robocopy {escSrc} {escDst} {modeFlag} {copyFlag} /DCOPY:DAT /R:{retryCount} /W:{waitSec} /NP /MT:{threads}{xdParam}{dryRunParam} /TEE /LOG+:\"%LOG_FILE%\"");
                     sb.AppendLine($"if errorlevel 8 (");
                     sb.AppendLine($"    echo [ERROR] 重大なエラーが発生しました。ログを確認してください: %LOG_FILE%");
                     sb.AppendLine($"    set HAS_ERROR=1");
@@ -375,12 +385,15 @@ namespace FolderMorpher.Services
             sb.AppendLine("echo.");
             sb.AppendLine("echo ==================================================================");
             sb.AppendLine("if %HAS_ERROR% equ 0 (");
-            sb.AppendLine($"    echo   [SUCCESS] {wave.WaveName} の {mode} 処理が正常に完了しました。");
+            sb.AppendLine($"    echo   [SUCCESS] {wave.WaveName} の {mode}{(dryRun ? " (DRY-RUN)" : "")} 処理が正常に完了しました。");
             sb.AppendLine(") else (");
             sb.AppendLine($"    echo   [FAILED] エラーが検出されました。ログを確認してください: %LOG_FILE%");
             sb.AppendLine(")");
             sb.AppendLine("echo ==================================================================");
             sb.AppendLine("pause");
+            sb.AppendLine("if %HAS_ERROR% neq 0 (");
+            sb.AppendLine("    exit /b 1");
+            sb.AppendLine(")");
 
             return sb.ToString();
         }

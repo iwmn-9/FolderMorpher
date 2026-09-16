@@ -103,6 +103,15 @@ namespace FolderMorpher.Services
                     CREATE INDEX IF NOT EXISTS idx_files_path ON IndexedFiles(FullPath);
                     CREATE INDEX IF NOT EXISTS idx_files_dir ON IndexedFiles(DirectoryPath);
 
+                    CREATE TABLE IF NOT EXISTS IndexedRoots (
+                        RootPath TEXT PRIMARY KEY COLLATE NOCASE,
+                        Status TEXT NOT NULL, -- 'InProgress', 'Complete', 'Error'
+                        CoverageComplete INTEGER NOT NULL DEFAULT 1,
+                        LastCompletedUtcTicks INTEGER,
+                        TotalFiles INTEGER NOT NULL DEFAULT 0,
+                        ExtractorVersion INTEGER NOT NULL DEFAULT 1
+                    );
+
                     CREATE VIRTUAL TABLE IF NOT EXISTS ContentFts USING fts5(
                         FileId UNINDEXED,
                         Body,
@@ -126,23 +135,47 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// 指定パスのファイルがインデックスに存在するか判定
+        /// 指定パスまたはその上位フォルダーが完全にインデックス化（Status == Complete かつ 最新ExtractorVersion）されているか判定。
+        /// 中断された不完全なインデックスによる検索漏れ（false negative）を完全に防止します。
         /// </summary>
-        public bool HasIndexForPath(string folderPath)
+        public bool HasCompleteIndexForPath(string folderPath)
         {
             if (string.IsNullOrWhiteSpace(folderPath)) return false;
             string norm = Path.GetFullPath(folderPath).TrimEnd('\\', '/');
-            string esc = norm.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
 
             lock (_lock)
             {
                 using var conn = new SqliteConnection(_connectionString);
                 conn.Open();
+
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = "SELECT 1 FROM IndexedFiles WHERE FullPath LIKE @prefix ESCAPE '\\' AND Status = 1 LIMIT 1";
-                cmd.Parameters.AddWithValue("@prefix", esc);
-                return cmd.ExecuteScalar() != null;
+                cmd.CommandText = @"
+                    SELECT RootPath FROM IndexedRoots 
+                    WHERE Status = 'Complete' 
+                      AND ExtractorVersion = @extVer";
+                cmd.Parameters.AddWithValue("@extVer", CurrentExtractorVersion);
+
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    string root = reader.GetString(0).TrimEnd('\\', '/');
+                    if (norm.Equals(root, StringComparison.OrdinalIgnoreCase) ||
+                        norm.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
             }
+        }
+
+        /// <summary>
+        /// 指定パスのファイルが完全なインデックスに存在するか判定（後方互換用：HasCompleteIndexForPath に委譲）
+        /// </summary>
+        public bool HasIndexForPath(string folderPath)
+        {
+            return HasCompleteIndexForPath(folderPath);
         }
 
         /// <summary>
@@ -158,6 +191,21 @@ namespace FolderMorpher.Services
                 var sw = Stopwatch.StartNew();
                 string normTarget = Path.GetFullPath(folderPath).TrimEnd('\\', '/');
 
+                // ルート状態を InProgress に登録
+                lock (_lock)
+                {
+                    using var conn = new SqliteConnection(_connectionString);
+                    conn.Open();
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandText = @"
+                        INSERT OR REPLACE INTO IndexedRoots (RootPath, Status, CoverageComplete, LastCompletedUtcTicks, TotalFiles, ExtractorVersion)
+                        VALUES (@root, 'InProgress', 0, @ticks, 0, @extVer);";
+                    cmd.Parameters.AddWithValue("@root", normTarget);
+                    cmd.Parameters.AddWithValue("@ticks", DateTime.UtcNow.Ticks);
+                    cmd.Parameters.AddWithValue("@extVer", CurrentExtractorVersion);
+                    cmd.ExecuteNonQuery();
+                }
+
                 progress?.Report(new IndexProgressReport
                 {
                     StatusMessage = "メタデータを走査中...",
@@ -165,233 +213,271 @@ namespace FolderMorpher.Services
                     Elapsed = sw.Elapsed
                 });
 
-                // 1. 並列2固定でファイル一覧を一括列挙 (I/O最小化)
-                var scannedEntries = await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
-                    normTarget,
-                    "*.*",
-                    coverage: null,
-                    onProgress: null,
-                    ct: ct);
+                var coverage = new ScanCoverage();
 
-                // 検索対象の拡張子（Office, PDF, Text）
-                var supportedExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                try
                 {
-                    ".txt", ".log", ".csv", ".tsv", ".json", ".xml", ".html", ".htm", ".md",
-                    ".cs", ".sql", ".ps1", ".bat", ".cmd", ".py", ".ini", ".cfg", ".yaml", ".yml",
-                    ".xlsx", ".xlsm", ".docx", ".pptx", ".pdf"
-                };
+                    // 1. 並列2固定でファイル一覧を一括列挙 (I/O最小化 & カバレッジ追跡)
+                    var scannedEntries = await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
+                        normTarget,
+                        "*.*",
+                        coverage: coverage,
+                        onProgress: null,
+                        ct: ct);
 
-                const long MaxIndexFileSize = 50L * 1024 * 1024; // 50MB上限
-                var targetEntries = scannedEntries
-                    .Where(e => !e.Attributes.HasFlag(FileAttributes.Directory) &&
-                                e.Length <= MaxIndexFileSize &&
-                                supportedExts.Contains(Path.GetExtension(e.Name)))
-                    .ToList();
+                    // 検索対象の拡張子（Office, PDF, Text）
+                    var supportedExts = ContentExtractionService.SupportedExtensions;
 
-                // 2. 既存DBのメタデータ状態をロード
-                var existingMap = new Dictionary<string, (long FileId, long SizeBytes, long LastWriteTicks, int Status, int ExtractorVer)>(StringComparer.OrdinalIgnoreCase);
-                lock (_lock)
-                {
-                    using var conn = new SqliteConnection(_connectionString);
-                    conn.Open();
-                    using var cmd = conn.CreateCommand();
-                    cmd.CommandText = "SELECT FileId, FullPath, SizeBytes, LastWriteTimeUtcTicks, Status, ExtractorVersion FROM IndexedFiles WHERE FullPath LIKE @prefix ESCAPE '\\'";
-                    string esc = normTarget.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                    cmd.Parameters.AddWithValue("@prefix", esc);
+                    const long MaxIndexFileSize = 50L * 1024 * 1024; // 50MB上限
+                    var targetEntries = scannedEntries
+                        .Where(e => !e.Attributes.HasFlag(FileAttributes.Directory) &&
+                                    e.Length <= MaxIndexFileSize &&
+                                    supportedExts.Contains(Path.GetExtension(e.Name)))
+                        .ToList();
 
-                    using var reader = cmd.ExecuteReader();
-                    while (reader.Read())
-                    {
-                        long fId = reader.GetInt64(0);
-                        string path = reader.GetString(1);
-                        long size = reader.GetInt64(2);
-                        long ticks = reader.GetInt64(3);
-                        int status = reader.GetInt32(4);
-                        int extVer = reader.IsDBNull(5) ? 1 : reader.GetInt32(5);
-                        existingMap[path] = (fId, size, ticks, status, extVer);
-                    }
-                }
-
-                // 3. 亡霊ファイル（削除・リネームで消失した旧パス）のクリーンアップ (Sol指摘2)
-                int deletedCount = 0;
-                var currentPaths = new HashSet<string>(scannedEntries.Select(e => e.FullPath), StringComparer.OrdinalIgnoreCase);
-                var ghostFileIds = existingMap
-                    .Where(kvp => !currentPaths.Contains(kvp.Key))
-                    .Select(kvp => kvp.Value.FileId)
-                    .ToList();
-
-                if (ghostFileIds.Count > 0)
-                {
+                    // 2. 既存DBのメタデータ状態をロード（パス境界を厳格化して近接類似フォルダーの巻き込みを防止）
+                    var existingMap = new Dictionary<string, (long FileId, long SizeBytes, long LastWriteTicks, int Status, int ExtractorVer)>(StringComparer.OrdinalIgnoreCase);
                     lock (_lock)
                     {
                         using var conn = new SqliteConnection(_connectionString);
                         conn.Open();
-                        using var trans = conn.BeginTransaction();
-                        foreach (var gId in ghostFileIds)
+                        using var cmd = conn.CreateCommand();
+                        cmd.CommandText = @"
+                            SELECT FileId, FullPath, SizeBytes, LastWriteTimeUtcTicks, Status, ExtractorVersion 
+                            FROM IndexedFiles 
+                            WHERE FullPath = @exact OR FullPath LIKE @prefix ESCAPE '\'";
+
+                        string dirPrefix = normTarget + "\\";
+                        string escPrefix = dirPrefix.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                        cmd.Parameters.AddWithValue("@exact", normTarget);
+                        cmd.Parameters.AddWithValue("@prefix", escPrefix);
+
+                        using var reader = cmd.ExecuteReader();
+                        while (reader.Read())
                         {
-                            using var delFts = conn.CreateCommand();
-                            delFts.Transaction = trans;
-                            delFts.CommandText = "DELETE FROM ContentFts WHERE FileId = @id";
-                            delFts.Parameters.AddWithValue("@id", gId);
-                            delFts.ExecuteNonQuery();
-
-                            using var delFile = conn.CreateCommand();
-                            delFile.Transaction = trans;
-                            delFile.CommandText = "DELETE FROM IndexedFiles WHERE FileId = @id";
-                            delFile.Parameters.AddWithValue("@id", gId);
-                            delFile.ExecuteNonQuery();
-                        }
-                        trans.Commit();
-                    }
-                    deletedCount = ghostFileIds.Count;
-                }
-
-                // 4. 差分判定（未変更スキップ、新規・更新・ExtractorVersion不一致・中断分を抽出）
-                var toProcess = new List<ScannedFileEntry>();
-                int alreadyIndexed = 0;
-
-                foreach (var entry in targetEntries)
-                {
-                    long currentTicks = entry.LastWriteTime.ToUniversalTime().Ticks;
-                    if (existingMap.TryGetValue(entry.FullPath, out var meta))
-                    {
-                        // 既に Indexed (Status==1) かつ サイズ・更新日時・ExtractorVersion が一致していれば完全スキップ (0 I/O)
-                        if (meta.Status == 1 && meta.SizeBytes == entry.Length && meta.LastWriteTicks == currentTicks && meta.ExtractorVer == CurrentExtractorVersion)
-                        {
-                            alreadyIndexed++;
-                            continue;
+                            long fId = reader.GetInt64(0);
+                            string path = reader.GetString(1);
+                            long size = reader.GetInt64(2);
+                            long ticks = reader.GetInt64(3);
+                            int status = reader.GetInt32(4);
+                            int extVer = reader.IsDBNull(5) ? 1 : reader.GetInt32(5);
+                            existingMap[path] = (fId, size, ticks, status, extVer);
                         }
                     }
-                    toProcess.Add(entry);
-                }
 
-                // ★ Sol提唱: 小さいファイル優先（Small-File First）でソート
-                toProcess = toProcess.OrderBy(e => e.Length).ToList();
+                    // 3. 亡霊ファイル（削除・リネームで消失した旧パス）のクリーンアップ (Sol指摘2 & アクセス拒否保護)
+                    int deletedCount = 0;
+                    var currentPaths = new HashSet<string>(scannedEntries.Select(e => e.FullPath), StringComparer.OrdinalIgnoreCase);
+                    var ghostFileIds = existingMap
+                        .Where(kvp => !currentPaths.Contains(kvp.Key))
+                        .Select(kvp => kvp.Value.FileId)
+                        .ToList();
 
-                int totalDiscovered = targetEntries.Count;
-                int processedCount = alreadyIndexed;
-                int newlyIndexed = 0;
-                int failedCount = 0;
-
-                progress?.Report(new IndexProgressReport
-                {
-                    TotalDiscovered = totalDiscovered,
-                    AlreadyIndexed = alreadyIndexed,
-                    ProcessedCount = processedCount,
-                    DeletedCount = deletedCount,
-                    StatusMessage = $"インデックス更新開始 (対象: {toProcess.Count:N0} 件 / 変更なしスキップ: {alreadyIndexed:N0} 件 / 削除整理: {deletedCount:N0} 件)",
-                    Elapsed = sw.Elapsed
-                });
-
-                // 5. バッチ処理（50ファイルごとにトランザクションコミットしてディスクに永続化）
-                const int BatchSize = 50;
-                for (int i = 0; i < toProcess.Count; i += BatchSize)
-                {
-                    ct.ThrowIfCancellationRequested();
-
-                    var batch = toProcess.Skip(i).Take(BatchSize).ToList();
-
-                    // 並列度2固定でテキスト抽出
-                    var extractedResults = new ConcurrentBag<(ScannedFileEntry Entry, string? Text, bool Success)>();
-                    var po = new ParallelOptions
+                    // ★ 走査中にアクセス拒否（AccessDenied）があった場合は、ファイルが消えたのではなく読めなかっただけなので亡霊削除を抑止
+                    if (coverage.AccessDeniedFolders == 0 && ghostFileIds.Count > 0)
                     {
-                        MaxDegreeOfParallelism = 2, // サーバー保護のためデュアルワーカー固定
-                        CancellationToken = ct
-                    };
-
-                    await Parallel.ForEachAsync(batch, po, async (entry, token) =>
-                    {
-                        token.ThrowIfCancellationRequested();
-                        try
+                        lock (_lock)
                         {
-                            string? text = await ExtractTextContentAsync(entry.FullPath, token);
-                            extractedResults.Add((entry, text, text != null));
+                            using var conn = new SqliteConnection(_connectionString);
+                            conn.Open();
+                            using var trans = conn.BeginTransaction();
+                            foreach (var gId in ghostFileIds)
+                            {
+                                using var delFts = conn.CreateCommand();
+                                delFts.Transaction = trans;
+                                delFts.CommandText = "DELETE FROM ContentFts WHERE FileId = @id";
+                                delFts.Parameters.AddWithValue("@id", gId);
+                                delFts.ExecuteNonQuery();
+
+                                using var delFile = conn.CreateCommand();
+                                delFile.Transaction = trans;
+                                delFile.CommandText = "DELETE FROM IndexedFiles WHERE FileId = @id";
+                                delFile.Parameters.AddWithValue("@id", gId);
+                                delFile.ExecuteNonQuery();
+                            }
+                            trans.Commit();
                         }
-                        catch
-                        {
-                            extractedResults.Add((entry, null, false));
-                        }
-                    });
-
-                    // SQLite へバッチコミット (ACID保証・クラッシュセーフ)
-                    lock (_lock)
-                    {
-                        using var conn = new SqliteConnection(_connectionString);
-                        conn.Open();
-                        using var trans = conn.BeginTransaction();
-
-                        foreach (var item in extractedResults)
-                        {
-                            var entry = item.Entry;
-                            long currentTicks = entry.LastWriteTime.ToUniversalTime().Ticks;
-                            long nowTicks = DateTime.UtcNow.Ticks;
-
-                            long fileId;
-                            if (existingMap.TryGetValue(entry.FullPath, out var meta))
-                            {
-                                fileId = meta.FileId;
-                                using var cmdUpd = conn.CreateCommand();
-                                cmdUpd.Transaction = trans;
-                                cmdUpd.CommandText = @"
-                                    UPDATE IndexedFiles 
-                                    SET SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, Status = @status, 
-                                        IndexedAtUtcTicks = @now, ExtractorVersion = @ver
-                                    WHERE FileId = @fileId";
-                                cmdUpd.Parameters.AddWithValue("@size", entry.Length);
-                                cmdUpd.Parameters.AddWithValue("@ticks", currentTicks);
-                                cmdUpd.Parameters.AddWithValue("@status", item.Success ? 1 : 2);
-                                cmdUpd.Parameters.AddWithValue("@now", nowTicks);
-                                cmdUpd.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
-                                cmdUpd.Parameters.AddWithValue("@fileId", fileId);
-                                cmdUpd.ExecuteNonQuery();
-
-                                // 既存の FTS エントリを削除
-                                using var cmdDelFts = conn.CreateCommand();
-                                cmdDelFts.Transaction = trans;
-                                cmdDelFts.CommandText = "DELETE FROM ContentFts WHERE FileId = @fileId";
-                                cmdDelFts.Parameters.AddWithValue("@fileId", fileId);
-                                cmdDelFts.ExecuteNonQuery();
-                            }
-                            else
-                            {
-                                using var cmdIns = conn.CreateCommand();
-                                cmdIns.Transaction = trans;
-                                cmdIns.CommandText = @"
-                                    INSERT INTO IndexedFiles (FullPath, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion)
-                                    VALUES (@path, @dir, @size, @ticks, @status, @now, @ver);
-                                    SELECT last_insert_rowid();";
-                                cmdIns.Parameters.AddWithValue("@path", entry.FullPath);
-                                cmdIns.Parameters.AddWithValue("@dir", entry.DirectoryPath);
-                                cmdIns.Parameters.AddWithValue("@size", entry.Length);
-                                cmdIns.Parameters.AddWithValue("@ticks", currentTicks);
-                                cmdIns.Parameters.AddWithValue("@status", item.Success ? 1 : 2);
-                                cmdIns.Parameters.AddWithValue("@now", nowTicks);
-                                cmdIns.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
-                                fileId = (long)cmdIns.ExecuteScalar()!;
-                            }
-
-                            if (item.Success && !string.IsNullOrWhiteSpace(item.Text))
-                            {
-                                using var cmdInsFts = conn.CreateCommand();
-                                cmdInsFts.Transaction = trans;
-                                cmdInsFts.CommandText = "INSERT INTO ContentFts (FileId, Body) VALUES (@fileId, @body)";
-                                cmdInsFts.Parameters.AddWithValue("@fileId", fileId);
-                                cmdInsFts.Parameters.AddWithValue("@body", item.Text);
-                                cmdInsFts.ExecuteNonQuery();
-                                newlyIndexed++;
-                            }
-                            else
-                            {
-                                failedCount++;
-                            }
-
-                            processedCount++;
-                        }
-
-                        trans.Commit();
+                        deletedCount = ghostFileIds.Count;
                     }
+
+                    // 4. 差分判定（未変更スキップ、新規・更新・ExtractorVersion不一致・中断分を抽出）
+                    var toProcess = new List<ScannedFileEntry>();
+                    int alreadyIndexed = 0;
+
+                    foreach (var entry in targetEntries)
+                    {
+                        long currentTicks = entry.LastWriteTime.ToUniversalTime().Ticks;
+                        if (existingMap.TryGetValue(entry.FullPath, out var meta))
+                        {
+                            // 既に Indexed (Status==1) かつ サイズ・更新日時・ExtractorVersion が一致していれば完全スキップ (0 I/O)
+                            if (meta.Status == 1 && meta.SizeBytes == entry.Length && meta.LastWriteTicks == currentTicks && meta.ExtractorVer == CurrentExtractorVersion)
+                            {
+                                alreadyIndexed++;
+                                continue;
+                            }
+                        }
+                        toProcess.Add(entry);
+                    }
+
+                    // ★ Sol提唱: 小さいファイル優先（Small-File First）でソート
+                    toProcess = toProcess.OrderBy(e => e.Length).ToList();
+
+                    int totalDiscovered = targetEntries.Count;
+                    int processedCount = alreadyIndexed;
+                    int newlyIndexed = 0;
+                    int failedCount = 0;
 
                     progress?.Report(new IndexProgressReport
+                    {
+                        TotalDiscovered = totalDiscovered,
+                        AlreadyIndexed = alreadyIndexed,
+                        ProcessedCount = processedCount,
+                        DeletedCount = deletedCount,
+                        StatusMessage = $"インデックス更新開始 (対象: {toProcess.Count:N0} 件 / 変更なしスキップ: {alreadyIndexed:N0} 件 / 削除整理: {deletedCount:N0} 件)",
+                        Elapsed = sw.Elapsed
+                    });
+
+                    // 5. バッチ処理（50ファイルごとにトランザクションコミットしてディスクに永続化）
+                    const int BatchSize = 50;
+                    for (int i = 0; i < toProcess.Count; i += BatchSize)
+                    {
+                        ct.ThrowIfCancellationRequested();
+
+                        var batch = toProcess.Skip(i).Take(BatchSize).ToList();
+
+                        // 並列度2固定でテキスト抽出
+                        var extractedResults = new ConcurrentBag<(ScannedFileEntry Entry, string? Text, bool Success)>();
+                        var po = new ParallelOptions
+                        {
+                            MaxDegreeOfParallelism = 2, // サーバー保護のためデュアルワーカー固定
+                            CancellationToken = ct
+                        };
+
+                        await Parallel.ForEachAsync(batch, po, async (entry, token) =>
+                        {
+                            token.ThrowIfCancellationRequested();
+                            try
+                            {
+                                string? text = await ContentExtractionService.ExtractTextAsync(entry.FullPath, token);
+                                extractedResults.Add((entry, text, text != null));
+                            }
+                            catch
+                            {
+                                extractedResults.Add((entry, null, false));
+                            }
+                        });
+
+                        // SQLite へバッチコミット (ACID保証・クラッシュセーフ)
+                        lock (_lock)
+                        {
+                            using var conn = new SqliteConnection(_connectionString);
+                            conn.Open();
+                            using var trans = conn.BeginTransaction();
+
+                            foreach (var item in extractedResults)
+                            {
+                                var entry = item.Entry;
+                                long currentTicks = entry.LastWriteTime.ToUniversalTime().Ticks;
+                                long nowTicks = DateTime.UtcNow.Ticks;
+
+                                long fileId;
+                                if (existingMap.TryGetValue(entry.FullPath, out var meta))
+                                {
+                                    fileId = meta.FileId;
+                                    using var cmdUpd = conn.CreateCommand();
+                                    cmdUpd.Transaction = trans;
+                                    cmdUpd.CommandText = @"
+                                        UPDATE IndexedFiles 
+                                        SET SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, Status = @status, 
+                                            IndexedAtUtcTicks = @now, ExtractorVersion = @ver
+                                        WHERE FileId = @fileId";
+                                    cmdUpd.Parameters.AddWithValue("@size", entry.Length);
+                                    cmdUpd.Parameters.AddWithValue("@ticks", currentTicks);
+                                    cmdUpd.Parameters.AddWithValue("@status", item.Success ? 1 : 2);
+                                    cmdUpd.Parameters.AddWithValue("@now", nowTicks);
+                                    cmdUpd.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
+                                    cmdUpd.Parameters.AddWithValue("@fileId", fileId);
+                                    cmdUpd.ExecuteNonQuery();
+
+                                    // 既存の FTS エントリを削除
+                                    using var cmdDelFts = conn.CreateCommand();
+                                    cmdDelFts.Transaction = trans;
+                                    cmdDelFts.CommandText = "DELETE FROM ContentFts WHERE FileId = @fileId";
+                                    cmdDelFts.Parameters.AddWithValue("@fileId", fileId);
+                                    cmdDelFts.ExecuteNonQuery();
+                                }
+                                else
+                                {
+                                    using var cmdIns = conn.CreateCommand();
+                                    cmdIns.Transaction = trans;
+                                    cmdIns.CommandText = @"
+                                        INSERT INTO IndexedFiles (FullPath, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion)
+                                        VALUES (@path, @dir, @size, @ticks, @status, @now, @ver);
+                                        SELECT last_insert_rowid();";
+                                    cmdIns.Parameters.AddWithValue("@path", entry.FullPath);
+                                    cmdIns.Parameters.AddWithValue("@dir", entry.DirectoryPath);
+                                    cmdIns.Parameters.AddWithValue("@size", entry.Length);
+                                    cmdIns.Parameters.AddWithValue("@ticks", currentTicks);
+                                    cmdIns.Parameters.AddWithValue("@status", item.Success ? 1 : 2);
+                                    cmdIns.Parameters.AddWithValue("@now", nowTicks);
+                                    cmdIns.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
+                                    fileId = (long)cmdIns.ExecuteScalar()!;
+                                }
+
+                                if (item.Success && !string.IsNullOrWhiteSpace(item.Text))
+                                {
+                                    using var cmdInsFts = conn.CreateCommand();
+                                    cmdInsFts.Transaction = trans;
+                                    cmdInsFts.CommandText = "INSERT INTO ContentFts (FileId, Body) VALUES (@fileId, @body)";
+                                    cmdInsFts.Parameters.AddWithValue("@fileId", fileId);
+                                    cmdInsFts.Parameters.AddWithValue("@body", item.Text);
+                                    cmdInsFts.ExecuteNonQuery();
+                                    newlyIndexed++;
+                                }
+                                else
+                                {
+                                    failedCount++;
+                                }
+
+                                processedCount++;
+                            }
+
+                            trans.Commit();
+                        }
+
+                        progress?.Report(new IndexProgressReport
+                        {
+                            TotalDiscovered = totalDiscovered,
+                            AlreadyIndexed = alreadyIndexed,
+                            ProcessedCount = processedCount,
+                            NewlyIndexedCount = newlyIndexed,
+                            DeletedCount = deletedCount,
+                            FailedCount = failedCount,
+                            CurrentFile = batch.LastOrDefault()?.Name ?? string.Empty,
+                            StatusMessage = $"インデックス中 ({processedCount:N0} / {totalDiscovered:N0})",
+                            Elapsed = sw.Elapsed
+                        });
+                    }
+
+                    // 完了時に IndexedRoots を Complete に更新（中断されていないことの証明）
+                    lock (_lock)
+                    {
+                        using var conn = new SqliteConnection(_connectionString);
+                        conn.Open();
+                        using var cmd = conn.CreateCommand();
+                        cmd.CommandText = @"
+                            INSERT OR REPLACE INTO IndexedRoots (RootPath, Status, CoverageComplete, LastCompletedUtcTicks, TotalFiles, ExtractorVersion)
+                            VALUES (@root, 'Complete', @cov, @ticks, @total, @extVer);";
+                        cmd.Parameters.AddWithValue("@root", normTarget);
+                        cmd.Parameters.AddWithValue("@cov", coverage.AccessDeniedFolders == 0 ? 1 : 0);
+                        cmd.Parameters.AddWithValue("@ticks", DateTime.UtcNow.Ticks);
+                        cmd.Parameters.AddWithValue("@total", totalDiscovered);
+                        cmd.Parameters.AddWithValue("@extVer", CurrentExtractorVersion);
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    sw.Stop();
+                    var finalReport = new IndexProgressReport
                     {
                         TotalDiscovered = totalDiscovered,
                         AlreadyIndexed = alreadyIndexed,
@@ -399,27 +485,35 @@ namespace FolderMorpher.Services
                         NewlyIndexedCount = newlyIndexed,
                         DeletedCount = deletedCount,
                         FailedCount = failedCount,
-                        CurrentFile = batch.LastOrDefault()?.Name ?? string.Empty,
-                        StatusMessage = $"インデックス中 ({processedCount:N0} / {totalDiscovered:N0})",
-                        Elapsed = sw.Elapsed
-                    });
+                        StatusMessage = $"インデックス完了 (新規/更新: {newlyIndexed:N0} 件, スキップ: {alreadyIndexed:N0} 件, 削除整理: {deletedCount:N0} 件)",
+                        Elapsed = sw.Elapsed,
+                        IsCompleted = true
+                    };
+                    progress?.Report(finalReport);
+                    return finalReport;
                 }
-
-                sw.Stop();
-                var finalReport = new IndexProgressReport
+                catch (Exception)
                 {
-                    TotalDiscovered = totalDiscovered,
-                    AlreadyIndexed = alreadyIndexed,
-                    ProcessedCount = processedCount,
-                    NewlyIndexedCount = newlyIndexed,
-                    DeletedCount = deletedCount,
-                    FailedCount = failedCount,
-                    StatusMessage = $"インデックス完了 (新規/更新: {newlyIndexed:N0} 件, スキップ: {alreadyIndexed:N0} 件, 削除整理: {deletedCount:N0} 件)",
-                    Elapsed = sw.Elapsed,
-                    IsCompleted = true
-                };
-                progress?.Report(finalReport);
-                return finalReport;
+                    // 途中でエラーまたは中断が発生した場合は Status = 'Error' にマーク
+                    lock (_lock)
+                    {
+                        try
+                        {
+                            using var conn = new SqliteConnection(_connectionString);
+                            conn.Open();
+                            using var cmd = conn.CreateCommand();
+                            cmd.CommandText = @"
+                                INSERT OR REPLACE INTO IndexedRoots (RootPath, Status, CoverageComplete, LastCompletedUtcTicks, TotalFiles, ExtractorVersion)
+                                VALUES (@root, 'Error', 0, @ticks, 0, @extVer);";
+                            cmd.Parameters.AddWithValue("@root", normTarget);
+                            cmd.Parameters.AddWithValue("@ticks", DateTime.UtcNow.Ticks);
+                            cmd.Parameters.AddWithValue("@extVer", CurrentExtractorVersion);
+                            cmd.ExecuteNonQuery();
+                        }
+                        catch { }
+                    }
+                    throw;
+                }
             }, ct);
         }
 
@@ -563,12 +657,15 @@ namespace FolderMorpher.Services
                         cmd.Parameters.AddWithValue(pName, escP);
                     }
 
-                    // G. スコープフォルダー
+                    // G. スコープフォルダー (ディレクトリ境界を厳格化して近接類似フォルダーの誤ヒットを防止)
                     if (!string.IsNullOrWhiteSpace(scopeFolder))
                     {
-                        whereClauses.Add("f.FullPath LIKE @scope ESCAPE '\\'");
-                        string escScope = scopeFolder.TrimEnd('\\', '/').Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                        cmd.Parameters.AddWithValue("@scope", escScope);
+                        string normScope = Path.GetFullPath(scopeFolder).TrimEnd('\\', '/');
+                        string dirScope = normScope + "\\";
+                        string escScope = dirScope.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                        whereClauses.Add("(f.FullPath = @scopeExact OR f.FullPath LIKE @scopeDir ESCAPE '\\')");
+                        cmd.Parameters.AddWithValue("@scopeExact", normScope);
+                        cmd.Parameters.AddWithValue("@scopeDir", escScope);
                     }
 
                     // SQL 組み立て
@@ -699,102 +796,9 @@ namespace FolderMorpher.Services
                 cmd.CommandText = @"
                     DELETE FROM ContentFts;
                     DELETE FROM IndexedFiles;
+                    DELETE FROM IndexedRoots;
                     VACUUM;";
                 cmd.ExecuteNonQuery();
-            }
-        }
-
-        private static async Task<string?> ExtractTextContentAsync(string filePath, CancellationToken ct)
-        {
-            string ext = Path.GetExtension(filePath).ToLowerInvariant();
-
-            // 1. Office (OpenXML: .xlsx, .xlsm, .docx, .pptx)
-            if (ext == ".xlsx" || ext == ".xlsm" || ext == ".docx" || ext == ".pptx")
-            {
-                return ExtractOfficeText(filePath);
-            }
-
-            // 2. PDF (.pdf)
-            if (ext == ".pdf")
-            {
-                return PdfSearchHelper.ExtractAllText(filePath);
-            }
-
-            // 3. Text (.txt, .csv, .log, .json, etc.) - UTF-16対応
-            return await ExtractPlainTextAsync(filePath, ct);
-        }
-
-        private static string? ExtractOfficeText(string filePath)
-        {
-            try
-            {
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var zip = new System.IO.Compression.ZipArchive(fs, System.IO.Compression.ZipArchiveMode.Read, false);
-                var sb = new StringBuilder();
-
-                foreach (var entry in zip.Entries)
-                {
-                    string name = entry.FullName.ToLowerInvariant();
-                    if (!name.EndsWith(".xml")) continue;
-                    if (!name.Contains("sharedstrings") &&
-                        !name.Contains("sheet") &&
-                        !name.Contains("document") &&
-                        !name.Contains("slide")) continue;
-
-                    using var stream = entry.Open();
-                    using var reader = new StreamReader(stream, Encoding.UTF8);
-                    string xml = reader.ReadToEnd();
-                    string clean = Regex.Replace(xml, @"<[^>]+>", " ");
-                    clean = Regex.Replace(clean, @"\s+", " ");
-                    sb.Append(clean).Append(' ');
-
-                    if (sb.Length > 500_000) break; // 巨大テキストの過大インデックス防止上限
-                }
-                return sb.ToString();
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static async Task<string?> ExtractPlainTextAsync(string filePath, CancellationToken ct)
-        {
-            try
-            {
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, true);
-
-                // BOM チェック & UTF-16判定
-                byte[] head = new byte[4096];
-                int read = await fs.ReadAsync(head, 0, head.Length, ct);
-                if (read > 0)
-                {
-                    bool isUtf16Le = (read >= 2 && head[0] == 0xFF && head[1] == 0xFE);
-                    bool isUtf16Be = (read >= 2 && head[0] == 0xFE && head[1] == 0xFF);
-
-                    if (!isUtf16Le && !isUtf16Be)
-                    {
-                        int nulls = 0;
-                        for (int i = 0; i < read; i++) if (head[i] == 0) nulls++;
-                        if (nulls >= 2) return null; // バイナリ早期脱落
-                    }
-                    fs.Seek(0, SeekOrigin.Begin);
-                }
-
-                using var reader = new StreamReader(fs, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-                char[] buffer = new char[64 * 1024];
-                var sb = new StringBuilder();
-                int charsRead;
-                while ((charsRead = await reader.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                {
-                    sb.Append(buffer, 0, charsRead);
-                    if (sb.Length > 500_000) break;
-                }
-                return sb.ToString();
-            }
-            catch
-            {
-                return null;
             }
         }
     }

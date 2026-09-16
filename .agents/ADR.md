@@ -304,3 +304,31 @@
   - IFilter 未登録環境や非圧縮テキスト埋め込みPDFにおいても、`rawUtf8` から `\((?<text>[^)]*)\)\s*Tj` 等のテキストオペレータを自動抽出してインデックス化。
 - **回帰テスト Domain 8 包括自己検証**:
   - 2文字日本語フォールバック、複数語AND結合、クエリ構文貫通、差分更新、新規ファイル即時ヒット、削除亡霊ファイルクリーンアップ、および HasIndexForPath を網羅し、CI 8/8 ALL PASSED を堅持。
+
+---
+
+## 17. 【Search Index 完全性保証 ＆ 移行パッケージ硬化 ＆ Quiet Fluent 研磨】（IndexedRoots・ディレクトリ境界厳格化・TargetRoot必須化・スリム1行メトリクスバー）
+*(v2.2.2 新規施工 & ADR 63)*
+
+- **Search Index 完全性保証 (`IndexedRoots` テーブル ＆ `HasCompleteIndexForPath`)**:
+  - **問題の根絶**: 従来は途中で中断されたインデックスであっても1件でもレコードがあれば `HasIndexForPath` が `true` を返し、未処理の99%が FTS でヒットせず検索漏れ（false negative）を起こす危険性があった。
+  - **設計**: `IndexedRoots` テーブル（`RootPath`, `Status: InProgress/Complete/Error`, `CoverageComplete`, `LastCompletedUtcTicks`, `TotalFiles`, `ExtractorVersion`）を配備。走査開始時に `InProgress` を記録し、全走査が正常完遂した時点でのみ `Complete` に更新。
+  - **判定**: `HasCompleteIndexForPath` は、対象フォルダーまたはその上位フォルダーが `IndexedRoots` で `Status == 'Complete'` かつ `ExtractorVersion` が現在バージョンと一致する場合にのみ `true` を返す。中断・クラッシュ時は自動で `false` となり、安全な直接走査へフォールバック。
+  - **AccessDenied 保護付き亡霊クリーンアップ**: 走査中にアクセス拒否フォルダー（`ScanCoverage.AccessDeniedFolders > 0`）が1つでも存在した場合は、ファイルが消えたのではなく読めなかっただけであるため、DB からの誤削除クリーンアップ（DELETE）を完全に抑止。
+- **ディレクトリ境界の厳格化（近接類似フォルダーの巻き込み事故完全防止）**:
+  - SQL prefix において `normTarget.Replace(...) + "%"` としていたため、`C:\Share\Sales` を走査した際に `C:\Share\SalesOld` や `SalesBackup` が誤マッチしていた。
+  - パスプレフィックスに必ずディレクトリセパレータ（`\`）を付与し、`(FullPath = @exact OR FullPath LIKE @dirPrefix ESCAPE '\')` の2条件に分離・正本化。
+- **本文抽出ロジックの単一正本化 (`ContentExtractionService`)**:
+  - `ContentIndexService` と `SearchEngineService` に分散していた OpenXML、PDF、PlainText（UTF-16/BOM/Shift-JIS自動判定）の抽出処理を `ContentExtractionService` へ集約。
+- **移行パッケージ（Migration Studio）の安全硬化**:
+  - **TargetRoot 必須バリデーション**: `options.TargetRoot` が空の場合に `\\NewServer\Share` を勝手に仮定する危険な挙動を廃止し、未入力時は `InvalidOperationException` で生成を拒否。
+  - **スクリプト相対ログパス (`%~dp0..\Logs`)**: カレントディレクトリ（CWD）に依存せず、バッチファイル自身の配置場所から確実にログディレクトリを解決。
+  - **遅延環境変数展開 (`EnableDelayedExpansion`) の完全排除**: 感嘆符 `!` を含むフォルダー名・ファイル名が文字化け・消失する Windows CMD の罠を根絶。
+  - **エラー伝播 (`exit /b 1`)**: robocopy で `errorlevel 8` を検知した際、バッチ終了時に `exit /b 1` を返し、マスターバッチからの連続実行時に即座に後続を安全停止。
+  - **本番最終ミラー Dry-Run (`04_Final_Cutover_DRYRUN.bat`) 同時出力**: `/MIR` による削除・上書きを恐れる管理者が、本番切替前にノーリスクで差分ログを事前確認できるよう、`/L` オプション付きの Dry-Run スクリプトを標準同梱。
+- **UI/UX Quiet Fluent 研磨（スリム1行メトリクスバー & ドロップシャドウ撤去）**:
+  - 4枚の独立した巨大KPIカード（約70px高）を、1行のスリムステータスメトリクスバー（面＋微細1pxボーダー、約36px高）へ統合。DataGrid の表示領域を大幅に拡大。
+  - コントロールカードおよび結果テーブルの重いドロップシャドウを撤去し、フラットで落ち着いた Quiet Fluent デザインへ整線。
+- **回帰テスト Domain 3 & Domain 8 の更なる強化**:
+  - パス境界厳格性、未完了ルート判定、TargetRoot未入力拒否、`04_Final_Cutover_DRYRUN.bat` 同時生成、`LOG_DIR=%~dp0..\Logs`、`exit /b 1`、`EnableDelayedExpansion` 排除のアサーションを追加し、CI 8/8 ALL PASSED を堅持。
+

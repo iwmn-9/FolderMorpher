@@ -968,6 +968,7 @@ namespace FolderMorpher.Services.Testing
                         "01_Baseline_Sync.bat",
                         "02_Delta_Sync.bat",
                         "03_PreCutover_Freeze_Guide.md",
+                        "04_Final_Cutover_DRYRUN.bat",
                         "04_Final_Cutover_Mirror.bat"
                     };
 
@@ -989,7 +990,7 @@ namespace FolderMorpher.Services.Testing
                     }
                 }
 
-                // Sales の 01_Baseline_Sync.bat の内容検証 (/XD で子孫 Archive2024 が除外されていること、/COPY:DAT, /MT:16)
+                // Sales の 01_Baseline_Sync.bat の内容検証 (/XD で子孫 Archive2024 が除外されていること、/COPY:DAT, /MT:16, %~dp0, exit /b 1, 遅延展開無効化)
                 string salesBaselineBat = Path.Combine(packageDir, "Wave01_Sales", "01_Baseline_Sync.bat");
                 string salesBatContent = File.ReadAllText(salesBaselineBat, System.Text.Encoding.UTF8);
                 if (!salesBatContent.Contains("/XD \"\\\\OldServer\\Share\\SalesHQ\\Archive2024\""))
@@ -1003,6 +1004,38 @@ namespace FolderMorpher.Services.Testing
                 if (!salesBatContent.Contains("/MT:16"))
                 {
                     throw new InvalidOperationException("Robocopyスレッド数欠陥: /MT:16 が指定されていません。");
+                }
+                if (!salesBatContent.Contains("set LOG_DIR=%~dp0..\\Logs"))
+                {
+                    throw new InvalidOperationException("Robocopyログパス欠陥: %~dp0 によるスクリプト相対パス指定になっていません。");
+                }
+                if (salesBatContent.Contains("EnableDelayedExpansion"))
+                {
+                    throw new InvalidOperationException("Robocopyスクリプト堅牢性欠陥: 感嘆符(!)を含むパスを破壊する EnableDelayedExpansion が残っています。");
+                }
+                if (!salesBatContent.Contains("exit /b 1"))
+                {
+                    throw new InvalidOperationException("Robocopyエラー伝播欠陥: 失敗時に exit /b 1 を呼んでいません。");
+                }
+
+                // 3. TargetRoot 未入力時の例外安全テスト (Sol指摘: 勝手に仮定先へ出力する重大事故を防止)
+                bool emptyTargetBlocked = false;
+                try
+                {
+                    var invalidOptions = new MigrationPackageOptions
+                    {
+                        OutputDirectory = tempBase,
+                        TargetRoot = "   " // 空白
+                    };
+                    await packageService.GeneratePackageAsync(roots, invalidOptions);
+                }
+                catch (InvalidOperationException)
+                {
+                    emptyTargetBlocked = true;
+                }
+                if (!emptyTargetBlocked)
+                {
+                    throw new InvalidOperationException("TargetRoot安全性欠陥: TargetRoot未入力時にパッケージ生成が拒否されませんでした！");
                 }
 
                 // マスターバッチ & ガイドREADME & Excel手順書の存在検証

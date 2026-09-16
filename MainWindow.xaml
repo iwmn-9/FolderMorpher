@@ -1445,10 +1445,7 @@
                 </Grid.RowDefinitions>
 
                 <!-- Controls Card -->
-                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="18" Margin="0,0,0,14">
-                    <Border.Effect>
-                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
-                    </Border.Effect>
+                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="16,12" Margin="0,0,0,10">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/> <!-- Search Box & Action Buttons -->
@@ -1512,49 +1509,56 @@
                     </Grid>
                 </Border>
 
-                <!-- KPI Cards -->
-                <Grid Grid.Row="1" Margin="0,0,0,14">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                <!-- Slim 1-Row Metrics Bar (Quiet Fluent) -->
+                <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="16,8" Margin="0,0,0,10">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/> <!-- Hit count -->
+                            <ColumnDefinition Width="Auto"/> <!-- Separator -->
+                            <ColumnDefinition Width="Auto"/> <!-- Total size -->
+                            <ColumnDefinition Width="Auto"/> <!-- Separator -->
+                            <ColumnDefinition Width="Auto"/> <!-- Elapsed -->
+                            <ColumnDefinition Width="Auto"/> <!-- Separator -->
+                            <ColumnDefinition Width="*"/>    <!-- Status -->
+                        </Grid.ColumnDefinitions>
 
-                    <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
-                        <StackPanel>
-                            <TextBlock x:Name="SearchKpiHitCountTitle" Text="ヒット件数" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="SearchKpiHitCountText" Text="0 件" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#0F172A" Margin="0,4,0,0"/>
+                        <!-- Hit Count -->
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="SearchKpiHitCountTitle" Text="ヒット件数:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="SearchKpiHitCountText" Text="0 件" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#0F172A" VerticalAlignment="Center"/>
                         </StackPanel>
-                    </Border>
 
-                    <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
-                        <StackPanel>
-                            <TextBlock x:Name="SearchKpiTotalSizeTitle" Text="合計容量" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="SearchKpiTotalSizeText" Text="0 B" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#2563EB" Margin="0,4,0,0"/>
-                        </StackPanel>
-                    </Border>
+                        <!-- Separator 1 -->
+                        <Border Grid.Column="1" Width="1" Background="#E2E8F0" Margin="14,2"/>
 
-                    <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
-                        <StackPanel>
-                            <TextBlock x:Name="SearchKpiElapsedTitle" Text="検索所要時間" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="SearchKpiElapsedText" Text="0.00s" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#059669" Margin="0,4,0,0"/>
+                        <!-- Total Size -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="SearchKpiTotalSizeTitle" Text="合計容量:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="SearchKpiTotalSizeText" Text="0 B" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#2563EB" VerticalAlignment="Center"/>
                         </StackPanel>
-                    </Border>
 
-                    <Border Grid.Column="3" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12">
-                        <StackPanel>
-                            <TextBlock x:Name="SearchStatusTitle" Text="ステータス / 走査パス" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="SearchStatusText" Text="待機中" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="#64748B" Margin="0,6,0,0"/>
+                        <!-- Separator 2 -->
+                        <Border Grid.Column="3" Width="1" Background="#E2E8F0" Margin="14,2"/>
+
+                        <!-- Elapsed -->
+                        <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="SearchKpiElapsedTitle" Text="所要時間:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="SearchKpiElapsedText" Text="0.00s" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#059669" VerticalAlignment="Center"/>
                         </StackPanel>
-                    </Border>
-                </Grid>
+
+                        <!-- Separator 3 -->
+                        <Border Grid.Column="5" Width="1" Background="#E2E8F0" Margin="14,2"/>
+
+                        <!-- Status / Path -->
+                        <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="SearchStatusTitle" Text="走査状況:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="SearchStatusText" Text="待機中" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="#64748B" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
 
                 <!-- Results DataGrid -->
-                <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="18">
-                    <Border.Effect>
-                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
-                    </Border.Effect>
+                <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="14">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
