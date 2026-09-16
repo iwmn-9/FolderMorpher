@@ -24,6 +24,11 @@ namespace FolderMorpher.Services
             ".xlsx", ".xlsm", ".docx", ".pptx"
         };
 
+        private static readonly HashSet<string> PdfExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".pdf"
+        };
+
         private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
             ".txt", ".log", ".csv", ".tsv", ".json", ".xml", ".html", ".htm", ".md",
@@ -265,9 +270,13 @@ namespace FolderMorpher.Services
                 if (fullPath.IndexOf(phr, StringComparison.OrdinalIgnoreCase) < 0) return false;
             }
 
-            foreach (var kw in query.Keywords)
+            // If SearchContentMode is true and ContentKeyword is empty, keywords can match either file name or content later
+            if (!query.SearchContentMode || !string.IsNullOrEmpty(query.ContentKeyword))
             {
-                if (fullPath.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0) return false;
+                foreach (var kw in query.Keywords)
+                {
+                    if (fullPath.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0) return false;
+                }
             }
 
             if (query.CompiledRegex != null)
@@ -334,9 +343,12 @@ namespace FolderMorpher.Services
                 if (fullPath.IndexOf(phr, StringComparison.OrdinalIgnoreCase) < 0) return false;
             }
 
-            foreach (var kw in query.Keywords)
+            if (!query.SearchContentMode || !string.IsNullOrEmpty(query.ContentKeyword))
             {
-                if (fullPath.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0) return false;
+                foreach (var kw in query.Keywords)
+                {
+                    if (fullPath.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0) return false;
+                }
             }
 
             if (query.CompiledRegex != null)
@@ -366,7 +378,14 @@ namespace FolderMorpher.Services
             CancellationToken ct)
         {
             var matched = new ConcurrentBag<SearchResultItem>();
+
+            // Determine target search keyword
             string targetContent = query.ContentKeyword ?? string.Empty;
+            if (string.IsNullOrEmpty(targetContent) && query.SearchContentMode && query.Keywords.Count > 0)
+            {
+                targetContent = query.Keywords[0];
+            }
+
             bool hasOfficeLinkReq = query.HasOfficeLinkOnly;
             string? officeLinkKeyword = query.OfficeLinkKeyword;
 
@@ -392,6 +411,7 @@ namespace FolderMorpher.Services
 
                     if (!string.IsNullOrEmpty(targetContent))
                     {
+                        // 1. Office (OpenXML: .xlsx, .xlsm, .docx, .pptx)
                         if (OfficeExtensions.Contains(ext))
                         {
                             if (SearchOfficeFileContent(item.FullPath, targetContent, out string snippet))
@@ -401,6 +421,17 @@ namespace FolderMorpher.Services
                                 matched.Add(item);
                             }
                         }
+                        // 2. PDF (.pdf) with Windows IFilter and pure C# fallback
+                        else if (PdfExtensions.Contains(ext))
+                        {
+                            if (PdfSearchHelper.SearchPdfContent(item.FullPath, targetContent, out string snippet))
+                            {
+                                item.ContentSnippet = snippet;
+                                item.MatchedReason = $"PDF Content: \"{targetContent}\"";
+                                matched.Add(item);
+                            }
+                        }
+                        // 3. Text files (.txt, .csv, .log, .json, code files, etc.)
                         else if (TextExtensions.Contains(ext) || item.SizeBytes < 2 * 1024 * 1024)
                         {
                             if (await SearchTextFileContentAsync(item.FullPath, targetContent, token) is { } snippet)
@@ -448,9 +479,42 @@ namespace FolderMorpher.Services
             snippet = string.Empty;
             try
             {
+                string ext = Path.GetExtension(filePath).ToLowerInvariant();
                 using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 using var zip = new ZipArchive(fs, ZipArchiveMode.Read, false);
 
+                // アイデア 1: Excel (.xlsx / .xlsm) の場合は sharedStrings.xml を最優先・ピンポイント探索
+                if (ext == ".xlsx" || ext == ".xlsm")
+                {
+                    ZipArchiveEntry? sharedEntry = null;
+                    foreach (var e in zip.Entries)
+                    {
+                        if (e.FullName.EndsWith("sharedstrings.xml", StringComparison.OrdinalIgnoreCase))
+                        {
+                            sharedEntry = e;
+                            break;
+                        }
+                    }
+
+                    if (sharedEntry != null)
+                    {
+                        using var stream = sharedEntry.Open();
+                        using var reader = new StreamReader(stream, Encoding.UTF8);
+                        string text = reader.ReadToEnd();
+
+                        int idx = text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+                        if (idx >= 0)
+                        {
+                            snippet = ExtractSnippet(text, idx, keyword.Length);
+                            return true; // Early exit!
+                        }
+
+                        // sharedStrings になければ、シート本文にもテキストは存在しないため即座に終了 (数ミリ秒)
+                        return false;
+                    }
+                }
+
+                // Word (.docx), PowerPoint (.pptx), または sharedStrings がない Excel の探索
                 foreach (var entry in zip.Entries)
                 {
                     string entryName = entry.FullName.ToLowerInvariant();
@@ -465,7 +529,7 @@ namespace FolderMorpher.Services
                     using var reader = new StreamReader(stream, Encoding.UTF8);
                     string text = reader.ReadToEnd();
 
-                    // 1. 素のXML文字列で高速検索
+                    // 1. 素のXML文字列で高速検索 (アイデア 3: Early Exit)
                     int idx = text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
                     if (idx >= 0)
                     {
@@ -473,7 +537,7 @@ namespace FolderMorpher.Services
                         return true;
                     }
 
-                    // 2. Sol提言: Word等のrun分割 (<w:t>A</w:t><w:t>B</w:t>) 対策でXMLタグ除去して探索
+                    // 2. Word等のrun分割 (<w:t>A</w:t><w:t>B</w:t>) 対策でXMLタグ除去して探索
                     if (entryName.Contains("document") || entryName.Contains("slide") || entryName.Contains("sheet"))
                     {
                         string stripped = Regex.Replace(text, @"<[^>]+>", "");
@@ -501,7 +565,6 @@ namespace FolderMorpher.Services
                 foreach (var entry in zip.Entries)
                 {
                     string entryName = entry.FullName.ToLowerInvariant();
-                    // 外部リンク・外部参照・リレーションシップXML
                     if (!entryName.Contains("externallink") &&
                         !entryName.Contains("externalreferences") &&
                         !entryName.Contains("_rels") &&
@@ -514,14 +577,12 @@ namespace FolderMorpher.Services
 
                     if (string.IsNullOrEmpty(keyword))
                     {
-                        // office-link:true -> 外部参照 (TargetMode="External", http/https, \\UNC) が1件でもあるか
                         if (text.Contains("TargetMode=\"External\"", StringComparison.OrdinalIgnoreCase) ||
                             text.Contains("http://", StringComparison.OrdinalIgnoreCase) ||
                             text.Contains("https://", StringComparison.OrdinalIgnoreCase) ||
                             text.Contains(@"\\", StringComparison.OrdinalIgnoreCase) ||
                             entryName.Contains("externallink"))
                         {
-                            // リンク先URL/パスをスニペットとして抽出
                             var match = Regex.Match(text, @"(?:Target=""([^""]+)""|TargetMode=""External""[^>]*>|(\\\\[a-zA-Z0-9._$-]+\\[^""<\s]+))", RegexOptions.IgnoreCase);
                             snippet = match.Success ? match.Groups[1].Value : "Office External Link Detected";
                             if (string.IsNullOrWhiteSpace(snippet)) snippet = "Office External Link";
@@ -530,7 +591,6 @@ namespace FolderMorpher.Services
                     }
                     else
                     {
-                        // office-link:"\\OldServer" -> 指定キーワードを含むか
                         int idx = text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
                         if (idx >= 0)
                         {
@@ -549,11 +609,30 @@ namespace FolderMorpher.Services
             try
             {
                 using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, true);
+
+                // アイデア 2: 先頭4KBでのバイナリ早期脱落 (Early Drop)
+                byte[] headBuffer = new byte[4096];
+                int readHead = await fs.ReadAsync(headBuffer, 0, headBuffer.Length, ct);
+                if (readHead > 0)
+                {
+                    int nullCount = 0;
+                    for (int i = 0; i < readHead; i++)
+                    {
+                        if (headBuffer[i] == 0) nullCount++;
+                    }
+                    // NULLバイトが混入している場合はバイナリとみなし即座に終了 (無駄なI/Oを完全カット)
+                    if (nullCount >= 2) return null;
+
+                    // ストリームを先頭に戻す
+                    fs.Seek(0, SeekOrigin.Begin);
+                }
+
                 using var reader = new StreamReader(fs, Encoding.UTF8, true);
 
                 string? line;
                 while ((line = await reader.ReadLineAsync(ct)) != null)
                 {
+                    // アイデア 3: マッチした瞬間に即座に読み込みを中断して復帰 (Early Exit)
                     int idx = line.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
                     if (idx >= 0)
                     {

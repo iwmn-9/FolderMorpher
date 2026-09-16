@@ -118,6 +118,17 @@ namespace AstraSize
             string rawQuery = SearchInputBox?.Text?.Trim() ?? string.Empty;
             var query = SearchQueryParser.Parse(rawQuery);
 
+            if (SearchContentCheckBox?.IsChecked == true)
+            {
+                query.SearchContentMode = true;
+            }
+
+            // 本文検索（I/Oを伴う探索）はタイピング途中のインクリメンタル実行をスキップし、Enterまたはボタン押下で実行
+            if (isIncremental && query.HasDeepFileIoRequirement)
+            {
+                return;
+            }
+
             _searchCts?.Cancel();
             _searchCts = new CancellationTokenSource();
             var ct = _searchCts.Token;

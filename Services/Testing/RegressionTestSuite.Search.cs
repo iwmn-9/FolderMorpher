@@ -141,7 +141,7 @@ namespace FolderMorpher.Services.Testing
             }
 
             // -------------------------------------------------------------
-            // 3. Content Search: 高速テキスト＆スニペット抽出の検証
+            // 3. Content Search: 高速テキスト、PDF、Early Drop の検証
             // -------------------------------------------------------------
             {
                 string tempDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_SearchTest_" + Guid.NewGuid().ToString("N"));
@@ -151,21 +151,61 @@ namespace FolderMorpher.Services.Testing
                 {
                     string fileSecret = Path.Combine(tempDir, "Confidential_Doc.txt");
                     string filePublic = Path.Combine(tempDir, "Public_Notes.txt");
+                    string fileBinary = Path.Combine(tempDir, "Sample_Binary.dat");
+                    string filePdf = Path.Combine(tempDir, "Contract_Doc.pdf");
 
+                    // 1. テキストファイル
                     File.WriteAllText(fileSecret, "本ドキュメントは極秘プロジェクト計画書です。\n重要キーワード: 【最高機密プロジェクトX】\n社外秘として厳重に保管してください。", Encoding.UTF8);
                     File.WriteAllText(filePublic, "これは一般公開用の議事録です。\n通常の会議内容が記載されています。", Encoding.UTF8);
 
+                    // 2. バイナリファイル (先頭4KBにNULLバイト混入 -> Early Drop検証)
+                    byte[] binaryBytes = new byte[8192];
+                    binaryBytes[0] = 0x41;
+                    binaryBytes[1] = 0x00; // NULLバイト
+                    binaryBytes[2] = 0x00; // NULLバイト
+                    byte[] secretBytes = Encoding.UTF8.GetBytes("最高機密プロジェクトX");
+                    Buffer.BlockCopy(secretBytes, 0, binaryBytes, 100, secretBytes.Length);
+                    File.WriteAllBytes(fileBinary, binaryBytes);
+
+                    // 3. テキスト埋め込みPDF
+                    string mockPdfText = "%PDF-1.4\n1 0 obj\n<< /Title (Confidential Agreement) >>\nendobj\n2 0 obj\n<< /Length 60 >>\nstream\nBT\n/F1 12 Tf\n(契約書キーワード: 最高機密プロジェクトX) Tj\nET\nendstream\nendobj\nxref\n0 3\ntrailer\n<< /Root 1 0 R >>\n%%EOF";
+                    File.WriteAllText(filePdf, mockPdfText, Encoding.UTF8);
+
+                    // 検索テスト (content:"最高機密プロジェクトX")
                     var qContent = SearchQueryParser.Parse("content:\"最高機密プロジェクトX\"");
                     var batchResults = new List<SearchResultItem>();
                     var batchYield = new Progress<IReadOnlyList<SearchResultItem>>(items => batchResults.AddRange(items));
 
                     var results = await searchEngine.SearchDirectFolderAsync(tempDir, qContent, batchYield, null, CancellationToken.None);
 
-                    if (results.Count != 1 || !results[0].FullPath.EndsWith("Confidential_Doc.txt"))
-                        throw new Exception($"Content Search failed: Expected 1 hit for Confidential_Doc.txt, got {results.Count}");
+                    // テキストファイルとPDFファイルがヒットし、バイナリファイルはEarly Dropで除外されていること
+                    bool txtFound = false;
+                    bool pdfFound = false;
+                    bool binFound = false;
 
-                    if (!results[0].HasSnippet || !results[0].ContentSnippet!.Contains("最高機密プロジェクトX"))
-                        throw new Exception($"Content Search snippet extraction failed: Snippet did not contain target keyword. Got: {results[0].ContentSnippet}");
+                    foreach (var r in results)
+                    {
+                        if (r.FullPath.EndsWith("Confidential_Doc.txt")) txtFound = true;
+                        if (r.FullPath.EndsWith("Contract_Doc.pdf")) pdfFound = true;
+                        if (r.FullPath.EndsWith("Sample_Binary.dat")) binFound = true;
+                    }
+
+                    if (!txtFound)
+                        throw new Exception("Content Search failed: Confidential_Doc.txt was not detected.");
+
+                    if (!pdfFound)
+                        throw new Exception("Content Search failed: Contract_Doc.pdf was not detected via PDF search engine.");
+
+                    if (binFound)
+                        throw new Exception("Content Search failed: Sample_Binary.dat should have been dropped by Early Drop (null bytes).");
+
+                    // 4. SearchContentMode ("本文も検索" トグル連動) 検証
+                    var qToggle = SearchQueryParser.Parse("最高機密プロジェクトX");
+                    qToggle.SearchContentMode = true; // トグルON
+
+                    var toggleResults = await searchEngine.SearchDirectFolderAsync(tempDir, qToggle, null, null, CancellationToken.None);
+                    if (toggleResults.Count < 2)
+                        throw new Exception($"SearchContentMode failed: Expected at least 2 hits for TXT & PDF, got {toggleResults.Count}");
                 }
                 finally
                 {

@@ -49,6 +49,7 @@ namespace FolderMorpher.Models
             set => DormantDays = value.HasValue ? value.Value * 365 : null;
         }
         public string? ContentKeyword { get; set; }
+        public bool SearchContentMode { get; set; }
         public bool HasOfficeLinkOnly { get; set; }
         public string? OfficeLinkKeyword { get; set; }
         public Regex? CompiledRegex { get; set; }
@@ -68,13 +69,17 @@ namespace FolderMorpher.Models
             !OnlyIllegalChars &&
             !DormantDays.HasValue &&
             string.IsNullOrEmpty(ContentKeyword) &&
+            !SearchContentMode &&
             !HasOfficeLinkOnly &&
             string.IsNullOrEmpty(OfficeLinkKeyword) &&
             CompiledRegex == null &&
             !IsDirectoryOnly.HasValue;
 
         public bool HasDeepFileIoRequirement =>
-            !string.IsNullOrEmpty(ContentKeyword) || HasOfficeLinkOnly || !string.IsNullOrEmpty(OfficeLinkKeyword);
+            !string.IsNullOrEmpty(ContentKeyword) ||
+            HasOfficeLinkOnly ||
+            !string.IsNullOrEmpty(OfficeLinkKeyword) ||
+            (SearchContentMode && Keywords.Count > 0);
     }
 
     /// <summary>

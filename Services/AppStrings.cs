@@ -445,6 +445,7 @@ namespace FolderMorpher.Services
         public static string SearchClear => IsJa ? "✕ クリア" : "✕ Clear";
         public static string SearchScopeScanned => IsJa ? "⚡ スキャン済みツリー (インメモリ 0秒)" : "⚡ In-Memory Trees (Instant 0s)";
         public static string SearchScopeDirect => IsJa ? "🌐 ライブ直接走査 (未スキャンフォルダ / UNC)" : "🌐 Live Direct Scan (Unscanned / UNC)";
+        public static string SearchContentCheck => IsJa ? "📄 本文も検索 (全文検索)" : "📄 Search Content (Full-Text)";
         public static string SearchTargetFolder => IsJa ? "対象フォルダー:" : "Target Folder:";
         public static string SearchQuickPresets => IsJa ? "クイック検索:" : "Quick Presets:";
         public static string SearchChipLargeText => IsJa ? "🐘 1GB超 (size:>1GB)" : "🐘 >1GB (size:>1GB)";
