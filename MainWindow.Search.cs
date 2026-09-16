@@ -23,6 +23,7 @@ namespace AstraSize
     public partial class MainWindow
     {
         private readonly SearchEngineService _searchEngine = new();
+        private readonly ContentIndexService _contentIndex = new();
         private CancellationTokenSource? _searchCts;
         private DispatcherTimer? _searchDebounceTimer;
         private readonly ObservableCollection<SearchResultItem> _searchResults = new();
@@ -122,6 +123,81 @@ namespace AstraSize
             }
         }
 
+        private async void SearchBuildIndexButton_Click(object sender, RoutedEventArgs e)
+        {
+            string targetFolder = SearchDirectTargetTextBox?.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(targetFolder))
+            {
+                // スキャン済みタブのルートをフォールバックとして取得
+                var selectedTab = StorageTabs?.FirstOrDefault(t => t.IsSelected);
+                if (selectedTab?.RootNode != null && !string.IsNullOrWhiteSpace(selectedTab.RootNode.FullPath))
+                {
+                    targetFolder = selectedTab.RootNode.FullPath;
+                    if (SearchDirectTargetTextBox != null)
+                    {
+                        SearchDirectTargetTextBox.Text = targetFolder;
+                    }
+                }
+            }
+
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+            if (string.IsNullOrWhiteSpace(targetFolder) || !Directory.Exists(targetFolder))
+            {
+                MessageBox.Show(
+                    isJa ? "インデックス対象の有効なフォルダーまたはUNCパスを指定してください。" : "Please specify a valid target folder or UNC path to index.",
+                    isJa ? "フォルダー指定エラー" : "Folder Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            _searchCts?.Cancel();
+            _searchCts = new CancellationTokenSource();
+            var ct = _searchCts.Token;
+
+            SetSearchLoadingState(true);
+
+            var progress = new Progress<IndexProgressReport>(r =>
+            {
+                if (SearchStatusText != null)
+                {
+                    SearchStatusText.Text = $"⚡ {r.StatusMessage} {r.CurrentFile}";
+                }
+            });
+
+            try
+            {
+                var finalReport = await _contentIndex.IndexFolderAsync(targetFolder, progress, ct);
+                if (SearchStatusText != null)
+                {
+                    SearchStatusText.Text = isJa
+                        ? $"⚡ インデックス完了: 新規/更新 {finalReport.NewlyIndexedCount:N0} 件, スキップ {finalReport.AlreadyIndexed:N0} 件 ({finalReport.Elapsed.TotalSeconds:F1}s)"
+                        : $"⚡ Index complete: {finalReport.NewlyIndexedCount:N0} updated, {finalReport.AlreadyIndexed:N0} skipped ({finalReport.Elapsed.TotalSeconds:F1}s)";
+                }
+                ShowToast(isJa
+                    ? $"⚡ FTS5全文インデックスを差分更新しました ({finalReport.NewlyIndexedCount:N0}件)"
+                    : $"⚡ Updated FTS5 index ({finalReport.NewlyIndexedCount:N0} files)");
+            }
+            catch (OperationCanceledException)
+            {
+                if (SearchStatusText != null)
+                {
+                    SearchStatusText.Text = isJa ? "⚡ インデックス作成を中断しました（次回差分再開可能）" : "⚡ Indexing canceled (can be resumed).";
+                }
+            }
+            catch (Exception ex)
+            {
+                if (SearchStatusText != null)
+                {
+                    SearchStatusText.Text = $"⚡ インデックスエラー: {ex.Message}";
+                }
+            }
+            finally
+            {
+                SetSearchLoadingState(false);
+            }
+        }
+
         #endregion
 
         #region Search Execution Core
@@ -153,6 +229,7 @@ namespace AstraSize
             long currentGen = Interlocked.Increment(ref _searchGeneration);
 
             bool isDirectScope = (SearchScopeDirectRadio?.IsChecked == true);
+            bool isIndexedScope = (SearchScopeIndexedRadio?.IsChecked == true);
             string targetFolder = SearchDirectTargetTextBox?.Text?.Trim() ?? string.Empty;
 
             if (isDirectScope && string.IsNullOrWhiteSpace(targetFolder))
@@ -195,7 +272,48 @@ namespace AstraSize
                 _searchResults.Clear();
                 _allSearchResults.Clear();
 
-                if (isDirectScope)
+                if (isIndexedScope)
+                {
+                    // 📑 SQLite FTS5 事前インデックス全文検索 (ミリ秒応答)
+                    string searchKeyword = !string.IsNullOrEmpty(query.ContentKeyword)
+                        ? query.ContentKeyword
+                        : (query.Keywords.Count > 0 ? string.Join(" ", query.Keywords) : rawQuery);
+
+                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                    if (string.IsNullOrWhiteSpace(searchKeyword))
+                    {
+                        if (SearchStatusText != null && currentGen == Volatile.Read(ref _searchGeneration))
+                        {
+                            SearchStatusText.Text = isJa ? "検索キーワードを入力してください" : "Please enter a search keyword.";
+                        }
+                        return;
+                    }
+
+                    var sw = Stopwatch.StartNew();
+                    var hits = await _contentIndex.SearchIndexedAsync(
+                        searchKeyword,
+                        string.IsNullOrWhiteSpace(targetFolder) ? null : targetFolder,
+                        ct);
+                    sw.Stop();
+
+                    if (currentGen == Volatile.Read(ref _searchGeneration))
+                    {
+                        _allSearchResults = hits;
+                        foreach (var item in hits)
+                        {
+                            _searchResults.Add(item);
+                        }
+                        long totalBytes = hits.Sum(h => h.SizeBytes);
+                        UpdateSearchKpi(hits.Count, totalBytes, sw.Elapsed);
+                        if (SearchStatusText != null)
+                        {
+                            SearchStatusText.Text = isJa
+                                ? $"📑 インデックス検索完了: {hits.Count:N0} 件ヒット ({sw.ElapsedMilliseconds} ms)"
+                                : $"📑 Indexed search complete: {hits.Count:N0} hits ({sw.ElapsedMilliseconds} ms)";
+                        }
+                    }
+                }
+                else if (isDirectScope)
                 {
                     // ライブ直接走査 (未スキャンUNC / フォルダー) - Progressive Streaming
                     var results = await _searchEngine.SearchDirectFolderAsync(targetFolder, query, batchYield, progress, ct);
@@ -357,6 +475,10 @@ namespace AstraSize
             if (SearchExecuteButton != null)
             {
                 SearchExecuteButton.IsEnabled = !isLoading;
+            }
+            if (SearchBuildIndexButton != null)
+            {
+                SearchBuildIndexButton.IsEnabled = !isLoading;
             }
         }
 

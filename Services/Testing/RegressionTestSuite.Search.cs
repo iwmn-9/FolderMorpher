@@ -257,6 +257,47 @@ namespace FolderMorpher.Services.Testing
                     var multiResults = await searchEngine.SearchDirectFolderAsync(tempDir, qMulti, null, null, CancellationToken.None);
                     if (!multiResults.Any(r => r.FullPath.EndsWith("予算_計画書.txt")))
                         throw new Exception("Multi-keyword Name OR Content search failed: 予算_計画書.txt was not detected.");
+
+                    // -------------------------------------------------------------
+                    // 4. ContentIndexService: SQLite FTS5 インデックス・差分更新・ミリ秒検索
+                    // -------------------------------------------------------------
+                    string customDbPath = Path.Combine(tempDir, "TestIndex.db");
+                    var indexService = new ContentIndexService(customDbPath);
+
+                    // A. 初回インデックス作成
+                    await indexService.IndexFolderAsync(tempDir, null, CancellationToken.None);
+
+                    var stats1 = indexService.GetStats();
+                    if (stats1.TotalFiles < 3)
+                        throw new Exception($"ContentIndexService failed: Expected >= 3 files indexed, got {stats1.TotalFiles}");
+
+                    // B. ミリ秒全文検索 (FTS5 trigram + snippet)
+                    var ftsHits = await indexService.SearchIndexedAsync("最高機密", tempDir, CancellationToken.None);
+                    if (ftsHits.Count == 0)
+                        throw new Exception("ContentIndexService failed: Keyword '最高機密' not found in indexed search.");
+
+                    bool ftsDocFound = ftsHits.Any(h => h.FullPath.EndsWith("Confidential_Doc.txt") && (h.ContentSnippet?.Contains("最高機密") ?? false));
+                    if (!ftsDocFound)
+                        throw new Exception("ContentIndexService failed: Confidential_Doc.txt with snippet was not found in FTS results.");
+
+                    // C. 差分更新（変更なしスキップ ＆ 更新ファイルのみ再インデックス）
+                    string fileDynamic = Path.Combine(tempDir, "Dynamic_Doc.txt");
+                    File.WriteAllText(fileDynamic, "初期バージョン: アルファ版テストコード", Encoding.UTF8);
+
+                    // 2回目インデックス（fileDynamicが新規追加）
+                    var diffReport = await indexService.IndexFolderAsync(tempDir, null, CancellationToken.None);
+
+                    // 既存ファイルはすべてスキップされ、新規ファイルのみインデックスされたか
+                    if (diffReport.NewlyIndexedCount != 1)
+                        throw new Exception($"ContentIndexService Diff Update failed: Expected newlyIndexed=1, got {diffReport.NewlyIndexedCount}");
+
+                    if (diffReport.AlreadyIndexed < 3)
+                        throw new Exception($"ContentIndexService Diff Update failed: Expected skipCount>=3, got {diffReport.AlreadyIndexed}");
+
+                    // D. 新規ファイル検索
+                    var dynHits = await indexService.SearchIndexedAsync("アルファ版", tempDir, CancellationToken.None);
+                    if (!dynHits.Any(h => h.FullPath.EndsWith("Dynamic_Doc.txt")))
+                        throw new Exception("ContentIndexService failed: Newly added Dynamic_Doc.txt was not found via FTS.");
                 }
                 finally
                 {

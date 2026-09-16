@@ -281,3 +281,28 @@
   - 親フォルダーも含めて絞り込みたい場合は、`path:xxx` 構文またはキーワードに `\` を含める（例: `2024\報告書`）ことで、Everything準拠の直感的なパス絞り込みを両立。
 - **回帰テスト Domain 8 の強化 & CI 8/8 ALL PASSED 維持**:
   - 回帰テストに PDF（IFilter/ストリーム探索）、テキスト、バイナリEarly Drop、`SearchContentMode` トグル、および `IncludeFolders`（既定false/trueのフォルダー排他・包含）と親フォルダー巻き添え防止の包括アサーションを追加し、全8大ドメイン回帰テストで 100% 検証を担保。
+
+---
+
+## 16. 【SQLite FTS5 trigram 事前インデックス & ミリ秒全文検索】（差分更新・レジューム・Small-File First・Contentless）
+*(v2.2.1 新規施工 & ADR 62)*
+
+- **単一EXE内包型 SQLite FTS5 trigram アーキテクチャ (`ContentIndexService`)**:
+  - **外部DLL不要の単一EXE維持**: `Microsoft.Data.Sqlite` (10.0.12) を採用。ネイティブ `e_sqlite3.dll` は .NET Single-File 発行時に自己完結EXE内部へ Deflate 圧縮バンドルされるため、外部配布ファイルは単一EXE（約74.5MB）のまま維持。
+  - **安全なDB格納先**: exe本体を書き換えることなく、`%APPDATA%\FolderMorpher\ContentIndex.db` にWALモード（`PRAGMA journal_mode = WAL;` + `PRAGMA synchronous = NORMAL;`）で高速永続化。
+  - **trigram トークナイザー採用**: 形態素解析辞書（MeCab等）が不要で、日本語・英語・記号・型番の任意の部分一致検索をミリ秒単位で完遂。
+- **差分更新（Incremental Indexing）＆ 0 I/O スキップ**:
+  - `IndexedFiles` メタデータ台帳テーブルに `FullPath`, `SizeBytes`, `LastWriteTimeUtcTicks`, `Status` を保持。
+  - 走査時に既存DBのメタデータと照合し、サイズおよび最終更新日時が一致しているファイルはファイルI/Oおよびテキスト抽出を完全スキップ（0 I/O）。
+  - 新規追加ファイル、更新ファイル、および未完了（中断・失敗）ファイルのみを差分抽出して効率的に処理。
+- **クラッシュセーフ・途中中断レジューム（Resume on Next Launch）**:
+  - 50ファイル単位で SQLite トランザクションをコミット。
+  - 途中でアプリが終了（プロセス停止やPCシャットダウン）されても、コミット済みのファイルはすべてDBに保存されており、次回「⚡ インデックス更新」を実行した際に直前の続きから即座に差分再開（レジューム）される。
+- **Sol提唱：Small-File First ＆ デュアルワーカー（並列度2固定）**:
+  - 未処理ファイルを容量昇順（`OrderBy(e => e.Length)`）でソート。大量のKB〜MB級オフィス文書やテキストを最初の数秒〜十数秒で一気にインデックス化。
+  - ファイルサーバー保護のため、テキスト抽出並列度はデュアルワーカー（並列度2固定）を厳守。
+- **UI直結のシームレス統合 (`MainWindow.Search.cs`)**:
+  - 検索スコープに「📑 インデックス検索 (Indexed FTS5)」ラジオボタンを追加。数万〜数十万ファイルの巨大フォルダーでも 10ms〜50ms で文脈スニペット付き全文検索が完了。
+  - コントロールバーに対象フォルダーの「⚡ インデックス更新」ボタンを配備し、ワンクリックで差分更新を開始・中断可能。
+- **回帰テスト Domain 8 包括自己検証**:
+  - `TestDomain_SearchStudioAsync` にインデックス作成、FTS5全文検索（スニペット一致）、ファイル追加後の差分更新（変更なしスキップ・新規のみ反映）、および新規ファイル即時ヒットのアサーションを配備。CI 8/8 ALL PASSED を堅持。

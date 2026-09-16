@@ -111,6 +111,98 @@ namespace FolderMorpher.Services
             return false;
         }
 
+        /// <summary>
+        /// Extract all readable text from a PDF file using IFilter or stream fallback (capped by maxChars).
+        /// </summary>
+        public static string ExtractAllText(string filePath, int maxChars = 200000)
+        {
+            if (!File.Exists(filePath)) return string.Empty;
+
+            // 1. Try Windows IFilter
+            try
+            {
+                Guid riid = IFilterGuid;
+                int hr = LoadIFilter(filePath, null, ref riid, out object? obj);
+                if (hr == 0 && obj is IFilter filter)
+                {
+                    try
+                    {
+                        hr = filter.Init(IFILTER_INIT_ALL, 0, 0, out _);
+                        if (hr == 0)
+                        {
+                            char[] buffer = new char[4096];
+                            var sb = new StringBuilder();
+                            while (filter.GetChunk(out var stat) == 0 && sb.Length < maxChars)
+                            {
+                                if ((stat.flags & CHUNK_TEXT) != 0)
+                                {
+                                    while (sb.Length < maxChars)
+                                    {
+                                        uint size = (uint)buffer.Length;
+                                        int textHr = filter.GetText(ref size, buffer);
+                                        if (textHr == 0 || size > 0)
+                                        {
+                                            sb.Append(buffer, 0, (int)size);
+                                        }
+                                        if (textHr == FILTER_E_NO_MORE_TEXT || size == 0)
+                                        {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            if (sb.Length > 0) return sb.ToString();
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.ReleaseComObject(filter);
+                    }
+                }
+            }
+            catch { }
+
+            // 2. Pure C# Fallback
+            try
+            {
+                byte[] bytes = File.ReadAllBytes(filePath);
+                if (bytes.Length < 10) return string.Empty;
+                var sb = new StringBuilder();
+
+                string rawAscii = Encoding.ASCII.GetString(bytes);
+                var streamMatches = Regex.Matches(rawAscii, @"stream[\r\n]+(?<data>[\s\S]*?)endstream");
+                foreach (Match match in streamMatches)
+                {
+                    if (sb.Length >= maxChars) break;
+                    int start = match.Index + (rawAscii[match.Index + 6] == '\n' ? 7 : (rawAscii[match.Index + 7] == '\n' ? 8 : 6));
+                    int length = match.Length - (start - match.Index) - 9;
+                    if (start + length > bytes.Length || length <= 2) continue;
+
+                    if (bytes[start] == 0x78 && (bytes[start + 1] == 0x9C || bytes[start + 1] == 0x01 || bytes[start + 1] == 0xDA))
+                    {
+                        try
+                        {
+                            using var ms = new MemoryStream(bytes, start + 2, length - 2);
+                            using var ds = new DeflateStream(ms, CompressionMode.Decompress);
+                            using var reader = new StreamReader(ds, Encoding.UTF8);
+                            string decompressed = reader.ReadToEnd();
+
+                            var textMatches = Regex.Matches(decompressed, @"\((?<text>[^)]*)\)\s*Tj|\[(?<text>[^\]]*)\]\s*TJ");
+                            foreach (Match tm in textMatches)
+                            {
+                                sb.Append(tm.Groups["text"].Value).Append(' ');
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                return sb.ToString();
+            }
+            catch { }
+
+            return string.Empty;
+        }
+
         private static bool SearchWithIFilter(string filePath, string keyword, out string snippet)
         {
             snippet = string.Empty;
