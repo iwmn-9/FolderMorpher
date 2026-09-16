@@ -47,8 +47,15 @@ namespace AstraSize
             };
             _adSyncTimer.Tick += async (s, e) => await CheckAndSyncAdPrincipalsAsync(forceRefresh: false);
 
+            _simHoverExpandTimer.Tick += SimHoverExpandTimer_Tick;
+            UpdateSimCloneButtonState();
+
             Loaded += (s, e) => _adSyncTimer?.Start();
-            Closed += (s, e) => _adSyncTimer?.Stop();
+            Closed += (s, e) =>
+            {
+                _adSyncTimer?.Stop();
+                _simHoverExpandTimer?.Stop();
+            };
         }
 
         private void UpdateSimulationDomainBadge()
@@ -158,6 +165,14 @@ namespace AstraSize
             {
                 SimSourcePathTextBox.Text = dialog.FolderName;
                 LoadSourceTree(dialog.FolderName);
+            }
+        }
+
+        private void SimSourcePathTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                SimSourceLoadButton_Click(sender, e);
             }
         }
 
@@ -351,17 +366,77 @@ namespace AstraSize
             }
         }
 
+        private void UpdateSimCloneButtonState()
+        {
+            if (SimCloneSelectedButton == null) return;
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+
+            if (_selectedSimNode != null)
+            {
+                SimCloneSelectedButton.Content = Strings.CloneSelectedUnder(_selectedSimNode.Name);
+                SimCloneSelectedButton.ToolTip = isJa
+                    ? $"選択中の「{_selectedSimNode.Name}」の直下に、左で選んだフォルダをサブフォルダとして配置します（権限・階層自動引き継ぎ）"
+                    : $"Places the selected folder on the left as a direct subfolder under '{_selectedSimNode.Name}' (inherits ACL and hierarchy)";
+            }
+            else
+            {
+                SimCloneSelectedButton.Content = Strings.CloneSelectedToCenter;
+                SimCloneSelectedButton.ToolTip = isJa
+                    ? "新環境ツリーの第1階層（ルート）として新規配置します"
+                    : "Places the selected folder on the left as a new root folder";
+            }
+        }
+
+        private void SimHoverExpandTimer_Tick(object? sender, EventArgs e)
+        {
+            _simHoverExpandTimer.Stop();
+            if (_simHoverExpandCandidate != null && !_simHoverExpandCandidate.IsExpanded)
+            {
+                _simHoverExpandCandidate.IsExpanded = true;
+            }
+        }
+
+        private void ClearSimDragState()
+        {
+            _simHoverExpandTimer.Stop();
+            _simHoverExpandCandidate = null;
+            if (_currentDragOverSimNode != null)
+            {
+                _currentDragOverSimNode.IsDragOverTarget = false;
+                _currentDragOverSimNode = null;
+            }
+        }
+
         private void SimCloneSelectedButton_Click(object sender, RoutedEventArgs e)
         {
             if (SimSourceTreeView.SelectedItem is FileItemNode selected)
             {
-                var simNode = CreateSimNodeFromSourceWithAcl(selected, null, 0);
-                _simRootFolders.Add(simNode);
-                ShowToast($"新環境モックツリーに配置しました (権限・階層自動引き継ぎ): {selected.Name}");
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                if (_selectedSimNode != null)
+                {
+                    var newSub = CreateSimNodeFromSourceWithAcl(selected, _selectedSimNode, _selectedSimNode.Level + 1);
+                    _selectedSimNode.Children.Add(newSub);
+                    _selectedSimNode.IsExpanded = true;
+                    ShowToast(isJa
+                        ? $"📁 「{selected.Name}」を「{_selectedSimNode.Name}」直下にサブ配置しました"
+                        : $"📁 Placed '{selected.Name}' as a subfolder under '{_selectedSimNode.Name}'");
+                }
+                else
+                {
+                    var simNode = CreateSimNodeFromSourceWithAcl(selected, null, 0);
+                    _simRootFolders.Add(simNode);
+                    ShowToast(isJa
+                        ? $"📁 新環境ツリーにルート配置しました: {selected.Name}"
+                        : $"📁 Placed as new root folder: {selected.Name}");
+                }
             }
             else
             {
-                MessageBox.Show("移行元ツリーからフォルダを選択してください。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                MessageBox.Show(
+                    isJa ? "移行元ツリーからフォルダを選択してください。" : "Please select a folder from the source tree first.",
+                    isJa ? "情報" : "Information",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
 
@@ -395,6 +470,7 @@ namespace AstraSize
                 SimMappedSourcesItemsControl.ItemsSource = null;
                 SimAclCardsItemsControl.ItemsSource = null;
             }
+            UpdateSimCloneButtonState();
         }
 
         private void SimMockTreeView_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -489,11 +565,61 @@ namespace AstraSize
             {
                 e.Effects = DragDropEffects.Copy | DragDropEffects.Move;
                 e.Handled = true;
+
+                // 1. ドロップ対象ノードの視覚的ハイライト
+                var target = GetSimNodeFromDragEvent(e);
+                if (target != _currentDragOverSimNode)
+                {
+                    if (_currentDragOverSimNode != null) _currentDragOverSimNode.IsDragOverTarget = false;
+                    _currentDragOverSimNode = target;
+                    if (_currentDragOverSimNode != null) _currentDragOverSimNode.IsDragOverTarget = true;
+                }
+
+                // 2. ホバー自動展開（Auto-Expand on Hover: 閉じたフォルダ上で400ms静止で開く）
+                if (target != null && !target.IsExpanded && target.Children.Count > 0)
+                {
+                    if (_simHoverExpandCandidate != target)
+                    {
+                        _simHoverExpandCandidate = target;
+                        _simHoverExpandTimer.Stop();
+                        _simHoverExpandTimer.Start();
+                    }
+                }
+                else
+                {
+                    if (_simHoverExpandCandidate != null)
+                    {
+                        _simHoverExpandCandidate = null;
+                        _simHoverExpandTimer.Stop();
+                    }
+                }
+
+                // 3. 上下端自動スクロール（Auto-Scroll on Drag）
+                Point mousePos = e.GetPosition(SimMockTreeView);
+                var scrollViewer = FindVisualChild<ScrollViewer>(SimMockTreeView);
+                if (scrollViewer != null)
+                {
+                    const double scrollZone = 25.0;
+                    if (mousePos.Y >= 0 && mousePos.Y < scrollZone)
+                    {
+                        scrollViewer.ScrollToVerticalOffset(Math.Max(0, scrollViewer.VerticalOffset - 14));
+                    }
+                    else if (mousePos.Y > SimMockTreeView.ActualHeight - scrollZone && mousePos.Y <= SimMockTreeView.ActualHeight)
+                    {
+                        scrollViewer.ScrollToVerticalOffset(Math.Min(scrollViewer.ScrollableHeight, scrollViewer.VerticalOffset + 14));
+                    }
+                }
             }
+        }
+
+        private void SimMockTreeView_DragLeave(object sender, DragEventArgs e)
+        {
+            ClearSimDragState();
         }
 
         private void SimMockTreeView_Drop(object sender, DragEventArgs e)
         {
+            ClearSimDragState();
             var target = GetSimNodeFromDragEvent(e);
 
             // Case 1: Drop source folder from left explorer (Create subfolder with full ACL & hierarchy)
@@ -577,24 +703,6 @@ namespace AstraSize
         {
             e.Effects = DragDropEffects.Copy | DragDropEffects.Move;
             e.Handled = true;
-        }
-
-        private void SimSubfolderDropZone_Drop(object sender, DragEventArgs e)
-        {
-            if (_selectedSimNode == null) return;
-
-            if (e.Data.GetData("FolderMorpherSourceNode") is FileItemNode src)
-            {
-                var newSub = CreateSimNodeFromSourceWithAcl(src, _selectedSimNode, _selectedSimNode.Level + 1);
-                _selectedSimNode.Children.Add(newSub);
-                _selectedSimNode.IsExpanded = true;
-                ShowToast($"📥 「{src.Name}」をサブフォルダ化（権限・階層継承）しました");
-            }
-            else if (e.Data.GetData("FolderMorpherSimNode") is SimFolderNode movingNode)
-            {
-                _simNodeDroppedInTree = true;
-                SimMockTreeView_Drop(sender, e);
-            }
         }
 
         private void SimAccordion_Drop(object sender, DragEventArgs e)
@@ -966,6 +1074,19 @@ namespace AstraSize
             {
                 if (parent is T typed) return typed;
                 parent = System.Windows.Media.VisualTreeHelper.GetParent(parent);
+            }
+            return null;
+        }
+
+        private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            int count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+                if (child is T typed) return typed;
+                var desc = FindVisualChild<T>(child);
+                if (desc != null) return desc;
             }
             return null;
         }

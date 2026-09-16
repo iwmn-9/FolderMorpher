@@ -94,6 +94,9 @@ namespace AstraSize
         private bool _isSimNodeDragging = false;
         private bool _simNodeDroppedInTree = false;
         private bool _simDragCancelled = false;
+        private readonly DispatcherTimer _simHoverExpandTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
+        private SimFolderNode? _simHoverExpandCandidate = null;
+        private SimFolderNode? _currentDragOverSimNode = null;
 
         private void OnCardQueryContinueDrag(object sender, QueryContinueDragEventArgs e)
         {

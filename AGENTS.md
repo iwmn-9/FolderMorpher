@@ -107,6 +107,13 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
    - **UNION Name OR Content**: SQLite FTS5 の trigram MATCH と通常ファイル名 LIKE を `UNION` で統合し、本文一致（スニペット付き）とファイル名一致の両方をミリ秒で完全取得。
    - **最深IndexedRoot判定**: 一致する Root のうち最深（最長パス）を正本として判定し、親がComplete・子がErrorの中断漏れを完全防止。
    - **Master BAT エラー伝播**: `00_Run_All_Waves_StepByStep.bat` で各Waveを `call "%~dp0..."` 実行し、`if errorlevel 1 exit /b 1` で即座に後続を安全停止。CP932（Shift-JIS）自動フォールバック対応。
+9. **UI整線 ＆ 深階層ツリー操作性の革新（v2.2.3 / ADR 65）**:
+   - **不要要素の完全撤去**: 容量分析（Tab 1）の謎の空欄 `FilterTextBox`、移行スタジオ（Tab 4）の「読込」ボタン（Enter自動読込化）、および右ペインの対症療法だった「サブ化ドロップゾーン」を撤去。
+   - **深階層でも迷わない4大工夫**:
+     1. **インテリジェント動的サブ化ボタン**: 選択ノードがあればその直下にサブ化（`CreateSimNodeFromSourceWithAcl`）、未選択なら新設ルート。ボタン文言・ToolTipも動的追従。
+     2. **ドロップ先端ハイライト**: D&Dドラッグ中の対象フォルダーを `IsDragOverTarget` で薄青（`#E0F2FE`）ハイライト。
+     3. **ホバー自動展開 (Auto-Expand on Hover)**: 閉じたフォルダー上で 400ms 留まると自動展開し、何階層でもドラッグで潜り込める。
+     4. **端点自動スクロール (Auto-Scroll)**: ドラッグ中の上下端 25px 領域で ScrollViewer を自動スクロール。
 
 ---
 

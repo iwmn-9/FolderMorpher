@@ -342,16 +342,6 @@ namespace AstraSize
             _scanCts?.Cancel();
         }
 
-        private void FilterTextBox_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            if (_currentTab != null)
-            {
-                _currentTab.FilterKeyword = FilterTextBox.Text.Trim();
-                _currentTab.FlattenTree();
-                FileTreeDataGrid.ItemsSource = _currentTab.VisibleFlatList;
-            }
-        }
-
         private void UpdateMetricsCards(ScanTabModel tab)
         {
             MftBoostBadge.Visibility = (tab.Summary?.IsMftBoosted == true) ? Visibility.Visible : Visibility.Collapsed;

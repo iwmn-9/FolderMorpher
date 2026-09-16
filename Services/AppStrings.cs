@@ -161,7 +161,8 @@ namespace FolderMorpher.Services
         // ==========================================
         // Tab 2: 移行スタジオ (Simulation Studio)
         // ==========================================
-        public static string CloneSelectedToCenter => IsJa ? "➡️ 選択フォルダを新設配置" : "➡️ Clone Selected to Center";
+        public static string CloneSelectedToCenter => IsJa ? "➡️ 新設ルートとして配置" : "➡️ Place as New Root";
+        public static string CloneSelectedUnder(string parentName) => IsJa ? $"➡️ 「{parentName}」直下にサブ配置" : $"➡️ Place under '{parentName}'";
         public static string AddRootFolder => IsJa ? "＋ ルート新設" : "＋ Add Root Folder";
         public static string ReviewDiffs => IsJa ? "🔍 チェック" : "🔍 Check";
         public static string DeploySkeleton => IsJa ? "🚀 スケルトン作成" : "🚀 Deploy Skeleton";
@@ -178,7 +179,6 @@ namespace FolderMorpher.Services
         public static string MockTreeTitle => IsJa ? "② 新環境 仮想フォルダツリー" : "② Target Virtual Tree Architecture";
         public static string MockTreeSubText => IsJa ? "💡 フォルダ行にドロップでサブ化 / クイックボタンで階層変更" : "💡 Drop on folder row to make subfolder / Use quick buttons to adjust levels";
         public static string SelectedFolderPrefix => IsJa ? "📁 " : "📁 ";
-        public static string SubfolderDropHint => IsJa ? "📥 左の現行フォルダをここにドロップして直下にサブ化" : "📥 Drop source folder here to make direct subfolder";
         public static string SimMappingTitle => IsJa ? "🔗 移行元マッピング (データ移行元 / N:1統合)" : "🔗 Source Mappings (Data Sources / N:1 Consolidation)";
         public static string SimAclTitle => IsJa ? "🛡️ 割り当てられたADアクセス権" : "🛡️ Assigned AD Permissions";
         public static string SimAdHeaderTitle => IsJa ? "④ AD パレット" : "④ AD Palette";

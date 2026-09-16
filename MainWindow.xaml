@@ -176,7 +176,6 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
                         <Border Grid.Column="0" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="32" Padding="8,0">
@@ -192,16 +191,10 @@
                             </Grid>
                         </Border>
 
-                        <Button x:Name="StorageBrowseButton" Grid.Column="1" Content="参照..." Margin="8,0,0,0" Height="32"
+                        <Button x:Name="StorageBrowseButton" Grid.Column="1" Content="参照..." Margin="8,0,10,0" Height="32"
                                 Style="{StaticResource FluentButtonSecondary}" Click="BrowseButton_Click"/>
 
-                        <Border Grid.Column="2" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="32" Width="160" Margin="10,0,10,0" Padding="8,0">
-                            <TextBox x:Name="FilterTextBox" BorderThickness="0" Background="Transparent"
-                                     VerticalAlignment="Center" FontSize="12.5" Foreground="#0F172A"
-                                     TextChanged="FilterTextBox_TextChanged"/>
-                        </Border>
-
-                        <StackPanel Grid.Column="3" Orientation="Horizontal">
+                        <StackPanel Grid.Column="2" Orientation="Horizontal">
                             <Button x:Name="ScanButton" Content="スキャン開始" Height="32" Margin="0,0,8,0"
                                     Style="{StaticResource FluentButtonPrimary}" Click="ScanButton_Click"/>
                             <Button x:Name="CancelButton" Content="中止" Height="32" Margin="0,0,8,0" Background="#E11D48"
@@ -514,16 +507,14 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="4" Height="28" Padding="6,0">
                                     <TextBox x:Name="SimSourcePathTextBox" BorderThickness="0" Background="Transparent"
-                                             VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"/>
+                                             VerticalAlignment="Center" FontSize="11" FontFamily="{StaticResource MonoFont}"
+                                             KeyDown="SimSourcePathTextBox_KeyDown"/>
                                 </Border>
                                 <Button x:Name="SimSourceBrowseButton" Grid.Column="1" Content="参照..." Height="28" Margin="6,0,0,0"
-                                        Style="{StaticResource FluentButtonSecondary}" Padding="8,2" Click="SimSourceBrowseButton_Click" ToolTip="現行フォルダ（UNCまたはローカル）を参照選択"/>
-                                <Button x:Name="SimSourceLoadButton" Grid.Column="2" Content="読込" Height="28" Margin="4,0,0,0"
-                                        Style="{StaticResource FluentButtonSecondary}" Padding="10,2" Click="SimSourceLoadButton_Click"/>
+                                        Style="{StaticResource FluentButtonSecondary}" Padding="10,2" Click="SimSourceBrowseButton_Click" ToolTip="現行フォルダ（UNCまたはローカル）を参照選択"/>
                             </Grid>
 
                             <!-- Source TreeView (Draggable, Smooth Scroll & Lazy Loading) -->
@@ -618,6 +609,7 @@
                                               AllowDrop="True"
                                               Drop="SimMockTreeView_Drop"
                                               DragOver="SimMockTreeView_DragOver"
+                                              DragLeave="SimMockTreeView_DragLeave"
                                               PreviewMouseLeftButtonDown="SimMockTreeView_PreviewMouseLeftButtonDown"
                                               PreviewMouseMove="SimMockTreeView_PreviewMouseMove">
                                         <TreeView.ItemContainerStyle>
@@ -640,7 +632,17 @@
                                     </TreeView.ContextMenu>
                                     <TreeView.ItemTemplate>
                                         <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                            <Border CornerRadius="4" Padding="4,3" Margin="0,1" Background="Transparent">
+                                            <Border CornerRadius="4" Padding="4,3" Margin="0,1" SnapsToDevicePixels="True">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="Transparent"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsDragOverTarget}" Value="True">
+                                                                <Setter Property="Background" Value="#E0F2FE"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
                                                 <Grid Margin="{Binding IndentMargin}">
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="Auto"/> <!-- Icon & Name -->
@@ -731,14 +733,6 @@
                                     AllowDrop="True" Drop="SimAccordion_Drop" DragOver="SimGenericDragOver">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <StackPanel>
-                                        <!-- Drop Zone 1: Subfolder Maker -->
-                                        <Border Background="#F1F5F9" BorderBrush="#94A3B8" BorderThickness="1"
-                                                CornerRadius="4" Padding="8,5" Margin="0,0,0,8" AllowDrop="True"
-                                                Drop="SimSubfolderDropZone_Drop" DragOver="SimGenericDragOver">
-                                            <TextBlock x:Name="SimSubfolderDropHintText" Text="📥 左の現行フォルダをここにドロップして直下にサブ化"
-                                                       FontSize="11" Foreground="#64748B" HorizontalAlignment="Center"/>
-                                        </Border>
-
                                         <!-- Drop Zone 2: N:1 Source Mapping Area -->
                                         <Border Background="#FAF5FF" BorderBrush="#C084FC" BorderThickness="1"
                                                 CornerRadius="4" Padding="8" Margin="0,0,0,8" AllowDrop="True"

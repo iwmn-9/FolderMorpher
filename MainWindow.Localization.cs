@@ -164,8 +164,7 @@ namespace AstraSize
             // Tab 2 (Simulation Studio)
             // ==========================================
             SimTargetBrowseButton.Content = isJa ? "参照..." : "Browse...";
-            SimSourceLoadButton.Content = isJa ? "読込" : "Load";
-            SimCloneSelectedButton.Content = Strings.CloneSelectedToCenter;
+            UpdateSimCloneButtonState();
             SimAddRootFolderButton.Content = Strings.AddRootFolder;
             SimSaveProjectButton.Content = Strings.Save;
             SimSaveProjectButton.ToolTip = Strings.SaveProjectToolTip;
@@ -215,7 +214,6 @@ namespace AstraSize
             SimMockTreeTitleText.Text = Strings.MockTreeTitle;
             SimMockTreeSubText.Text = Strings.MockTreeSubText;
             SimSelectedFolderPrefixText.Text = Strings.SelectedFolderPrefix;
-            SimSubfolderDropHintText.Text = Strings.SubfolderDropHint;
             SimMappingTitleText.Text = Strings.SimMappingTitle;
             SimAclTitleText.Text = Strings.SimAclTitle;
             SimAdHeaderTitle.Text = Strings.SimAdHeaderTitle;

@@ -586,6 +586,14 @@ namespace AstraSize.Models
             set { _isSelected = value; OnPropertyChanged(); }
         }
 
+        private bool _isDragOverTarget = false;
+        [JsonIgnore]
+        public bool IsDragOverTarget
+        {
+            get => _isDragOverTarget;
+            set { _isDragOverTarget = value; OnPropertyChanged(); }
+        }
+
         /// <summary>
         /// N:1 mapping source paths (複数の現行フォルダを統合・紐づけ可能)
         /// </summary>
