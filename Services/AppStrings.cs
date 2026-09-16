@@ -48,20 +48,20 @@ namespace FolderMorpher.Services
         public static string AppSubtitle => IsJa ? "ストレージ ＆ 移行スタジオ" : "Storage & Migration Studio";
         public static string AppSubtitleCleaner => IsJa ? "ファイルサーバー クリーンアップ Studio" : "Storage Cleanup Studio";
         public static string ToggleSidebarToolTip => IsJa ? "サイドバーの開閉 (収縮 / 展開)" : "Toggle Sidebar (Collapse / Expand)";
-        public static string TabStorage => IsJa ? "容量分析 & 監視" : "Storage Explorer";
-        public static string TabStorageToolTip => IsJa ? "📊 容量分析 & 監視 (Storage Explorer)" : "📊 Storage Explorer";
+        public static string TabStorage => IsJa ? "容量分析" : "Storage Explorer";
+        public static string TabStorageToolTip => IsJa ? "📊 容量分析" : "📊 Storage Explorer";
         public static string TabLiveAcl => IsJa ? "権限コントロール" : "Live ACL";
-        public static string TabLiveAclToolTip => IsJa ? "🛡️ 実環境 権限コントロール (Live ACL)" : "🛡️ Live ACL Control";
+        public static string TabLiveAclToolTip => IsJa ? "🛡️ 権限コントロール" : "🛡️ Live ACL Control";
         public static string TabSimulation => IsJa ? "移行スタジオ" : "Simulation Studio";
-        public static string TabSimulationToolTip => IsJa ? "🚀 移行シミュレーション (Simulation Studio)" : "🚀 Migration Studio";
-        public static string TabLinkFix => IsJa ? "リンク一括修復" : "LinkFixer";
-        public static string TabLinkFixToolTip => IsJa ? "🔗 ショートカット・Office修復 (LinkFixer)" : "🔗 LinkFixer";
-        public static string TabAudit => IsJa ? "ファイル監査・整理" : "Audit & Hygiene";
-        public static string TabAuditToolTip => IsJa ? "🧹 重複・休眠・パス長チェック (Audit & Hygiene)" : "🧹 Audit & Hygiene";
+        public static string TabSimulationToolTip => IsJa ? "🚀 移行スタジオ" : "🚀 Migration Studio";
+        public static string TabLinkFix => IsJa ? "リンク修復" : "LinkFixer";
+        public static string TabLinkFixToolTip => IsJa ? "🔗 リンク修復" : "🔗 LinkFixer";
+        public static string TabAudit => IsJa ? "ファイル監査" : "Audit & Hygiene";
+        public static string TabAuditToolTip => IsJa ? "🧹 ファイル監査" : "🧹 Audit & Hygiene";
         public static string TabMedia => IsJa ? "メディア最適化" : "Media Optimizer";
-        public static string TabMediaToolTip => IsJa ? "🖼️ 写真軽量化 & 大容量動画抽出 (Media Optimizer)" : "🖼️ Media Optimizer";
-        public static string TabSearch => IsJa ? "統合ファイル検索" : "Search Studio";
-        public static string TabSearchToolTip => IsJa ? "🔍 高速・全文 統合ファイル検索 (Search Studio)" : "🔍 Fast & Content Search Studio";
+        public static string TabMediaToolTip => IsJa ? "🖼️ メディア最適化" : "🖼️ Media Optimizer";
+        public static string TabSearch => IsJa ? "ファイル検索" : "File Search";
+        public static string TabSearchToolTip => IsJa ? "🔍 ファイル検索" : "🔍 File Search";
         public static string SettingsToolTip => IsJa ? "環境設定 / Settings" : "Settings";
         public static string LanguageToggleText => IsJa ? "🌐 EN" : "🌐 JA";
         public static string LanguageToggleToolTip => IsJa ? "英語に切り替え / Switch to English" : "日本語に切り替え / Switch to Japanese";
@@ -204,9 +204,9 @@ namespace FolderMorpher.Services
         public static string QuickDemoteToolTip => IsJa ? "1階層降格" : "Demote 1 Level";
 
         // ==========================================
-        // Tab 3: リンク一括修復 (LinkFixer)
+        // Tab 4: リンク修復 (LinkFixer)
         // ==========================================
-        public static string LinkFixTitle => IsJa ? "🔗 ショートカット ＆ Officeリンク一括修復（LinkFixer）" : "🔗 Broken Link & Office Reference Repair (LinkFixer)";
+        public static string LinkFixTitle => IsJa ? "🔗 ショートカット ＆ Officeリンク修復" : "🔗 Shortcut & Office Link Repair";
         public static string LinkFixDesc => IsJa ? "ファイルサーバー移行後に切断されたショートカット (.lnk) および Excel 内部リンク数式 (.xlsx / .xlsm) を高速検出し、新パスへ一括書き換えします。" : "Quickly scans and repairs broken shortcut (.lnk) targets and Excel formula references (.xlsx / .xlsm) after file server migrations.";
         public static string LinkSearchScopeLabel => IsJa ? "走査対象フォルダー (クライアントPCまたはサーバー)" : "Target Scan Directory (Client PC or File Server)";
         public static string LinkOldPatternLabel => IsJa ? "旧サーバーパス (置換前)" : "Old Server Path (To Replace)";
@@ -227,7 +227,7 @@ namespace FolderMorpher.Services
         // ==========================================
         // Tab 4: ファイル監査・整理 (Audit & Hygiene)
         // ==========================================
-        public static string AuditHeaderTitle => IsJa ? "🧹 ファイルサーバー健全化 ＆ ファイル監査（重複整理・容量削減）" : "🧹 File Server Hygiene & Cleanup";
+        public static string AuditHeaderTitle => IsJa ? "🧹 ファイルサーバー健全化 ＆ ファイル監査" : "🧹 File Server Hygiene & Audit";
         public static string AuditHeaderDesc => IsJa ? "重複ファイル (SHA256)、休眠ファイル (3年以上未更新)、パス長240文字超、移行禁則文字を一括抽出し、安全な棚卸し台帳を出力します。" : "Batch detects duplicates (SHA256), dormant files (3+ years), paths > 240 chars, and migration-invalid characters. Generates safe audit ledgers (Excel/CSV).";
         public static string AuditTargetFolderLabel => IsJa ? "監査対象ディレクトリ (UNC / ローカル)" : "Target Audit Directory (UNC / Local)";
         public static string AuditExcludeFoldersLabel => IsJa ? "除外フォルダー名 (部分一致 / カンマ区切り):" : "Exclude Folders (Partial match / Comma-separated):";
@@ -268,7 +268,7 @@ namespace FolderMorpher.Services
         // ==========================================
         // Tab 5: メディア最適化 (Media Optimizer)
         // ==========================================
-        public static string MediaHeaderTitle => IsJa ? "🖼️ メディア・オプティマイザ（写真・画像最適化 ＆ 大容量動画抽出）" : "🖼️ Media Optimizer (Photo Optimization & Video Nightly Batch)";
+        public static string MediaHeaderTitle => IsJa ? "🖼️ メディア最適化" : "🖼️ Media Optimizer";
         public static string MediaHeaderDesc => IsJa ? "保護対象（_Master、印刷用、RAW等）を自動スキップしながら、大容量写真（2MB超）を最適化（長辺2560px超は縮小/85%品質/Exif・日時保持）で上書き軽量化し、大容量動画のTop抽出と夜間圧縮バッチを出力します。" : "Protects designated master folders (_Master, Print, RAW), optimizes large photos (>2MB) in-place with high quality (resizes if >2560px, preserves Exif & timestamps), and extracts large videos for nightly GPU H.265 compression.";
         public static string MediaTargetDirLabel => IsJa ? "走査対象ディレクトリ (UNC / ローカル)" : "Target Directory (UNC / Local)";
         public static string MediaMaxDimLabel => IsJa ? "最大長辺 (px)" : "Max Dimension (px)";
@@ -443,10 +443,10 @@ namespace FolderMorpher.Services
         public static string SearchExecute => IsJa ? "🔍 検索" : "🔍 Search";
         public static string SearchCancel => IsJa ? "⏹ 中断" : "⏹ Cancel";
         public static string SearchClear => IsJa ? "✕ クリア" : "✕ Clear";
-        public static string SearchScopeScanned => IsJa ? "⚡ スキャン済みツリー (インメモリ 0秒)" : "⚡ In-Memory Trees (Instant 0s)";
-        public static string SearchScopeDirect => IsJa ? "🌐 ライブ直接走査 (未スキャンフォルダ / UNC)" : "🌐 Live Direct Scan (Unscanned / UNC)";
+        public static string SearchScopeScanned => IsJa ? "⚡ スキャン済みツリー" : "⚡ In-Memory Trees";
+        public static string SearchScopeDirect => IsJa ? "🌐 直接走査" : "🌐 Direct Scan";
         public static string SearchIncludeFoldersCheck => IsJa ? "📁 フォルダも含める" : "📁 Include Folders";
-        public static string SearchContentCheck => IsJa ? "📄 本文も検索 (全文検索)" : "📄 Search Content (Full-Text)";
+        public static string SearchContentCheck => IsJa ? "📄 本文も検索" : "📄 Search Content";
         public static string SearchTargetFolder => IsJa ? "対象フォルダー:" : "Target Folder:";
         public static string SearchQuickPresets => IsJa ? "クイック検索:" : "Quick Presets:";
         public static string SearchChipLargeText => IsJa ? "🐘 1GB超 (size:>1GB)" : "🐘 >1GB (size:>1GB)";

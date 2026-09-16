@@ -250,12 +250,12 @@ namespace AstraSize
                             if (forceLang == "en") FolderMorpher.Services.LocalizationService.Instance.SetLanguage(FolderMorpher.Services.AppLanguage.English);
                             else if (forceLang == "ja") FolderMorpher.Services.LocalizationService.Instance.SetLanguage(FolderMorpher.Services.AppLanguage.Japanese);
 
-                            if (selectTab == 1) mw.NavTabLiveAcl.IsChecked = true;
-                            else if (selectTab == 2) mw.NavTabSimulation.IsChecked = true;
-                            else if (selectTab == 3) mw.NavTabLinkFix.IsChecked = true;
-                            else if (selectTab == 4) mw.NavTabAudit.IsChecked = true;
-                            else if (selectTab == 5) mw.NavTabMedia.IsChecked = true;
-                            else if (selectTab == 6) mw.NavTabSearch.IsChecked = true;
+                            if (selectTab == 1) mw.NavTabSearch.IsChecked = true;
+                            else if (selectTab == 2) mw.NavTabLiveAcl.IsChecked = true;
+                            else if (selectTab == 3) mw.NavTabSimulation.IsChecked = true;
+                            else if (selectTab == 4) mw.NavTabLinkFix.IsChecked = true;
+                            else if (selectTab == 5) mw.NavTabAudit.IsChecked = true;
+                            else if (selectTab == 6) mw.NavTabMedia.IsChecked = true;
                             else if (selectTab == 98)
                             {
                                 var testSnapshots = new List<AstraSize.Models.ScanSnapshot>

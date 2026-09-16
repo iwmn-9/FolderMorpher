@@ -235,9 +235,9 @@ namespace AstraSize
             }
 
             // ==========================================
-            // Tab 3 (LinkFixer)
+            // Tab 4 (LinkFixer)
             // ==========================================
-            LinkFixHeaderTitle.Text = isJa ? "🔗 ショートカット ＆ Officeリンク一括修復（LinkFixer）" : "🔗 Broken Link & Office Reference Repair (LinkFixer)";
+            LinkFixHeaderTitle.Text = isJa ? "🔗 ショートカット ＆ Officeリンク修復" : "🔗 Shortcut & Office Link Repair";
             LinkFixHeaderDesc.Text = isJa ? "ファイルサーバー移行後に切断されたショートカット (.lnk) および Excel 内部リンク数式 (.xlsx / .xlsm) を高速検出し、新パスへ一括書き換えします。" : "Quickly scans and repairs broken shortcut (.lnk) targets and Excel formula references (.xlsx / .xlsm) after file server migrations.";
             LinkSearchScopeLabel.Text = isJa ? "走査対象フォルダー (クライアントPCまたはサーバー)" : "Target Scan Directory (Client PC or File Server)";
             LinkOldPatternLabel.Text = isJa ? "旧サーバーパス (置換前)" : "Old Server Path (To Replace)";

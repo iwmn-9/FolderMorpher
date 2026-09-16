@@ -190,12 +190,21 @@ namespace AstraSize
             if (NavTabStorage.IsChecked == true)
             {
                 StorageTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: 容量分析 & 監視 (Storage Explorer)" : "Mode: Storage Explorer";
+                StatusTextBlock.Text = isJa ? "モード: 容量分析" : "Mode: Storage Explorer";
+            }
+            else if (NavTabSearch.IsChecked == true)
+            {
+                SearchTabPanel.Visibility = Visibility.Visible;
+                StatusTextBlock.Text = isJa ? "モード: ファイル検索" : "Mode: File Search";
+                if (string.IsNullOrWhiteSpace(SearchDirectTargetTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
+                {
+                    SearchDirectTargetTextBox.Text = PathTextBox.Text;
+                }
             }
             else if (NavTabLiveAcl.IsChecked == true)
             {
                 LiveAclStudioControl.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: 実環境 権限コントロール (Live ACL)" : "Mode: Live ACL Control";
+                StatusTextBlock.Text = isJa ? "モード: 権限コントロール" : "Mode: Live ACL Control";
                 if (string.IsNullOrWhiteSpace(LiveAclStudioControl.CurrentPath) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     LiveAclStudioControl.SetDefaultPath(PathTextBox.Text);
@@ -204,7 +213,7 @@ namespace AstraSize
             else if (NavTabSimulation.IsChecked == true)
             {
                 SimulationTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: 移行シミュレーションスタジオ (FolderMorph Studio)" : "Mode: Simulation Studio";
+                StatusTextBlock.Text = isJa ? "モード: 移行スタジオ" : "Mode: Simulation Studio";
                 if (string.IsNullOrWhiteSpace(SimSourcePathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     SimSourcePathTextBox.Text = PathTextBox.Text;
@@ -213,7 +222,7 @@ namespace AstraSize
             else if (NavTabLinkFix.IsChecked == true)
             {
                 LinkFixTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: ショートカット ＆ Officeリンク修復 (LinkFixer)" : "Mode: LinkFixer";
+                StatusTextBlock.Text = isJa ? "モード: リンク修復" : "Mode: LinkFixer";
                 if (string.IsNullOrWhiteSpace(LinkSearchScopeTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     LinkSearchScopeTextBox.Text = PathTextBox.Text;
@@ -222,7 +231,7 @@ namespace AstraSize
             else if (NavTabAudit.IsChecked == true)
             {
                 AuditTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: ファイルサーバー健全化 ＆ ファイル監査 (重複整理・容量削減)" : "Mode: Audit & Hygiene";
+                StatusTextBlock.Text = isJa ? "モード: ファイル監査" : "Mode: Audit & Hygiene";
                 if (string.IsNullOrWhiteSpace(AuditPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     AuditPathTextBox.Text = PathTextBox.Text;
@@ -231,19 +240,10 @@ namespace AstraSize
             else if (NavTabMedia.IsChecked == true)
             {
                 MediaTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: メディア・オプティマイザ (写真軽量化 ＆ 大容量動画抽出)" : "Mode: Media Optimizer";
+                StatusTextBlock.Text = isJa ? "モード: メディア最適化" : "Mode: Media Optimizer";
                 if (string.IsNullOrWhiteSpace(MediaPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     MediaPathTextBox.Text = PathTextBox.Text;
-                }
-            }
-            else if (NavTabSearch.IsChecked == true)
-            {
-                SearchTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: 高速・全文 統合ファイル検索 (Search Studio)" : "Mode: Search Studio";
-                if (string.IsNullOrWhiteSpace(SearchDirectTargetTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
-                {
-                    SearchDirectTargetTextBox.Text = PathTextBox.Text;
                 }
             }
         }

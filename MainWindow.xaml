@@ -60,19 +60,19 @@
                 <!-- Nav Items -->
                 <StackPanel Grid.Row="1" Margin="10,14">
                     <RadioButton x:Name="NavTabStorage" Style="{StaticResource SidebarNavButton}"
-                                 IsChecked="True" Checked="NavTab_Checked" Tag="📊" Content="容量分析 &amp; 監視" ToolTip="📊 容量分析 &amp; 監視"/>
-                    <RadioButton x:Name="NavTabLiveAcl" Style="{StaticResource SidebarNavButton}"
-                                 Checked="NavTab_Checked" Tag="🛡️" Content="権限コントロール" ToolTip="🛡️ 実環境 権限コントロール"/>
-                    <RadioButton x:Name="NavTabSimulation" Style="{StaticResource SidebarNavButton}"
-                                 Checked="NavTab_Checked" Tag="🚀" Content="移行スタジオ" ToolTip="🚀 移行シミュレーション"/>
-                    <RadioButton x:Name="NavTabLinkFix" Style="{StaticResource SidebarNavButton}"
-                                 Checked="NavTab_Checked" Tag="🔗" Content="リンク一括修復" ToolTip="🔗 ショートカット・Office修復"/>
-                    <RadioButton x:Name="NavTabAudit" Style="{StaticResource SidebarNavButton}"
-                                 Checked="NavTab_Checked" Tag="🧹" Content="ファイル監査・整理" ToolTip="🧹 重複・休眠・パス長チェック"/>
-                    <RadioButton x:Name="NavTabMedia" Style="{StaticResource SidebarNavButton}"
-                                 Checked="NavTab_Checked" Tag="🖼️" Content="メディア最適化" ToolTip="🖼️ 写真軽量化 &amp; 大容量動画抽出"/>
+                                 IsChecked="True" Checked="NavTab_Checked" Tag="📊" Content="容量分析" ToolTip="容量分析"/>
                     <RadioButton x:Name="NavTabSearch" Style="{StaticResource SidebarNavButton}"
-                                 Checked="NavTab_Checked" Tag="🔍" Content="統合ファイル検索" ToolTip="🔍 高速・全文 統合ファイル検索"/>
+                                 Checked="NavTab_Checked" Tag="🔍" Content="ファイル検索" ToolTip="ファイル検索"/>
+                    <RadioButton x:Name="NavTabLiveAcl" Style="{StaticResource SidebarNavButton}"
+                                 Checked="NavTab_Checked" Tag="🛡️" Content="権限コントロール" ToolTip="権限コントロール"/>
+                    <RadioButton x:Name="NavTabSimulation" Style="{StaticResource SidebarNavButton}"
+                                 Checked="NavTab_Checked" Tag="🚀" Content="移行スタジオ" ToolTip="移行シミュレーション"/>
+                    <RadioButton x:Name="NavTabLinkFix" Style="{StaticResource SidebarNavButton}"
+                                 Checked="NavTab_Checked" Tag="🔗" Content="リンク修復" ToolTip="ショートカット・リンク修復"/>
+                    <RadioButton x:Name="NavTabAudit" Style="{StaticResource SidebarNavButton}"
+                                 Checked="NavTab_Checked" Tag="🧹" Content="ファイル監査" ToolTip="重複・休眠・パス長チェック"/>
+                    <RadioButton x:Name="NavTabMedia" Style="{StaticResource SidebarNavButton}"
+                                 Checked="NavTab_Checked" Tag="🖼️" Content="メディア最適化" ToolTip="写真軽量化・動画抽出"/>
                 </StackPanel>
 
                 <!-- Sidebar Footer -->
@@ -81,7 +81,7 @@
                         <!-- Expanded Footer (2-tier layout: Brand on top, Controls below) -->
                         <StackPanel x:Name="SidebarFooterExpandedPanel" Margin="14,8,14,10">
                             <StackPanel Margin="0,0,0,8">
-                                <TextBlock x:Name="SidebarVersionText" Text="FolderMorpher v2.1.2" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock x:Name="SidebarVersionText" Text="FolderMorpher v2.2.0" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                                 <TextBlock x:Name="SidebarSubtitleText" Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#94A3B8" Margin="0,1,0,0"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal">
@@ -1493,18 +1493,18 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
-                                <RadioButton x:Name="SearchScopeScannedRadio" Content="⚡ スキャン済みツリー (インメモリ 0秒)" IsChecked="True"
+                                <RadioButton x:Name="SearchScopeScannedRadio" Content="⚡ スキャン済みツリー" IsChecked="True"
                                              FontSize="12" Foreground="#334155" VerticalContentAlignment="Center" Margin="0,0,12,0"
-                                             ToolTip="容量分析タブでスキャン済みのツリー構造に対して0秒インメモリ超高速検索"/>
-                                <RadioButton x:Name="SearchScopeDirectRadio" Content="🌐 ライブ直接走査 (未スキャンフォルダ / UNC)"
+                                             ToolTip="容量分析でスキャン済みのツリーから即時検索"/>
+                                <RadioButton x:Name="SearchScopeDirectRadio" Content="🌐 直接走査"
                                              FontSize="12" Foreground="#334155" VerticalContentAlignment="Center" Margin="0,0,14,0"
-                                             ToolTip="指定フォルダーやUNC共有を直接走査しながらリアルタイム検索"/>
+                                             ToolTip="指定フォルダーを直接走査しながら検索"/>
                                 <CheckBox x:Name="SearchIncludeFoldersCheckBox" Content="📁 フォルダも含める"
                                           FontSize="12" Foreground="#475569" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,14,0"
-                                          ToolTip="検索結果にフォルダー自体も含めます（オフの場合はファイルのみ検索）"/>
-                                <CheckBox x:Name="SearchContentCheckBox" Content="📄 本文も検索 (全文検索)"
+                                          ToolTip="検索結果にフォルダーも含めます"/>
+                                <CheckBox x:Name="SearchContentCheckBox" Content="📄 本文も検索"
                                           FontSize="12" Foreground="#2563EB" FontWeight="SemiBold" VerticalAlignment="Center"
-                                          ToolTip="ファイル名だけでなく、テキスト・Excel・Word・PowerPoint・PDF等のファイル中身（全文）も探索します"/>
+                                          ToolTip="ファイル本文（Office/PDF/テキスト等）も探索します"/>
                             </StackPanel>
                             <TextBlock x:Name="SearchTargetFolderLabel" Grid.Column="1" Text="対象フォルダー:" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
                             <Grid Grid.Column="2">
