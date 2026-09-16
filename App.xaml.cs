@@ -131,16 +131,19 @@ namespace AstraSize
 
             if (runRegression)
             {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 Task.Run(async () =>
                 {
                     try
                     {
                         bool allPassed = await FolderMorpher.Services.Testing.RegressionTestSuite.RunAllTestsAsync();
+                        Console.Out.Flush();
                         Environment.Exit(allPassed ? 0 : 1);
                     }
                     catch (Exception ex)
                     {
                         Console.WriteLine($"[TEST-REGRESSION-FATAL] {ex}");
+                        Console.Out.Flush();
                         Environment.Exit(1);
                     }
                 });
@@ -252,6 +255,7 @@ namespace AstraSize
                             else if (selectTab == 3) mw.NavTabLinkFix.IsChecked = true;
                             else if (selectTab == 4) mw.NavTabAudit.IsChecked = true;
                             else if (selectTab == 5) mw.NavTabMedia.IsChecked = true;
+                            else if (selectTab == 6) mw.NavTabSearch.IsChecked = true;
                             else if (selectTab == 98)
                             {
                                 var testSnapshots = new List<AstraSize.Models.ScanSnapshot>

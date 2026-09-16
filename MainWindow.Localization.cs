@@ -91,6 +91,11 @@ namespace AstraSize
             NavTabAudit.ToolTip = Strings.TabAuditToolTip;
             NavTabMedia.Content = Strings.TabMedia;
             NavTabMedia.ToolTip = Strings.TabMediaToolTip;
+            if (NavTabSearch != null)
+            {
+                NavTabSearch.Content = Strings.TabSearch;
+                NavTabSearch.ToolTip = Strings.TabSearchToolTip;
+            }
 
             // ==========================================
             // Tab 0 (Storage Explorer)
@@ -481,6 +486,48 @@ namespace AstraSize
             if (MigKpiCutoverTimeLabel != null) MigKpiCutoverTimeLabel.Text = Strings.MigKpiCutoverTime;
             if (MigPkgCancelButton != null) MigPkgCancelButton.Content = Strings.Cancel;
             if (MigPkgExportButton != null) MigPkgExportButton.Content = Strings.MigExportButton;
+
+            // ==========================================
+            // Tab 6: Search Studio (統合ファイル検索)
+            // ==========================================
+            if (SearchExecuteButton != null) SearchExecuteButton.Content = Strings.SearchExecute;
+            if (SearchCancelButton != null) SearchCancelButton.Content = Strings.SearchCancel;
+            if (SearchClearButton != null) SearchClearButton.Content = Strings.SearchClear;
+            if (SearchExportExcelButton != null) SearchExportExcelButton.Content = isJa ? "📊 Excel台帳 (.xlsx)" : "📊 Export Excel (.xlsx)";
+            if (SearchExportCsvButton != null) SearchExportCsvButton.Content = isJa ? "📑 CSV" : "📑 Export CSV";
+            if (SearchScopeScannedRadio != null) SearchScopeScannedRadio.Content = Strings.SearchScopeScanned;
+            if (SearchScopeDirectRadio != null) SearchScopeDirectRadio.Content = Strings.SearchScopeDirect;
+            if (SearchDirectBrowseButton != null) SearchDirectBrowseButton.Content = Strings.BrowseWithFolder;
+            if (SearchChipLarge != null) SearchChipLarge.Content = Strings.SearchChipLargeText;
+            if (SearchChipDormant != null) SearchChipDormant.Content = Strings.SearchChipDormantText;
+            if (SearchChipPathLen != null) SearchChipPathLen.Content = Strings.SearchChipPathLenText;
+            if (SearchChipIllegal != null) SearchChipIllegal.Content = Strings.SearchChipIllegalText;
+            if (SearchChipOffice != null) SearchChipOffice.Content = Strings.SearchChipOfficeText;
+            if (SearchKpiHitCountTitle != null) SearchKpiHitCountTitle.Text = Strings.SearchKpiHitCount;
+            if (SearchKpiTotalSizeTitle != null) SearchKpiTotalSizeTitle.Text = Strings.SearchKpiTotalSize;
+            if (SearchKpiElapsedTitle != null) SearchKpiElapsedTitle.Text = Strings.SearchKpiElapsed;
+            if (SearchStatusTitle != null) SearchStatusTitle.Text = Strings.SearchStatusLabel;
+            if (SearchTableTitleText != null) SearchTableTitleText.Text = Strings.SearchTableTitle;
+            if (SearchTargetFolderLabel != null) SearchTargetFolderLabel.Text = Strings.SearchTargetFolder;
+            if (SearchQuickPresetsLabel != null) SearchQuickPresetsLabel.Text = Strings.SearchQuickPresets;
+            if (SearchSyntaxHintText != null) SearchSyntaxHintText.Text = Strings.SearchSyntaxHint;
+            if (SearchTableHintText != null) SearchTableHintText.Text = Strings.SearchTableHint;
+            if (SearchStatusText != null && (SearchStatusText.Text == "待機中" || SearchStatusText.Text == "Ready"))
+            {
+                SearchStatusText.Text = Strings.Waiting;
+            }
+            if (SearchKpiHitCountText != null && (SearchKpiHitCountText.Text == "0 件" || SearchKpiHitCountText.Text == "0 items"))
+            {
+                SearchKpiHitCountText.Text = isJa ? "0 件" : "0 items";
+            }
+            if (ColSearchType != null) ColSearchType.Header = Strings.ColSearchTypeHeader;
+            if (ColSearchName != null) ColSearchName.Header = Strings.ColSearchNameHeader;
+            if (ColSearchSize != null) ColSearchSize.Header = Strings.ColSearchSizeHeader;
+            if (ColSearchModified != null) ColSearchModified.Header = Strings.ColSearchModifiedHeader;
+            if (ColSearchExt != null) ColSearchExt.Header = Strings.ColSearchExtHeader;
+            if (ColSearchPathLen != null) ColSearchPathLen.Header = Strings.ColSearchPathLenHeader;
+            if (ColSearchMatch != null) ColSearchMatch.Header = Strings.ColSearchMatchHeader;
+            if (ColSearchFullPath != null) ColSearchFullPath.Header = Strings.ColSearchFullPathHeader;
 
             // Settings Modal
             SettingsButton.ToolTip = isJa ? "環境設定 / Settings" : "Settings";

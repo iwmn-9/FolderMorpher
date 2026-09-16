@@ -176,8 +176,8 @@
 
 - **日英バイリンガル完全同期**:
   - `Services/AppStrings.cs`（静的辞書）と `MainWindow.Localization.cs` を正本とし、全画面・全モーダル・全出力ファイル（Excel/CSV/スクリプト）の日英完全同期を保証。英語モード時のCJK文字残存をゼロ化。
-- **ヘッドレス自己検証 CI ゲート（7/7 ALL PASSED 必須）**:
-  - コード変更後は必ず `dotnet run --no-build -- --test-regression` を実行し、以下の7大ドメインすべてが 100% PASS することを必須ゲートとする：
+- **ヘッドレス自己検証 CI ゲート（8/8 ALL PASSED 必須）**:
+  - コード変更後は必ず `dotnet run --no-build -- --test-regression` を実行し、以下の8大ドメインすべてが 100% PASS することを必須ゲートとする：
     - `Domain 1`: Live ACL & Effective Access (Canonical DACL, Rollback SDDL, SID最優先一致, 余計なACE検知)
     - `Domain 2`: Storage Explorer & UNC Traversal (Win32 LargeFetch/8.3 Skip, SafeFindHandle, Concurrency 2)
     - `Domain 3`: Simulation Studio (Plan-First Skeleton, Robocopy /XD, 実機DACLセマンティックVerify)
@@ -185,6 +185,7 @@
     - `Domain 5`: Media Optimizer & LinkFixer (PNG透過保持, 聖域保護, SafeFileEnumerator, PartiallyFixed)
     - `Domain 6`: MFT & Defensive Hardening (Initial LCN 0-Base, AppSettings Cascade)
     - `Domain 7`: Bilingual Localization & Storage Forecasting (JA/EN Switch, Holt Forecasting)
+    - `Domain 8`: Search Studio (Everything Parser, In-Memory Fast Match, Content Search)
 
 ---
 
@@ -213,4 +214,41 @@
   - `3_マッピング・除外詳細`: 新旧パス対応表および `/XD` 除外パス一覧。
 - **文字コード契約**:
   - バッチファイルは冒頭で `chcp 65001 > nul` を宣言し、BOMなし UTF-8 (`new UTF8Encoding(false)`) で保存。Markdownドキュメントは UTF-8 で保存。Shift-JIS (CP932) のコードページ依存エラーを根絶。
+
+---
+
+## 14. 【統合ファイル検索】Search Studio（Everything構文・0秒インメモリ＆プログレッシブ直接走査・OpenXMLストリーム全文検索・スタジオ連携Hub）
+*(v2.2.0 新規施工 & ADR 60)*
+
+- **0秒インメモリ高速検索 ＆ プログレッシブ直接走査のハイブリッド・アーキテクチャ (`SearchEngineService`)**:
+  - **インメモリ走査**: Storage Explorer (Tab 1) で一度スキャン済みのツリー（`FileItemNode`）に対しては、I/Oを一切発生させず完全インメモリ（0ms〜数ms）で走査。
+  - **プログレッシブ直接走査**: 未スキャンの任意パスやUNC共有に対しては、ADR 35/49 の正本である `SafeFileEnumerator` を貫通させて非同期プログレッシブ走査を実施。進捗（走査件数・ヒット数）をUIへリアルタイム反映。
+- **Everything 互換クエリ構文解析器 (`SearchQueryParser`)**:
+  - 高速・直感的な検索構文をフルサポート：
+    - 拡張子フィルタ: `ext:xlsx,docx`
+    - サイズ条件: `size:>100MB`, `size:<10MB`（KB/MB/GB/TB対応）
+    - 休眠期間: `dormant:>3y`（更新日時基準）
+    - パス長危険域: `pathlen:>240`（Windows MAX_PATH 260字問題の予防）
+    - 禁則文字: `chars:illegal`（Windows予約文字 `< > : " / \ | ? *` の検出）
+    - 全文検索: `content:"キーワード"`
+    - Office内部リンク: `office-link:true`
+    - 正規表現: `regex:^FIN_[0-9]+`
+    - 除外（NOT）: `!temp`
+    - 完全一致フレーズ: `"Project Alpha"`
+- **Office OpenXML ストリーム全文検索 & スニペット抽出**:
+  - テキストファイル（.txt, .csv, .log, .json, .xml 等）および Office ファイル（.xlsx, .docx, .pptx）のZIP内XMLストリーム（`xl/sharedStrings.xml`, `word/document.xml`, `ppt/slides/` 等）を直接メモリ展開してキーワード探索。
+  - 前後40文字の文脈スニペット（`...キーワード...`）を自動抽出し、UI上に即座に提示。巨大ファイル事故を防ぐため 50MB 制限およびテキスト判定ガードを設置。
+- **全スタジオを束ねる統合 Hub 連携 (`MainWindow.Search.cs`)**:
+  - 検索結果の右クリック／ダブルクリックから、FolderMorpher 内の各スタジオへ即座に転送・ジャンプ：
+    - `Live ACL Studio`: 当該フォルダーのNTFSアクセス権を即座に可視化・編集
+    - `Simulation Studio`: 移行ツリー設計へソースノードとして追加
+    - `LinkFixer`: 内部リンク切れ修復の対象としてセット
+    - `Audit & Hygiene`: ファイル健全化・整理の対象としてセット
+    - `Explorer で選択`: 標準エクスプローラーを起動しハイライト表示
+- **ClosedXML による Excel 台帳 & BOM付き UTF-8 CSV エクスポート**:
+  - 検索結果一覧（ファイル名、パス、サイズ、更新日時、拡張子、属性、一致理由/スニペット）をハイパーリンク付き Excel および UTF-8 CSV として即座に出力可能。
+- **日英バイリンガル完全対応 & 回帰テスト Domain 8 追加**:
+  - 検索バー、スマートチップ、4連KPIカード（ヒット件数、合計容量、最大サイズ、最古更新日）、コンテキストメニューの全UIリソースを日英辞書化。
+  - 回帰テストスイートに `Domain 8`（パーサー構文、インメモリ高速検索、OpenXML全文検索）を追加し、CIゲートを 8/8 ALL PASSED 化。
+
 

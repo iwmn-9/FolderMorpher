@@ -60,6 +60,8 @@ namespace FolderMorpher.Services
         public static string TabAuditToolTip => IsJa ? "🧹 重複・休眠・パス長チェック (Audit & Hygiene)" : "🧹 Audit & Hygiene";
         public static string TabMedia => IsJa ? "メディア最適化" : "Media Optimizer";
         public static string TabMediaToolTip => IsJa ? "🖼️ 写真軽量化 & 大容量動画抽出 (Media Optimizer)" : "🖼️ Media Optimizer";
+        public static string TabSearch => IsJa ? "統合ファイル検索" : "Search Studio";
+        public static string TabSearchToolTip => IsJa ? "🔍 高速・全文 統合ファイル検索 (Search Studio)" : "🔍 Fast & Content Search Studio";
         public static string SettingsToolTip => IsJa ? "環境設定 / Settings" : "Settings";
         public static string LanguageToggleText => IsJa ? "🌐 EN" : "🌐 JA";
         public static string LanguageToggleToolTip => IsJa ? "英語に切り替え / Switch to English" : "日本語に切り替え / Switch to Japanese";
@@ -434,6 +436,41 @@ namespace FolderMorpher.Services
         public static string MigKpiCutoverTime => IsJa ? "本番切替想定 (差分2%)" : "Est. Cutover (2% Delta)";
         public static string MigExportButton => IsJa ? "📦 移行パッケージ一式を出力" : "📦 Generate Migration Package";
         public static string MigDescNotice => IsJa ? "※ 子孫フォルダ (/XD) は自動除外されます" : "* Mapped descendant folders are automatically excluded via /XD";
+
+        // ==========================================
+        // Tab 6: 統合ファイル検索 (Search Studio)
+        // ==========================================
+        public static string SearchExecute => IsJa ? "🔍 検索" : "🔍 Search";
+        public static string SearchCancel => IsJa ? "⏹ 中断" : "⏹ Cancel";
+        public static string SearchClear => IsJa ? "✕ クリア" : "✕ Clear";
+        public static string SearchScopeScanned => IsJa ? "⚡ スキャン済みツリー (インメモリ 0秒)" : "⚡ In-Memory Trees (Instant 0s)";
+        public static string SearchScopeDirect => IsJa ? "🌐 ライブ直接走査 (未スキャンフォルダ / UNC)" : "🌐 Live Direct Scan (Unscanned / UNC)";
+        public static string SearchTargetFolder => IsJa ? "対象フォルダー:" : "Target Folder:";
+        public static string SearchQuickPresets => IsJa ? "クイック検索:" : "Quick Presets:";
+        public static string SearchChipLargeText => IsJa ? "🐘 1GB超 (size:>1GB)" : "🐘 >1GB (size:>1GB)";
+        public static string SearchChipDormantText => IsJa ? "💤 3年休眠 (dormant:3y)" : "💤 Dormant 3Y (dormant:3y)";
+        public static string SearchChipPathLenText => IsJa ? "📏 240字超 (pathlen:>240)" : "📏 Length>240 (pathlen:>240)";
+        public static string SearchChipIllegalText => IsJa ? "⚠️ 禁則文字 (chars:illegal)" : "⚠️ Illegal Chars (chars:illegal)";
+        public static string SearchChipOfficeText => IsJa ? "🔗 Officeリンク (office-link:\"\\\\\")" : "🔗 Office Links (office-link:\"\\\\\")";
+        public static string SearchSyntaxHint => IsJa
+            ? "※構文: ext:xlsx,docx size:>100MB date:>2024-01-01 content:キーワード !除外 word"
+            : "* Syntax: ext:xlsx,docx size:>100MB date:>2024-01-01 content:keyword !exclude word";
+        public static string SearchKpiHitCount => IsJa ? "ヒット件数" : "Matched Items";
+        public static string SearchKpiTotalSize => IsJa ? "合計容量" : "Total Size";
+        public static string SearchKpiElapsed => IsJa ? "検索所要時間" : "Search Time";
+        public static string SearchStatusLabel => IsJa ? "ステータス / 走査パス" : "Status / Scan Path";
+        public static string SearchTableTitle => IsJa ? "検索結果一覧" : "Search Results";
+        public static string SearchTableHint => IsJa
+            ? "※ダブルクリックで直接開く / 右クリックで Live ACL・移行スタジオ・リンク修復・監査へ連携"
+            : "* Double-click to open / Right-click to send to Live ACL, Simulation, LinkFixer, Audit";
+        public static string ColSearchTypeHeader => IsJa ? "種別" : "Type";
+        public static string ColSearchNameHeader => IsJa ? "ファイル名" : "Name";
+        public static string ColSearchSizeHeader => IsJa ? "容量" : "Size";
+        public static string ColSearchModifiedHeader => IsJa ? "最終更新日時" : "Modified";
+        public static string ColSearchExtHeader => IsJa ? "拡張子" : "Ext";
+        public static string ColSearchPathLenHeader => IsJa ? "文字数" : "Length";
+        public static string ColSearchMatchHeader => IsJa ? "一致理由 / 抜粋" : "Match Reason / Snippet";
+        public static string ColSearchFullPathHeader => IsJa ? "完全パス" : "Full Path";
 
         /// <summary>
         /// 全プロパティが言語ごとに非空文字列を返すかを自己検証（自動テスト用）

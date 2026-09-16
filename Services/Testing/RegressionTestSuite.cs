@@ -19,7 +19,7 @@ namespace FolderMorpher.Services.Testing
             Console.WriteLine("================================================================================");
 
             int passCount = 0;
-            int totalTests = 7;
+            int totalTests = 8;
 
             var originalLang = LocalizationService.Instance.CurrentLanguage;
             LocalizationService.Instance.SetLanguage(AppLanguage.Japanese);
@@ -63,9 +63,15 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Domain 7
-                Console.WriteLine("\n[TEST 7/7] Domain 7: Bilingual Localization & Storage Forecasting (JA/EN Switch, CJK-Free Verification, Holt Forecasting & Dictionary Integrity)...");
+                Console.WriteLine("\n[TEST 7/8] Domain 7: Bilingual Localization & Storage Forecasting (JA/EN Switch, CJK-Free Verification, Holt Forecasting & Dictionary Integrity)...");
                 TestDomain_LocalizationAndForecasting();
                 Console.WriteLine("  --> [PASS] Domain 7: Bilingual Localization & Storage Forecasting 100% verified.");
+                passCount++;
+
+                // Domain 8
+                Console.WriteLine("\n[TEST 8/8] Domain 8: Search Studio (Everything-Like Query Parsing, In-Memory 0s Tree Search & Fast Content Streaming)...");
+                await TestDomain_SearchStudioAsync();
+                Console.WriteLine("  --> [PASS] Domain 8: Search Studio 100% verified.");
                 passCount++;
 
                 Console.WriteLine("\n================================================================================");

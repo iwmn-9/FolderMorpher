@@ -71,6 +71,8 @@
                                  Checked="NavTab_Checked" Tag="🧹" Content="ファイル監査・整理" ToolTip="🧹 重複・休眠・パス長チェック"/>
                     <RadioButton x:Name="NavTabMedia" Style="{StaticResource SidebarNavButton}"
                                  Checked="NavTab_Checked" Tag="🖼️" Content="メディア最適化" ToolTip="🖼️ 写真軽量化 &amp; 大容量動画抽出"/>
+                    <RadioButton x:Name="NavTabSearch" Style="{StaticResource SidebarNavButton}"
+                                 Checked="NavTab_Checked" Tag="🔍" Content="統合ファイル検索" ToolTip="🔍 高速・全文 統合ファイル検索"/>
                 </StackPanel>
 
                 <!-- Sidebar Footer -->
@@ -1426,6 +1428,196 @@
                                 <DataGridTextColumn x:Name="ColMediaSavedSize" Header="削減容量" Binding="{Binding SavedSizeFormatted}" Width="100" ElementStyle="{StaticResource RightAlignedCell}"/>
                                 <DataGridTextColumn x:Name="ColMediaStatus" Header="状態 / 保護" Binding="{Binding Status}" Width="180" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                 <DataGridTextColumn x:Name="ColMediaFullPath" Header="完全パス" Binding="{Binding FullPath}" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ======================================================== -->
+            <!-- TAB 7: SEARCH STUDIO (高速・全文 統合ファイル検索)         -->
+            <!-- ======================================================== -->
+            <Grid x:Name="SearchTabPanel" Visibility="Collapsed" Margin="20,16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/> <!-- Controls Card -->
+                    <RowDefinition Height="Auto"/> <!-- KPI Summary Cards -->
+                    <RowDefinition Height="*"/>    <!-- Results DataGrid -->
+                </Grid.RowDefinitions>
+
+                <!-- Controls Card -->
+                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="18" Margin="0,0,0,14">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
+                    </Border.Effect>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/> <!-- Search Box & Action Buttons -->
+                            <RowDefinition Height="Auto"/> <!-- Scope Selection & Target Folder -->
+                            <RowDefinition Height="Auto"/> <!-- Smart Chips (Presets) -->
+                            <RowDefinition Height="Auto"/> <!-- Progress Bar -->
+                        </Grid.RowDefinitions>
+
+                        <!-- Row 0: Search Box & Buttons -->
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="SearchInputBox" Height="36" FontSize="13" Padding="10,0"
+                                     VerticalContentAlignment="Center" BorderBrush="#CBD5E1"
+                                     TextChanged="SearchInputBox_TextChanged" KeyDown="SearchInputBox_KeyDown"
+                                     ToolTip="検索構文を入力 (例: ext:xlsx size:&gt;10MB dormant:3y content:社外秘 regex:^backup.*\.zip)"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
+                                <Button x:Name="SearchExecuteButton" Content="🔍 検索" Height="36" Padding="14,0"
+                                        Style="{StaticResource FluentButtonPrimary}" Click="SearchExecuteButton_Click"
+                                        ToolTip="検索を実行 (Enterキーでも実行可能)"/>
+                                <Button x:Name="SearchCancelButton" Content="⏹ 中断" Height="36" Padding="12,0" Margin="6,0,0,0"
+                                        Style="{StaticResource FluentButtonDanger}" Click="SearchCancelButton_Click"
+                                        Visibility="Collapsed" ToolTip="実行中の走査を中断"/>
+                                <Button x:Name="SearchClearButton" Content="✕ クリア" Height="36" Padding="10,0" Margin="6,0,0,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchClearButton_Click"
+                                        ToolTip="入力内容と結果をクリア"/>
+                                <Button x:Name="SearchExportExcelButton" Content="📊 Excel台帳 (.xlsx)" Height="36" Margin="6,0,0,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchExportExcelButton_Click"
+                                        ToolTip="検索結果をExcel台帳として保存"/>
+                                <Button x:Name="SearchExportCsvButton" Content="📑 CSV" Height="36" Margin="6,0,0,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchExportCsvButton_Click"
+                                        ToolTip="検索結果をCSVファイルとして保存"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Row 1: Scope & Target Folder -->
+                        <Grid Grid.Row="1" Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
+                                <RadioButton x:Name="SearchScopeScannedRadio" Content="⚡ スキャン済みツリー (インメモリ 0秒)" IsChecked="True"
+                                             FontSize="12" Foreground="#334155" VerticalContentAlignment="Center" Margin="0,0,12,0"
+                                             ToolTip="容量分析タブでスキャン済みのツリー構造に対して0秒インメモリ超高速検索"/>
+                                <RadioButton x:Name="SearchScopeDirectRadio" Content="🌐 ライブ直接走査 (未スキャンフォルダ / UNC)"
+                                             FontSize="12" Foreground="#334155" VerticalContentAlignment="Center"
+                                             ToolTip="指定フォルダーやUNC共有を直接走査しながらリアルタイム検索"/>
+                            </StackPanel>
+                            <TextBlock x:Name="SearchTargetFolderLabel" Grid.Column="1" Text="対象フォルダー:" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <Grid Grid.Column="2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="SearchDirectTargetTextBox" Height="28" FontSize="11" Padding="6,0" VerticalContentAlignment="Center" BorderBrush="#CBD5E1"/>
+                                <Button x:Name="SearchDirectBrowseButton" Grid.Column="1" Content="📁 参照..." Height="28" Margin="4,0,0,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchDirectBrowseButton_Click"/>
+                            </Grid>
+                        </Grid>
+
+                        <!-- Row 2: Smart Chips (Presets) -->
+                        <WrapPanel Grid.Row="2" Margin="0,10,0,0">
+                            <TextBlock x:Name="SearchQuickPresetsLabel" Text="クイック検索:" FontSize="11" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <Button x:Name="SearchChipLarge" Content="🐘 1GB超 (size:&gt;1GB)" Height="26" FontSize="11" Padding="8,0" Margin="0,0,6,0"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchChipLarge_Click"/>
+                            <Button x:Name="SearchChipDormant" Content="💤 3年休眠 (dormant:3y)" Height="26" FontSize="11" Padding="8,0" Margin="0,0,6,0"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchChipDormant_Click"/>
+                            <Button x:Name="SearchChipPathLen" Content="📏 240字超 (pathlen:&gt;240)" Height="26" FontSize="11" Padding="8,0" Margin="0,0,6,0"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchChipPathLen_Click"/>
+                            <Button x:Name="SearchChipIllegal" Content="⚠️ 禁則文字 (chars:illegal)" Height="26" FontSize="11" Padding="8,0" Margin="0,0,6,0"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchChipIllegal_Click"/>
+                            <Button x:Name="SearchChipOffice" Content="🔗 Officeリンク (office-link:&quot;\\&quot;)" Height="26" FontSize="11" Padding="8,0" Margin="0,0,6,0"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchChipOffice_Click"/>
+                            <TextBlock x:Name="SearchSyntaxHintText" Text="※構文: ext:xlsx,docx size:&gt;100MB date:&gt;2024-01-01 content:キーワード !除外 word" FontSize="10.5" Foreground="#94A3B8" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        </WrapPanel>
+
+                        <!-- Row 3: Progress Bar -->
+                        <ProgressBar x:Name="SearchProgressBar" Grid.Row="3" Height="3" Margin="0,8,0,0"
+                                     IsIndeterminate="True" Visibility="Collapsed" Foreground="#2563EB" Background="#E2E8F0" BorderThickness="0"/>
+                    </Grid>
+                </Border>
+
+                <!-- KPI Cards -->
+                <Grid Grid.Row="1" Margin="0,0,0,14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
+                        <StackPanel>
+                            <TextBlock x:Name="SearchKpiHitCountTitle" Text="ヒット件数" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="SearchKpiHitCountText" Text="0 件" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#0F172A" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
+                        <StackPanel>
+                            <TextBlock x:Name="SearchKpiTotalSizeTitle" Text="合計容量" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="SearchKpiTotalSizeText" Text="0 B" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#2563EB" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
+                        <StackPanel>
+                            <TextBlock x:Name="SearchKpiElapsedTitle" Text="検索所要時間" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="SearchKpiElapsedText" Text="0.00s" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#059669" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="3" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12">
+                        <StackPanel>
+                            <TextBlock x:Name="SearchStatusTitle" Text="ステータス / 走査パス" FontSize="11" Foreground="#64748B"/>
+                            <TextBlock x:Name="SearchStatusText" Text="待機中" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="#64748B" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Results DataGrid -->
+                <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="18">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
+                    </Border.Effect>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                            <TextBlock x:Name="SearchTableTitleText" Text="検索結果一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="SearchTableHintText" Text="※ダブルクリックで直接開く / 右クリックで Live ACL・移行スタジオ・リンク修復・監査へ連携"
+                                       FontSize="11" Foreground="#94A3B8" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                        </Grid>
+                        <DataGrid x:Name="SearchDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
+                                  BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="28"
+                                  HeadersVisibility="Column" RowHeaderWidth="0"
+                                  VirtualizingStackPanel.IsVirtualizing="True"
+                                  VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                  EnableRowVirtualization="True"
+                                  ScrollViewer.CanContentScroll="True"
+                                  MouseDoubleClick="SearchDataGrid_MouseDoubleClick">
+                            <DataGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="📄 ファイルを開く (Open)" Click="SearchContextMenu_Open_Click"/>
+                                    <MenuItem Header="📂 エクスプローラーで表示 (Explore)" Click="SearchContextMenu_Explore_Click"/>
+                                    <MenuItem Header="📋 フルパスをコピー (Copy Path)" Click="SearchContextMenu_CopyPath_Click"/>
+                                    <MenuItem Header="📋 ファイル名をコピー (Copy Name)" Click="SearchContextMenu_CopyName_Click"/>
+                                    <Separator/>
+                                    <MenuItem Header="🛡️ Live ACLで開く (Live ACL Control)" Click="SearchContextMenu_LiveAcl_Click"/>
+                                    <MenuItem Header="🚀 移行スタジオに追加 (Simulation)" Click="SearchContextMenu_Simulation_Click"/>
+                                    <MenuItem Header="🔗 リンク修復へ転送 (LinkFixer)" Click="SearchContextMenu_LinkFix_Click"/>
+                                    <MenuItem Header="🧹 ファイル整理・監査へ転送 (Audit &amp; Hygiene)" Click="SearchContextMenu_Audit_Click"/>
+                                </ContextMenu>
+                            </DataGrid.ContextMenu>
+                            <DataGrid.Columns>
+                                <DataGridTextColumn x:Name="ColSearchType" Header="種別" Binding="{Binding TypeIcon}" Width="50" ElementStyle="{StaticResource CenterAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColSearchName" Header="ファイル名" Binding="{Binding Name}" SortMemberPath="Name" Width="220" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColSearchSize" Header="容量" Binding="{Binding FormattedSize}" SortMemberPath="SizeBytes" Width="95" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColSearchModified" Header="最終更新日時" Binding="{Binding FormattedDate}" SortMemberPath="LastWriteTime" Width="135" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColSearchExt" Header="拡張子" Binding="{Binding Extension}" SortMemberPath="Extension" Width="65" ElementStyle="{StaticResource CenterAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColSearchPathLen" Header="文字数" Binding="{Binding PathLength}" SortMemberPath="PathLength" Width="60" ElementStyle="{StaticResource RightAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColSearchMatch" Header="一致理由 / 抜粋" Binding="{Binding DisplaySnippetOrReason}" SortMemberPath="MatchedReason" Width="220" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColSearchFullPath" Header="完全パス" Binding="{Binding FullPath}" SortMemberPath="FullPath" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Grid>

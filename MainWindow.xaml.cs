@@ -124,6 +124,7 @@ namespace AstraSize
 
             AuditItemsDataGrid.ItemsSource = _auditVisibleItems;
             AuditItem.GlobalCheckedChanged += (item) => UpdateLiveSelectedReduction();
+            InitializeSearchStudio();
             Loaded += MainWindow_Loaded;
         }
 
@@ -173,7 +174,7 @@ namespace AstraSize
         private void NavTab_Checked(object sender, RoutedEventArgs e)
         {
             if (StorageTabPanel == null || LiveAclStudioControl == null || SimulationTabPanel == null || LinkFixTabPanel == null ||
-                AuditTabPanel == null || MediaTabPanel == null)
+                AuditTabPanel == null || MediaTabPanel == null || SearchTabPanel == null)
                 return;
 
             StorageTabPanel.Visibility = Visibility.Collapsed;
@@ -182,6 +183,7 @@ namespace AstraSize
             LinkFixTabPanel.Visibility = Visibility.Collapsed;
             AuditTabPanel.Visibility = Visibility.Collapsed;
             MediaTabPanel.Visibility = Visibility.Collapsed;
+            SearchTabPanel.Visibility = Visibility.Collapsed;
 
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
 
@@ -233,6 +235,15 @@ namespace AstraSize
                 if (string.IsNullOrWhiteSpace(MediaPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
                 {
                     MediaPathTextBox.Text = PathTextBox.Text;
+                }
+            }
+            else if (NavTabSearch.IsChecked == true)
+            {
+                SearchTabPanel.Visibility = Visibility.Visible;
+                StatusTextBlock.Text = isJa ? "モード: 高速・全文 統合ファイル検索 (Search Studio)" : "Mode: Search Studio";
+                if (string.IsNullOrWhiteSpace(SearchDirectTargetTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
+                {
+                    SearchDirectTargetTextBox.Text = PathTextBox.Text;
                 }
             }
         }
