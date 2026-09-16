@@ -501,7 +501,13 @@ namespace FolderMorpher.Services
                 sb.AppendLine($"echo 次のWaveを実行します: {w.WaveName}");
                 sb.AppendLine($"set /p W_EXEC=\"実行しますか？ (Y/N/Skip): \"");
                 sb.AppendLine($"if /i \"%W_EXEC%\"==\"Y\" (");
-                sb.AppendLine($"    call \"{dirName}\\{Path.GetFileName(w.FullBat)}\"");
+                sb.AppendLine($"    call \"%~dp0{dirName}\\{Path.GetFileName(w.FullBat)}\"");
+                sb.AppendLine($"    if errorlevel 1 (");
+                sb.AppendLine($"        echo.");
+                sb.AppendLine($"        echo [ABORT] {w.WaveName} の実行でエラーが検出されたため、後続のWaveを安全停止しました。");
+                sb.AppendLine($"        pause");
+                sb.AppendLine($"        exit /b 1");
+                sb.AppendLine($"    )");
                 sb.AppendLine($")");
             }
             sb.AppendLine("goto END");
@@ -515,7 +521,13 @@ namespace FolderMorpher.Services
                 sb.AppendLine($"echo 【本番切替】次のWaveを実行します: {w.WaveName}");
                 sb.AppendLine($"set /p W_EXEC=\"実行しますか？ (Y/N/Skip): \"");
                 sb.AppendLine($"if /i \"%W_EXEC%\"==\"Y\" (");
-                sb.AppendLine($"    call \"{dirName}\\{Path.GetFileName(w.CutoverBat)}\"");
+                sb.AppendLine($"    call \"%~dp0{dirName}\\{Path.GetFileName(w.CutoverBat)}\"");
+                sb.AppendLine($"    if errorlevel 1 (");
+                sb.AppendLine($"        echo.");
+                sb.AppendLine($"        echo [ABORT] {w.WaveName} の本番切替でエラーが検出されたため、後続のWaveを安全停止しました。");
+                sb.AppendLine($"        pause");
+                sb.AppendLine($"        exit /b 1");
+                sb.AppendLine($"    )");
                 sb.AppendLine($")");
             }
             sb.AppendLine("goto END");

@@ -1044,6 +1044,15 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException("パッケージ生成欠陥: 00_Run_All_Waves_StepByStep.bat が存在しません。");
                 }
+                string masterBatContent = File.ReadAllText(masterBat, System.Text.Encoding.UTF8);
+                if (!masterBatContent.Contains("call \"%~dp0"))
+                {
+                    throw new InvalidOperationException("Master BAT欠陥: call %~dp0 によるスクリプト相対呼び出しになっていません。");
+                }
+                if (!masterBatContent.Contains("if errorlevel 1") || !masterBatContent.Contains("exit /b 1"))
+                {
+                    throw new InvalidOperationException("Master BAT欠陥: if errorlevel 1 による安全停止・エラー伝播 (exit /b 1) が施工されていません。");
+                }
 
                 string readmeMd = Path.Combine(packageDir, "README_MIGRATION_GUIDE.md");
                 if (!File.Exists(readmeMd))

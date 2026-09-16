@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -10,7 +11,7 @@ using System.Threading.Tasks;
 namespace FolderMorpher.Services
 {
     /// <summary>
-    /// ファイル（Office OpenXML, PDF, プレーンテキスト）からの本文テキスト抽出を行う共通サービスクラス（正本の単一性）。
+    /// ファイル（Office OpenXML, PDF, プレーンテキスト）からの本文テキスト抽出およびストリーム高速検索を行う共通サービスクラス（正本の単一性）。
     /// </summary>
     public static class ContentExtractionService
     {
@@ -24,6 +25,21 @@ namespace FolderMorpher.Services
             ".xlsx", ".xlsm", ".docx", ".pptx", ".pdf"
         };
 
+        private static readonly Encoding SjisEncoding;
+
+        static ContentExtractionService()
+        {
+            try
+            {
+                Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                SjisEncoding = Encoding.GetEncoding(932); // Shift-JIS (CP932)
+            }
+            catch
+            {
+                SjisEncoding = Encoding.UTF8;
+            }
+        }
+
         /// <summary>
         /// 指定ファイルが本文抽出に対応しているか判定
         /// </summary>
@@ -35,7 +51,7 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// ファイルから本文テキストを非同期で抽出します。
+        /// ファイルから本文テキストを非同期で抽出します（Index登録用）。
         /// </summary>
         public static async Task<string?> ExtractTextAsync(string filePath, CancellationToken ct = default)
         {
@@ -55,7 +71,7 @@ namespace FolderMorpher.Services
                 return PdfSearchHelper.ExtractAllText(filePath);
             }
 
-            // 3. プレーンテキスト (.txt, .csv, .log, .json 等)
+            // 3. プレーンテキスト (.txt, .csv, .log, .json 等 - UTF-8 / UTF-16 / Shift-JIS自動判別)
             return await ExtractPlainTextAsync(filePath, ct);
         }
 
@@ -107,7 +123,7 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// プレーンテキストファイルからエンコーディング自動判別（UTF-8, UTF-16LE/BE, Shift-JIS）で本文を抽出します。
+        /// プレーンテキストファイルからエンコーディング自動判別（UTF-8, UTF-16LE/BE, Shift-JIS/CP932）で本文を抽出します。
         /// </summary>
         public static async Task<string?> ExtractPlainTextAsync(string filePath, CancellationToken ct = default)
         {
@@ -116,50 +132,53 @@ namespace FolderMorpher.Services
                 using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 if (fs.Length == 0) return null;
 
-                // BOM および UTF-16 検出
-                byte[] bom = new byte[Math.Min(4, (int)fs.Length)];
-                int bytesRead = await fs.ReadAsync(bom.AsMemory(0, bom.Length), ct);
+                // 1. BOM および UTF-16 判定
+                byte[] head = new byte[Math.Min(4096, (int)fs.Length)];
+                int bytesRead = await fs.ReadAsync(head.AsMemory(0, head.Length), ct);
                 fs.Position = 0;
 
-                Encoding encoding = Encoding.UTF8;
                 if (bytesRead >= 2)
                 {
-                    if (bom[0] == 0xFF && bom[1] == 0xFE)
+                    if (head[0] == 0xFF && head[1] == 0xFE)
                     {
-                        encoding = Encoding.Unicode; // UTF-16 LE
+                        return await ReadStreamWithEncodingAsync(fs, Encoding.Unicode, ct); // UTF-16 LE
                     }
-                    else if (bom[0] == 0xFE && bom[1] == 0xFF)
+                    if (head[0] == 0xFE && head[1] == 0xFF)
                     {
-                        encoding = Encoding.BigEndianUnicode; // UTF-16 BE
-                    }
-                    else if (bytesRead >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF)
-                    {
-                        encoding = Encoding.UTF8; // UTF-8 with BOM
-                    }
-                    else
-                    {
-                        // ゼロバイト頻度で UTF-16 LE を推定
-                        byte[] sample = new byte[Math.Min(1024, (int)fs.Length)];
-                        int sampleRead = await fs.ReadAsync(sample.AsMemory(0, sample.Length), ct);
-                        fs.Position = 0;
-
-                        int nullCount = 0;
-                        for (int i = 1; i < sampleRead; i += 2)
-                        {
-                            if (sample[i] == 0x00) nullCount++;
-                        }
-                        if (nullCount > (sampleRead / 4))
-                        {
-                            encoding = Encoding.Unicode;
-                        }
+                        return await ReadStreamWithEncodingAsync(fs, Encoding.BigEndianUnicode, ct); // UTF-16 BE
                     }
                 }
+                if (bytesRead >= 3 && head[0] == 0xEF && head[1] == 0xBB && head[2] == 0xBF)
+                {
+                    return await ReadStreamWithEncodingAsync(fs, Encoding.UTF8, ct); // UTF-8 with BOM
+                }
 
-                using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true);
-                char[] buffer = new char[Math.Min(MaxCharsPerDocument, (int)Math.Min(fs.Length, MaxCharsPerDocument))];
-                int charsRead = await reader.ReadBlockAsync(buffer.AsMemory(0, buffer.Length), ct);
+                // 2. BOMなし UTF-16LE ヒューリスティック判定
+                int nullCount = 0;
+                for (int i = 1; i < bytesRead; i += 2)
+                {
+                    if (head[i] == 0x00) nullCount++;
+                }
+                if (bytesRead >= 8 && nullCount > (bytesRead / 4))
+                {
+                    return await ReadStreamWithEncodingAsync(fs, Encoding.Unicode, ct);
+                }
 
-                return charsRead > 0 ? new string(buffer, 0, charsRead) : null;
+                // 3. UTF-8 (Strict) 試行 ➔ 失敗時に Shift-JIS (CP932) フォールバック
+                try
+                {
+                    var strictUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+                    using var reader = new StreamReader(fs, strictUtf8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
+                    char[] buffer = new char[Math.Min(MaxCharsPerDocument, (int)Math.Min(fs.Length, MaxCharsPerDocument))];
+                    int charsRead = await reader.ReadBlockAsync(buffer.AsMemory(0, buffer.Length), ct);
+                    return charsRead > 0 ? new string(buffer, 0, charsRead) : null;
+                }
+                catch (DecoderFallbackException)
+                {
+                    // UTF-8 デコード失敗（不正シーケンス検知） ➔ 日本語ファイルサーバー標準の Shift-JIS (CP932) で再読込
+                    fs.Position = 0;
+                    return await ReadStreamWithEncodingAsync(fs, SjisEncoding, ct);
+                }
             }
             catch
             {
@@ -167,19 +186,204 @@ namespace FolderMorpher.Services
             }
         }
 
+        private static async Task<string?> ReadStreamWithEncodingAsync(FileStream fs, Encoding encoding, CancellationToken ct)
+        {
+            using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: true);
+            char[] buffer = new char[Math.Min(MaxCharsPerDocument, (int)Math.Min(fs.Length, MaxCharsPerDocument))];
+            int charsRead = await reader.ReadBlockAsync(buffer.AsMemory(0, buffer.Length), ct);
+            return charsRead > 0 ? new string(buffer, 0, charsRead) : null;
+        }
+
+        #region Live走査用 高速ストリーム検索（Early Exit 対応・正本の単一化）
+
+        /// <summary>
+        /// Officeファイル（Excel/Word/PowerPoint）をストリーム走査し、キーワード群の包含判定を高速実行（Early Exit対応）。
+        /// </summary>
+        public static bool SearchOfficeContent(string filePath, IReadOnlyList<string> keywords, out string snippet)
+        {
+            snippet = string.Empty;
+            if (keywords.Count == 0) return false;
+
+            try
+            {
+                string ext = Path.GetExtension(filePath).ToLowerInvariant();
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var zip = new ZipArchive(fs, ZipArchiveMode.Read, false);
+
+                // Excel (.xlsx / .xlsm) の場合は sharedStrings.xml を最優先・ピンポイント探索
+                if (ext == ".xlsx" || ext == ".xlsm")
+                {
+                    ZipArchiveEntry? sharedEntry = zip.Entries.FirstOrDefault(e => e.FullName.EndsWith("sharedstrings.xml", StringComparison.OrdinalIgnoreCase));
+                    if (sharedEntry != null)
+                    {
+                        using var stream = sharedEntry.Open();
+                        using var reader = new StreamReader(stream, Encoding.UTF8);
+                        string text = reader.ReadToEnd();
+
+                        bool allFound = true;
+                        string firstSnippet = string.Empty;
+                        foreach (var kw in keywords)
+                        {
+                            int idx = text.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
+                            if (idx >= 0)
+                            {
+                                if (string.IsNullOrEmpty(firstSnippet)) firstSnippet = ExtractSnippet(text, idx, kw.Length);
+                            }
+                            else
+                            {
+                                allFound = false;
+                                break;
+                            }
+                        }
+
+                        if (allFound)
+                        {
+                            snippet = firstSnippet;
+                            return true; // sharedStrings で全キーワードが揃ったので Early exit!
+                        }
+                    }
+                }
+
+                // Word (.docx), PowerPoint (.pptx), または sharedStrings だけでは見つからなかった Excel の探索
+                var foundKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                string firstFoundSnippet = string.Empty;
+
+                foreach (var entry in zip.Entries)
+                {
+                    string entryName = entry.FullName.ToLowerInvariant();
+                    if (!entryName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) && !entryName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!entryName.Contains("sharedstrings") &&
+                        !entryName.Contains("sheet") &&
+                        !entryName.Contains("document") &&
+                        !entryName.Contains("slide") &&
+                        !entryName.Contains("comment") &&
+                        !entryName.Contains("footnote"))
+                    {
+                        continue;
+                    }
+
+                    using var stream = entry.Open();
+                    using var reader = new StreamReader(stream, Encoding.UTF8);
+                    string xml = reader.ReadToEnd();
+                    string clean = Regex.Replace(xml, @"<[^>]+>", " ");
+
+                    foreach (var kw in keywords)
+                    {
+                        if (!foundKeywords.Contains(kw))
+                        {
+                            int idx = clean.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
+                            if (idx >= 0)
+                            {
+                                foundKeywords.Add(kw);
+                                if (string.IsNullOrEmpty(firstFoundSnippet))
+                                {
+                                    firstFoundSnippet = ExtractSnippet(clean, idx, kw.Length);
+                                }
+                            }
+                        }
+                    }
+
+                    if (foundKeywords.Count == keywords.Count)
+                    {
+                        snippet = firstFoundSnippet;
+                        return true;
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>
+        /// プレーンテキストファイルをストリーム走査し、キーワード群の包含判定を高速実行（UTF-8/16/Shift-JIS対応・Early Exit対応）。
+        /// </summary>
+        public static async Task<string?> SearchTextContentAsync(string filePath, IReadOnlyList<string> keywords, CancellationToken ct)
+        {
+            if (keywords.Count == 0) return null;
+
+            try
+            {
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, true);
+                if (fs.Length == 0) return null;
+
+                // 先頭バイトでエンコーディング判定
+                byte[] head = new byte[Math.Min(4096, (int)fs.Length)];
+                int bytesRead = await fs.ReadAsync(head.AsMemory(0, head.Length), ct);
+                fs.Position = 0;
+
+                Encoding encoding = Encoding.UTF8;
+                if (bytesRead >= 2)
+                {
+                    if (head[0] == 0xFF && head[1] == 0xFE) encoding = Encoding.Unicode;
+                    else if (head[0] == 0xFE && head[1] == 0xFF) encoding = Encoding.BigEndianUnicode;
+                    else
+                    {
+                        // バイナリ早期脱落判定
+                        int nulls = 0;
+                        for (int i = 0; i < bytesRead; i++) if (head[i] == 0) nulls++;
+                        if (nulls >= 2) return null; // 純粋なバイナリは即座に脱落
+                    }
+                }
+
+                // 行単位ストリーム走査
+                using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true);
+                var foundKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                string? firstSnippet = null;
+
+                string? line;
+                while ((line = await reader.ReadLineAsync(ct)) != null)
+                {
+                    foreach (var kw in keywords)
+                    {
+                        if (!foundKeywords.Contains(kw))
+                        {
+                            int idx = line.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
+                            if (idx >= 0)
+                            {
+                                foundKeywords.Add(kw);
+                                if (firstSnippet == null)
+                                {
+                                    firstSnippet = ExtractSnippet(line, idx, kw.Length);
+                                }
+                            }
+                        }
+                    }
+
+                    if (foundKeywords.Count == keywords.Count)
+                    {
+                        return firstSnippet ?? keywords[0];
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        #endregion
+
         /// <summary>
         /// 本文テキスト内からキーワードの一致スニペット（前後文字列）を抽出します。
         /// </summary>
         public static string ExtractSnippet(string text, string keyword, int radius = DefaultSnippetRadius)
         {
             if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(keyword)) return string.Empty;
-
             int idx = text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
             if (idx < 0) return string.Empty;
+            return ExtractSnippet(text, idx, keyword.Length, radius);
+        }
 
-            int start = Math.Max(0, idx - radius);
-            int length = Math.Min(text.Length - start, keyword.Length + (radius * 2));
+        /// <summary>
+        /// 一致位置と長さからスニペットを抽出します。
+        /// </summary>
+        public static string ExtractSnippet(string text, int matchIndex, int matchLength, int radius = DefaultSnippetRadius)
+        {
+            if (string.IsNullOrEmpty(text) || matchIndex < 0) return string.Empty;
+
+            int start = Math.Max(0, matchIndex - radius);
+            int length = Math.Min(text.Length - start, matchLength + (radius * 2));
             string snippet = text.Substring(start, length).Replace("\r", " ").Replace("\n", " ");
+            snippet = Regex.Replace(snippet, @"<[^>]+>", " ");
+            snippet = Regex.Replace(snippet, @"\s+", " ");
 
             if (start > 0) snippet = "..." + snippet;
             if (start + length < text.Length) snippet += "...";

@@ -135,8 +135,10 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// 指定パスまたはその上位フォルダーが完全にインデックス化（Status == Complete かつ 最新ExtractorVersion）されているか判定。
-        /// 中断された不完全なインデックスによる検索漏れ（false negative）を完全に防止します。
+        /// 指定パスまたはその上位フォルダーが完全にインデックス化されているか判定。
+        /// 一致する最深（最長パス）の Root を正本として検証し、
+        /// Status == 'Complete' かつ ExtractorVersion 一致 かつ CoverageComplete == 1 の場合のみ true を返す。
+        /// 親が Complete でも子が Error の場合の中断漏れ、および未走査フォルダーの誤判定を完全に防止。
         /// </summary>
         public bool HasCompleteIndexForPath(string folderPath)
         {
@@ -150,10 +152,13 @@ namespace FolderMorpher.Services
 
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
-                    SELECT RootPath FROM IndexedRoots 
-                    WHERE Status = 'Complete' 
-                      AND ExtractorVersion = @extVer";
-                cmd.Parameters.AddWithValue("@extVer", CurrentExtractorVersion);
+                    SELECT RootPath, Status, CoverageComplete, ExtractorVersion 
+                    FROM IndexedRoots";
+
+                string? bestRootPath = null;
+                string? bestStatus = null;
+                int bestCoverage = 0;
+                int bestExtVer = 0;
 
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
@@ -162,11 +167,22 @@ namespace FolderMorpher.Services
                     if (norm.Equals(root, StringComparison.OrdinalIgnoreCase) ||
                         norm.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase))
                     {
-                        return true;
+                        // 最深（最もパスが長い＝最も近い）Root を選択
+                        if (bestRootPath == null || root.Length > bestRootPath.Length)
+                        {
+                            bestRootPath = root;
+                            bestStatus = reader.GetString(1);
+                            bestCoverage = reader.GetInt32(2);
+                            bestExtVer = reader.GetInt32(3);
+                        }
                     }
                 }
 
-                return false;
+                if (bestRootPath == null) return false;
+
+                return string.Equals(bestStatus, "Complete", StringComparison.OrdinalIgnoreCase) &&
+                       bestCoverage == 1 &&
+                       bestExtVer == CurrentExtractorVersion;
             }
         }
 
@@ -225,17 +241,22 @@ namespace FolderMorpher.Services
                         onProgress: null,
                         ct: ct);
 
-                    // 検索対象の拡張子（Office, PDF, Text）
-                    var supportedExts = ContentExtractionService.SupportedExtensions;
-
-                    const long MaxIndexFileSize = 50L * 1024 * 1024; // 50MB上限
-                    var targetEntries = scannedEntries
-                        .Where(e => !e.Attributes.HasFlag(FileAttributes.Directory) &&
-                                    e.Length <= MaxIndexFileSize &&
-                                    supportedExts.Contains(Path.GetExtension(e.Name)))
+                    // 2. ファイルを全ファイルと本文対象ファイルに分類 (抜本案: 全ファイルメタデータ登録 ＋ 本文対象のみFTS)
+                    var allFiles = scannedEntries
+                        .Where(e => !e.Attributes.HasFlag(FileAttributes.Directory))
                         .ToList();
 
-                    // 2. 既存DBのメタデータ状態をロード（パス境界を厳格化して近接類似フォルダーの巻き込みを防止）
+                    var supportedExts = ContentExtractionService.SupportedExtensions;
+                    const long MaxIndexFileSize = 50L * 1024 * 1024; // 50MB上限
+
+                    var contentTargets = allFiles
+                        .Where(e => e.Length <= MaxIndexFileSize && supportedExts.Contains(Path.GetExtension(e.Name)))
+                        .ToList();
+                    var metadataOnlyFiles = allFiles
+                        .Where(e => e.Length > MaxIndexFileSize || !supportedExts.Contains(Path.GetExtension(e.Name)))
+                        .ToList();
+
+                    // 3. 既存DBのメタデータ状態をロード（パス境界を厳格化して近接類似フォルダーの巻き込みを防止）
                     var existingMap = new Dictionary<string, (long FileId, long SizeBytes, long LastWriteTicks, int Status, int ExtractorVer)>(StringComparer.OrdinalIgnoreCase);
                     lock (_lock)
                     {
@@ -265,9 +286,9 @@ namespace FolderMorpher.Services
                         }
                     }
 
-                    // 3. 亡霊ファイル（削除・リネームで消失した旧パス）のクリーンアップ (Sol指摘2 & アクセス拒否保護)
+                    // 4. 亡霊ファイル（削除・リネームで消失した旧パス）のクリーンアップ (Sol指摘2 & アクセス拒否保護)
                     int deletedCount = 0;
-                    var currentPaths = new HashSet<string>(scannedEntries.Select(e => e.FullPath), StringComparer.OrdinalIgnoreCase);
+                    var currentPaths = new HashSet<string>(allFiles.Select(e => e.FullPath), StringComparer.OrdinalIgnoreCase);
                     var ghostFileIds = existingMap
                         .Where(kvp => !currentPaths.Contains(kvp.Key))
                         .Select(kvp => kvp.Value.FileId)
@@ -300,11 +321,78 @@ namespace FolderMorpher.Services
                         deletedCount = ghostFileIds.Count;
                     }
 
-                    // 4. 差分判定（未変更スキップ、新規・更新・ExtractorVersion不一致・中断分を抽出）
-                    var toProcess = new List<ScannedFileEntry>();
                     int alreadyIndexed = 0;
+                    int newlyIndexed = 0;
+                    int failedCount = 0;
 
-                    foreach (var entry in targetEntries)
+                    // 5-A. 非本文ファイル（zip, exe, 動画, 画像など）のメタデータを IndexedFiles に一括登録 (抜本案)
+                    var metaToInsert = new List<ScannedFileEntry>();
+                    foreach (var entry in metadataOnlyFiles)
+                    {
+                        long currentTicks = entry.LastWriteTime.ToUniversalTime().Ticks;
+                        if (existingMap.TryGetValue(entry.FullPath, out var meta))
+                        {
+                            if (meta.SizeBytes == entry.Length && meta.LastWriteTicks == currentTicks)
+                            {
+                                alreadyIndexed++;
+                                continue;
+                            }
+                        }
+                        metaToInsert.Add(entry);
+                    }
+
+                    if (metaToInsert.Count > 0)
+                    {
+                        lock (_lock)
+                        {
+                            using var conn = new SqliteConnection(_connectionString);
+                            conn.Open();
+                            using var trans = conn.BeginTransaction();
+                            long nowTicks = DateTime.UtcNow.Ticks;
+                            foreach (var entry in metaToInsert)
+                            {
+                                long currentTicks = entry.LastWriteTime.ToUniversalTime().Ticks;
+                                if (existingMap.TryGetValue(entry.FullPath, out var meta))
+                                {
+                                    using var cmdUpd = conn.CreateCommand();
+                                    cmdUpd.Transaction = trans;
+                                    cmdUpd.CommandText = @"
+                                        UPDATE IndexedFiles 
+                                        SET SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, Status = 0, 
+                                            IndexedAtUtcTicks = @now, ExtractorVersion = @ver
+                                        WHERE FileId = @fileId";
+                                    cmdUpd.Parameters.AddWithValue("@size", entry.Length);
+                                    cmdUpd.Parameters.AddWithValue("@ticks", currentTicks);
+                                    cmdUpd.Parameters.AddWithValue("@now", nowTicks);
+                                    cmdUpd.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
+                                    cmdUpd.Parameters.AddWithValue("@fileId", meta.FileId);
+                                    cmdUpd.ExecuteNonQuery();
+                                }
+                                else
+                                {
+                                    using var cmdIns = conn.CreateCommand();
+                                    cmdIns.Transaction = trans;
+                                    cmdIns.CommandText = @"
+                                        INSERT INTO IndexedFiles (FullPath, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion)
+                                        VALUES (@path, @dir, @size, @ticks, 0, @now, @ver);";
+                                    cmdIns.Parameters.AddWithValue("@path", entry.FullPath);
+                                    cmdIns.Parameters.AddWithValue("@dir", entry.DirectoryPath);
+                                    cmdIns.Parameters.AddWithValue("@size", entry.Length);
+                                    cmdIns.Parameters.AddWithValue("@ticks", currentTicks);
+                                    cmdIns.Parameters.AddWithValue("@now", nowTicks);
+                                    cmdIns.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
+                                    cmdIns.ExecuteNonQuery();
+                                }
+                            }
+                            trans.Commit();
+                        }
+                        newlyIndexed += metaToInsert.Count;
+                    }
+
+                    // 5-B. 本文対象ファイル（Office/PDF/Text）の差分判定
+                    var toProcess = new List<ScannedFileEntry>();
+
+                    foreach (var entry in contentTargets)
                     {
                         long currentTicks = entry.LastWriteTime.ToUniversalTime().Ticks;
                         if (existingMap.TryGetValue(entry.FullPath, out var meta))
@@ -322,18 +410,17 @@ namespace FolderMorpher.Services
                     // ★ Sol提唱: 小さいファイル優先（Small-File First）でソート
                     toProcess = toProcess.OrderBy(e => e.Length).ToList();
 
-                    int totalDiscovered = targetEntries.Count;
-                    int processedCount = alreadyIndexed;
-                    int newlyIndexed = 0;
-                    int failedCount = 0;
+                    int totalDiscovered = allFiles.Count;
+                    int processedCount = alreadyIndexed + metaToInsert.Count;
 
                     progress?.Report(new IndexProgressReport
                     {
                         TotalDiscovered = totalDiscovered,
                         AlreadyIndexed = alreadyIndexed,
                         ProcessedCount = processedCount,
+                        NewlyIndexedCount = newlyIndexed,
                         DeletedCount = deletedCount,
-                        StatusMessage = $"インデックス更新開始 (対象: {toProcess.Count:N0} 件 / 変更なしスキップ: {alreadyIndexed:N0} 件 / 削除整理: {deletedCount:N0} 件)",
+                        StatusMessage = $"インデックス更新開始 (全ファイル: {totalDiscovered:N0} 件 / 本文抽出対象: {toProcess.Count:N0} 件 / 変更なしスキップ: {alreadyIndexed:N0} 件)",
                         Elapsed = sw.Elapsed
                     });
 
@@ -536,29 +623,13 @@ namespace FolderMorpher.Services
                     keywords.Add(query.ContentKeyword);
                 }
 
-                // 3文字以上（trigram MATCH可能）と 1〜2文字（MATCH不可、LIKEフォールバック）に分類 (Sol指摘1)
-                var trigramWords = new List<string>();
-                var shortWords = new List<string>();
-
-                foreach (var kw in keywords)
-                {
-                    if (string.IsNullOrWhiteSpace(kw)) continue;
-                    string trimmed = kw.Trim();
-                    if (trimmed.Length >= 3)
-                    {
-                        trigramWords.Add(trimmed);
-                    }
-                    else
-                    {
-                        shortWords.Add(trimmed);
-                    }
-                }
-
                 // キーワードも属性条件もない場合は空
-                if (keywords.Count == 0 && query.Extensions.Count == 0 && !query.MinSizeBytes.HasValue && !query.MaxSizeBytes.HasValue && !query.DormantYears.HasValue && !query.MinPathLength.HasValue && query.PathContains.Count == 0)
+                if (keywords.Count == 0 && query.Extensions.Count == 0 && !query.MinSizeBytes.HasValue && !query.MaxSizeBytes.HasValue && !query.DormantYears.HasValue && !query.DormantDays.HasValue && !query.MinPathLength.HasValue && query.PathContains.Count == 0)
                 {
                     return results;
                 }
+
+                bool isExplicitContentSearch = query.SearchContentMode || !string.IsNullOrEmpty(query.ContentKeyword);
 
                 lock (_lock)
                 {
@@ -567,30 +638,9 @@ namespace FolderMorpher.Services
 
                     using var cmd = conn.CreateCommand();
 
-                    var whereClauses = new List<string>();
-                    whereClauses.Add("f.Status = 1");
+                    // === 1. 共通属性条件 (Extensions, Min/MaxSize, Dormant, PathLen, PathContains, ScopeFolder) ===
+                    var commonWhereClauses = new List<string>();
 
-                    // 1. trigram MATCH (3文字以上の単語は AND 結合) (Sol指摘5)
-                    bool hasTrigramMatch = trigramWords.Count > 0;
-                    if (hasTrigramMatch)
-                    {
-                        var matchTerms = trigramWords.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
-                        string ftsMatch = string.Join(" AND ", matchTerms);
-                        whereClauses.Add("ContentFts MATCH @ftsQuery");
-                        cmd.Parameters.AddWithValue("@ftsQuery", ftsMatch);
-                    }
-
-                    // 2. 1〜2文字の単語 (LIKE フォールバック) (Sol指摘1)
-                    for (int i = 0; i < shortWords.Count; i++)
-                    {
-                        string paramName = $"@shortWord_{i}";
-                        whereClauses.Add($"(c.Body LIKE {paramName} OR f.FullPath LIKE {paramName})");
-                        string escVal = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                        cmd.Parameters.AddWithValue(paramName, escVal);
-                    }
-
-                    // 3. SearchQuery 構文の完全貫通 (Sol指摘4)
-                    // A. 拡張子フィルタ
                     if (query.Extensions.Count > 0)
                     {
                         var extConditions = new List<string>();
@@ -598,89 +648,159 @@ namespace FolderMorpher.Services
                         foreach (var rawExt in query.Extensions)
                         {
                             string pName = $"@ext_{extIdx}";
-                            extConditions.Add($"f.FullPath LIKE {pName}");
+                            extConditions.Add($"f.FullPath LIKE {pName} ESCAPE '\\'");
                             string ext = rawExt.StartsWith(".") ? rawExt : "." + rawExt;
-                            cmd.Parameters.AddWithValue(pName, "%" + ext);
+                            cmd.Parameters.AddWithValue(pName, "%" + ext.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_"));
                             extIdx++;
                         }
-                        whereClauses.Add("(" + string.Join(" OR ", extConditions) + ")");
+                        commonWhereClauses.Add("(" + string.Join(" OR ", extConditions) + ")");
                     }
 
-                    // B. サイズフィルタ
                     if (query.MinSizeBytes.HasValue)
                     {
-                        whereClauses.Add("f.SizeBytes >= @minSize");
+                        commonWhereClauses.Add("f.SizeBytes >= @minSize");
                         cmd.Parameters.AddWithValue("@minSize", query.MinSizeBytes.Value);
                     }
                     if (query.MaxSizeBytes.HasValue)
                     {
-                        whereClauses.Add("f.SizeBytes <= @maxSize");
+                        commonWhereClauses.Add("f.SizeBytes <= @maxSize");
                         cmd.Parameters.AddWithValue("@maxSize", query.MaxSizeBytes.Value);
                     }
 
-                    // C. 休眠年数フィルタ
                     if (query.DormantYears.HasValue)
                     {
                         long maxTicks = DateTime.UtcNow.AddYears(-query.DormantYears.Value).Ticks;
-                        whereClauses.Add("f.LastWriteTimeUtcTicks <= @dormantTicks");
+                        commonWhereClauses.Add("f.LastWriteTimeUtcTicks <= @dormantTicks");
                         cmd.Parameters.AddWithValue("@dormantTicks", maxTicks);
                     }
                     else if (query.DormantDays.HasValue)
                     {
                         long maxTicks = DateTime.UtcNow.AddDays(-query.DormantDays.Value).Ticks;
-                        whereClauses.Add("f.LastWriteTimeUtcTicks <= @dormantTicks");
+                        commonWhereClauses.Add("f.LastWriteTimeUtcTicks <= @dormantTicks");
                         cmd.Parameters.AddWithValue("@dormantTicks", maxTicks);
                     }
 
-                    // D. パス長危険域 (pathlen:>240)
                     if (query.MinPathLength.HasValue)
                     {
-                        whereClauses.Add("LENGTH(f.FullPath) >= @minPathLen");
+                        commonWhereClauses.Add("LENGTH(f.FullPath) >= @minPathLen");
                         cmd.Parameters.AddWithValue("@minPathLen", query.MinPathLength.Value);
                     }
 
-                    // E. 除外ワード (!temp)
-                    for (int i = 0; i < query.ExcludedWords.Count; i++)
-                    {
-                        string pName = $"@ex_{i}";
-                        whereClauses.Add($"(f.FullPath NOT LIKE {pName} AND c.Body NOT LIKE {pName})");
-                        string escEx = "%" + query.ExcludedWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                        cmd.Parameters.AddWithValue(pName, escEx);
-                    }
-
-                    // F. パス絞り込み (path:xxx)
                     for (int i = 0; i < query.PathContains.Count; i++)
                     {
                         string pName = $"@path_{i}";
-                        whereClauses.Add($"f.FullPath LIKE {pName} ESCAPE '\\'");
+                        commonWhereClauses.Add($"f.FullPath LIKE {pName} ESCAPE '\\'");
                         string escP = "%" + query.PathContains[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
                         cmd.Parameters.AddWithValue(pName, escP);
                     }
 
-                    // G. スコープフォルダー (ディレクトリ境界を厳格化して近接類似フォルダーの誤ヒットを防止)
                     if (!string.IsNullOrWhiteSpace(scopeFolder))
                     {
                         string normScope = Path.GetFullPath(scopeFolder).TrimEnd('\\', '/');
                         string dirScope = normScope + "\\";
                         string escScope = dirScope.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                        whereClauses.Add("(f.FullPath = @scopeExact OR f.FullPath LIKE @scopeDir ESCAPE '\\')");
+                        commonWhereClauses.Add("(f.FullPath = @scopeExact OR f.FullPath LIKE @scopeDir ESCAPE '\\')");
                         cmd.Parameters.AddWithValue("@scopeExact", normScope);
                         cmd.Parameters.AddWithValue("@scopeDir", escScope);
                     }
 
-                    // SQL 組み立て
-                    string snippetExpr = hasTrigramMatch
-                        ? "snippet(ContentFts, 1, '【', '】', '...', 15) AS Snippet"
-                        : "SUBSTR(c.Body, 1, 120) AS Snippet";
+                    string commonWhereSql = commonWhereClauses.Count > 0 ? " AND " + string.Join(" AND ", commonWhereClauses) : "";
 
-                    string whereSql = string.Join(" AND ", whereClauses);
-                    string sql = $@"
-                        SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks,
-                               {snippetExpr}
-                        FROM ContentFts c
-                        JOIN IndexedFiles f ON c.FileId = f.FileId
-                        WHERE {whereSql}
-                        LIMIT 500";
+                    string sql;
+                    bool hasTrigramMatch = false;
+                    var shortWords = new List<string>();
+
+                    if (keywords.Count == 0)
+                    {
+                        // キーワードなし（属性検索のみ）: IndexedFiles 単体検索
+                        string whereSql = commonWhereClauses.Count > 0 ? string.Join(" AND ", commonWhereClauses) : "1=1";
+                        sql = $@"
+                            SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet
+                            FROM IndexedFiles f
+                            WHERE {whereSql}
+                            LIMIT 500";
+                    }
+                    else
+                    {
+                        // キーワードあり: 本文 (FTS5) と ファイル名 (LIKE) のハイブリッド検索 (Name OR Content)
+                        // A. FTS5 本文検索クエリ
+                        var ftsClauses = new List<string>();
+                        ftsClauses.Add("f.Status = 1");
+
+                        var trigramWords = new List<string>();
+                        foreach (var kw in keywords)
+                        {
+                            if (string.IsNullOrWhiteSpace(kw)) continue;
+                            string trimmed = kw.Trim();
+                            if (trimmed.Length >= 3) trigramWords.Add(trimmed);
+                            else shortWords.Add(trimmed);
+                        }
+
+                        hasTrigramMatch = trigramWords.Count > 0;
+                        if (hasTrigramMatch)
+                        {
+                            var matchTerms = trigramWords.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
+                            string ftsMatch = string.Join(" AND ", matchTerms);
+                            ftsClauses.Add("ContentFts MATCH @ftsQuery");
+                            cmd.Parameters.AddWithValue("@ftsQuery", ftsMatch);
+                        }
+
+                        for (int i = 0; i < shortWords.Count; i++)
+                        {
+                            string paramName = $"@shortWord_{i}";
+                            ftsClauses.Add($"(c.Body LIKE {paramName} ESCAPE '\\' OR f.FullPath LIKE {paramName} ESCAPE '\\')");
+                            string escVal = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                            cmd.Parameters.AddWithValue(paramName, escVal);
+                        }
+
+                        for (int i = 0; i < query.ExcludedWords.Count; i++)
+                        {
+                            string pName = $"@ftsEx_{i}";
+                            ftsClauses.Add($"(f.FullPath NOT LIKE {pName} ESCAPE '\\' AND c.Body NOT LIKE {pName} ESCAPE '\\')");
+                            string escEx = "%" + query.ExcludedWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                            cmd.Parameters.AddWithValue(pName, escEx);
+                        }
+
+                        string ftsWhereSql = string.Join(" AND ", ftsClauses) + commonWhereSql;
+                        string snippetExpr = hasTrigramMatch
+                            ? "snippet(ContentFts, 1, '【', '】', '...', 15) AS Snippet"
+                            : "SUBSTR(c.Body, 1, 120) AS Snippet";
+
+                        // B. ファイル名検索クエリ
+                        var nameClauses = new List<string>();
+                        // 本文検索明示時 (isExplicitContentSearch == true) は非本文ファイル (.zip, .exe) の混入を防止するため f.Status = 1 のみ
+                        // 通常検索時 (isExplicitContentSearch == false) は .zip, .exe を含む全ファイル f.Status >= 0
+                        nameClauses.Add(isExplicitContentSearch ? "f.Status = 1" : "f.Status >= 0");
+
+                        for (int i = 0; i < keywords.Count; i++)
+                        {
+                            string pName = $"@nameKw_{i}";
+                            nameClauses.Add($"f.FullPath LIKE {pName} ESCAPE '\\'");
+                            string escKw = "%" + keywords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                            cmd.Parameters.AddWithValue(pName, escKw);
+                        }
+
+                        for (int i = 0; i < query.ExcludedWords.Count; i++)
+                        {
+                            string pName = $"@nameEx_{i}";
+                            nameClauses.Add($"f.FullPath NOT LIKE {pName} ESCAPE '\\'");
+                            string escEx = "%" + query.ExcludedWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                            cmd.Parameters.AddWithValue(pName, escEx);
+                        }
+
+                        string nameWhereSql = string.Join(" AND ", nameClauses) + commonWhereSql;
+
+                        sql = $@"
+                            SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, {snippetExpr}
+                            FROM ContentFts c
+                            JOIN IndexedFiles f ON c.FileId = f.FileId
+                            WHERE {ftsWhereSql}
+                            UNION
+                            SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet
+                            FROM IndexedFiles f
+                            WHERE {nameWhereSql}
+                            LIMIT 500";
+                    }
 
                     cmd.CommandText = sql;
 
@@ -694,8 +814,7 @@ namespace FolderMorpher.Services
                         long ticks = reader.GetInt64(3);
                         string snippet = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
 
-                        // 1〜2文字検索でtrigram snippetがない場合、C#側で文脈抽出
-                        if (!hasTrigramMatch && shortWords.Count > 0 && !string.IsNullOrEmpty(snippet))
+                        if (!string.IsNullOrEmpty(snippet) && !hasTrigramMatch && shortWords.Count > 0)
                         {
                             string firstShort = shortWords[0];
                             int idx = snippet.IndexOf(firstShort, StringComparison.OrdinalIgnoreCase);
@@ -707,11 +826,14 @@ namespace FolderMorpher.Services
                             }
                         }
 
-                        // CompiledRegex が指定されている場合は最終フィルタ
                         if (query.CompiledRegex != null && !query.CompiledRegex.IsMatch(Path.GetFileName(fullPath)))
                         {
                             continue;
                         }
+
+                        string reason = !string.IsNullOrEmpty(snippet)
+                            ? (keywords.Count > 0 ? $"Indexed (FTS5): {string.Join(", ", keywords)}" : "Indexed: Content Match")
+                            : (keywords.Count > 0 ? $"Indexed: {string.Join(", ", keywords)}" : "Indexed: Property Match");
 
                         results.Add(new SearchResultItem
                         {
@@ -723,7 +845,7 @@ namespace FolderMorpher.Services
                             Extension = Path.GetExtension(fullPath).ToLowerInvariant(),
                             IsDirectory = false,
                             ContentSnippet = snippet,
-                            MatchedReason = keywords.Count > 0 ? $"Indexed: {string.Join(", ", keywords)}" : "Indexed: Property Match"
+                            MatchedReason = reason
                         });
                     }
                 }

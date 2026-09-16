@@ -610,7 +610,7 @@ namespace FolderMorpher.Services
                         // 1. Office (OpenXML: .xlsx, .xlsm, .docx, .pptx)
                         if (OfficeExtensions.Contains(ext))
                         {
-                            if (SearchOfficeFileContent(item.FullPath, requiredKeywords, out string snippet))
+                            if (ContentExtractionService.SearchOfficeContent(item.FullPath, requiredKeywords, out string snippet))
                             {
                                 item.ContentSnippet = snippet;
                                 item.MatchedReason = (query.Keywords.Count > requiredKeywords.Count)
@@ -634,7 +634,7 @@ namespace FolderMorpher.Services
                         // 3. Text files (.txt, .csv, .log, .json, code files, etc.)
                         else if (TextExtensions.Contains(ext) || item.SizeBytes < 2 * 1024 * 1024)
                         {
-                            if (await SearchTextFileContentAsync(item.FullPath, requiredKeywords, token) is { } snippet)
+                            if (await ContentExtractionService.SearchTextContentAsync(item.FullPath, requiredKeywords, token) is { } snippet)
                             {
                                 item.ContentSnippet = snippet;
                                 item.MatchedReason = (query.Keywords.Count > requiredKeywords.Count)
@@ -701,129 +701,6 @@ namespace FolderMorpher.Services
             return true;
         }
 
-        private static bool SearchOfficeFileContent(string filePath, IReadOnlyList<string> keywords, out string snippet)
-        {
-            snippet = string.Empty;
-            if (keywords.Count == 0) return false;
-
-            try
-            {
-                string ext = Path.GetExtension(filePath).ToLowerInvariant();
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var zip = new ZipArchive(fs, ZipArchiveMode.Read, false);
-
-                // アイデア 1: Excel (.xlsx / .xlsm) の場合は sharedStrings.xml を最優先・ピンポイント探索
-                if (ext == ".xlsx" || ext == ".xlsm")
-                {
-                    ZipArchiveEntry? sharedEntry = null;
-                    foreach (var e in zip.Entries)
-                    {
-                        if (e.FullName.EndsWith("sharedstrings.xml", StringComparison.OrdinalIgnoreCase))
-                        {
-                            sharedEntry = e;
-                            break;
-                        }
-                    }
-
-                    if (sharedEntry != null)
-                    {
-                        using var stream = sharedEntry.Open();
-                        using var reader = new StreamReader(stream, Encoding.UTF8);
-                        string text = reader.ReadToEnd();
-
-                        bool allFound = true;
-                        string firstSnippet = string.Empty;
-                        foreach (var kw in keywords)
-                        {
-                            int idx = text.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
-                            if (idx >= 0)
-                            {
-                                if (string.IsNullOrEmpty(firstSnippet)) firstSnippet = ExtractSnippet(text, idx, kw.Length);
-                            }
-                            else
-                            {
-                                allFound = false;
-                                break;
-                            }
-                        }
-
-                        if (allFound)
-                        {
-                            snippet = firstSnippet;
-                            return true; // sharedStrings で全キーワードが揃ったので Early exit!
-                        }
-
-                        // ★ Sol指摘: sharedStrings に存在しない場合でも、inline string や数式文字列が
-                        // sheet*.xml に直接存在する可能性があるため、即座に false を返さず後続の XML 探索へ進む！
-                    }
-                }
-
-                // Word (.docx), PowerPoint (.pptx), または sharedStrings だけでは見つからなかった Excel の探索
-                var foundKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                string firstFoundSnippet = string.Empty;
-
-                foreach (var entry in zip.Entries)
-                {
-                    string entryName = entry.FullName.ToLowerInvariant();
-                    if (!entryName.EndsWith(".xml") && !entryName.EndsWith(".rels")) continue;
-                    if (!entryName.Contains("sharedstrings") &&
-                        !entryName.Contains("sheet") &&
-                        !entryName.Contains("document") &&
-                        !entryName.Contains("slide") &&
-                        !entryName.Contains("_rels")) continue;
-
-                    using var stream = entry.Open();
-                    using var reader = new StreamReader(stream, Encoding.UTF8);
-                    string text = reader.ReadToEnd();
-
-                    // 1. 素のXML文字列で高速検索 (アイデア 3: Early Exit)
-                    foreach (var kw in keywords)
-                    {
-                        if (!foundKeywords.Contains(kw))
-                        {
-                            int idx = text.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
-                            if (idx >= 0)
-                            {
-                                foundKeywords.Add(kw);
-                                if (string.IsNullOrEmpty(firstFoundSnippet)) firstFoundSnippet = ExtractSnippet(text, idx, kw.Length);
-                            }
-                        }
-                    }
-
-                    if (foundKeywords.Count == keywords.Count)
-                    {
-                        snippet = firstFoundSnippet;
-                        return true; // 全キーワード揃ったので Early exit!
-                    }
-
-                    // 2. Word等のrun分割 (<w:t>A</w:t><w:t>B</w:t>) 対策でXMLタグ除去して探索
-                    if (entryName.Contains("document") || entryName.Contains("slide") || entryName.Contains("sheet"))
-                    {
-                        string stripped = Regex.Replace(text, @"<[^>]+>", "");
-                        foreach (var kw in keywords)
-                        {
-                            if (!foundKeywords.Contains(kw))
-                            {
-                                int strippedIdx = stripped.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
-                                if (strippedIdx >= 0)
-                                {
-                                    foundKeywords.Add(kw);
-                                    if (string.IsNullOrEmpty(firstFoundSnippet)) firstFoundSnippet = ExtractSnippet(stripped, strippedIdx, kw.Length);
-                                }
-                            }
-                        }
-
-                        if (foundKeywords.Count == keywords.Count)
-                        {
-                            snippet = firstFoundSnippet;
-                            return true;
-                        }
-                    }
-                }
-            }
-            catch { }
-            return false;
-        }
 
         private static bool SearchOfficeFileLinks(string filePath, string? keyword, out string snippet)
         {
@@ -865,7 +742,7 @@ namespace FolderMorpher.Services
                         int idx = text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
                         if (idx >= 0)
                         {
-                            snippet = ExtractSnippet(text, idx, keyword.Length);
+                            snippet = ContentExtractionService.ExtractSnippet(text, idx, keyword.Length);
                             return true;
                         }
                     }
@@ -873,109 +750,6 @@ namespace FolderMorpher.Services
             }
             catch { }
             return false;
-        }
-
-        private static async Task<string?> SearchTextFileContentAsync(string filePath, IReadOnlyList<string> keywords, CancellationToken ct)
-        {
-            if (keywords.Count == 0) return null;
-
-            try
-            {
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, true);
-
-                // アイデア 2: 先頭4KBでのバイナリ早期脱落 (Early Drop) - UTF-16 / BOM 安全保護
-                byte[] headBuffer = new byte[4096];
-                int readHead = await fs.ReadAsync(headBuffer, 0, headBuffer.Length, ct);
-                if (readHead > 0)
-                {
-                    // BOM チェック
-                    bool isUtf16Le = (readHead >= 2 && headBuffer[0] == 0xFF && headBuffer[1] == 0xFE);
-                    bool isUtf16Be = (readHead >= 2 && headBuffer[0] == 0xFE && headBuffer[1] == 0xFF);
-                    bool isUtf8Bom = (readHead >= 3 && headBuffer[0] == 0xEF && headBuffer[1] == 0xBB && headBuffer[2] == 0xBF);
-
-                    // UTF-16 以外の一般ファイルのみ NULL バイト検査でバイナリを判定
-                    if (!isUtf16Le && !isUtf16Be)
-                    {
-                        // BOMなし UTF-16LE ヒューリスティック判定 (奇数バイトにNULLが多発する典型的なUnicodeテキスト)
-                        bool likelyUtf16 = false;
-                        if (readHead >= 8)
-                        {
-                            int zerosOnOdds = 0;
-                            int zerosOnEvens = 0;
-                            int sampleCount = Math.Min(readHead, 256);
-                            for (int i = 0; i < sampleCount; i++)
-                            {
-                                if (headBuffer[i] == 0)
-                                {
-                                    if (i % 2 == 1) zerosOnOdds++;
-                                    else zerosOnEvens++;
-                                }
-                            }
-                            if (zerosOnOdds > (sampleCount / 4) && zerosOnEvens == 0) likelyUtf16 = true;
-                        }
-
-                        if (!likelyUtf16)
-                        {
-                            int nullCount = 0;
-                            for (int i = 0; i < readHead; i++)
-                            {
-                                if (headBuffer[i] == 0) nullCount++;
-                            }
-                            // 純粋なバイナリファイルは早期脱落
-                            if (nullCount >= 2) return null;
-                        }
-                    }
-
-                    // ストリームを先頭に戻す
-                    fs.Seek(0, SeekOrigin.Begin);
-                }
-
-                using var reader = new StreamReader(fs, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-
-                var foundKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                string? firstSnippet = null;
-
-                string? line;
-                while ((line = await reader.ReadLineAsync(ct)) != null)
-                {
-                    foreach (var kw in keywords)
-                    {
-                        if (!foundKeywords.Contains(kw))
-                        {
-                            int idx = line.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
-                            if (idx >= 0)
-                            {
-                                foundKeywords.Add(kw);
-                                if (firstSnippet == null)
-                                {
-                                    firstSnippet = ExtractSnippet(line, idx, kw.Length);
-                                }
-                            }
-                        }
-                    }
-
-                    // アイデア 3: 全キーワードが揃った瞬間に即座に読み込みを中断して復帰 (Early Exit)
-                    if (foundKeywords.Count == keywords.Count)
-                    {
-                        return firstSnippet ?? keywords[0];
-                    }
-                }
-            }
-            catch { }
-            return null;
-        }
-
-        private static string ExtractSnippet(string text, int matchIndex, int matchLength)
-        {
-            const int contextLength = 40;
-            int start = Math.Max(0, matchIndex - contextLength);
-            int end = Math.Min(text.Length, matchIndex + matchLength + contextLength);
-
-            string snippet = text.Substring(start, end - start).Replace('\r', ' ').Replace('\n', ' ').Trim();
-            snippet = Regex.Replace(snippet, @"<[^>]+>", " ");
-            snippet = Regex.Replace(snippet, @"\s+", " ");
-
-            return (start > 0 ? "..." : "") + snippet + (end < text.Length ? "..." : "");
         }
     }
 }

@@ -102,6 +102,11 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
    - `IndexedRoots` による未完了インデックスの false negative 完全防止、ディレクトリ境界厳格化（近接類似フォルダー巻き込み防止）、`ContentExtractionService` への本文抽出正本一本化。
    - Migration Studio での TargetRoot 必須バリデーション、`04_Final_Cutover_DRYRUN.bat` 同梱、`%~dp0..\Logs`、`exit /b 1`、`EnableDelayedExpansion` 排除。
    - Search Studio の 4 KPI カードを 1 行スリムメトリクスバーへ統合、通常カードの重いドロップシャドウを撤去し面と線の Quiet Fluent へ整線。
+8. **FTS5二元ハイブリッドインデックス ＆ 最深Root完全性 ＆ Master BAT安全停止（v2.2.2 / ADR 64）**:
+   - **抜本案施工**: 全ファイルメタデータ登録（`IndexedFiles`）＋本文対象のみFTS（`ContentFts`）の分離により、スキャンツリー不在時の通常検索で `.zip` や `.exe` が0件になる false negative を完全根絶。
+   - **UNION Name OR Content**: SQLite FTS5 の trigram MATCH と通常ファイル名 LIKE を `UNION` で統合し、本文一致（スニペット付き）とファイル名一致の両方をミリ秒で完全取得。
+   - **最深IndexedRoot判定**: 一致する Root のうち最深（最長パス）を正本として判定し、親がComplete・子がErrorの中断漏れを完全防止。
+   - **Master BAT エラー伝播**: `00_Run_All_Waves_StepByStep.bat` で各Waveを `call "%~dp0..."` 実行し、`if errorlevel 1 exit /b 1` で即座に後続を安全停止。CP932（Shift-JIS）自動フォールバック対応。
 
 ---
 

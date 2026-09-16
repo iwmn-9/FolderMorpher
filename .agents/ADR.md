@@ -332,3 +332,32 @@
 - **回帰テスト Domain 3 & Domain 8 の更なる強化**:
   - パス境界厳格性、未完了ルート判定、TargetRoot未入力拒否、`04_Final_Cutover_DRYRUN.bat` 同時生成、`LOG_DIR=%~dp0..\Logs`、`exit /b 1`、`EnableDelayedExpansion` 排除のアサーションを追加し、CI 8/8 ALL PASSED を堅持。
 
+---
+
+## 18. 【FTS5ハイブリッド二元インデックス ＆ 最深Root完全性 ＆ Master BAT安全停止】（抜本案施工・UNION Name OR Content・最深Root判定・Master BAT errorlevel伝播）
+*(v2.2.2 本番施工 & ADR 64)*
+
+- **全ファイルメタデータ登録 ＋ 本文対象のみFTS（抜本案の完全施工）**:
+  - **背景と課題**: 従来の `ContentIndexService` は Office/PDF/Text（50MB以下）のみを `IndexedFiles` に登録していたため、インデックスが存在するフォルダーで通常ファイル名検索（例: `backup.zip`, `setup.exe`）を行った際、インデックス検索にルーティングされてしまい、0件（false negative）になる深刻な検索漏れが存在した。
+  - **抜本案設計**: 走査で発見された**すべてのファイル**のメタデータを `IndexedFiles` に登録（ディレクトリのみ除外、非本文ファイルは `Status = 0: MetadataOnly`）。
+  - **本文抽出の局所化**: テキスト抽出および `ContentFts`（trigram 仮想テーブル）への登録は、`ContentExtractionService.IsSupported` かつ 50MB 以下のファイルにのみ限定。
+  - **UNION による Name OR Content ハイブリッド検索**:
+    `SearchIndexedAsync` では、SQLite のクエリオプティマイザが FTS5 の `MATCH` 制約を最大限に活用できるよう、`ContentFts`（本文検索）と `IndexedFiles`（ファイル名/属性検索）を `UNION` で結合。
+    - 通常の名前検索時（`SearchContentMode == false`）: 本文にキーワードがあるファイル（スニペット付き）と、ファイル名にキーワードがある非本文ファイル（`.zip`, `.exe`, `.mp4` 等含む）の両方がミリ秒でヒット。
+    - 本文検索明示時（`SearchContentMode == true` または `content:`）: 非本文ファイルを除外（`f.Status = 1`）し、厳密な本文検索結果を返す。
+- **最深（最長パス）IndexedRoot による完全性判定**:
+  - **課題**: `C:\Share` が Complete で `C:\Share\Sales` が中断・Error の場合、`C:\Share\Sales` を検索した際に親の Complete が先にヒットして「完全インデックス済み」と誤判定される穴が存在した。
+  - **施工**: マッチするすべての `IndexedRoots` のうち、**最深（パス文字列長が最大）** のレコードを正本として判定。
+  - `bestStatus == 'Complete' && bestCoverage == 1 && bestExtVer == CurrentExtractorVersion` の全条件を満たす場合のみ `true` を返す。親が Complete でも子が Error なら `false`、親が Error でも子が Complete なら `true` となる完全なセマンティクスを確立。
+- **本文抽出エンジンの単一正本化 ＆ Shift-JIS（CP932）自動フォールバック**:
+  - `ContentExtractionService` に `Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);` を導入し、UTF-8/UTF-16 だけでなくレガシーな Shift-JIS 日本語テキストも完全サポート。
+  - Live走査用のストリーム高速検索メソッド（`SearchOfficeContent`, `SearchTextContentAsync`, `ExtractSnippet`）を `ContentExtractionService` へ単一正本化し、`SearchEngineService` 内の二重実装を完全根絶。
+- **マスター移行バッチ（`00_Run_All_Waves_StepByStep.bat`）の安全停止・エラー伝播**:
+  - 各 Wave の呼び出しを `call "%~dp0{dirName}\{batName}"` に統一し、CWD（カレントディレクトリ）非依存化。
+  - 各 `call` の直後に `if errorlevel 1 (` ブロックを配置し、エラー発生時は即座に「後続Waveを安全停止しました」と警告して `exit /b 1` で中断。事故防止・手戻りゼロを保証。
+- **回帰テスト Domain 3 & Domain 8 の包括検証更新**:
+  - 非本文ファイル（`.zip`, `.exe`）の通常インデックス検索ヒット検証。
+  - 最深Root判定（子がErrorの場合にfalseを返すこと）の検証。
+  - Master BAT の `%~dp0` および `if errorlevel 1 / exit /b 1` の検証。
+  - 全 8 大ドメイン包括自動回帰テスト ALL PASSED (8/8) を堅持。
+

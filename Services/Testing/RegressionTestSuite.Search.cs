@@ -343,6 +343,53 @@ namespace FolderMorpher.Services.Testing
                     var neighborHits = await indexService.SearchIndexedAsync(qSecret, neighborDir, CancellationToken.None);
                     if (neighborHits.Count > 0)
                         throw new Exception($"ContentIndexService Path Boundary failed: Scoped search for '{neighborDir}' should return 0 results.");
+
+                    // G. 抜本案検証: 非本文ファイル (.zip, .exe) のメタデータインデックス登録 & 通常検索ミリ秒ヒット検証
+                    string fileZip = Path.Combine(tempDir, "Deploy_Package.zip");
+                    string fileExe = Path.Combine(tempDir, "Installer_Tool.exe");
+                    File.WriteAllBytes(fileZip, new byte[] { 0x50, 0x4B, 0x03, 0x04, 0x00, 0x00 }); // PK signature
+                    File.WriteAllBytes(fileExe, new byte[] { 0x4D, 0x5A, 0x90, 0x00 }); // MZ signature
+
+                    await indexService.IndexFolderAsync(tempDir, null, CancellationToken.None);
+
+                    // 通常の名前検索 (SearchContentMode = false) では .zip や .exe が即座にヒットすること
+                    var qZip = SearchQueryParser.Parse("Deploy_Package");
+                    var zipHits = await indexService.SearchIndexedAsync(qZip, tempDir, CancellationToken.None);
+                    if (!zipHits.Any(h => h.FullPath.EndsWith("Deploy_Package.zip")))
+                        throw new Exception("ContentIndexService 抜本案検証失敗: 通常検索で非本文ファイル Deploy_Package.zip がヒットしませんでした。");
+
+                    var qExeExt = SearchQueryParser.Parse("ext:exe");
+                    var exeHits = await indexService.SearchIndexedAsync(qExeExt, tempDir, CancellationToken.None);
+                    if (!exeHits.Any(h => h.FullPath.EndsWith("Installer_Tool.exe")))
+                        throw new Exception("ContentIndexService 抜本案検証失敗: 拡張子検索 ext:exe で Installer_Tool.exe がヒットしませんでした。");
+
+                    // 一方で本文検索モード (SearchContentMode = true) では、非本文ファイルはFTS対象外のためヒットしないこと
+                    var qZipContent = SearchQueryParser.Parse("Deploy_Package");
+                    qZipContent.SearchContentMode = true;
+                    var zipContentHits = await indexService.SearchIndexedAsync(qZipContent, tempDir, CancellationToken.None);
+                    if (zipContentHits.Any(h => h.FullPath.EndsWith("Deploy_Package.zip")))
+                        throw new Exception("ContentIndexService 抜本案検証失敗: 本文検索モードで非本文ファイルがFTS結果に混入しました。");
+
+                    // H. 最深Root判定検証 (親がCompleteでも子がErrorの場合は中断漏れとしてfalseを返すこと)
+                    string subErrorDir = Path.Combine(tempDir, "SubProject_Broken");
+                    Directory.CreateDirectory(subErrorDir);
+                    using (var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={customDbPath}"))
+                    {
+                        conn.Open();
+                        using var cmd = conn.CreateCommand();
+                        cmd.CommandText = "INSERT INTO IndexedRoots (RootPath, Status, CoverageComplete, LastCompletedUtcTicks, TotalFiles, ExtractorVersion) VALUES (@root, 'Error', 0, @ticks, 0, 1)";
+                        cmd.Parameters.AddWithValue("@root", subErrorDir);
+                        cmd.Parameters.AddWithValue("@ticks", DateTime.UtcNow.Ticks);
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    // 子フォルダーは Error なので false
+                    if (indexService.HasCompleteIndexForPath(subErrorDir))
+                        throw new Exception("ContentIndexService 最深Root判定失敗: 子フォルダーがErrorなのにHasCompleteIndexForPathがtrueを返しました。");
+
+                    // 親フォルダー自体は Complete なので true
+                    if (!indexService.HasCompleteIndexForPath(tempDir))
+                        throw new Exception("ContentIndexService 最深Root判定失敗: 親フォルダーHasCompleteIndexForPathがfalseを返しました。");
                 }
                 finally
                 {
