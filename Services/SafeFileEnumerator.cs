@@ -152,7 +152,9 @@ namespace FolderMorpher.Services
             ScanCoverage? coverage = null,
             Action<int>? onProgress = null,
             CancellationToken ct = default,
-            IReadOnlyList<string>? excludeFolderPatterns = null)
+            IReadOnlyList<string>? excludeFolderPatterns = null,
+            bool includeDirectories = false,
+            Action<ScannedFileEntry>? onEntryFound = null)
         {
             var resultFiles = new System.Collections.Concurrent.ConcurrentBag<ScannedFileEntry>();
             if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath)) return new List<ScannedFileEntry>();
@@ -181,7 +183,7 @@ namespace FolderMorpher.Services
                         continue;
 
                     string fullPath = Path.Combine(rootPath, f.Name);
-                    resultFiles.Add(new ScannedFileEntry(
+                    var entry = new ScannedFileEntry(
                         fullPath,
                         f.Name,
                         rootPath,
@@ -189,7 +191,9 @@ namespace FolderMorpher.Services
                         f.CreationTimeUtc.ToLocalTime(),
                         f.LastWriteTimeUtc.ToLocalTime(),
                         f.LastAccessTimeUtc.ToLocalTime(),
-                        f.Attributes));
+                        f.Attributes);
+                    resultFiles.Add(entry);
+                    onEntryFound?.Invoke(entry);
 
                     int count = Interlocked.Increment(ref scannedFilesCount);
                     if (coverage != null)
@@ -203,7 +207,22 @@ namespace FolderMorpher.Services
                     var sd = rootSubDirs[i];
                     if (!sd.IsReparsePoint && !ShouldExcludeDirectory(sd.Name, excludeFolderPatterns))
                     {
-                        folderQueue.Enqueue(Path.Combine(rootPath, sd.Name));
+                        string dirPath = Path.Combine(rootPath, sd.Name);
+                        folderQueue.Enqueue(dirPath);
+                        if (includeDirectories)
+                        {
+                            var dirEntry = new ScannedFileEntry(
+                                dirPath,
+                                sd.Name,
+                                rootPath,
+                                0,
+                                sd.CreationTimeUtc.ToLocalTime(),
+                                sd.LastWriteTimeUtc.ToLocalTime(),
+                                sd.LastAccessTimeUtc.ToLocalTime(),
+                                sd.Attributes | FileAttributes.Directory);
+                            resultFiles.Add(dirEntry);
+                            onEntryFound?.Invoke(dirEntry);
+                        }
                     }
                 }
             }
@@ -269,7 +288,22 @@ namespace FolderMorpher.Services
                                 var sd = localSubDirs[i];
                                 if (sd.IsReparsePoint) continue;
                                 if (ShouldExcludeDirectory(sd.Name, excludeFolderPatterns)) continue;
-                                folderQueue.Enqueue(Path.Combine(currentPath, sd.Name));
+                                string dirPath = Path.Combine(currentPath, sd.Name);
+                                folderQueue.Enqueue(dirPath);
+                                if (includeDirectories)
+                                {
+                                    var dirEntry = new ScannedFileEntry(
+                                        dirPath,
+                                        sd.Name,
+                                        currentPath,
+                                        0,
+                                        sd.CreationTimeUtc.ToLocalTime(),
+                                        sd.LastWriteTimeUtc.ToLocalTime(),
+                                        sd.LastAccessTimeUtc.ToLocalTime(),
+                                        sd.Attributes | FileAttributes.Directory);
+                                    resultFiles.Add(dirEntry);
+                                    onEntryFound?.Invoke(dirEntry);
+                                }
                             }
 
                             // ファイルを結果コレクションへ追加（stat 再問い合わせゼロ）
@@ -280,7 +314,7 @@ namespace FolderMorpher.Services
                                     continue;
 
                                 string fullPath = Path.Combine(currentPath, f.Name);
-                                resultFiles.Add(new ScannedFileEntry(
+                                var entry = new ScannedFileEntry(
                                     fullPath,
                                     f.Name,
                                     currentPath,
@@ -288,7 +322,9 @@ namespace FolderMorpher.Services
                                     f.CreationTimeUtc.ToLocalTime(),
                                     f.LastWriteTimeUtc.ToLocalTime(),
                                     f.LastAccessTimeUtc.ToLocalTime(),
-                                    f.Attributes));
+                                    f.Attributes);
+                                resultFiles.Add(entry);
+                                onEntryFound?.Invoke(entry);
 
                                 int count = Interlocked.Increment(ref scannedFilesCount);
                                 if (coverage != null)

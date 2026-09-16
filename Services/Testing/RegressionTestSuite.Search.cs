@@ -62,6 +62,13 @@ namespace FolderMorpher.Services.Testing
                 if (!qLinkNamed.HasOfficeLinkOnly || qLinkNamed.OfficeLinkKeyword != "\\\\OldServer")
                     throw new Exception($"SearchQueryParser failed: office-link:\"\\\\OldServer\" expected OfficeLinkKeyword='\\\\OldServer', got '{qLinkNamed.OfficeLinkKeyword}'");
 
+                // 追加検証: KB 倍率の検証 (1024倍であること)
+                var qKb = SearchQueryParser.Parse("size:>100KB size:<200KB");
+                if (!qKb.MinSizeBytes.HasValue || qKb.MinSizeBytes.Value != 100L * 1024)
+                    throw new Exception($"SearchQueryParser failed: size:>100KB expected {100L * 1024}, got {qKb.MinSizeBytes}");
+                if (!qKb.MaxSizeBytes.HasValue || qKb.MaxSizeBytes.Value != 200L * 1024)
+                    throw new Exception($"SearchQueryParser failed: size:<200KB expected {200L * 1024}, got {qKb.MaxSizeBytes}");
+
                 // 追加検証: dormant:>180d
                 var qDormantDays = SearchQueryParser.Parse("dormant:>180d");
                 if (!qDormantDays.DormantDays.HasValue || qDormantDays.DormantDays.Value != 180)
@@ -190,6 +197,18 @@ namespace FolderMorpher.Services.Testing
                     string mockPdfText = "%PDF-1.4\n1 0 obj\n<< /Title (Confidential Agreement) >>\nendobj\n2 0 obj\n<< /Length 60 >>\nstream\nBT\n/F1 12 Tf\n(契約書キーワード: 最高機密プロジェクトX) Tj\nET\nendstream\nendobj\nxref\n0 3\ntrailer\n<< /Root 1 0 R >>\n%%EOF";
                     File.WriteAllText(filePdf, mockPdfText, Encoding.UTF8);
 
+                    // 4. UTF-16LE テキストファイル (Sol指摘: NULLバイトが混入しても誤判定で落ちないこと)
+                    string fileUtf16 = Path.Combine(tempDir, "Utf16_Doc.txt");
+                    File.WriteAllText(fileUtf16, "UTF-16テキストの内容: 最高機密プロジェクトX", Encoding.Unicode);
+
+                    // 5. サブフォルダー (Sol指摘: Direct Search でのフォルダー包含)
+                    string subFolder = Path.Combine(tempDir, "SubFolder_ProjectX");
+                    Directory.CreateDirectory(subFolder);
+
+                    // 6. 名前 OR 本文（複数キーワード）テスト用ファイル
+                    string filePartial = Path.Combine(tempDir, "予算_計画書.txt");
+                    File.WriteAllText(filePartial, "2026年の事業方針について記載する。", Encoding.UTF8);
+
                     // 検索テスト (content:"最高機密プロジェクトX")
                     var qContent = SearchQueryParser.Parse("content:\"最高機密プロジェクトX\"");
                     var batchResults = new List<SearchResultItem>();
@@ -197,15 +216,17 @@ namespace FolderMorpher.Services.Testing
 
                     var results = await searchEngine.SearchDirectFolderAsync(tempDir, qContent, batchYield, null, CancellationToken.None);
 
-                    // テキストファイルとPDFファイルがヒットし、バイナリファイルはEarly Dropで除外されていること
+                    // テキストファイル、PDF、UTF-16ファイルがヒットし、バイナリファイルはEarly Dropで除外されていること
                     bool txtFound = false;
                     bool pdfFound = false;
+                    bool utf16Found = false;
                     bool binFound = false;
 
                     foreach (var r in results)
                     {
                         if (r.FullPath.EndsWith("Confidential_Doc.txt")) txtFound = true;
                         if (r.FullPath.EndsWith("Contract_Doc.pdf")) pdfFound = true;
+                        if (r.FullPath.EndsWith("Utf16_Doc.txt")) utf16Found = true;
                         if (r.FullPath.EndsWith("Sample_Binary.dat")) binFound = true;
                     }
 
@@ -215,16 +236,27 @@ namespace FolderMorpher.Services.Testing
                     if (!pdfFound)
                         throw new Exception("Content Search failed: Contract_Doc.pdf was not detected via PDF search engine.");
 
+                    if (!utf16Found)
+                        throw new Exception("Content Search failed: Utf16_Doc.txt was dropped incorrectly as binary.");
+
                     if (binFound)
                         throw new Exception("Content Search failed: Sample_Binary.dat should have been dropped by Early Drop (null bytes).");
 
-                    // 4. SearchContentMode ("本文も検索" トグル連動) 検証
-                    var qToggle = SearchQueryParser.Parse("最高機密プロジェクトX");
-                    qToggle.SearchContentMode = true; // トグルON
+                    // 7. Direct Search での「フォルダも含める」検証
+                    var qFolder = SearchQueryParser.Parse("ProjectX");
+                    qFolder.IncludeFolders = true;
+                    var folderResults = await searchEngine.SearchDirectFolderAsync(tempDir, qFolder, null, null, CancellationToken.None);
+                    if (!folderResults.Any(r => r.IsDirectory && r.Name == "SubFolder_ProjectX"))
+                        throw new Exception("Direct Search failed: SubFolder_ProjectX was not found with IncludeFolders=true.");
 
-                    var toggleResults = await searchEngine.SearchDirectFolderAsync(tempDir, qToggle, null, null, CancellationToken.None);
-                    if (toggleResults.Count < 2)
-                        throw new Exception($"SearchContentMode failed: Expected at least 2 hits for TXT & PDF, got {toggleResults.Count}");
+                    // 8. SearchContentMode ("本文も検索" トグル連動 & 複数キーワード 名前 OR 本文) 検証
+                    // "予算 2026": ファイル名に「予算」、本文に「2026」があるファイルがマッチすること
+                    var qMulti = SearchQueryParser.Parse("予算 2026");
+                    qMulti.SearchContentMode = true; // トグルON
+
+                    var multiResults = await searchEngine.SearchDirectFolderAsync(tempDir, qMulti, null, null, CancellationToken.None);
+                    if (!multiResults.Any(r => r.FullPath.EndsWith("予算_計画書.txt")))
+                        throw new Exception("Multi-keyword Name OR Content search failed: 予算_計画書.txt was not detected.");
                 }
                 finally
                 {

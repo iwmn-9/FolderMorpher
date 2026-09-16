@@ -212,7 +212,7 @@ namespace FolderMorpher.Services
             if (input.EndsWith("TB")) { multiplier = 1024L * 1024 * 1024 * 1024; numPart = input.Substring(0, input.Length - 2); }
             else if (input.EndsWith("GB")) { multiplier = 1024L * 1024 * 1024; numPart = input.Substring(0, input.Length - 2); }
             else if (input.EndsWith("MB")) { multiplier = 1024L * 1024; numPart = input.Substring(0, input.Length - 2); }
-            else if (input.EndsWith("KB")) { multiplier = 1024L * 1024; numPart = input.Substring(0, input.Length - 2); }
+            else if (input.EndsWith("KB")) { multiplier = 1024.0; numPart = input.Substring(0, input.Length - 2); }
             else if (input.EndsWith("B")) { multiplier = 1.0; numPart = input.Substring(0, input.Length - 1); }
 
             if (double.TryParse(numPart.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double val))

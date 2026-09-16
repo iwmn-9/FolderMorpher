@@ -27,6 +27,7 @@ namespace AstraSize
         private DispatcherTimer? _searchDebounceTimer;
         private readonly ObservableCollection<SearchResultItem> _searchResults = new();
         private List<SearchResultItem> _allSearchResults = new();
+        private long _searchGeneration = 0;
 
         public void InitializeSearchStudio()
         {
@@ -149,6 +150,7 @@ namespace AstraSize
             _searchCts?.Cancel();
             _searchCts = new CancellationTokenSource();
             var ct = _searchCts.Token;
+            long currentGen = Interlocked.Increment(ref _searchGeneration);
 
             bool isDirectScope = (SearchScopeDirectRadio?.IsChecked == true);
             string targetFolder = SearchDirectTargetTextBox?.Text?.Trim() ?? string.Empty;
@@ -171,6 +173,7 @@ namespace AstraSize
 
             var progress = new Progress<SearchProgressReport>(r =>
             {
+                if (currentGen != Volatile.Read(ref _searchGeneration)) return;
                 UpdateSearchKpi(r.HitCount, r.TotalHitBytes, r.Elapsed);
                 if (SearchStatusText != null && !string.IsNullOrEmpty(r.CurrentPath))
                 {
@@ -180,6 +183,7 @@ namespace AstraSize
 
             var batchYield = new Progress<IReadOnlyList<SearchResultItem>>(items =>
             {
+                if (currentGen != Volatile.Read(ref _searchGeneration)) return;
                 foreach (var item in items)
                 {
                     _searchResults.Add(item);
@@ -193,9 +197,12 @@ namespace AstraSize
 
                 if (isDirectScope)
                 {
-                    // ライブ直接走査 (未スキャンUNC / フォルダー)
+                    // ライブ直接走査 (未スキャンUNC / フォルダー) - Progressive Streaming
                     var results = await _searchEngine.SearchDirectFolderAsync(targetFolder, query, batchYield, progress, ct);
-                    _allSearchResults = results;
+                    if (currentGen == Volatile.Read(ref _searchGeneration))
+                    {
+                        _allSearchResults = results;
+                    }
                 }
                 else
                 {
@@ -207,13 +214,16 @@ namespace AstraSize
                         if (scopedRoots.Count > 0)
                         {
                             var results = await _searchEngine.SearchInMemoryAsync(scopedRoots, query, progress, ct);
-                            _allSearchResults = results;
-                            foreach (var item in results) _searchResults.Add(item);
+                            if (currentGen == Volatile.Read(ref _searchGeneration))
+                            {
+                                _allSearchResults = results;
+                                foreach (var item in results) _searchResults.Add(item);
+                            }
                         }
                         else
                         {
                             // スキャン済みツリーに対象フォルダーが含まれていない場合は直接走査へフォールバック
-                            if (SearchStatusText != null)
+                            if (SearchStatusText != null && currentGen == Volatile.Read(ref _searchGeneration))
                             {
                                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                                 SearchStatusText.Text = isJa
@@ -221,35 +231,50 @@ namespace AstraSize
                                     : "Target folder not in cached tree. Running live direct search...";
                             }
                             var results = await _searchEngine.SearchDirectFolderAsync(targetFolder, query, batchYield, progress, ct);
-                            _allSearchResults = results;
+                            if (currentGen == Volatile.Read(ref _searchGeneration))
+                            {
+                                _allSearchResults = results;
+                            }
                         }
                     }
                     else
                     {
                         var roots = GetTargetScannedRootNodes(null);
                         var results = await _searchEngine.SearchInMemoryAsync(roots, query, progress, ct);
-                        _allSearchResults = results;
-                        foreach (var item in results) _searchResults.Add(item);
+                        if (currentGen == Volatile.Read(ref _searchGeneration))
+                        {
+                            _allSearchResults = results;
+                            foreach (var item in results) _searchResults.Add(item);
+                        }
                     }
                 }
             }
             catch (OperationCanceledException)
             {
-                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                if (SearchStatusText != null) SearchStatusText.Text = isJa ? "検索を中断しました。" : "Search canceled.";
+                if (currentGen == Volatile.Read(ref _searchGeneration))
+                {
+                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                    if (SearchStatusText != null) SearchStatusText.Text = isJa ? "検索を中断しました。" : "Search canceled.";
+                }
             }
             catch (Exception ex)
             {
-                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                MessageBox.Show(
-                    (isJa ? "検索中にエラーが発生しました: " : "Error occurred during search: ") + ex.Message,
-                    isJa ? "検索エラー" : "Search Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                if (currentGen == Volatile.Read(ref _searchGeneration))
+                {
+                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                    MessageBox.Show(
+                        (isJa ? "検索中にエラーが発生しました: " : "Error occurred during search: ") + ex.Message,
+                        isJa ? "検索エラー" : "Search Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                }
             }
             finally
             {
-                SetSearchLoadingState(false);
+                if (currentGen == Volatile.Read(ref _searchGeneration))
+                {
+                    SetSearchLoadingState(false);
+                }
             }
         }
 
