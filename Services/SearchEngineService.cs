@@ -411,9 +411,14 @@ namespace FolderMorpher.Services
             int processed = 0;
             int total = validFiles.Count;
 
+            bool containsUnc = validFiles.Any(f => f.FullPath.StartsWith(@"\\", StringComparison.Ordinal) || f.FullPath.StartsWith("//", StringComparison.Ordinal));
+            int maxDegree = containsUnc
+                ? 2 // UNC/ネットワーク共有はサーバー保護のためデュアルワーカー（並列度2）固定
+                : Math.Clamp(Environment.ProcessorCount / 2, 2, 4); // ローカルドライブもI/O競合抑制のため安全上限4
+
             var po = new ParallelOptions
             {
-                MaxDegreeOfParallelism = Math.Max(2, Environment.ProcessorCount / 2),
+                MaxDegreeOfParallelism = maxDegree,
                 CancellationToken = ct
             };
 
