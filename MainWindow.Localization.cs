@@ -148,8 +148,9 @@ namespace AstraSize
             ColTopFileName.Header = isJa ? "ファイル名" : "File Name";
             ColTopFileSize.Header = isJa ? "容量" : "Size";
 
-            StorageDirectSharesTitleText.Text = isJa ? "選択フォルダーの内訳" : "Folder Content Breakdown";
-            StorageDirectSharesSubText.Text = isJa ? "Wクリックで下層へドリルダウン展開" : "Double-click item to drill down in tree";
+            StorageDirectSharesTitleText.Text = isJa ? "📁 選択フォルダーの内訳" : "📁 Direct Children Breakdown";
+            StorageDirectSharesSubText.Text = string.Empty;
+            StorageDirectSharesSubText.Visibility = Visibility.Collapsed;
             ColShareName.Header = isJa ? "直下アイテム" : "Direct Child Item";
             ColShareSize.Header = isJa ? "容量" : "Size";
             ColShareRatio.Header = isJa ? "直下比率" : "Subfolder Share";
@@ -388,9 +389,11 @@ namespace AstraSize
             SecModalTypeLabel.Text = isJa ? "種類:" : "Type:";
             SecModalAppliesToLabel.Text = isJa ? "適用先:" : "Applies to:";
             SecModalBasicPermTitle.Text = isJa ? "基本アクセス許可:" : "Basic permissions:";
-            SecModalRealtimeNotice.Text = isJa ? "※高度な権限と完全リアルタイム連動" : "*Synced in real-time with advanced permissions";
-            SecModalAdvPermTitle.Text = isJa ? "⚙️ 高度なアクセス許可 (Windows ACL 14項目完全網羅):" : "⚙️ Advanced permissions (All 14 Windows ACL bits):";
-            SecModalAdvPermSubtitle.Text = isJa ? "Windows セキュリティ詳細設定準拠" : "Windows standard security compliant";
+            SecModalRealtimeNotice.Text = string.Empty;
+            SecModalRealtimeNotice.Visibility = Visibility.Collapsed;
+            SecModalAdvPermTitle.Text = isJa ? "⚙️ 高度なアクセス許可:" : "⚙️ Advanced permissions:";
+            SecModalAdvPermSubtitle.Text = string.Empty;
+            SecModalAdvPermSubtitle.Visibility = Visibility.Collapsed;
 
             SecChkFullControl.Content = isJa ? "フル コントロール" : "Full control";
             SecChkModify.Content = isJa ? "変更 (Modify)" : "Modify";
@@ -493,8 +496,6 @@ namespace AstraSize
             if (SearchExecuteButton != null) SearchExecuteButton.Content = Strings.SearchExecute;
             if (SearchCancelButton != null) SearchCancelButton.Content = Strings.SearchCancel;
             if (SearchClearButton != null) SearchClearButton.Content = Strings.SearchClear;
-            if (SearchExportExcelButton != null) SearchExportExcelButton.Content = isJa ? "📊 Excel台帳 (.xlsx)" : "📊 Export Excel (.xlsx)";
-            if (SearchExportCsvButton != null) SearchExportCsvButton.Content = isJa ? "📑 CSV" : "📑 Export CSV";
             if (SearchIncludeFoldersCheckBox != null) SearchIncludeFoldersCheckBox.Content = Strings.SearchIncludeFoldersCheck;
             if (SearchContentCheckBox != null) SearchContentCheckBox.Content = Strings.SearchContentCheck;
             if (SearchDirectBrowseButton != null) SearchDirectBrowseButton.Content = Strings.BrowseWithFolder;
@@ -504,7 +505,11 @@ namespace AstraSize
             if (SearchStatusTitle != null) SearchStatusTitle.Text = Strings.SearchStatusLabel;
             if (SearchTableTitleText != null) SearchTableTitleText.Text = Strings.SearchTableTitle;
             if (SearchTargetFolderLabel != null) SearchTargetFolderLabel.Text = Strings.SearchTargetFolder;
-            if (SearchTableHintText != null) SearchTableHintText.Text = Strings.SearchTableHint;
+            if (SearchTableHintText != null)
+            {
+                SearchTableHintText.Text = string.Empty;
+                SearchTableHintText.Visibility = Visibility.Collapsed;
+            }
             if (SearchStatusText != null && (SearchStatusText.Text == "待機中" || SearchStatusText.Text == "Ready"))
             {
                 SearchStatusText.Text = Strings.Waiting;

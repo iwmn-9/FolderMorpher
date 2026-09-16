@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -1228,13 +1228,13 @@ namespace AstraSize.Views
             _revGroups.Clear();
             _revFolders.Clear();
             _revAllFoldersCache.Clear();
-            RevKpiTotal.Text = "0 箇所";
-            RevKpiEnclave.Text = "0 箇所";
-            RevKpiSevered.Text = "0 箇所";
-            RevKpiUnavailable.Text = "0 箇所";
-            RevKpiFull.Text = "0 箇所";
-            RevKpiMod.Text = "0 箇所";
-            RevKpiRead.Text = "0 箇所";
+            RevKpiTotal.Text = "0";
+            RevKpiEnclave.Text = "0";
+            RevKpiSevered.Text = "0";
+            RevKpiUnavailable.Text = "0";
+            RevKpiFull.Text = "0";
+            RevKpiMod.Text = "0";
+            RevKpiRead.Text = "0";
 
             _revCts = new CancellationTokenSource();
             var ct = _revCts.Token;
@@ -1254,7 +1254,7 @@ namespace AstraSize.Views
 
                 var progress = new Progress<(int scanned, int found)>(p =>
                 {
-                    RevStatusText.Text = $"スキャン進行中: {p.scanned:N0} フォルダ走査済み / {p.found:N0} 箇所でアクセス権検出";
+                    RevStatusText.Text = $"スキャン進行中: {p.scanned:N0} フォルダ走査済み / {p.found:N0} 件でアクセス権検出";
                 });
 
                 var report = await _effectiveAccessService.ScanEffectiveAccessAsync(
@@ -1274,17 +1274,17 @@ namespace AstraSize.Views
                 // フィルター（変化点・テキスト）を適用して一覧に反映
                 ApplyRevFilter();
 
-                RevKpiTotal.Text = $"{report.AccessibleFolders.Count:N0} 箇所";
-                RevKpiEnclave.Text = $"{report.EnclaveCount:N0} 箇所";
-                RevKpiSevered.Text = $"{report.SeveredCount:N0} 箇所";
-                RevKpiUnavailable.Text = $"{report.UnavailableCount:N0} 箇所";
-                RevKpiFull.Text = $"{report.FullControlCount:N0} 箇所";
-                RevKpiMod.Text = $"{report.ModifyCount:N0} 箇所";
-                RevKpiRead.Text = $"{report.ReadOnlyCount:N0} 箇所";
+                RevKpiTotal.Text = $"{report.AccessibleFolders.Count:N0}";
+                RevKpiEnclave.Text = $"{report.EnclaveCount:N0}";
+                RevKpiSevered.Text = $"{report.SeveredCount:N0}";
+                RevKpiUnavailable.Text = $"{report.UnavailableCount:N0}";
+                RevKpiFull.Text = $"{report.FullControlCount:N0}";
+                RevKpiMod.Text = $"{report.ModifyCount:N0}";
+                RevKpiRead.Text = $"{report.ReadOnlyCount:N0}";
 
-                RevStatusText.Text = $"監査完了: 総走査 {report.TotalFoldersScanned:N0} フォルダ中、{report.AccessibleFolders.Count:N0} 箇所のフォルダーを検出 (飛び地: {report.EnclaveCount}件, 遮断: {report.SeveredCount}件, 走査不能: {report.UnavailableCount}件)";
+                RevStatusText.Text = $"監査完了: 総走査 {report.TotalFoldersScanned:N0} フォルダ中、{report.AccessibleFolders.Count:N0} 件のフォルダーを検出 (飛び地: {report.EnclaveCount}件, 遮断: {report.SeveredCount}件, 走査不能: {report.UnavailableCount}件)";
                 RevExportExcelButton.IsEnabled = report.AccessibleFolders.Count > 0;
-                ShowToast($"🔍 「{targetAccount}」の逆引き監査が完了しました ({report.AccessibleFolders.Count:N0} 箇所)");
+                ShowToast($"🔍 「{targetAccount}」の逆引き監査が完了しました ({report.AccessibleFolders.Count:N0} 件)");
             }
             catch (OperationCanceledException)
             {
@@ -1579,7 +1579,7 @@ namespace AstraSize.Views
             RevKpiFullTitle.Text = isJa ? "フルコントロール" : "Full Control";
             RevKpiModTitle.Text = isJa ? "変更 (Modify)" : "Modify";
             RevKpiReadTitle.Text = isJa ? "読み取り専用" : "Read-Only";
-            RevFoldersTableTitle.Text = isJa ? "📂 監査フォルダー一覧 (Wクリックでエクスプローラー直行)" : "📂 Audit Folders (Double-click to open in Explorer)";
+            RevFoldersTableTitle.Text = isJa ? "📂 監査フォルダー一覧" : "📂 Audit Folders";
             RevFilterChangesOnlyCheckBox.Content = Strings.RevFilterChangesOnly;
             RevFilterChangesOnlyCheckBox.ToolTip = Strings.RevFilterChangesOnlyToolTip;
             RevFolderFilterLabel.Text = isJa ? "絞り込み:" : "Filter:";

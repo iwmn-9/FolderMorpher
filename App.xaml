@@ -218,6 +218,39 @@
                 </Setter>
             </Style>
 
+            <!-- Sidebar Collapsed Mini Navigation Button (Icon Only, Centered 40x40 Square) -->
+            <Style x:Key="SidebarNavButtonCollapsed" TargetType="RadioButton">
+                <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
+                <Setter Property="Foreground" Value="#64748B"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Height" Value="40"/>
+                <Setter Property="Width" Value="44"/>
+                <Setter Property="Margin" Value="0,3"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="GroupName" Value="SidebarNavGroup"/>
+                <Setter Property="HorizontalAlignment" Value="Center"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="RadioButton">
+                            <Border x:Name="itemBorder" Background="{TemplateBinding Background}" CornerRadius="10" Width="40" Height="40" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock Text="{TemplateBinding Tag}" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="itemBorder" Property="Background" Value="#F1F5F9"/>
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="itemBorder" Property="Background" Value="#E0F2FE"/>
+                                    <Setter TargetName="itemBorder" Property="BorderBrush" Value="#BAE6FD"/>
+                                    <Setter TargetName="itemBorder" Property="BorderThickness" Value="1"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <!-- Fluent Card Border -->
             <Style x:Key="FluentCard" TargetType="Border">
                 <Setter Property="Background" Value="{StaticResource CardBackground}"/>

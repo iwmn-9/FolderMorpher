@@ -36,13 +36,13 @@
                 </Grid.RowDefinitions>
 
                 <!-- Sidebar Header -->
-                <Border Grid.Row="0" BorderBrush="#F1F5F9" BorderThickness="0,0,0,1" Padding="10,0,14,0">
+                <Border Grid.Row="0" x:Name="SidebarHeaderBorder" BorderBrush="#F1F5F9" BorderThickness="0,0,0,1" Padding="12,0">
                     <Grid VerticalAlignment="Center">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition x:Name="SidebarToggleCol" Width="36"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <Button x:Name="SidebarToggleButton" Content="☰" Width="34" Height="34"
+                        <Button x:Name="SidebarToggleButton" Content="☰" Width="34" Height="34" HorizontalAlignment="Center"
                                 Background="Transparent" BorderThickness="0" FontSize="16" Foreground="#475569"
                                 Cursor="Hand" Click="SidebarToggleButton_Click" ToolTip="サイドバーの開閉 (収縮 / 展開)"/>
                         <StackPanel x:Name="SidebarBrandPanel" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0">
@@ -58,7 +58,7 @@
                 </Border>
 
                 <!-- Nav Items -->
-                <StackPanel Grid.Row="1" Margin="10,14">
+                <StackPanel Grid.Row="1" x:Name="SidebarNavPanel" Margin="10,14">
                     <RadioButton x:Name="NavTabStorage" Style="{StaticResource SidebarNavButton}"
                                  IsChecked="True" Checked="NavTab_Checked" Tag="📊" Content="容量分析" ToolTip="容量分析"/>
                     <RadioButton x:Name="NavTabSearch" Style="{StaticResource SidebarNavButton}"
@@ -379,10 +379,10 @@
                                 </DataGrid.Columns>
                             </DataGrid>
 
-                            <!-- Folder Direct Children Shares Header (2行スタック構造) -->
+                            <!-- Folder Direct Children Shares Header -->
                             <StackPanel Grid.Row="2" Margin="0,8,0,6">
                                 <TextBlock x:Name="StorageDirectSharesTitleText" Text="📁 選択フォルダーの内訳" FontWeight="SemiBold" FontSize="12.5" Foreground="#1E293B"/>
-                                <TextBlock x:Name="StorageDirectSharesSubText" Text="Wクリックでツリー連動 ➔" FontSize="11" Foreground="#0284C7" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock x:Name="StorageDirectSharesSubText" Text="" Visibility="Collapsed"/>
                             </StackPanel>
 
                             <!-- Folder Direct Children Shares DataGrid -->
@@ -1467,21 +1467,15 @@
                                      TextChanged="SearchInputBox_TextChanged" KeyDown="SearchInputBox_KeyDown"
                                      ToolTip="検索構文を入力 (例: ext:xlsx size:>10MB dormant:>3y content:社外秘 regex:^backup.*\.zip)"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
-                                <Button x:Name="SearchExecuteButton" Content="🔍 検索" Height="36" Padding="14,0"
+                                <Button x:Name="SearchExecuteButton" Content="🔍 検索" Height="36" Padding="16,0"
                                         Style="{StaticResource FluentButtonPrimary}" Click="SearchExecuteButton_Click"
                                         ToolTip="検索を実行 (Enterキーでも実行可能)"/>
                                 <Button x:Name="SearchCancelButton" Content="⏹ 中断" Height="36" Padding="12,0" Margin="6,0,0,0"
                                         Style="{StaticResource FluentButtonDanger}" Click="SearchCancelButton_Click"
                                         Visibility="Collapsed" ToolTip="実行中の走査を中断"/>
-                                <Button x:Name="SearchClearButton" Content="✕ クリア" Height="36" Padding="10,0" Margin="6,0,0,0"
+                                <Button x:Name="SearchClearButton" Content="✕ クリア" Height="36" Padding="12,0" Margin="6,0,0,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="SearchClearButton_Click"
                                         ToolTip="入力内容と結果をクリア"/>
-                                <Button x:Name="SearchExportExcelButton" Content="📊 Excel台帳 (.xlsx)" Height="36" Margin="6,0,0,0"
-                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchExportExcelButton_Click"
-                                        ToolTip="検索結果をExcel台帳として保存"/>
-                                <Button x:Name="SearchExportCsvButton" Content="📑 CSV" Height="36" Margin="6,0,0,0"
-                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchExportCsvButton_Click"
-                                        ToolTip="検索結果をCSVファイルとして保存"/>
                             </StackPanel>
                         </Grid>
 
@@ -1508,7 +1502,7 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="SearchDirectTargetTextBox" Height="28" FontSize="11" Padding="6,0" VerticalContentAlignment="Center" BorderBrush="#CBD5E1"/>
                                 <Button x:Name="SearchDirectBrowseButton" Grid.Column="1" Content="📁 参照..." Height="28" Margin="4,0,0,0"
-                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchDirectBrowseButton_Click"/>
+                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchDirectBrowseButton_Click" ToolTip="走査対象フォルダーを選択"/>
                             </Grid>
                         </Grid>
 
@@ -1568,8 +1562,7 @@
                         </Grid.RowDefinitions>
                         <Grid Grid.Row="0" Margin="0,0,0,10">
                             <TextBlock x:Name="SearchTableTitleText" Text="検索結果一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="SearchTableHintText" Text="※ダブルクリックで直接開く / 右クリックで Live ACL・移行スタジオ・リンク修復・監査へ連携"
-                                       FontSize="11" Foreground="#94A3B8" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="SearchTableHintText" Text="" Visibility="Collapsed"/>
                         </Grid>
                         <DataGrid x:Name="SearchDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="28"
@@ -1590,6 +1583,9 @@
                                     <MenuItem Header="🚀 移行スタジオに追加 (Simulation)" Click="SearchContextMenu_Simulation_Click"/>
                                     <MenuItem Header="🔗 リンク修復へ転送 (LinkFixer)" Click="SearchContextMenu_LinkFix_Click"/>
                                     <MenuItem Header="🧹 ファイル整理・監査へ転送 (Audit &amp; Hygiene)" Click="SearchContextMenu_Audit_Click"/>
+                                    <Separator/>
+                                    <MenuItem Header="📊 検索結果をExcelでエクスポート (.xlsx)" Click="SearchExportExcelButton_Click"/>
+                                    <MenuItem Header="📑 検索結果をCSVでエクスポート (.csv)" Click="SearchExportCsvButton_Click"/>
                                 </ContextMenu>
                             </DataGrid.ContextMenu>
                             <DataGrid.Columns>
@@ -1677,7 +1673,7 @@
                                 <StackPanel>
                                     <Grid Margin="0,0,0,8">
                                         <TextBlock x:Name="SecModalBasicPermTitle" Text="基本アクセス許可:" FontWeight="Bold" FontSize="12.5" Foreground="#334155"/>
-                                        <TextBlock x:Name="SecModalRealtimeNotice" Text="※高度な権限と完全リアルタイム連動" FontSize="11.5" Foreground="#0284C7" HorizontalAlignment="Right"/>
+                                        <TextBlock x:Name="SecModalRealtimeNotice" Text="" Visibility="Collapsed"/>
                                     </Grid>
                                     <UniformGrid Columns="2">
                                         <CheckBox x:Name="SecChkFullControl" Content="フル コントロール" Margin="0,3" FontWeight="Bold" Click="SecBasicPerm_Click"/>
@@ -1694,8 +1690,8 @@
                             <Border Background="#F1F5F9" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Padding="12">
                                 <StackPanel>
                                     <Grid Margin="0,0,0,8">
-                                        <TextBlock x:Name="SecModalAdvPermTitle" Text="⚙️ 高度なアクセス許可 (Windows ACL 14項目完全網羅):" FontWeight="Bold" FontSize="12" Foreground="#0284C7"/>
-                                        <TextBlock x:Name="SecModalAdvPermSubtitle" Text="Windows セキュリティ詳細設定準拠" FontSize="11" Foreground="#64748B" HorizontalAlignment="Right"/>
+                                        <TextBlock x:Name="SecModalAdvPermTitle" Text="⚙️ 高度なアクセス許可:" FontWeight="Bold" FontSize="12" Foreground="#0284C7"/>
+                                        <TextBlock x:Name="SecModalAdvPermSubtitle" Text="" Visibility="Collapsed"/>
                                     </Grid>
                                     <UniformGrid Columns="2">
                                         <CheckBox x:Name="SecAdvTraverse" Content="フォルダーのスキャン / ファイルの実行" Margin="0,3" FontSize="11" Click="SecAdvPerm_Click"/>

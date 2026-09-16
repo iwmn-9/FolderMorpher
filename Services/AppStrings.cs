@@ -90,8 +90,7 @@ namespace FolderMorpher.Services
         public static string TopFilesTitle => IsJa ? "容量上位ファイル Top 10" : "Top 10 Largest Files";
         public static string ColTopFileName => IsJa ? "ファイル名" : "File Name";
         public static string ColTopFileSize => IsJa ? "容量" : "Size";
-        public static string DirectSharesTitle => IsJa ? "選択フォルダーの内訳" : "Folder Content Breakdown";
-        public static string DirectSharesSubText => IsJa ? "Wクリックで下層へドリルダウン展開" : "Double-click item to drill down in tree";
+        public static string DirectSharesTitle => IsJa ? "📁 選択フォルダーの内訳" : "📁 Folder Content Breakdown";
         public static string ColShareName => IsJa ? "直下アイテム" : "Direct Child Item";
         public static string ColShareSize => IsJa ? "容量" : "Size";
         public static string ColShareRatio => IsJa ? "直下比率" : "Subfolder Share";
@@ -300,9 +299,7 @@ namespace FolderMorpher.Services
         public static string SecModalType => IsJa ? "種類:" : "Type:";
         public static string SecModalAppliesTo => IsJa ? "適用先:" : "Applies to:";
         public static string SecModalBasicPermTitle => IsJa ? "基本アクセス許可:" : "Basic permissions:";
-        public static string SecModalRealtimeNotice => IsJa ? "※高度な権限と完全リアルタイム連動" : "*Synced in real-time with advanced permissions";
-        public static string SecModalAdvPermTitle => IsJa ? "⚙️ 高度なアクセス許可 (Windows ACL 14項目完全網羅):" : "⚙️ Advanced permissions (All 14 Windows ACL bits):";
-        public static string SecModalAdvPermSubtitle => IsJa ? "Windows セキュリティ詳細設定準拠" : "Windows standard security compliant";
+        public static string SecModalAdvPermTitle => IsJa ? "⚙️ 高度なアクセス許可:" : "⚙️ Advanced permissions:";
         public static string SecFullControl => IsJa ? "フル コントロール" : "Full control";
         public static string SecModify => IsJa ? "変更 (Modify)" : "Modify";
         public static string SecReadExecute => IsJa ? "読み取りと実行" : "Read & execute";

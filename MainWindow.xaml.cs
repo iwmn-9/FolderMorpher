@@ -253,21 +253,48 @@ namespace AstraSize
         private void SidebarToggleButton_Click(object sender, RoutedEventArgs e)
         {
             _isSidebarCollapsed = !_isSidebarCollapsed;
+            var normalStyle = (Style)FindResource("SidebarNavButton");
+            var collapsedStyle = (Style)FindResource("SidebarNavButtonCollapsed");
+
             if (_isSidebarCollapsed)
             {
-                SidebarBorder.Width = 58;
+                SidebarBorder.Width = 60;
+                SidebarHeaderBorder.Padding = new Thickness(0);
+                SidebarToggleCol.Width = new GridLength(60);
                 SidebarBrandPanel.Visibility = Visibility.Collapsed;
+                SidebarNavPanel.Margin = new Thickness(8, 14, 8, 14);
+
+                NavTabStorage.Style = collapsedStyle;
+                NavTabSearch.Style = collapsedStyle;
+                NavTabLiveAcl.Style = collapsedStyle;
+                NavTabSimulation.Style = collapsedStyle;
+                NavTabLinkFix.Style = collapsedStyle;
+                NavTabAudit.Style = collapsedStyle;
+                NavTabMedia.Style = collapsedStyle;
+
                 SidebarFooterExpandedPanel.Visibility = Visibility.Collapsed;
                 SidebarFooterCollapsedPanel.Visibility = Visibility.Visible;
-                SidebarToggleButton.ToolTip = "サイドバーを展開";
+                SidebarToggleButton.ToolTip = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "サイドバーを展開" : "Expand Sidebar";
             }
             else
             {
                 SidebarBorder.Width = 220;
+                SidebarHeaderBorder.Padding = new Thickness(12, 0, 14, 0);
+                SidebarToggleCol.Width = new GridLength(36);
                 SidebarBrandPanel.Visibility = Visibility.Visible;
+                SidebarNavPanel.Margin = new Thickness(10, 14, 10, 14);
+
+                NavTabStorage.Style = normalStyle;
+                NavTabSearch.Style = normalStyle;
+                NavTabLiveAcl.Style = normalStyle;
+                NavTabSimulation.Style = normalStyle;
+                NavTabLinkFix.Style = normalStyle;
+                NavTabAudit.Style = normalStyle;
+                NavTabMedia.Style = normalStyle;
+
                 SidebarFooterExpandedPanel.Visibility = Visibility.Visible;
                 SidebarFooterCollapsedPanel.Visibility = Visibility.Collapsed;
-                SidebarToggleButton.ToolTip = "サイドバーを収縮";
+                SidebarToggleButton.ToolTip = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "サイドバーを収縮" : "Collapse Sidebar";
             }
         }
         #endregion

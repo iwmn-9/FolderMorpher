@@ -252,6 +252,11 @@ namespace AstraSize
 
                             if (selectTab == 1) mw.NavTabSearch.IsChecked = true;
                             else if (selectTab == 2) mw.NavTabLiveAcl.IsChecked = true;
+                            else if (selectTab == 22)
+                            {
+                                mw.NavTabLiveAcl.IsChecked = true;
+                                mw.LiveAclStudioControl.LiveAclModeReverseRadio.IsChecked = true;
+                            }
                             else if (selectTab == 3) mw.NavTabSimulation.IsChecked = true;
                             else if (selectTab == 4) mw.NavTabLinkFix.IsChecked = true;
                             else if (selectTab == 5) mw.NavTabAudit.IsChecked = true;
