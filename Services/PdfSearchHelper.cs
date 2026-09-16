@@ -196,6 +196,19 @@ namespace FolderMorpher.Services
                         catch { }
                     }
                 }
+
+                // 非圧縮テキストまたは平文ストリームのフォールバック抽出
+                if (sb.Length < 10)
+                {
+                    string rawUtf8 = Encoding.UTF8.GetString(bytes);
+                    var textMatches = Regex.Matches(rawUtf8, @"\((?<text>[^)]*)\)\s*Tj|\[(?<text>[^\]]*)\]\s*TJ");
+                    foreach (Match tm in textMatches)
+                    {
+                        if (sb.Length >= maxChars) break;
+                        sb.Append(tm.Groups["text"].Value).Append(' ');
+                    }
+                }
+
                 return sb.ToString();
             }
             catch { }

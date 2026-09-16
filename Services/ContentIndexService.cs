@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using AstraSize.Models;
 using FolderMorpher.Models;
 using Microsoft.Data.Sqlite;
 
@@ -19,6 +20,7 @@ namespace FolderMorpher.Services
         public int AlreadyIndexed { get; set; }
         public int ProcessedCount { get; set; }
         public int NewlyIndexedCount { get; set; }
+        public int DeletedCount { get; set; }
         public int FailedCount { get; set; }
         public string CurrentFile { get; set; } = string.Empty;
         public TimeSpan Elapsed { get; set; }
@@ -36,10 +38,13 @@ namespace FolderMorpher.Services
 
     /// <summary>
     /// SQLite FTS5 (trigram) を用いた事前インデックス型 全文検索サービス。
-    /// 差分更新、途中中断レジューム、Small-File First、Contentless/Snippetsに対応。
+    /// 差分更新、途中中断レジューム、Small-File First、日本語2文字LIKEフォールバック、
+    /// 削除亡霊クリーンアップ、SearchQuery完全貫通に対応。
     /// </summary>
     public class ContentIndexService
     {
+        public const int CurrentExtractorVersion = 1;
+
         private readonly string _dbPath;
         private readonly string _connectionString;
         private readonly object _lock = new();
@@ -50,9 +55,10 @@ namespace FolderMorpher.Services
         {
             if (string.IsNullOrWhiteSpace(customDbPath))
             {
-                string appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FolderMorpher");
-                Directory.CreateDirectory(appData);
-                _dbPath = Path.Combine(appData, "ContentIndex.db");
+                // Sol指摘3: Roaming (%APPDATA%) ではなく LocalAppData (%LOCALAPPDATA%) を採用
+                string localAppData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FolderMorpher");
+                Directory.CreateDirectory(localAppData);
+                _dbPath = Path.Combine(localAppData, "ContentIndex.db");
             }
             else
             {
@@ -91,7 +97,8 @@ namespace FolderMorpher.Services
                         SizeBytes INTEGER NOT NULL,
                         LastWriteTimeUtcTicks INTEGER NOT NULL,
                         Status INTEGER NOT NULL, -- 0: Pending, 1: Indexed, 2: Failed
-                        IndexedAtUtcTicks INTEGER
+                        IndexedAtUtcTicks INTEGER,
+                        ExtractorVersion INTEGER NOT NULL DEFAULT 1
                     );
                     CREATE INDEX IF NOT EXISTS idx_files_path ON IndexedFiles(FullPath);
                     CREATE INDEX IF NOT EXISTS idx_files_dir ON IndexedFiles(DirectoryPath);
@@ -103,6 +110,38 @@ namespace FolderMorpher.Services
                     );
                 ";
                 cmd.ExecuteNonQuery();
+
+                // マイグレーション: ExtractorVersion カラム追加 (既存DB対応)
+                try
+                {
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = "ALTER TABLE IndexedFiles ADD COLUMN ExtractorVersion INTEGER NOT NULL DEFAULT 1;";
+                    alterCmd.ExecuteNonQuery();
+                }
+                catch
+                {
+                    // 既にカラムが存在する場合は無視
+                }
+            }
+        }
+
+        /// <summary>
+        /// 指定パスのファイルがインデックスに存在するか判定
+        /// </summary>
+        public bool HasIndexForPath(string folderPath)
+        {
+            if (string.IsNullOrWhiteSpace(folderPath)) return false;
+            string norm = Path.GetFullPath(folderPath).TrimEnd('\\', '/');
+            string esc = norm.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+
+            lock (_lock)
+            {
+                using var conn = new SqliteConnection(_connectionString);
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT 1 FROM IndexedFiles WHERE FullPath LIKE @prefix ESCAPE '\\' AND Status = 1 LIMIT 1";
+                cmd.Parameters.AddWithValue("@prefix", esc);
+                return cmd.ExecuteScalar() != null;
             }
         }
 
@@ -150,13 +189,13 @@ namespace FolderMorpher.Services
                     .ToList();
 
                 // 2. 既存DBのメタデータ状態をロード
-                var existingMap = new Dictionary<string, (long FileId, long SizeBytes, long LastWriteTicks, int Status)>(StringComparer.OrdinalIgnoreCase);
+                var existingMap = new Dictionary<string, (long FileId, long SizeBytes, long LastWriteTicks, int Status, int ExtractorVer)>(StringComparer.OrdinalIgnoreCase);
                 lock (_lock)
                 {
                     using var conn = new SqliteConnection(_connectionString);
                     conn.Open();
                     using var cmd = conn.CreateCommand();
-                    cmd.CommandText = "SELECT FileId, FullPath, SizeBytes, LastWriteTimeUtcTicks, Status FROM IndexedFiles WHERE FullPath LIKE @prefix ESCAPE '\\'";
+                    cmd.CommandText = "SELECT FileId, FullPath, SizeBytes, LastWriteTimeUtcTicks, Status, ExtractorVersion FROM IndexedFiles WHERE FullPath LIKE @prefix ESCAPE '\\'";
                     string esc = normTarget.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
                     cmd.Parameters.AddWithValue("@prefix", esc);
 
@@ -168,11 +207,46 @@ namespace FolderMorpher.Services
                         long size = reader.GetInt64(2);
                         long ticks = reader.GetInt64(3);
                         int status = reader.GetInt32(4);
-                        existingMap[path] = (fId, size, ticks, status);
+                        int extVer = reader.IsDBNull(5) ? 1 : reader.GetInt32(5);
+                        existingMap[path] = (fId, size, ticks, status, extVer);
                     }
                 }
 
-                // 3. 差分判定（未変更スキップ、新規・更新・中断分を抽出）
+                // 3. 亡霊ファイル（削除・リネームで消失した旧パス）のクリーンアップ (Sol指摘2)
+                int deletedCount = 0;
+                var currentPaths = new HashSet<string>(scannedEntries.Select(e => e.FullPath), StringComparer.OrdinalIgnoreCase);
+                var ghostFileIds = existingMap
+                    .Where(kvp => !currentPaths.Contains(kvp.Key))
+                    .Select(kvp => kvp.Value.FileId)
+                    .ToList();
+
+                if (ghostFileIds.Count > 0)
+                {
+                    lock (_lock)
+                    {
+                        using var conn = new SqliteConnection(_connectionString);
+                        conn.Open();
+                        using var trans = conn.BeginTransaction();
+                        foreach (var gId in ghostFileIds)
+                        {
+                            using var delFts = conn.CreateCommand();
+                            delFts.Transaction = trans;
+                            delFts.CommandText = "DELETE FROM ContentFts WHERE FileId = @id";
+                            delFts.Parameters.AddWithValue("@id", gId);
+                            delFts.ExecuteNonQuery();
+
+                            using var delFile = conn.CreateCommand();
+                            delFile.Transaction = trans;
+                            delFile.CommandText = "DELETE FROM IndexedFiles WHERE FileId = @id";
+                            delFile.Parameters.AddWithValue("@id", gId);
+                            delFile.ExecuteNonQuery();
+                        }
+                        trans.Commit();
+                    }
+                    deletedCount = ghostFileIds.Count;
+                }
+
+                // 4. 差分判定（未変更スキップ、新規・更新・ExtractorVersion不一致・中断分を抽出）
                 var toProcess = new List<ScannedFileEntry>();
                 int alreadyIndexed = 0;
 
@@ -181,8 +255,8 @@ namespace FolderMorpher.Services
                     long currentTicks = entry.LastWriteTime.ToUniversalTime().Ticks;
                     if (existingMap.TryGetValue(entry.FullPath, out var meta))
                     {
-                        // 既に Indexed (Status==1) かつ サイズと更新日時が一致していれば完全スキップ (0 I/O)
-                        if (meta.Status == 1 && meta.SizeBytes == entry.Length && meta.LastWriteTicks == currentTicks)
+                        // 既に Indexed (Status==1) かつ サイズ・更新日時・ExtractorVersion が一致していれば完全スキップ (0 I/O)
+                        if (meta.Status == 1 && meta.SizeBytes == entry.Length && meta.LastWriteTicks == currentTicks && meta.ExtractorVer == CurrentExtractorVersion)
                         {
                             alreadyIndexed++;
                             continue;
@@ -204,11 +278,12 @@ namespace FolderMorpher.Services
                     TotalDiscovered = totalDiscovered,
                     AlreadyIndexed = alreadyIndexed,
                     ProcessedCount = processedCount,
-                    StatusMessage = $"インデックス更新開始 (対象: {toProcess.Count:N0} 件 / 変更なしスキップ: {alreadyIndexed:N0} 件)",
+                    DeletedCount = deletedCount,
+                    StatusMessage = $"インデックス更新開始 (対象: {toProcess.Count:N0} 件 / 変更なしスキップ: {alreadyIndexed:N0} 件 / 削除整理: {deletedCount:N0} 件)",
                     Elapsed = sw.Elapsed
                 });
 
-                // 4. バッチ処理（50ファイルごとにトランザクションコミットしてディスクに永続化）
+                // 5. バッチ処理（50ファイルごとにトランザクションコミットしてディスクに永続化）
                 const int BatchSize = 50;
                 for (int i = 0; i < toProcess.Count; i += BatchSize)
                 {
@@ -259,12 +334,14 @@ namespace FolderMorpher.Services
                                 cmdUpd.Transaction = trans;
                                 cmdUpd.CommandText = @"
                                     UPDATE IndexedFiles 
-                                    SET SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, Status = @status, IndexedAtUtcTicks = @now
+                                    SET SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, Status = @status, 
+                                        IndexedAtUtcTicks = @now, ExtractorVersion = @ver
                                     WHERE FileId = @fileId";
                                 cmdUpd.Parameters.AddWithValue("@size", entry.Length);
                                 cmdUpd.Parameters.AddWithValue("@ticks", currentTicks);
                                 cmdUpd.Parameters.AddWithValue("@status", item.Success ? 1 : 2);
                                 cmdUpd.Parameters.AddWithValue("@now", nowTicks);
+                                cmdUpd.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
                                 cmdUpd.Parameters.AddWithValue("@fileId", fileId);
                                 cmdUpd.ExecuteNonQuery();
 
@@ -280,8 +357,8 @@ namespace FolderMorpher.Services
                                 using var cmdIns = conn.CreateCommand();
                                 cmdIns.Transaction = trans;
                                 cmdIns.CommandText = @"
-                                    INSERT INTO IndexedFiles (FullPath, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, Status, IndexedAtUtcTicks)
-                                    VALUES (@path, @dir, @size, @ticks, @status, @now);
+                                    INSERT INTO IndexedFiles (FullPath, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion)
+                                    VALUES (@path, @dir, @size, @ticks, @status, @now, @ver);
                                     SELECT last_insert_rowid();";
                                 cmdIns.Parameters.AddWithValue("@path", entry.FullPath);
                                 cmdIns.Parameters.AddWithValue("@dir", entry.DirectoryPath);
@@ -289,6 +366,7 @@ namespace FolderMorpher.Services
                                 cmdIns.Parameters.AddWithValue("@ticks", currentTicks);
                                 cmdIns.Parameters.AddWithValue("@status", item.Success ? 1 : 2);
                                 cmdIns.Parameters.AddWithValue("@now", nowTicks);
+                                cmdIns.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
                                 fileId = (long)cmdIns.ExecuteScalar()!;
                             }
 
@@ -319,6 +397,7 @@ namespace FolderMorpher.Services
                         AlreadyIndexed = alreadyIndexed,
                         ProcessedCount = processedCount,
                         NewlyIndexedCount = newlyIndexed,
+                        DeletedCount = deletedCount,
                         FailedCount = failedCount,
                         CurrentFile = batch.LastOrDefault()?.Name ?? string.Empty,
                         StatusMessage = $"インデックス中 ({processedCount:N0} / {totalDiscovered:N0})",
@@ -333,8 +412,9 @@ namespace FolderMorpher.Services
                     AlreadyIndexed = alreadyIndexed,
                     ProcessedCount = processedCount,
                     NewlyIndexedCount = newlyIndexed,
+                    DeletedCount = deletedCount,
                     FailedCount = failedCount,
-                    StatusMessage = $"インデックス完了 (新規/更新: {newlyIndexed:N0} 件, スキップ: {alreadyIndexed:N0} 件)",
+                    StatusMessage = $"インデックス完了 (新規/更新: {newlyIndexed:N0} 件, スキップ: {alreadyIndexed:N0} 件, 削除整理: {deletedCount:N0} 件)",
                     Elapsed = sw.Elapsed,
                     IsCompleted = true
                 };
@@ -344,19 +424,47 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// SQLite FTS5 (trigram) を使用したミリ秒全文検索
+        /// SQLite FTS5 (trigram) を使用したミリ秒全文検索（SearchQuery構文完全貫通・日本語2文字LIKE対応・複数語AND）
         /// </summary>
         public async Task<List<SearchResultItem>> SearchIndexedAsync(
-            string keyword,
+            SearchQuery query,
             string? scopeFolder = null,
             CancellationToken ct = default)
         {
             return await Task.Run(() =>
             {
                 var results = new List<SearchResultItem>();
-                if (string.IsNullOrWhiteSpace(keyword)) return results;
 
-                string sanitized = keyword.Trim().Replace("\"", "\"\"");
+                // 検索キーワードの収集
+                var keywords = new List<string>(query.Keywords);
+                if (!string.IsNullOrEmpty(query.ContentKeyword) && !keywords.Contains(query.ContentKeyword, StringComparer.OrdinalIgnoreCase))
+                {
+                    keywords.Add(query.ContentKeyword);
+                }
+
+                // 3文字以上（trigram MATCH可能）と 1〜2文字（MATCH不可、LIKEフォールバック）に分類 (Sol指摘1)
+                var trigramWords = new List<string>();
+                var shortWords = new List<string>();
+
+                foreach (var kw in keywords)
+                {
+                    if (string.IsNullOrWhiteSpace(kw)) continue;
+                    string trimmed = kw.Trim();
+                    if (trimmed.Length >= 3)
+                    {
+                        trigramWords.Add(trimmed);
+                    }
+                    else
+                    {
+                        shortWords.Add(trimmed);
+                    }
+                }
+
+                // キーワードも属性条件もない場合は空
+                if (keywords.Count == 0 && query.Extensions.Count == 0 && !query.MinSizeBytes.HasValue && !query.MaxSizeBytes.HasValue && !query.DormantYears.HasValue && !query.MinPathLength.HasValue && query.PathContains.Count == 0)
+                {
+                    return results;
+                }
 
                 lock (_lock)
                 {
@@ -364,23 +472,120 @@ namespace FolderMorpher.Services
                     conn.Open();
 
                     using var cmd = conn.CreateCommand();
-                    string sql = @"
-                        SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks,
-                               snippet(ContentFts, 1, '【', '】', '...', 15) AS Snippet
-                        FROM ContentFts c
-                        JOIN IndexedFiles f ON c.FileId = f.FileId
-                        WHERE ContentFts MATCH @query";
 
+                    var whereClauses = new List<string>();
+                    whereClauses.Add("f.Status = 1");
+
+                    // 1. trigram MATCH (3文字以上の単語は AND 結合) (Sol指摘5)
+                    bool hasTrigramMatch = trigramWords.Count > 0;
+                    if (hasTrigramMatch)
+                    {
+                        var matchTerms = trigramWords.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
+                        string ftsMatch = string.Join(" AND ", matchTerms);
+                        whereClauses.Add("ContentFts MATCH @ftsQuery");
+                        cmd.Parameters.AddWithValue("@ftsQuery", ftsMatch);
+                    }
+
+                    // 2. 1〜2文字の単語 (LIKE フォールバック) (Sol指摘1)
+                    for (int i = 0; i < shortWords.Count; i++)
+                    {
+                        string paramName = $"@shortWord_{i}";
+                        whereClauses.Add($"(c.Body LIKE {paramName} OR f.FullPath LIKE {paramName})");
+                        string escVal = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                        cmd.Parameters.AddWithValue(paramName, escVal);
+                    }
+
+                    // 3. SearchQuery 構文の完全貫通 (Sol指摘4)
+                    // A. 拡張子フィルタ
+                    if (query.Extensions.Count > 0)
+                    {
+                        var extConditions = new List<string>();
+                        int extIdx = 0;
+                        foreach (var rawExt in query.Extensions)
+                        {
+                            string pName = $"@ext_{extIdx}";
+                            extConditions.Add($"f.FullPath LIKE {pName}");
+                            string ext = rawExt.StartsWith(".") ? rawExt : "." + rawExt;
+                            cmd.Parameters.AddWithValue(pName, "%" + ext);
+                            extIdx++;
+                        }
+                        whereClauses.Add("(" + string.Join(" OR ", extConditions) + ")");
+                    }
+
+                    // B. サイズフィルタ
+                    if (query.MinSizeBytes.HasValue)
+                    {
+                        whereClauses.Add("f.SizeBytes >= @minSize");
+                        cmd.Parameters.AddWithValue("@minSize", query.MinSizeBytes.Value);
+                    }
+                    if (query.MaxSizeBytes.HasValue)
+                    {
+                        whereClauses.Add("f.SizeBytes <= @maxSize");
+                        cmd.Parameters.AddWithValue("@maxSize", query.MaxSizeBytes.Value);
+                    }
+
+                    // C. 休眠年数フィルタ
+                    if (query.DormantYears.HasValue)
+                    {
+                        long maxTicks = DateTime.UtcNow.AddYears(-query.DormantYears.Value).Ticks;
+                        whereClauses.Add("f.LastWriteTimeUtcTicks <= @dormantTicks");
+                        cmd.Parameters.AddWithValue("@dormantTicks", maxTicks);
+                    }
+                    else if (query.DormantDays.HasValue)
+                    {
+                        long maxTicks = DateTime.UtcNow.AddDays(-query.DormantDays.Value).Ticks;
+                        whereClauses.Add("f.LastWriteTimeUtcTicks <= @dormantTicks");
+                        cmd.Parameters.AddWithValue("@dormantTicks", maxTicks);
+                    }
+
+                    // D. パス長危険域 (pathlen:>240)
+                    if (query.MinPathLength.HasValue)
+                    {
+                        whereClauses.Add("LENGTH(f.FullPath) >= @minPathLen");
+                        cmd.Parameters.AddWithValue("@minPathLen", query.MinPathLength.Value);
+                    }
+
+                    // E. 除外ワード (!temp)
+                    for (int i = 0; i < query.ExcludedWords.Count; i++)
+                    {
+                        string pName = $"@ex_{i}";
+                        whereClauses.Add($"(f.FullPath NOT LIKE {pName} AND c.Body NOT LIKE {pName})");
+                        string escEx = "%" + query.ExcludedWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                        cmd.Parameters.AddWithValue(pName, escEx);
+                    }
+
+                    // F. パス絞り込み (path:xxx)
+                    for (int i = 0; i < query.PathContains.Count; i++)
+                    {
+                        string pName = $"@path_{i}";
+                        whereClauses.Add($"f.FullPath LIKE {pName} ESCAPE '\\'");
+                        string escP = "%" + query.PathContains[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                        cmd.Parameters.AddWithValue(pName, escP);
+                    }
+
+                    // G. スコープフォルダー
                     if (!string.IsNullOrWhiteSpace(scopeFolder))
                     {
-                        sql += " AND f.FullPath LIKE @scope ESCAPE '\\'";
+                        whereClauses.Add("f.FullPath LIKE @scope ESCAPE '\\'");
                         string escScope = scopeFolder.TrimEnd('\\', '/').Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
                         cmd.Parameters.AddWithValue("@scope", escScope);
                     }
 
-                    sql += " LIMIT 500";
+                    // SQL 組み立て
+                    string snippetExpr = hasTrigramMatch
+                        ? "snippet(ContentFts, 1, '【', '】', '...', 15) AS Snippet"
+                        : "SUBSTR(c.Body, 1, 120) AS Snippet";
+
+                    string whereSql = string.Join(" AND ", whereClauses);
+                    string sql = $@"
+                        SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks,
+                               {snippetExpr}
+                        FROM ContentFts c
+                        JOIN IndexedFiles f ON c.FileId = f.FileId
+                        WHERE {whereSql}
+                        LIMIT 500";
+
                     cmd.CommandText = sql;
-                    cmd.Parameters.AddWithValue("@query", $"\"{sanitized}\"");
 
                     using var reader = cmd.ExecuteReader();
                     while (reader.Read())
@@ -392,6 +597,25 @@ namespace FolderMorpher.Services
                         long ticks = reader.GetInt64(3);
                         string snippet = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
 
+                        // 1〜2文字検索でtrigram snippetがない場合、C#側で文脈抽出
+                        if (!hasTrigramMatch && shortWords.Count > 0 && !string.IsNullOrEmpty(snippet))
+                        {
+                            string firstShort = shortWords[0];
+                            int idx = snippet.IndexOf(firstShort, StringComparison.OrdinalIgnoreCase);
+                            if (idx >= 0)
+                            {
+                                int start = Math.Max(0, idx - 20);
+                                int len = Math.Min(snippet.Length - start, 50);
+                                snippet = (start > 0 ? "..." : "") + snippet.Substring(start, len).Replace('\r', ' ').Replace('\n', ' ').Trim() + "...";
+                            }
+                        }
+
+                        // CompiledRegex が指定されている場合は最終フィルタ
+                        if (query.CompiledRegex != null && !query.CompiledRegex.IsMatch(Path.GetFileName(fullPath)))
+                        {
+                            continue;
+                        }
+
                         results.Add(new SearchResultItem
                         {
                             Name = Path.GetFileName(fullPath),
@@ -402,13 +626,25 @@ namespace FolderMorpher.Services
                             Extension = Path.GetExtension(fullPath).ToLowerInvariant(),
                             IsDirectory = false,
                             ContentSnippet = snippet,
-                            MatchedReason = $"Indexed: \"{keyword}\""
+                            MatchedReason = keywords.Count > 0 ? $"Indexed: {string.Join(", ", keywords)}" : "Indexed: Property Match"
                         });
                     }
                 }
 
                 return results;
             }, ct);
+        }
+
+        /// <summary>
+        /// 後方互換用：単一文字列キーワードによるインデックス検索
+        /// </summary>
+        public async Task<List<SearchResultItem>> SearchIndexedAsync(
+            string keyword,
+            string? scopeFolder = null,
+            CancellationToken ct = default)
+        {
+            var query = SearchQueryParser.Parse(keyword);
+            return await SearchIndexedAsync(query, scopeFolder, ct);
         }
 
         /// <summary>

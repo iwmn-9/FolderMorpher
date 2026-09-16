@@ -60,18 +60,47 @@ namespace AstraSize
             }
         }
 
+        private int _isBackgroundIndexing = 0;
+
+        private void TriggerBackgroundIndexUpdate(string? folderPath)
+        {
+            if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath)) return;
+            if (Interlocked.CompareExchange(ref _isBackgroundIndexing, 1, 0) != 0) return;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var report = await _contentIndex.IndexFolderAsync(folderPath, progress: null, CancellationToken.None);
+                    if (report.NewlyIndexedCount > 0)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                            ShowToast(isJa
+                                ? $"⚡ インデックスを自動更新しました ({report.NewlyIndexedCount:N0}件)"
+                                : $"⚡ Background index updated ({report.NewlyIndexedCount:N0} files)");
+                        });
+                    }
+                }
+                catch
+                {
+                    // バックグラウンドインデックス失敗はサイレントに処理
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref _isBackgroundIndexing, 0);
+                }
+            });
+        }
+
         #region Search Input & Debounce
 
         private void SearchInputBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (SearchScopeScannedRadio == null) return;
-
-            // スキャン済みツリー対象の場合はインクリメンタル即時検索
-            if (SearchScopeScannedRadio.IsChecked == true)
-            {
-                _searchDebounceTimer?.Stop();
-                _searchDebounceTimer?.Start();
-            }
+            // インクリメンタル即時検索（タイピング中の自動デバウンス検索）
+            _searchDebounceTimer?.Stop();
+            _searchDebounceTimer?.Start();
         }
 
         private void SearchInputBox_KeyDown(object sender, KeyEventArgs e)
@@ -123,84 +152,9 @@ namespace AstraSize
             }
         }
 
-        private async void SearchBuildIndexButton_Click(object sender, RoutedEventArgs e)
-        {
-            string targetFolder = SearchDirectTargetTextBox?.Text?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(targetFolder))
-            {
-                // スキャン済みタブのルートをフォールバックとして取得
-                var selectedTab = StorageTabs?.FirstOrDefault(t => t.IsSelected);
-                if (selectedTab?.RootNode != null && !string.IsNullOrWhiteSpace(selectedTab.RootNode.FullPath))
-                {
-                    targetFolder = selectedTab.RootNode.FullPath;
-                    if (SearchDirectTargetTextBox != null)
-                    {
-                        SearchDirectTargetTextBox.Text = targetFolder;
-                    }
-                }
-            }
-
-            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-            if (string.IsNullOrWhiteSpace(targetFolder) || !Directory.Exists(targetFolder))
-            {
-                MessageBox.Show(
-                    isJa ? "インデックス対象の有効なフォルダーまたはUNCパスを指定してください。" : "Please specify a valid target folder or UNC path to index.",
-                    isJa ? "フォルダー指定エラー" : "Folder Error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-                return;
-            }
-
-            _searchCts?.Cancel();
-            _searchCts = new CancellationTokenSource();
-            var ct = _searchCts.Token;
-
-            SetSearchLoadingState(true);
-
-            var progress = new Progress<IndexProgressReport>(r =>
-            {
-                if (SearchStatusText != null)
-                {
-                    SearchStatusText.Text = $"⚡ {r.StatusMessage} {r.CurrentFile}";
-                }
-            });
-
-            try
-            {
-                var finalReport = await _contentIndex.IndexFolderAsync(targetFolder, progress, ct);
-                if (SearchStatusText != null)
-                {
-                    SearchStatusText.Text = isJa
-                        ? $"⚡ インデックス完了: 新規/更新 {finalReport.NewlyIndexedCount:N0} 件, スキップ {finalReport.AlreadyIndexed:N0} 件 ({finalReport.Elapsed.TotalSeconds:F1}s)"
-                        : $"⚡ Index complete: {finalReport.NewlyIndexedCount:N0} updated, {finalReport.AlreadyIndexed:N0} skipped ({finalReport.Elapsed.TotalSeconds:F1}s)";
-                }
-                ShowToast(isJa
-                    ? $"⚡ FTS5全文インデックスを差分更新しました ({finalReport.NewlyIndexedCount:N0}件)"
-                    : $"⚡ Updated FTS5 index ({finalReport.NewlyIndexedCount:N0} files)");
-            }
-            catch (OperationCanceledException)
-            {
-                if (SearchStatusText != null)
-                {
-                    SearchStatusText.Text = isJa ? "⚡ インデックス作成を中断しました（次回差分再開可能）" : "⚡ Indexing canceled (can be resumed).";
-                }
-            }
-            catch (Exception ex)
-            {
-                if (SearchStatusText != null)
-                {
-                    SearchStatusText.Text = $"⚡ インデックスエラー: {ex.Message}";
-                }
-            }
-            finally
-            {
-                SetSearchLoadingState(false);
-            }
-        }
-
         #endregion
 
-        #region Search Execution Core
+        #region Search Execution Core (Smart Auto-Routing)
 
         private async void ExecuteSearch(bool isIncremental)
         {
@@ -223,16 +177,23 @@ namespace AstraSize
                 return;
             }
 
-            _searchCts?.Cancel();
-            _searchCts = new CancellationTokenSource();
-            var ct = _searchCts.Token;
-            long currentGen = Interlocked.Increment(ref _searchGeneration);
-
-            bool isDirectScope = (SearchScopeDirectRadio?.IsChecked == true);
-            bool isIndexedScope = (SearchScopeIndexedRadio?.IsChecked == true);
             string targetFolder = SearchDirectTargetTextBox?.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(targetFolder))
+            {
+                // スキャン済みタブのルートをフォールバックとして取得
+                var selectedTab = StorageTabs?.FirstOrDefault(t => t.IsSelected);
+                if (selectedTab?.RootNode != null && !string.IsNullOrWhiteSpace(selectedTab.RootNode.FullPath))
+                {
+                    targetFolder = selectedTab.RootNode.FullPath;
+                }
+            }
 
-            if (isDirectScope && string.IsNullOrWhiteSpace(targetFolder))
+            // ターゲットもスキャン済みツリーもない場合
+            bool hasTarget = !string.IsNullOrWhiteSpace(targetFolder);
+            var scopedRoots = GetTargetScannedRootNodes(hasTarget ? targetFolder : null);
+            bool hasScannedTree = scopedRoots.Count > 0;
+
+            if (!hasTarget && !hasScannedTree)
             {
                 if (!isIncremental)
                 {
@@ -245,6 +206,11 @@ namespace AstraSize
                 }
                 return;
             }
+
+            _searchCts?.Cancel();
+            _searchCts = new CancellationTokenSource();
+            var ct = _searchCts.Token;
+            long currentGen = Interlocked.Increment(ref _searchGeneration);
 
             SetSearchLoadingState(true);
 
@@ -272,28 +238,16 @@ namespace AstraSize
                 _searchResults.Clear();
                 _allSearchResults.Clear();
 
-                if (isIndexedScope)
+                // ⚡ スマートルーティング判定:
+                // 1. FTS5インデックスが存在するか？
+                bool hasIndex = hasTarget && _contentIndex.HasIndexForPath(targetFolder);
+
+                if (hasIndex && (query.SearchContentMode || !hasScannedTree))
                 {
-                    // 📑 SQLite FTS5 事前インデックス全文検索 (ミリ秒応答)
-                    string searchKeyword = !string.IsNullOrEmpty(query.ContentKeyword)
-                        ? query.ContentKeyword
-                        : (query.Keywords.Count > 0 ? string.Join(" ", query.Keywords) : rawQuery);
-
+                    // 📑 ルート1: SQLite FTS5 事前インデックス全文検索 (ミリ秒応答)
                     bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                    if (string.IsNullOrWhiteSpace(searchKeyword))
-                    {
-                        if (SearchStatusText != null && currentGen == Volatile.Read(ref _searchGeneration))
-                        {
-                            SearchStatusText.Text = isJa ? "検索キーワードを入力してください" : "Please enter a search keyword.";
-                        }
-                        return;
-                    }
-
                     var sw = Stopwatch.StartNew();
-                    var hits = await _contentIndex.SearchIndexedAsync(
-                        searchKeyword,
-                        string.IsNullOrWhiteSpace(targetFolder) ? null : targetFolder,
-                        ct);
+                    var hits = await _contentIndex.SearchIndexedAsync(query, targetFolder, ct);
                     sw.Stop();
 
                     if (currentGen == Volatile.Read(ref _searchGeneration))
@@ -308,68 +262,51 @@ namespace AstraSize
                         if (SearchStatusText != null)
                         {
                             SearchStatusText.Text = isJa
-                                ? $"📑 インデックス検索完了: {hits.Count:N0} 件ヒット ({sw.ElapsedMilliseconds} ms)"
-                                : $"📑 Indexed search complete: {hits.Count:N0} hits ({sw.ElapsedMilliseconds} ms)";
+                                ? $"⚡ インデックス高速検索完了: {hits.Count:N0} 件ヒット ({sw.ElapsedMilliseconds} ms)"
+                                : $"⚡ Indexed search complete: {hits.Count:N0} hits ({sw.ElapsedMilliseconds} ms)";
                         }
                     }
                 }
-                else if (isDirectScope)
+                else if (hasScannedTree && !query.SearchContentMode)
                 {
-                    // ライブ直接走査 (未スキャンUNC / フォルダー) - Progressive Streaming
+                    // 🚀 ルート2: スキャン済みツリー対象 (0秒インメモリ検索)
+                    var results = await _searchEngine.SearchInMemoryAsync(scopedRoots, query, progress, ct, batchYield);
+                    if (currentGen == Volatile.Read(ref _searchGeneration))
+                    {
+                        _allSearchResults = results;
+                        if (_searchResults.Count == 0 && results.Count > 0)
+                        {
+                            foreach (var item in results) _searchResults.Add(item);
+                        }
+                    }
+
+                    // インデックス未構築ならバックグラウンド同期を自動トリガー
+                    if (!hasIndex && hasTarget)
+                    {
+                        TriggerBackgroundIndexUpdate(targetFolder);
+                    }
+                }
+                else
+                {
+                    // 🔍 ルート3: ライブ直接走査 (未スキャンUNC / 初見フォルダー / インデックス未構築時の本文検索)
+                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                    if (SearchStatusText != null && currentGen == Volatile.Read(ref _searchGeneration))
+                    {
+                        SearchStatusText.Text = isJa
+                            ? "🔍 ライブ走査を実行中..."
+                            : "🔍 Running live direct search...";
+                    }
+
                     var results = await _searchEngine.SearchDirectFolderAsync(targetFolder, query, batchYield, progress, ct);
                     if (currentGen == Volatile.Read(ref _searchGeneration))
                     {
                         _allSearchResults = results;
                     }
-                }
-                else
-                {
-                    // スキャン済みツリー対象 (0秒インメモリ検索)
-                    // 対象フォルダーの指定がある場合は、該当フォルダーの部分木のみにスコープを絞り込む
-                    if (!string.IsNullOrWhiteSpace(targetFolder))
+
+                    // 走査完了後、裏でインデックスを自動蓄積
+                    if (hasTarget)
                     {
-                        var scopedRoots = GetTargetScannedRootNodes(targetFolder);
-                        if (scopedRoots.Count > 0)
-                        {
-                            var results = await _searchEngine.SearchInMemoryAsync(scopedRoots, query, progress, ct, batchYield);
-                            if (currentGen == Volatile.Read(ref _searchGeneration))
-                            {
-                                _allSearchResults = results;
-                                if (_searchResults.Count == 0 && results.Count > 0)
-                                {
-                                    foreach (var item in results) _searchResults.Add(item);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            // スキャン済みツリーに対象フォルダーが含まれていない場合は直接走査へフォールバック
-                            if (SearchStatusText != null && currentGen == Volatile.Read(ref _searchGeneration))
-                            {
-                                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                                SearchStatusText.Text = isJa
-                                    ? "※スキャン済みツリー外のため、ライブ直接走査を実行中..."
-                                    : "Target folder not in cached tree. Running live direct search...";
-                            }
-                            var results = await _searchEngine.SearchDirectFolderAsync(targetFolder, query, batchYield, progress, ct);
-                            if (currentGen == Volatile.Read(ref _searchGeneration))
-                            {
-                                _allSearchResults = results;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        var roots = GetTargetScannedRootNodes(null);
-                        var results = await _searchEngine.SearchInMemoryAsync(roots, query, progress, ct, batchYield);
-                        if (currentGen == Volatile.Read(ref _searchGeneration))
-                        {
-                            _allSearchResults = results;
-                            if (_searchResults.Count == 0 && results.Count > 0)
-                            {
-                                foreach (var item in results) _searchResults.Add(item);
-                            }
-                        }
+                        TriggerBackgroundIndexUpdate(targetFolder);
                     }
                 }
             }
@@ -475,10 +412,6 @@ namespace AstraSize
             if (SearchExecuteButton != null)
             {
                 SearchExecuteButton.IsEnabled = !isLoading;
-            }
-            if (SearchBuildIndexButton != null)
-            {
-                SearchBuildIndexButton.IsEnabled = !isLoading;
             }
         }
 

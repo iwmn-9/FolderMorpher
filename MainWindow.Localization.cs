@@ -495,10 +495,6 @@ namespace AstraSize
             if (SearchClearButton != null) SearchClearButton.Content = Strings.SearchClear;
             if (SearchExportExcelButton != null) SearchExportExcelButton.Content = isJa ? "📊 Excel台帳 (.xlsx)" : "📊 Export Excel (.xlsx)";
             if (SearchExportCsvButton != null) SearchExportCsvButton.Content = isJa ? "📑 CSV" : "📑 Export CSV";
-            if (SearchScopeScannedRadio != null) SearchScopeScannedRadio.Content = Strings.SearchScopeScanned;
-            if (SearchScopeDirectRadio != null) SearchScopeDirectRadio.Content = Strings.SearchScopeDirect;
-            if (SearchScopeIndexedRadio != null) SearchScopeIndexedRadio.Content = Strings.SearchScopeIndexed;
-            if (SearchBuildIndexButton != null) SearchBuildIndexButton.Content = Strings.SearchBuildIndex;
             if (SearchIncludeFoldersCheckBox != null) SearchIncludeFoldersCheckBox.Content = Strings.SearchIncludeFoldersCheck;
             if (SearchContentCheckBox != null) SearchContentCheckBox.Content = Strings.SearchContentCheck;
             if (SearchDirectBrowseButton != null) SearchDirectBrowseButton.Content = Strings.BrowseWithFolder;

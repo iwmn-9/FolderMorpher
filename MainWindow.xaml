@@ -1485,26 +1485,16 @@
                             </StackPanel>
                         </Grid>
 
-                        <!-- Row 1: Scope & Target Folder -->
+                        <!-- Row 1: Filters & Target Folder (全自動スマート検索) -->
                         <Grid Grid.Row="1" Margin="0,10,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
-                                <RadioButton x:Name="SearchScopeScannedRadio" Content="⚡ スキャン済みツリー" IsChecked="True"
-                                             FontSize="12" Foreground="#334155" VerticalContentAlignment="Center" Margin="0,0,10,0"
-                                             ToolTip="容量分析でスキャン済みのツリーから即時検索"/>
-                                <RadioButton x:Name="SearchScopeDirectRadio" Content="🌐 直接走査"
-                                             FontSize="12" Foreground="#334155" VerticalContentAlignment="Center" Margin="0,0,10,0"
-                                             ToolTip="指定フォルダーを直接走査しながら検索"/>
-                                <RadioButton x:Name="SearchScopeIndexedRadio" Content="📑 インデックス検索"
-                                             FontSize="12" Foreground="#334155" VerticalContentAlignment="Center" Margin="0,0,12,0"
-                                             ToolTip="SQLite FTS5 事前インデックスからミリ秒全文検索"/>
                                 <CheckBox x:Name="SearchIncludeFoldersCheckBox" Content="📁 フォルダも含める"
-                                          FontSize="12" Foreground="#475569" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,10,0"
+                                          FontSize="12" Foreground="#475569" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,14,0"
                                           ToolTip="検索結果にフォルダーも含めます"/>
                                 <CheckBox x:Name="SearchContentCheckBox" Content="📄 本文も検索"
                                           FontSize="12" Foreground="#2563EB" FontWeight="SemiBold" VerticalAlignment="Center"
@@ -1520,9 +1510,6 @@
                                 <Button x:Name="SearchDirectBrowseButton" Grid.Column="1" Content="📁 参照..." Height="28" Margin="4,0,0,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="SearchDirectBrowseButton_Click"/>
                             </Grid>
-                            <Button x:Name="SearchBuildIndexButton" Grid.Column="3" Content="⚡ インデックス更新" Height="28" Padding="10,0" Margin="8,0,0,0"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchBuildIndexButton_Click"
-                                    ToolTip="対象フォルダーのSQLite FTS5全文検索インデックスを差分作成・更新します"/>
                         </Grid>
 
                         <!-- Row 2: Progress Bar -->

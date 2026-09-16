@@ -148,6 +148,8 @@ namespace FolderMorpher.Services
                 var currentBatch = new List<SearchResultItem>();
                 var batchLock = new object();
                 int scannedCount = 0;
+                int hitCount = 0;
+                long totalHitBytes = 0;
                 long lastReportMs = 0;
 
                 var candidates = new ConcurrentBag<SearchResultItem>();
@@ -175,6 +177,8 @@ namespace FolderMorpher.Services
                         if (needsDeepCheck)
                         {
                             candidates.Add(item);
+                            Interlocked.Increment(ref hitCount);
+                            Interlocked.Add(ref totalHitBytes, item.SizeBytes);
                         }
                         else
                         {
@@ -188,6 +192,8 @@ namespace FolderMorpher.Services
                                     currentBatch.Clear();
                                 }
                             }
+                            Interlocked.Increment(ref hitCount);
+                            Interlocked.Add(ref totalHitBytes, item.SizeBytes);
                         }
                     }
 
@@ -197,9 +203,9 @@ namespace FolderMorpher.Services
                         Volatile.Write(ref lastReportMs, elapsed);
                         progress?.Report(new SearchProgressReport
                         {
-                            HitCount = results.Count + candidates.Count,
+                            HitCount = Volatile.Read(ref hitCount),
                             ScannedCount = count,
-                            TotalHitBytes = results.Sum(r => r.SizeBytes) + candidates.Sum(r => r.SizeBytes),
+                            TotalHitBytes = Volatile.Read(ref totalHitBytes),
                             CurrentPath = entry.FullPath,
                             Elapsed = sw.Elapsed,
                             IsCompleted = false
@@ -580,8 +586,12 @@ namespace FolderMorpher.Services
                     else if (query.SearchContentMode && query.Keywords.Count > 0)
                     {
                         requiredKeywords = query.Keywords
-                            .Where(kw => (item.Name.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0 &&
-                                          item.FullPath.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0))
+                            .Where(kw =>
+                            {
+                                bool hasSeparator = kw.Contains('\\') || kw.Contains('/');
+                                string targetString = hasSeparator ? item.FullPath : item.Name;
+                                return targetString.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0;
+                            })
                             .ToList();
                     }
                     else

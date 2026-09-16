@@ -271,14 +271,39 @@ namespace FolderMorpher.Services.Testing
                     if (stats1.TotalFiles < 3)
                         throw new Exception($"ContentIndexService failed: Expected >= 3 files indexed, got {stats1.TotalFiles}");
 
+                    // HasIndexForPath の検証
+                    if (!indexService.HasIndexForPath(tempDir))
+                        throw new Exception("ContentIndexService failed: HasIndexForPath returned false for indexed directory.");
+
                     // B. ミリ秒全文検索 (FTS5 trigram + snippet)
-                    var ftsHits = await indexService.SearchIndexedAsync("最高機密", tempDir, CancellationToken.None);
+                    var qSecret = SearchQueryParser.Parse("最高機密");
+                    var ftsHits = await indexService.SearchIndexedAsync(qSecret, tempDir, CancellationToken.None);
                     if (ftsHits.Count == 0)
                         throw new Exception("ContentIndexService failed: Keyword '最高機密' not found in indexed search.");
 
                     bool ftsDocFound = ftsHits.Any(h => h.FullPath.EndsWith("Confidential_Doc.txt") && (h.ContentSnippet?.Contains("最高機密") ?? false));
                     if (!ftsDocFound)
                         throw new Exception("ContentIndexService failed: Confidential_Doc.txt with snippet was not found in FTS results.");
+
+                    // B2. 日本語2文字検索のハイブリッド検証 (Sol指摘: 3文字未満は trigram MATCH エラーにならず LIKE fallback で正確にヒットすること)
+                    var qTwoChar = SearchQueryParser.Parse("契約");
+                    var twoCharHits = await indexService.SearchIndexedAsync(qTwoChar, tempDir, CancellationToken.None);
+                    if (!twoCharHits.Any(h => h.FullPath.EndsWith("Contract_Doc.pdf")))
+                        throw new Exception("ContentIndexService failed: 2-character Japanese keyword '契約' should hit Contract_Doc.pdf via LIKE fallback.");
+
+                    // B3. 複数キーワード AND 検索 (Sol指摘: 単一フレーズ化せず個別トークンAND結合でヒットすること)
+                    var qAndSearch = SearchQueryParser.Parse("予算 2026");
+                    var andHits = await indexService.SearchIndexedAsync(qAndSearch, tempDir, CancellationToken.None);
+                    if (!andHits.Any(h => h.FullPath.EndsWith("予算_計画書.txt")))
+                        throw new Exception("ContentIndexService failed: Multi-keyword AND search '予算 2026' did not hit 予算_計画書.txt.");
+
+                    // B4. クエリ構文の SQL 貫通検証 (ext:txt size:<10MB !NoSuchWord)
+                    var qFilter = SearchQueryParser.Parse("ext:txt size:<10MB !xyznotfound 最高機密");
+                    var filterHits = await indexService.SearchIndexedAsync(qFilter, tempDir, CancellationToken.None);
+                    if (!filterHits.Any(h => h.FullPath.EndsWith("Confidential_Doc.txt")))
+                        throw new Exception("ContentIndexService failed: Filtered indexed search with ext: and size: failed to hit Confidential_Doc.txt.");
+                    if (filterHits.Any(h => h.FullPath.EndsWith(".pdf")))
+                        throw new Exception("ContentIndexService failed: Filtered indexed search with ext:txt returned .pdf file.");
 
                     // C. 差分更新（変更なしスキップ ＆ 更新ファイルのみ再インデックス）
                     string fileDynamic = Path.Combine(tempDir, "Dynamic_Doc.txt");
@@ -295,9 +320,20 @@ namespace FolderMorpher.Services.Testing
                         throw new Exception($"ContentIndexService Diff Update failed: Expected skipCount>=3, got {diffReport.AlreadyIndexed}");
 
                     // D. 新規ファイル検索
-                    var dynHits = await indexService.SearchIndexedAsync("アルファ版", tempDir, CancellationToken.None);
+                    var qDyn = SearchQueryParser.Parse("アルファ版");
+                    var dynHits = await indexService.SearchIndexedAsync(qDyn, tempDir, CancellationToken.None);
                     if (!dynHits.Any(h => h.FullPath.EndsWith("Dynamic_Doc.txt")))
                         throw new Exception("ContentIndexService failed: Newly added Dynamic_Doc.txt was not found via FTS.");
+
+                    // E. 削除亡霊ファイルのクリーンアップ検証 (Sol指摘: 削除・リネームしたファイルが次回インデックスでDBから消去されること)
+                    File.Delete(fileDynamic);
+                    var cleanReport = await indexService.IndexFolderAsync(tempDir, null, CancellationToken.None);
+                    if (cleanReport.DeletedCount != 1)
+                        throw new Exception($"ContentIndexService Ghost Cleanup failed: Expected DeletedCount=1, got {cleanReport.DeletedCount}");
+
+                    var ghostHits = await indexService.SearchIndexedAsync(qDyn, tempDir, CancellationToken.None);
+                    if (ghostHits.Any(h => h.FullPath.EndsWith("Dynamic_Doc.txt")))
+                        throw new Exception("ContentIndexService Ghost Cleanup failed: Deleted file still appeared in indexed search.");
                 }
                 finally
                 {
