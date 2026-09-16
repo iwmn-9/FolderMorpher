@@ -44,7 +44,8 @@ namespace FolderMorpher.Services
             IEnumerable<FileItemNode> rootNodes,
             SearchQuery query,
             IProgress<SearchProgressReport>? progress = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            IProgress<IReadOnlyList<SearchResultItem>>? batchYield = null)
         {
             return await Task.Run(async () =>
             {
@@ -52,6 +53,8 @@ namespace FolderMorpher.Services
                 var results = new List<SearchResultItem>();
                 int scannedCount = 0;
                 var candidates = new List<SearchResultItem>();
+
+                var currentBatch = new List<SearchResultItem>();
 
                 void Traverse(FileItemNode node)
                 {
@@ -79,6 +82,15 @@ namespace FolderMorpher.Services
                         else
                         {
                             results.Add(item);
+                            if (batchYield != null)
+                            {
+                                currentBatch.Add(item);
+                                if (currentBatch.Count >= 50)
+                                {
+                                    batchYield.Report(currentBatch.ToList());
+                                    currentBatch.Clear();
+                                }
+                            }
                         }
                     }
 
@@ -93,9 +105,15 @@ namespace FolderMorpher.Services
                     Traverse(root);
                 }
 
+                if (currentBatch.Count > 0 && batchYield != null)
+                {
+                    batchYield.Report(currentBatch.ToList());
+                    currentBatch.Clear();
+                }
+
                 if (candidates.Count > 0)
                 {
-                    var contentResults = await FilterByContentAsync(candidates, query, progress, ct);
+                    var contentResults = await FilterByContentAsync(candidates, query, progress, ct, batchYield);
                     results.AddRange(contentResults);
                 }
 
@@ -211,9 +229,8 @@ namespace FolderMorpher.Services
 
                 if (candidates.Count > 0)
                 {
-                    var contentResults = await FilterByContentAsync(candidates.ToList(), query, progress, ct);
+                    var contentResults = await FilterByContentAsync(candidates.ToList(), query, progress, ct, batchYield);
                     results.AddRange(contentResults);
-                    batchYield?.Report(contentResults);
                 }
 
                 sw.Stop();
@@ -490,9 +507,12 @@ namespace FolderMorpher.Services
             List<SearchResultItem> candidates,
             SearchQuery query,
             IProgress<SearchProgressReport>? progress,
-            CancellationToken ct)
+            CancellationToken ct,
+            IProgress<IReadOnlyList<SearchResultItem>>? batchYield = null)
         {
             var matched = new ConcurrentBag<SearchResultItem>();
+            var progressiveBatch = new List<SearchResultItem>();
+            var batchLock = new object();
 
             // Determine target search keyword
             string targetContent = query.ContentKeyword ?? string.Empty;
@@ -505,7 +525,12 @@ namespace FolderMorpher.Services
             string? officeLinkKeyword = query.OfficeLinkKeyword;
 
             const long MaxSearchFileSize = 50L * 1024 * 1024;
-            var validFiles = candidates.Where(c => !c.IsDirectory && c.SizeBytes <= MaxSearchFileSize && File.Exists(c.FullPath)).ToList();
+            // ★ Sol提唱: 小さいファイル優先（Small-File First）
+            // 100KBと40MBなら100KBから先に読み、0.1〜0.3秒で初期ヒットをUIへポンポン流す
+            var validFiles = candidates
+                .Where(c => !c.IsDirectory && c.SizeBytes <= MaxSearchFileSize && File.Exists(c.FullPath))
+                .OrderBy(c => c.SizeBytes)
+                .ToList();
 
             int processed = 0;
             int total = validFiles.Count;
@@ -520,6 +545,23 @@ namespace FolderMorpher.Services
                 MaxDegreeOfParallelism = maxDegree,
                 CancellationToken = ct
             };
+
+            void EmitHit(SearchResultItem hit)
+            {
+                matched.Add(hit);
+                if (batchYield != null)
+                {
+                    lock (batchLock)
+                    {
+                        progressiveBatch.Add(hit);
+                        if (progressiveBatch.Count >= 5)
+                        {
+                            batchYield.Report(progressiveBatch.ToList());
+                            progressiveBatch.Clear();
+                        }
+                    }
+                }
+            }
 
             await Parallel.ForEachAsync(validFiles, po, async (item, token) =>
             {
@@ -551,7 +593,7 @@ namespace FolderMorpher.Services
                     if (requiredKeywords.Count == 0 && !hasOfficeLinkReq)
                     {
                         item.MatchedReason = "Name";
-                        matched.Add(item);
+                        EmitHit(item);
                     }
                     else if (requiredKeywords.Count > 0)
                     {
@@ -564,7 +606,7 @@ namespace FolderMorpher.Services
                                 item.MatchedReason = (query.Keywords.Count > requiredKeywords.Count)
                                     ? $"Name + Content: \"{string.Join(", ", requiredKeywords)}\""
                                     : $"Content: \"{string.Join(", ", requiredKeywords)}\"";
-                                matched.Add(item);
+                                EmitHit(item);
                             }
                         }
                         // 2. PDF (.pdf) with Windows IFilter and pure C# fallback
@@ -576,7 +618,7 @@ namespace FolderMorpher.Services
                                 item.MatchedReason = (query.Keywords.Count > requiredKeywords.Count)
                                     ? $"Name + PDF Content: \"{string.Join(", ", requiredKeywords)}\""
                                     : $"PDF Content: \"{string.Join(", ", requiredKeywords)}\"";
-                                matched.Add(item);
+                                EmitHit(item);
                             }
                         }
                         // 3. Text files (.txt, .csv, .log, .json, code files, etc.)
@@ -588,7 +630,7 @@ namespace FolderMorpher.Services
                                 item.MatchedReason = (query.Keywords.Count > requiredKeywords.Count)
                                     ? $"Name + Content: \"{string.Join(", ", requiredKeywords)}\""
                                     : $"Content: \"{string.Join(", ", requiredKeywords)}\"";
-                                matched.Add(item);
+                                EmitHit(item);
                             }
                         }
                     }
@@ -600,7 +642,7 @@ namespace FolderMorpher.Services
                             item.MatchedReason = string.IsNullOrEmpty(officeLinkKeyword)
                                 ? "Office External Link"
                                 : $"OfficeLink: \"{officeLinkKeyword}\"";
-                            matched.Add(item);
+                            EmitHit(item);
                         }
                     }
                 }
@@ -620,6 +662,15 @@ namespace FolderMorpher.Services
                     });
                 }
             });
+
+            lock (batchLock)
+            {
+                if (progressiveBatch.Count > 0 && batchYield != null)
+                {
+                    batchYield.Report(progressiveBatch.ToList());
+                    progressiveBatch.Clear();
+                }
+            }
 
             return matched.ToList();
         }

@@ -213,11 +213,14 @@ namespace AstraSize
                         var scopedRoots = GetTargetScannedRootNodes(targetFolder);
                         if (scopedRoots.Count > 0)
                         {
-                            var results = await _searchEngine.SearchInMemoryAsync(scopedRoots, query, progress, ct);
+                            var results = await _searchEngine.SearchInMemoryAsync(scopedRoots, query, progress, ct, batchYield);
                             if (currentGen == Volatile.Read(ref _searchGeneration))
                             {
                                 _allSearchResults = results;
-                                foreach (var item in results) _searchResults.Add(item);
+                                if (_searchResults.Count == 0 && results.Count > 0)
+                                {
+                                    foreach (var item in results) _searchResults.Add(item);
+                                }
                             }
                         }
                         else
@@ -240,11 +243,14 @@ namespace AstraSize
                     else
                     {
                         var roots = GetTargetScannedRootNodes(null);
-                        var results = await _searchEngine.SearchInMemoryAsync(roots, query, progress, ct);
+                        var results = await _searchEngine.SearchInMemoryAsync(roots, query, progress, ct, batchYield);
                         if (currentGen == Volatile.Read(ref _searchGeneration))
                         {
                             _allSearchResults = results;
-                            foreach (var item in results) _searchResults.Add(item);
+                            if (_searchResults.Count == 0 && results.Count > 0)
+                            {
+                                foreach (var item in results) _searchResults.Add(item);
+                            }
                         }
                     }
                 }
