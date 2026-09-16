@@ -1453,7 +1453,6 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/> <!-- Search Box & Action Buttons -->
                             <RowDefinition Height="Auto"/> <!-- Scope Selection & Target Folder -->
-                            <RowDefinition Height="Auto"/> <!-- Smart Chips (Presets) -->
                             <RowDefinition Height="Auto"/> <!-- Progress Bar -->
                         </Grid.RowDefinitions>
 
@@ -1466,7 +1465,7 @@
                             <TextBox x:Name="SearchInputBox" Height="36" FontSize="13" Padding="10,0"
                                      VerticalContentAlignment="Center" BorderBrush="#CBD5E1"
                                      TextChanged="SearchInputBox_TextChanged" KeyDown="SearchInputBox_KeyDown"
-                                     ToolTip="検索構文を入力 (例: ext:xlsx size:&gt;10MB dormant:3y content:社外秘 regex:^backup.*\.zip)"/>
+                                     ToolTip="検索構文を入力 (例: ext:xlsx size:>10MB dormant:>3y content:社外秘 regex:^backup.*\.zip)"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
                                 <Button x:Name="SearchExecuteButton" Content="🔍 検索" Height="36" Padding="14,0"
                                         Style="{StaticResource FluentButtonPrimary}" Click="SearchExecuteButton_Click"
@@ -1513,24 +1512,8 @@
                             </Grid>
                         </Grid>
 
-                        <!-- Row 2: Smart Chips (Presets) -->
-                        <WrapPanel Grid.Row="2" Margin="0,10,0,0">
-                            <TextBlock x:Name="SearchQuickPresetsLabel" Text="クイック検索:" FontSize="11" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <Button x:Name="SearchChipLarge" Content="🐘 1GB超 (size:&gt;1GB)" Height="26" FontSize="11" Padding="8,0" Margin="0,0,6,0"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchChipLarge_Click"/>
-                            <Button x:Name="SearchChipDormant" Content="💤 3年休眠 (dormant:3y)" Height="26" FontSize="11" Padding="8,0" Margin="0,0,6,0"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchChipDormant_Click"/>
-                            <Button x:Name="SearchChipPathLen" Content="📏 240字超 (pathlen:&gt;240)" Height="26" FontSize="11" Padding="8,0" Margin="0,0,6,0"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchChipPathLen_Click"/>
-                            <Button x:Name="SearchChipIllegal" Content="⚠️ 禁則文字 (chars:illegal)" Height="26" FontSize="11" Padding="8,0" Margin="0,0,6,0"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchChipIllegal_Click"/>
-                            <Button x:Name="SearchChipOffice" Content="🔗 Officeリンク (office-link:&quot;\\&quot;)" Height="26" FontSize="11" Padding="8,0" Margin="0,0,6,0"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchChipOffice_Click"/>
-                            <TextBlock x:Name="SearchSyntaxHintText" Text="※構文: ext:xlsx,docx size:&gt;100MB date:&gt;2024-01-01 content:キーワード !除外 word" FontSize="10.5" Foreground="#94A3B8" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                        </WrapPanel>
-
-                        <!-- Row 3: Progress Bar -->
-                        <ProgressBar x:Name="SearchProgressBar" Grid.Row="3" Height="3" Margin="0,8,0,0"
+                        <!-- Row 2: Progress Bar -->
+                        <ProgressBar x:Name="SearchProgressBar" Grid.Row="2" Height="3" Margin="0,8,0,0"
                                      IsIndeterminate="True" Visibility="Collapsed" Foreground="#2563EB" Background="#E2E8F0" BorderThickness="0"/>
                     </Grid>
                 </Border>

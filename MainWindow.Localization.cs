@@ -498,19 +498,12 @@ namespace AstraSize
             if (SearchScopeScannedRadio != null) SearchScopeScannedRadio.Content = Strings.SearchScopeScanned;
             if (SearchScopeDirectRadio != null) SearchScopeDirectRadio.Content = Strings.SearchScopeDirect;
             if (SearchDirectBrowseButton != null) SearchDirectBrowseButton.Content = Strings.BrowseWithFolder;
-            if (SearchChipLarge != null) SearchChipLarge.Content = Strings.SearchChipLargeText;
-            if (SearchChipDormant != null) SearchChipDormant.Content = Strings.SearchChipDormantText;
-            if (SearchChipPathLen != null) SearchChipPathLen.Content = Strings.SearchChipPathLenText;
-            if (SearchChipIllegal != null) SearchChipIllegal.Content = Strings.SearchChipIllegalText;
-            if (SearchChipOffice != null) SearchChipOffice.Content = Strings.SearchChipOfficeText;
             if (SearchKpiHitCountTitle != null) SearchKpiHitCountTitle.Text = Strings.SearchKpiHitCount;
             if (SearchKpiTotalSizeTitle != null) SearchKpiTotalSizeTitle.Text = Strings.SearchKpiTotalSize;
             if (SearchKpiElapsedTitle != null) SearchKpiElapsedTitle.Text = Strings.SearchKpiElapsed;
             if (SearchStatusTitle != null) SearchStatusTitle.Text = Strings.SearchStatusLabel;
             if (SearchTableTitleText != null) SearchTableTitleText.Text = Strings.SearchTableTitle;
             if (SearchTargetFolderLabel != null) SearchTargetFolderLabel.Text = Strings.SearchTargetFolder;
-            if (SearchQuickPresetsLabel != null) SearchQuickPresetsLabel.Text = Strings.SearchQuickPresets;
-            if (SearchSyntaxHintText != null) SearchSyntaxHintText.Text = Strings.SearchSyntaxHint;
             if (SearchTableHintText != null) SearchTableHintText.Text = Strings.SearchTableHint;
             if (SearchStatusText != null && (SearchStatusText.Text == "待機中" || SearchStatusText.Text == "Ready"))
             {

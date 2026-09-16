@@ -300,12 +300,9 @@ namespace FolderMorpher.Services
                 if (isDir || !query.Extensions.Contains(ext)) return false;
             }
 
-            if (isDir)
+            if (query.MinSizeBytes.HasValue || query.MaxSizeBytes.HasValue)
             {
-                if (query.MinSizeBytes.HasValue || query.MaxSizeBytes.HasValue) return false;
-            }
-            else
-            {
+                if (isDir) return false;
                 if (query.MinSizeBytes.HasValue && entry.Length < query.MinSizeBytes.Value) return false;
                 if (query.MaxSizeBytes.HasValue && entry.Length > query.MaxSizeBytes.Value) return false;
             }
@@ -370,7 +367,8 @@ namespace FolderMorpher.Services
         {
             var matched = new ConcurrentBag<SearchResultItem>();
             string targetContent = query.ContentKeyword ?? string.Empty;
-            string targetLink = query.OfficeLinkKeyword ?? string.Empty;
+            bool hasOfficeLinkReq = query.HasOfficeLinkOnly;
+            string? officeLinkKeyword = query.OfficeLinkKeyword;
 
             const long MaxSearchFileSize = 50L * 1024 * 1024;
             var validFiles = candidates.Where(c => !c.IsDirectory && c.SizeBytes <= MaxSearchFileSize && File.Exists(c.FullPath)).ToList();
@@ -413,12 +411,14 @@ namespace FolderMorpher.Services
                             }
                         }
                     }
-                    else if (!string.IsNullOrEmpty(targetLink) && OfficeExtensions.Contains(ext))
+                    else if (hasOfficeLinkReq && OfficeExtensions.Contains(ext))
                     {
-                        if (SearchOfficeFileContent(item.FullPath, targetLink, out string snippet))
+                        if (SearchOfficeFileLinks(item.FullPath, officeLinkKeyword, out string snippet))
                         {
                             item.ContentSnippet = snippet;
-                            item.MatchedReason = $"OfficeLink: \"{targetLink}\"";
+                            item.MatchedReason = string.IsNullOrEmpty(officeLinkKeyword)
+                                ? "Office External Link"
+                                : $"OfficeLink: \"{officeLinkKeyword}\"";
                             matched.Add(item);
                         }
                     }
@@ -434,7 +434,7 @@ namespace FolderMorpher.Services
                     {
                         HitCount = matched.Count,
                         ScannedCount = c,
-                        CurrentPath = $"Content Search ({c}/{total}): {item.Name}",
+                        CurrentPath = $"Deep Search ({c}/{total}): {item.Name}",
                         IsCompleted = false
                     });
                 }
@@ -465,11 +465,78 @@ namespace FolderMorpher.Services
                     using var reader = new StreamReader(stream, Encoding.UTF8);
                     string text = reader.ReadToEnd();
 
+                    // 1. 素のXML文字列で高速検索
                     int idx = text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
                     if (idx >= 0)
                     {
                         snippet = ExtractSnippet(text, idx, keyword.Length);
                         return true;
+                    }
+
+                    // 2. Sol提言: Word等のrun分割 (<w:t>A</w:t><w:t>B</w:t>) 対策でXMLタグ除去して探索
+                    if (entryName.Contains("document") || entryName.Contains("slide") || entryName.Contains("sheet"))
+                    {
+                        string stripped = Regex.Replace(text, @"<[^>]+>", "");
+                        int strippedIdx = stripped.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+                        if (strippedIdx >= 0)
+                        {
+                            snippet = ExtractSnippet(stripped, strippedIdx, keyword.Length);
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private static bool SearchOfficeFileLinks(string filePath, string? keyword, out string snippet)
+        {
+            snippet = string.Empty;
+            try
+            {
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var zip = new ZipArchive(fs, ZipArchiveMode.Read, false);
+
+                foreach (var entry in zip.Entries)
+                {
+                    string entryName = entry.FullName.ToLowerInvariant();
+                    // 外部リンク・外部参照・リレーションシップXML
+                    if (!entryName.Contains("externallink") &&
+                        !entryName.Contains("externalreferences") &&
+                        !entryName.Contains("_rels") &&
+                        !entryName.EndsWith(".rels") &&
+                        !entryName.Contains("worksheets")) continue;
+
+                    using var stream = entry.Open();
+                    using var reader = new StreamReader(stream, Encoding.UTF8);
+                    string text = reader.ReadToEnd();
+
+                    if (string.IsNullOrEmpty(keyword))
+                    {
+                        // office-link:true -> 外部参照 (TargetMode="External", http/https, \\UNC) が1件でもあるか
+                        if (text.Contains("TargetMode=\"External\"", StringComparison.OrdinalIgnoreCase) ||
+                            text.Contains("http://", StringComparison.OrdinalIgnoreCase) ||
+                            text.Contains("https://", StringComparison.OrdinalIgnoreCase) ||
+                            text.Contains(@"\\", StringComparison.OrdinalIgnoreCase) ||
+                            entryName.Contains("externallink"))
+                        {
+                            // リンク先URL/パスをスニペットとして抽出
+                            var match = Regex.Match(text, @"(?:Target=""([^""]+)""|TargetMode=""External""[^>]*>|(\\\\[a-zA-Z0-9._$-]+\\[^""<\s]+))", RegexOptions.IgnoreCase);
+                            snippet = match.Success ? match.Groups[1].Value : "Office External Link Detected";
+                            if (string.IsNullOrWhiteSpace(snippet)) snippet = "Office External Link";
+                            return true;
+                        }
+                    }
+                    else
+                    {
+                        // office-link:"\\OldServer" -> 指定キーワードを含むか
+                        int idx = text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+                        if (idx >= 0)
+                        {
+                            snippet = ExtractSnippet(text, idx, keyword.Length);
+                            return true;
+                        }
                     }
                 }
             }

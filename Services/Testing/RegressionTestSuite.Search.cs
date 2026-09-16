@@ -20,7 +20,7 @@ namespace FolderMorpher.Services.Testing
             // 1. SearchQueryParser: 構文解析エンジンの検証
             // -------------------------------------------------------------
             {
-                string queryStr = "project ext:xlsx,docx size:>10MB size:<1GB dormant:3y pathlen:>240 chars:illegal content:\"社外秘\" !temp regex:^backup.*\\.zip$";
+                string queryStr = "project ext:xlsx,docx size:>10MB size:<1GB dormant:>3y pathlen:>240 chars:illegal content:\"社外秘\" !temp regex:^backup.*\\.zip$";
                 var q = SearchQueryParser.Parse(queryStr);
 
                 if (!q.Keywords.Contains("project"))
@@ -36,7 +36,7 @@ namespace FolderMorpher.Services.Testing
                     throw new Exception($"SearchQueryParser failed: MaxSizeBytes expected 1GB, got {q.MaxSizeBytes}");
 
                 if (!q.DormantYears.HasValue || q.DormantYears.Value != 3)
-                    throw new Exception("SearchQueryParser failed: DormantYears expected 3.");
+                    throw new Exception($"SearchQueryParser failed: DormantYears expected 3 for dormant:>3y, got {q.DormantYears}");
 
                 if (!q.MinPathLength.HasValue || q.MinPathLength.Value != 240)
                     throw new Exception("SearchQueryParser failed: MinPathLength expected 240.");
@@ -52,6 +52,20 @@ namespace FolderMorpher.Services.Testing
 
                 if (q.CompiledRegex == null || !q.CompiledRegex.IsMatch("backup_2024.zip"))
                     throw new Exception("SearchQueryParser failed: CompiledRegex did not match 'backup_2024.zip'.");
+
+                // 追加検証: office-link:true と office-link:"\\OldServer"
+                var qLinkTrue = SearchQueryParser.Parse("office-link:true");
+                if (!qLinkTrue.HasOfficeLinkOnly || qLinkTrue.OfficeLinkKeyword != null)
+                    throw new Exception("SearchQueryParser failed: office-link:true should set HasOfficeLinkOnly=true and OfficeLinkKeyword=null.");
+
+                var qLinkNamed = SearchQueryParser.Parse("office-link:\"\\\\OldServer\"");
+                if (!qLinkNamed.HasOfficeLinkOnly || qLinkNamed.OfficeLinkKeyword != "\\\\OldServer")
+                    throw new Exception($"SearchQueryParser failed: office-link:\"\\\\OldServer\" expected OfficeLinkKeyword='\\\\OldServer', got '{qLinkNamed.OfficeLinkKeyword}'");
+
+                // 追加検証: dormant:>180d
+                var qDormantDays = SearchQueryParser.Parse("dormant:>180d");
+                if (!qDormantDays.DormantDays.HasValue || qDormantDays.DormantDays.Value != 180)
+                    throw new Exception($"SearchQueryParser failed: dormant:>180d expected 180 days, got {qDormantDays.DormantDays}");
             }
 
             // -------------------------------------------------------------
@@ -107,8 +121,8 @@ namespace FolderMorpher.Services.Testing
 
                 var roots = new List<FileItemNode> { root };
 
-                // テストA: 拡張子 & 休眠検索 (ext:xlsx dormant:3y)
-                var qA = SearchQueryParser.Parse("ext:xlsx dormant:3y");
+                // テストA: 拡張子 & 休眠検索 (ext:xlsx dormant:>3y)
+                var qA = SearchQueryParser.Parse("ext:xlsx dormant:>3y");
                 var hitsA = await searchEngine.SearchInMemoryAsync(roots, qA, null, CancellationToken.None);
                 if (hitsA.Count != 1 || hitsA[0].Name != "Financial_Report_2023.xlsx")
                     throw new Exception($"SearchInMemoryAsync Test A failed: Expected 1 hit (Financial_Report_2023.xlsx), got {hitsA.Count}");

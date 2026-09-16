@@ -111,46 +111,6 @@ namespace AstraSize
 
         #endregion
 
-        #region Smart Chips (Presets)
-
-        private void SearchChipLarge_Click(object sender, RoutedEventArgs e)
-        {
-            SetSearchQuery("size:>1GB");
-        }
-
-        private void SearchChipDormant_Click(object sender, RoutedEventArgs e)
-        {
-            SetSearchQuery("dormant:3y");
-        }
-
-        private void SearchChipPathLen_Click(object sender, RoutedEventArgs e)
-        {
-            SetSearchQuery("pathlen:>240");
-        }
-
-        private void SearchChipIllegal_Click(object sender, RoutedEventArgs e)
-        {
-            SetSearchQuery("chars:illegal");
-        }
-
-        private void SearchChipOffice_Click(object sender, RoutedEventArgs e)
-        {
-            SetSearchQuery("ext:xlsx,docx office-link:\"\\\\\"");
-        }
-
-        private void SetSearchQuery(string q)
-        {
-            if (SearchInputBox != null)
-            {
-                SearchInputBox.Text = q;
-                SearchInputBox.CaretIndex = SearchInputBox.Text.Length;
-                SearchInputBox.Focus();
-            }
-            ExecuteSearch(isIncremental: false);
-        }
-
-        #endregion
-
         #region Search Execution Core
 
         private async void ExecuteSearch(bool isIncremental)
@@ -205,19 +165,43 @@ namespace AstraSize
 
                 if (isDirectScope)
                 {
-                    // ライブ直接走査
+                    // ライブ直接走査 (未スキャンUNC / フォルダー)
                     var results = await _searchEngine.SearchDirectFolderAsync(targetFolder, query, batchYield, progress, ct);
                     _allSearchResults = results;
                 }
                 else
                 {
-                    // スキャン済みツリー対象 0秒インメモリ検索
-                    var roots = GetCurrentScannedRootNodes();
-                    var results = await _searchEngine.SearchInMemoryAsync(roots, query, progress, ct);
-                    _allSearchResults = results;
-                    foreach (var item in results)
+                    // スキャン済みツリー対象 (0秒インメモリ検索)
+                    // 対象フォルダーの指定がある場合は、該当フォルダーの部分木のみにスコープを絞り込む
+                    if (!string.IsNullOrWhiteSpace(targetFolder))
                     {
-                        _searchResults.Add(item);
+                        var scopedRoots = GetTargetScannedRootNodes(targetFolder);
+                        if (scopedRoots.Count > 0)
+                        {
+                            var results = await _searchEngine.SearchInMemoryAsync(scopedRoots, query, progress, ct);
+                            _allSearchResults = results;
+                            foreach (var item in results) _searchResults.Add(item);
+                        }
+                        else
+                        {
+                            // スキャン済みツリーに対象フォルダーが含まれていない場合は直接走査へフォールバック
+                            if (SearchStatusText != null)
+                            {
+                                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                                SearchStatusText.Text = isJa
+                                    ? "※スキャン済みツリー外のため、ライブ直接走査を実行中..."
+                                    : "Target folder not in cached tree. Running live direct search...";
+                            }
+                            var results = await _searchEngine.SearchDirectFolderAsync(targetFolder, query, batchYield, progress, ct);
+                            _allSearchResults = results;
+                        }
+                    }
+                    else
+                    {
+                        var roots = GetTargetScannedRootNodes(null);
+                        var results = await _searchEngine.SearchInMemoryAsync(roots, query, progress, ct);
+                        _allSearchResults = results;
+                        foreach (var item in results) _searchResults.Add(item);
                     }
                 }
             }
@@ -241,10 +225,12 @@ namespace AstraSize
             }
         }
 
-        private List<FileItemNode> GetCurrentScannedRootNodes()
+        private List<FileItemNode> GetTargetScannedRootNodes(string? targetFolder)
         {
             var roots = new List<FileItemNode>();
-            if (StorageTabs != null)
+            if (StorageTabs == null) return roots;
+
+            if (string.IsNullOrWhiteSpace(targetFolder))
             {
                 foreach (var tab in StorageTabs)
                 {
@@ -253,8 +239,50 @@ namespace AstraSize
                         roots.Add(tab.RootNode);
                     }
                 }
+                return roots;
             }
+
+            string normTarget = targetFolder.Trim().TrimEnd('\\', '/');
+            foreach (var tab in StorageTabs)
+            {
+                if (tab.RootNode == null) continue;
+
+                var matched = FindNodeByPathRecursive(tab.RootNode, normTarget);
+                if (matched != null)
+                {
+                    roots.Add(matched);
+                    return roots;
+                }
+            }
+
             return roots;
+        }
+
+        private static FileItemNode? FindNodeByPathRecursive(FileItemNode current, string targetPath)
+        {
+            string currentPath = current.FullPath.TrimEnd('\\', '/');
+            if (string.Equals(currentPath, targetPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return current;
+            }
+
+            // 配下にない場合は探索を枝刈り
+            if (!targetPath.StartsWith(currentPath + "\\", StringComparison.OrdinalIgnoreCase) &&
+                !targetPath.StartsWith(currentPath + "/", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            foreach (var child in current.Children)
+            {
+                if (child.IsDirectory)
+                {
+                    var found = FindNodeByPathRecursive(child, targetPath);
+                    if (found != null) return found;
+                }
+            }
+
+            return null;
         }
 
         private void SetSearchLoadingState(bool isLoading)
@@ -375,19 +403,45 @@ namespace AstraSize
             string targetDir = item.IsDirectory ? item.FullPath : item.DirectoryPath;
             if (string.IsNullOrEmpty(targetDir)) return;
 
+            // スキャン済みツリーから対応するフォルダーノードを探索
+            FileItemNode? matchedNode = null;
+            if (StorageTabs != null)
+            {
+                string norm = targetDir.TrimEnd('\\', '/');
+                foreach (var tab in StorageTabs)
+                {
+                    if (tab.RootNode != null)
+                    {
+                        matchedNode = FindNodeByPathRecursive(tab.RootNode, norm);
+                        if (matchedNode != null) break;
+                    }
+                }
+            }
+
+            SimFolderNode newNode;
+            if (matchedNode != null && _simService != null)
+            {
+                // 正本: スキャン済みノードから正確な配下容量・実測ファイル数・ACLを一括継承
+                newNode = _simService.ConvertToSimNode(matchedNode);
+            }
+            else
+            {
+                // スキャン外フォルダー: ファイル単体のサイズをフォルダー全体サイズに誤認させない安全設計
+                newNode = new SimFolderNode
+                {
+                    Name = Path.GetFileName(targetDir),
+                    EstimatedSizeBytes = item.IsDirectory ? item.SizeBytes : 0,
+                    EstimatedFileCount = null,
+                    Level = 0,
+                    InheritAcl = true
+                };
+                newNode.MappedSourcePaths.Add(targetDir);
+            }
+
             // Tab 3 (Simulation) へジャンプ
             NavTabSimulation.IsChecked = true;
-
-            // 仮想ツリーに新規ルートとして追加
-            var newNode = new SimFolderNode
-            {
-                Name = Path.GetFileName(targetDir),
-                EstimatedSizeBytes = item.SizeBytes,
-                Level = 0,
-                InheritAcl = true
-            };
-            newNode.MappedSourcePaths.Add(targetDir);
             _simRootFolders.Add(newNode);
+            if (SimMockTreeView != null) SimMockTreeView.ItemsSource = _simRootFolders;
             ShowToast($"移行ツリーに「{newNode.Name}」を追加しました");
         }
 
@@ -431,112 +485,140 @@ namespace AstraSize
 
         private void SearchExportExcelButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_allSearchResults.Count == 0) return;
+            if (_searchResults.Count == 0)
+            {
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                MessageBox.Show(
+                    isJa ? "エクスポートする検索結果がありません。" : "No search results to export.",
+                    isJa ? "情報" : "Information",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
 
-            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-            var sfd = new SaveFileDialog
+            var dlg = new SaveFileDialog
             {
                 Filter = "Excel Workbook (*.xlsx)|*.xlsx",
-                FileName = $"Search_Results_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx",
-                Title = isJa ? "検索結果をExcel台帳で保存" : "Export Search Results to Excel"
+                FileName = $"Search_Report_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx"
             };
 
-            if (sfd.ShowDialog() != true) return;
-
-            try
+            if (dlg.ShowDialog() == true)
             {
-                using var wb = new XLWorkbook();
-                var ws = wb.Worksheets.Add(isJa ? "検索結果台帳" : "Search_Results");
-                ws.ShowGridLines = true;
-
-                // Header
-                ws.Cell("B2").Value = isJa ? "FolderMorpher — 検索結果台帳" : "FolderMorpher — Search Results";
-                ws.Cell("B2").Style.Font.Bold = true;
-                ws.Cell("B2").Style.Font.FontSize = 14;
-
-                ws.Cell("B3").Value = $"Query: {SearchInputBox?.Text} | Exported: {DateTime.Now:yyyy/MM/dd HH:mm:ss} | Count: {_allSearchResults.Count:N0}";
-                ws.Cell("B3").Style.Font.FontSize = 9;
-                ws.Cell("B3").Style.Font.FontColor = XLColor.DimGray;
-
-                int hRow = 5;
-                string[] headers = isJa
-                    ? new[] { "ファイル名", "種別", "容量", "サイズ (Bytes)", "更新日時", "拡張子", "パス長", "フルパス", "一致理由 / 本文抜粋" }
-                    : new[] { "Name", "Type", "Size", "Bytes", "Modified", "Extension", "Length", "Full Path", "Match Reason / Snippet" };
-
-                for (int col = 0; col < headers.Length; col++)
+                try
                 {
-                    var c = ws.Cell(hRow, col + 2);
-                    c.Value = headers[col];
-                    c.Style.Font.Bold = true;
-                    c.Style.Fill.BackgroundColor = XLColor.FromHtml("#1E3A8A");
-                    c.Style.Font.FontColor = XLColor.White;
+                    ExportSearchResultsToExcel(dlg.FileName, _searchResults.ToList());
+                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                    ShowToast(isJa ? "Excel台帳を出力しました" : "Exported Excel report");
                 }
-
-                int r = hRow + 1;
-                foreach (var item in _allSearchResults)
+                catch (Exception ex)
                 {
-                    ws.Cell(r, 2).Value = item.Name;
-                    ws.Cell(r, 3).Value = item.IsDirectory ? "Folder" : "File";
-                    ws.Cell(r, 4).Value = item.FormattedSize;
-                    ws.Cell(r, 4).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
-                    ws.Cell(r, 5).Value = item.SizeBytes;
-                    ws.Cell(r, 5).Style.NumberFormat.Format = "#,##0";
-                    ws.Cell(r, 6).Value = item.FormattedDate;
-                    ws.Cell(r, 7).Value = item.Extension;
-                    ws.Cell(r, 8).Value = item.PathLength;
-                    ws.Cell(r, 9).Value = item.FullPath;
-                    ws.Cell(r, 10).Value = item.HasSnippet ? item.ContentSnippet : item.MatchedReason;
-                    r++;
+                    MessageBox.Show("Excel出力中にエラーが発生しました: " + ex.Message);
                 }
-
-                var tbl = ws.Range(hRow, 2, r - 1, headers.Length + 1);
-                tbl.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
-                tbl.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
-                tbl.SetAutoFilter();
-                ws.Columns(2, headers.Length + 1).AdjustToContents(3, 100);
-
-                wb.SaveAs(sfd.FileName);
-                ShowToast("検索結果台帳をExcelで保存しました");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("Excel保存エラー: " + ex.Message);
             }
         }
 
         private void SearchExportCsvButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_allSearchResults.Count == 0) return;
-
-            var sfd = new SaveFileDialog
+            if (_searchResults.Count == 0)
             {
-                Filter = "CSV (Comma delimited) (*.csv)|*.csv",
-                FileName = $"Search_Results_{DateTime.Now:yyyyMMdd_HHmmss}.csv"
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                MessageBox.Show(
+                    isJa ? "エクスポートする検索結果がありません。" : "No search results to export.",
+                    isJa ? "情報" : "Information",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            var dlg = new SaveFileDialog
+            {
+                Filter = "CSV UTF-8 (*.csv)|*.csv",
+                FileName = $"Search_Report_{DateTime.Now:yyyyMMdd_HHmmss}.csv"
             };
 
-            if (sfd.ShowDialog() != true) return;
-
-            try
+            if (dlg.ShowDialog() == true)
             {
-                var sb = new StringBuilder();
-                sb.AppendLine("Name,Type,FormattedSize,SizeBytes,LastWriteTime,Extension,PathLength,FullPath,MatchedReason");
-                foreach (var item in _allSearchResults)
+                try
                 {
-                    sb.AppendLine($"\"{EscapeCsv(item.Name)}\",\"{(item.IsDirectory ? "Folder" : "File")}\",\"{item.FormattedSize}\",{item.SizeBytes},\"{item.FormattedDate}\",\"{item.Extension}\",{item.PathLength},\"{EscapeCsv(item.FullPath)}\",\"{EscapeCsv(item.HasSnippet ? item.ContentSnippet! : item.MatchedReason)}\"");
+                    ExportSearchResultsToCsv(dlg.FileName, _searchResults.ToList());
+                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                    ShowToast(isJa ? "CSVを出力しました" : "Exported CSV");
                 }
-
-                File.WriteAllText(sfd.FileName, sb.ToString(), new UTF8Encoding(true)); // BOM付きUTF-8
-                ShowToast("CSVを出力しました");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("CSV保存エラー: " + ex.Message);
+                catch (Exception ex)
+                {
+                    MessageBox.Show("CSV出力中にエラーが発生しました: " + ex.Message);
+                }
             }
         }
 
-        private static string EscapeCsv(string val)
+        private static void ExportSearchResultsToExcel(string filePath, List<SearchResultItem> items)
         {
-            return (val ?? string.Empty).Replace("\"", "\"\"");
+            using var wb = new XLWorkbook();
+            var ws = wb.Worksheets.Add("Search Results");
+
+            // Header styling
+            string[] headers = { "種別", "ファイル/フォルダ名", "サイズ (Bytes)", "サイズ (表示)", "更新日時", "拡張子", "パス長", "一致理由 / スニペット", "完全パス" };
+            for (int c = 0; c < headers.Length; c++)
+            {
+                ws.Cell(1, c + 1).Value = headers[c];
+                ws.Cell(1, c + 1).Style.Font.Bold = true;
+                ws.Cell(1, c + 1).Style.Fill.BackgroundColor = XLColor.FromArgb(37, 99, 235);
+                ws.Cell(1, c + 1).Style.Font.FontColor = XLColor.White;
+            }
+
+            int row = 2;
+            foreach (var item in items)
+            {
+                ws.Cell(row, 1).Value = item.IsDirectory ? "フォルダ" : "ファイル";
+                ws.Cell(row, 2).Value = item.Name;
+                ws.Cell(row, 3).Value = item.SizeBytes;
+                ws.Cell(row, 4).Value = item.FormattedSize;
+                ws.Cell(row, 5).Value = item.FormattedDate;
+                ws.Cell(row, 6).Value = item.Extension;
+                ws.Cell(row, 7).Value = item.PathLength;
+                ws.Cell(row, 8).Value = item.DisplaySnippetOrReason;
+                ws.Cell(row, 9).Value = item.FullPath;
+
+                if (item.IsPathLengthRisk)
+                {
+                    ws.Cell(row, 7).Style.Fill.BackgroundColor = XLColor.FromArgb(254, 226, 226);
+                    ws.Cell(row, 7).Style.Font.FontColor = XLColor.FromArgb(185, 28, 28);
+                }
+
+                row++;
+            }
+
+            ws.Columns().AdjustToContents();
+            wb.SaveAs(filePath);
+        }
+
+        private static void ExportSearchResultsToCsv(string filePath, List<SearchResultItem> items)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("Type,Name,SizeBytes,FormattedSize,LastWriteTime,Extension,PathLength,ReasonOrSnippet,FullPath");
+
+            foreach (var item in items)
+            {
+                string type = item.IsDirectory ? "Folder" : "File";
+                string name = EscapeCsv(item.Name);
+                string reason = EscapeCsv(item.DisplaySnippetOrReason);
+                string path = EscapeCsv(item.FullPath);
+
+                sb.AppendLine($"{type},{name},{item.SizeBytes},{item.FormattedSize},{item.FormattedDate},{item.Extension},{item.PathLength},{reason},{path}");
+            }
+
+            // BOM付き UTF-8
+            File.WriteAllText(filePath, sb.ToString(), new UTF8Encoding(true));
+        }
+
+        private static string EscapeCsv(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "\"\"";
+            if (text.Contains(',') || text.Contains('"') || text.Contains('\n') || text.Contains('\r'))
+            {
+                return "\"" + text.Replace("\"", "\"\"") + "\"";
+            }
+            return "\"" + text + "\"";
         }
 
         #endregion

@@ -103,16 +103,21 @@ namespace FolderMorpher.Services
                         if (val.Equals("illegal", StringComparison.OrdinalIgnoreCase)) query.OnlyIllegalChars = true;
                         return;
 
-                    case "duplicate" or "dup":
-                        query.OnlyDuplicates = val.Equals("true", StringComparison.OrdinalIgnoreCase) || val == "1";
-                        return;
-
                     case "content" or "text":
                         query.ContentKeyword = val;
                         return;
 
                     case "office-link" or "link":
-                        query.OfficeLinkKeyword = val;
+                        if (val.Equals("true", StringComparison.OrdinalIgnoreCase) || val == "1")
+                        {
+                            query.HasOfficeLinkOnly = true;
+                            query.OfficeLinkKeyword = null;
+                        }
+                        else
+                        {
+                            query.HasOfficeLinkOnly = true;
+                            query.OfficeLinkKeyword = val;
+                        }
                         return;
 
                     case "regex":
@@ -161,33 +166,37 @@ namespace FolderMorpher.Services
 
         private static void ParseSize(string val, SearchQuery query)
         {
-            int rangeIdx = val.IndexOf("..", StringComparison.Ordinal);
-            if (rangeIdx > 0)
+            if (val.Contains(".."))
             {
-                string minStr = val.Substring(0, rangeIdx);
-                string maxStr = val.Substring(rangeIdx + 2);
-                if (TryParseBytes(minStr, out long minB)) query.MinSizeBytes = minB;
-                if (TryParseBytes(maxStr, out long maxB)) query.MaxSizeBytes = maxB;
+                var parts = val.Split(new[] { ".." }, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 2)
+                {
+                    if (TryParseBytes(parts[0], out long min)) query.MinSizeBytes = min;
+                    if (TryParseBytes(parts[1], out long max)) query.MaxSizeBytes = max;
+                }
                 return;
             }
 
-            if (val.StartsWith(">=") || val.StartsWith(">"))
+            if (val.StartsWith(">="))
             {
-                string numStr = val.TrimStart('>', '=');
-                if (TryParseBytes(numStr, out long b)) query.MinSizeBytes = b;
+                if (TryParseBytes(val.Substring(2), out long b)) query.MinSizeBytes = b;
             }
-            else if (val.StartsWith("<=") || val.StartsWith("<"))
+            else if (val.StartsWith('>'))
             {
-                string numStr = val.TrimStart('<', '=');
-                if (TryParseBytes(numStr, out long b)) query.MaxSizeBytes = b;
+                if (TryParseBytes(val.Substring(1), out long b)) query.MinSizeBytes = b;
             }
-            else
+            else if (val.StartsWith("<="))
             {
-                if (TryParseBytes(val, out long b))
-                {
-                    query.MinSizeBytes = b;
-                    query.MaxSizeBytes = b;
-                }
+                if (TryParseBytes(val.Substring(2), out long b)) query.MaxSizeBytes = b;
+            }
+            else if (val.StartsWith('<'))
+            {
+                if (TryParseBytes(val.Substring(1), out long b)) query.MaxSizeBytes = b;
+            }
+            else if (TryParseBytes(val, out long exact))
+            {
+                query.MinSizeBytes = exact;
+                query.MaxSizeBytes = exact;
             }
         }
 
@@ -203,7 +212,7 @@ namespace FolderMorpher.Services
             if (input.EndsWith("TB")) { multiplier = 1024L * 1024 * 1024 * 1024; numPart = input.Substring(0, input.Length - 2); }
             else if (input.EndsWith("GB")) { multiplier = 1024L * 1024 * 1024; numPart = input.Substring(0, input.Length - 2); }
             else if (input.EndsWith("MB")) { multiplier = 1024L * 1024; numPart = input.Substring(0, input.Length - 2); }
-            else if (input.EndsWith("KB")) { multiplier = 1024L; numPart = input.Substring(0, input.Length - 2); }
+            else if (input.EndsWith("KB")) { multiplier = 1024L * 1024; numPart = input.Substring(0, input.Length - 2); }
             else if (input.EndsWith("B")) { multiplier = 1.0; numPart = input.Substring(0, input.Length - 1); }
 
             if (double.TryParse(numPart.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double val))
@@ -256,11 +265,30 @@ namespace FolderMorpher.Services
 
         private static void ParseDormant(string val, SearchQuery query)
         {
-            string numStr = val.TrimEnd('y', 'Y');
-            if (int.TryParse(numStr, out int years) && years > 0)
+            // Handles dormant:>3y, dormant:>180d, dormant:3y, dormant:>=3y
+            string clean = val.TrimStart('>', '<', '=').Trim();
+            if (clean.EndsWith("y", StringComparison.OrdinalIgnoreCase))
             {
-                query.DormantYears = years;
-                query.MaxModifiedUtc = DateTime.UtcNow.AddYears(-years);
+                string numStr = clean.Substring(0, clean.Length - 1).Trim();
+                if (int.TryParse(numStr, out int years) && years > 0)
+                {
+                    query.DormantDays = years * 365;
+                    query.MaxModifiedUtc = DateTime.UtcNow.AddYears(-years);
+                }
+            }
+            else if (clean.EndsWith("d", StringComparison.OrdinalIgnoreCase))
+            {
+                string numStr = clean.Substring(0, clean.Length - 1).Trim();
+                if (int.TryParse(numStr, out int days) && days > 0)
+                {
+                    query.DormantDays = days;
+                    query.MaxModifiedUtc = DateTime.UtcNow.AddDays(-days);
+                }
+            }
+            else if (int.TryParse(clean, out int defaultYears) && defaultYears > 0)
+            {
+                query.DormantDays = defaultYears * 365;
+                query.MaxModifiedUtc = DateTime.UtcNow.AddYears(-defaultYears);
             }
         }
 

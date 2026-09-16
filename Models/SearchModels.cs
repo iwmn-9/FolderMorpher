@@ -10,22 +10,23 @@ using FolderMorpher.Services;
 namespace FolderMorpher.Models
 {
     /// <summary>
-    /// 讀懃ｴ｢蟇ｾ雎｡縺ｮ繧ｹ繧ｳ繝ｼ繝・    /// </summary>
+    /// 検索対象のスコープ
+    /// </summary>
     public enum SearchScope
     {
         /// <summary>
-        /// Storage Explorer (Tab 1) 縺ｧ繧ｹ繧ｭ繝｣繝ｳ貂医∩縺ｮ蜈ｨ繝・Μ繝ｼ縺九ｉ0遘偵う繝ｳ繝｡繝｢繝ｪ讀懃ｴ｢
+        /// Storage Explorer (Tab 1) でスキャン済みの全ツリーから0秒インメモリ検索
         /// </summary>
         ScannedTrees = 0,
 
         /// <summary>
-        /// 謖・ｮ壹＠縺溘Ο繝ｼ繧ｫ繝ｫ縺ｾ縺溘・UNC繝輔か繝ｫ繝繝ｼ繧堤峩謗･繧ｹ繝医Μ繝ｼ繝溘Φ繧ｰ襍ｰ譟ｻ
+        /// 指定したローカルまたはUNCフォルダーを直接ストリーミング走査
         /// </summary>
         DirectFolder = 1
     }
 
     /// <summary>
-    /// 隗｣譫先ｸ医∩縺ｮ讒矩蛹匁､懃ｴ｢繧ｯ繧ｨ繝ｪ
+    /// 解析済みの構造化検索クエリ
     /// </summary>
     public class SearchQuery
     {
@@ -41,9 +42,14 @@ namespace FolderMorpher.Models
         public List<string> PathContains { get; set; } = new();
         public int? MinPathLength { get; set; }
         public bool OnlyIllegalChars { get; set; }
-        public int? DormantYears { get; set; }
-        public bool OnlyDuplicates { get; set; }
+        public int? DormantDays { get; set; }
+        public int? DormantYears
+        {
+            get => DormantDays.HasValue ? (int)Math.Round(DormantDays.Value / 365.0) : null;
+            set => DormantDays = value.HasValue ? value.Value * 365 : null;
+        }
         public string? ContentKeyword { get; set; }
+        public bool HasOfficeLinkOnly { get; set; }
         public string? OfficeLinkKeyword { get; set; }
         public Regex? CompiledRegex { get; set; }
         public bool? IsDirectoryOnly { get; set; }
@@ -60,19 +66,20 @@ namespace FolderMorpher.Models
             PathContains.Count == 0 &&
             !MinPathLength.HasValue &&
             !OnlyIllegalChars &&
-            !DormantYears.HasValue &&
-            !OnlyDuplicates &&
+            !DormantDays.HasValue &&
             string.IsNullOrEmpty(ContentKeyword) &&
+            !HasOfficeLinkOnly &&
             string.IsNullOrEmpty(OfficeLinkKeyword) &&
             CompiledRegex == null &&
             !IsDirectoryOnly.HasValue;
 
         public bool HasDeepFileIoRequirement =>
-            !string.IsNullOrEmpty(ContentKeyword) || !string.IsNullOrEmpty(OfficeLinkKeyword);
+            !string.IsNullOrEmpty(ContentKeyword) || HasOfficeLinkOnly || !string.IsNullOrEmpty(OfficeLinkKeyword);
     }
 
     /// <summary>
-    /// 蜊倅ｸ縺ｮ讀懃ｴ｢邨先棡陦後ョ繝ｼ繧ｿ・井ｻｮ諠ｳ蛹・DataGrid 蜷代￠・・    /// </summary>
+    /// 単一の検索結果行データ（仮想化 DataGrid 向け）
+    /// </summary>
     public class SearchResultItem : INotifyPropertyChanged
     {
         private string _name = string.Empty;
@@ -175,7 +182,8 @@ namespace FolderMorpher.Models
     }
 
     /// <summary>
-    /// 讀懃ｴ｢縺ｮ騾ｲ謐励・迥ｶ諷九Ξ繝昴・繝・    /// </summary>
+    /// 検索の進捗・状態レポート
+    /// </summary>
     public class SearchProgressReport
     {
         public int HitCount { get; set; }
