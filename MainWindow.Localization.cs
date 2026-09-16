@@ -165,6 +165,8 @@ namespace AstraSize
             // ==========================================
             SimTargetBrowseButton.Content = isJa ? "参照..." : "Browse...";
             UpdateSimCloneButtonState();
+            SimUndoButton.Content = isJa ? "↩️ 戻る" : "↩️ Undo";
+            SimUndoButton.ToolTip = isJa ? "直前のツリー変更を取り消す (Ctrl+Z)" : "Undo last tree change (Ctrl+Z)";
             SimAddRootFolderButton.Content = Strings.AddRootFolder;
             SimSaveProjectButton.Content = Strings.Save;
             SimSaveProjectButton.ToolTip = Strings.SaveProjectToolTip;

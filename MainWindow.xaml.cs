@@ -58,6 +58,8 @@ namespace AstraSize
 
         // Simulation Studio State
         private readonly ObservableCollection<SimFolderNode> _simRootFolders = new();
+        private readonly Stack<string> _simUndoStack = new();
+        private const int MaxSimUndoDepth = 30;
         private readonly ObservableCollection<AdPrincipalItem> _adPrincipals = new();
         private List<AdPrincipalItem> _rawAdPrincipalsCache = new();
         private DispatcherTimer? _adSyncTimer;
@@ -128,7 +130,20 @@ namespace AstraSize
             AuditItemsDataGrid.ItemsSource = _auditVisibleItems;
             AuditItem.GlobalCheckedChanged += (item) => UpdateLiveSelectedReduction();
             InitializeSearchStudio();
+            PreviewKeyDown += MainWindow_PreviewKeyDown;
             Loaded += MainWindow_Loaded;
+        }
+
+        private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Z && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+            {
+                if (SimulationTabPanel != null && SimulationTabPanel.Visibility == Visibility.Visible)
+                {
+                    PerformUndo();
+                    e.Handled = true;
+                }
+            }
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)

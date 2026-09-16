@@ -81,7 +81,7 @@
                         <!-- Expanded Footer (2-tier layout: Brand on top, Controls below) -->
                         <StackPanel x:Name="SidebarFooterExpandedPanel" Margin="14,8,14,10">
                             <StackPanel Margin="0,0,0,8">
-                                <TextBlock x:Name="SidebarVersionText" Text="FolderMorpher v2.2.0" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock x:Name="SidebarVersionText" Text="FolderMorpher v2.2.4" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
                                 <TextBlock x:Name="SidebarSubtitleText" Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#94A3B8" Margin="0,1,0,0"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal">
@@ -574,6 +574,9 @@
                                     <TextBlock x:Name="SimMockTreeSubText" Text="💡 フォルダ行にドロップでサブ化 / クイックボタンで階層変更" FontSize="10" Foreground="#0284C7" TextTrimming="CharacterEllipsis"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <Button x:Name="SimUndoButton" Content="↩️ 戻る" Height="26" Style="{StaticResource FluentButtonSecondary}"
+                                            FontSize="10.5" Padding="6,2" Margin="0,0,6,0" Click="SimUndoButton_Click" IsEnabled="False"
+                                            ToolTip="直前のツリー変更を取り消す (Ctrl+Z)"/>
                                     <Button x:Name="SimAddRootFolderButton" Content="＋ ルート新設" Height="26" Style="{StaticResource FluentButtonSecondary}"
                                             FontSize="10.5" Padding="6,2" Click="SimAddRootFolderButton_Click"/>
                                 </StackPanel>
@@ -1121,49 +1124,56 @@
                     </Grid>
                 </Border>
 
-                <!-- KPI Cards -->
-                <Grid Grid.Row="1" Margin="0,0,0,14">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                <!-- Slim 1-Row Metrics Bar (Quiet Fluent) -->
+                <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="16,8" Margin="0,0,0,10">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/> <!-- 総走査ファイル数 -->
+                            <ColumnDefinition Width="Auto"/> <!-- Separator -->
+                            <ColumnDefinition Width="Auto"/> <!-- 重複の無駄 -->
+                            <ColumnDefinition Width="Auto"/> <!-- Separator -->
+                            <ColumnDefinition Width="Auto"/> <!-- 休眠ファイル容量 -->
+                            <ColumnDefinition Width="Auto"/> <!-- Separator -->
+                            <ColumnDefinition Width="*"/>    <!-- パス長・禁則違反 -->
+                        </Grid.ColumnDefinitions>
 
-                    <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
-                        <StackPanel>
-                            <TextBlock x:Name="AuditKpiTotalFilesTitle" Text="総走査ファイル数" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="AuditKpiTotalFiles" Text="0 件" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#0F172A" Margin="0,4,0,0"/>
+                        <!-- Total Files -->
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="AuditKpiTotalFilesTitle" Text="総走査ファイル数:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="AuditKpiTotalFiles" Text="0 件" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#0F172A" VerticalAlignment="Center"/>
                         </StackPanel>
-                    </Border>
 
-                    <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
-                        <StackPanel>
-                            <TextBlock x:Name="AuditKpiDupWastedTitle" Text="重複ファイルによる無駄" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="AuditKpiDupWasted" Text="0 B" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#DC2626" Margin="0,4,0,0"/>
-                        </StackPanel>
-                    </Border>
+                        <!-- Separator 1 -->
+                        <Border Grid.Column="1" Width="1" Background="#E2E8F0" Margin="14,2"/>
 
-                    <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
-                        <StackPanel>
-                            <TextBlock x:Name="AuditKpiDormantSizeTitle" Text="休眠ファイル容量 (3年超)" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="AuditKpiDormantSize" Text="0 B" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#D97706" Margin="0,4,0,0"/>
+                        <!-- Duplicates Wasted -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="AuditKpiDupWastedTitle" Text="重複の無駄:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="AuditKpiDupWasted" Text="0 B" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#DC2626" VerticalAlignment="Center"/>
                         </StackPanel>
-                    </Border>
 
-                    <Border Grid.Column="3" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12">
-                        <StackPanel>
-                            <TextBlock x:Name="AuditKpiPathLimitsTitle" Text="パス長・禁則文字 違反" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="AuditKpiPathLimits" Text="0 件" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#2563EB" Margin="0,4,0,0"/>
+                        <!-- Separator 2 -->
+                        <Border Grid.Column="3" Width="1" Background="#E2E8F0" Margin="14,2"/>
+
+                        <!-- Dormant Size -->
+                        <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="AuditKpiDormantSizeTitle" Text="休眠ファイル容量:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="AuditKpiDormantSize" Text="0 B" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#D97706" VerticalAlignment="Center"/>
                         </StackPanel>
-                    </Border>
-                </Grid>
+
+                        <!-- Separator 3 -->
+                        <Border Grid.Column="5" Width="1" Background="#E2E8F0" Margin="14,2"/>
+
+                        <!-- Path Limits -->
+                        <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="AuditKpiPathLimitsTitle" Text="パス長・禁則違反:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="AuditKpiPathLimits" Text="0 件" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#2563EB" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
 
                 <!-- Results DataGrid -->
-                <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="18">
-                    <Border.Effect>
-                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
-                    </Border.Effect>
+                <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="14">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -1362,49 +1372,56 @@
                     </Grid>
                 </Border>
 
-                <!-- KPI Cards -->
-                <Grid Grid.Row="1" Margin="0,0,0,14">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                <!-- Slim 1-Row Metrics Bar (Quiet Fluent) -->
+                <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="16,8" Margin="0,0,0,10">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/> <!-- 画像数 -->
+                            <ColumnDefinition Width="Auto"/> <!-- Separator -->
+                            <ColumnDefinition Width="Auto"/> <!-- 動画数 -->
+                            <ColumnDefinition Width="Auto"/> <!-- Separator -->
+                            <ColumnDefinition Width="Auto"/> <!-- 軽量化完了数 -->
+                            <ColumnDefinition Width="Auto"/> <!-- Separator -->
+                            <ColumnDefinition Width="*"/>    <!-- 総削減容量 -->
+                        </Grid.ColumnDefinitions>
 
-                    <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
-                        <StackPanel>
-                            <TextBlock x:Name="MediaKpiImagesCountTitle" Text="走査対象 画像数" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="MediaKpiImagesCount" Text="0 枚" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#0F172A" Margin="0,4,0,0"/>
+                        <!-- Images Count -->
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="MediaKpiImagesCountTitle" Text="走査対象 画像数:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="MediaKpiImagesCount" Text="0 枚" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#0F172A" VerticalAlignment="Center"/>
                         </StackPanel>
-                    </Border>
 
-                    <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
-                        <StackPanel>
-                            <TextBlock x:Name="MediaKpiVideosCountTitle" Text="大容量動画 ファイル数" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="MediaKpiVideosCount" Text="0 本" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#2563EB" Margin="0,4,0,0"/>
-                        </StackPanel>
-                    </Border>
+                        <!-- Separator 1 -->
+                        <Border Grid.Column="1" Width="1" Background="#E2E8F0" Margin="14,2"/>
 
-                    <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,10,0">
-                        <StackPanel>
-                            <TextBlock x:Name="MediaKpiOptimizedCountTitle" Text="軽量化 完了数" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="MediaKpiOptimizedCount" Text="0 枚" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#059669" Margin="0,4,0,0"/>
+                        <!-- Videos Count -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="MediaKpiVideosCountTitle" Text="大容量動画数:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="MediaKpiVideosCount" Text="0 本" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#2563EB" VerticalAlignment="Center"/>
                         </StackPanel>
-                    </Border>
 
-                    <Border Grid.Column="3" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="14,12">
-                        <StackPanel>
-                            <TextBlock x:Name="MediaKpiSavedSizeTitle" Text="総削減容量 (解放された空き)" FontSize="11" Foreground="#64748B"/>
-                            <TextBlock x:Name="MediaKpiSavedSize" Text="0 B" FontSize="18" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#059669" Margin="0,4,0,0"/>
+                        <!-- Separator 2 -->
+                        <Border Grid.Column="3" Width="1" Background="#E2E8F0" Margin="14,2"/>
+
+                        <!-- Optimized Count -->
+                        <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="MediaKpiOptimizedCountTitle" Text="軽量化 完了数:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="MediaKpiOptimizedCount" Text="0 枚" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#059669" VerticalAlignment="Center"/>
                         </StackPanel>
-                    </Border>
-                </Grid>
+
+                        <!-- Separator 3 -->
+                        <Border Grid.Column="5" Width="1" Background="#E2E8F0" Margin="14,2"/>
+
+                        <!-- Saved Size -->
+                        <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock x:Name="MediaKpiSavedSizeTitle" Text="総削減容量:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="MediaKpiSavedSize" Text="0 B" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#059669" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
 
                 <!-- Results DataGrid -->
-                <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="18">
-                    <Border.Effect>
-                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
-                    </Border.Effect>
+                <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="14">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>

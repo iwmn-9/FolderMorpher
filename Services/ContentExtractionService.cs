@@ -123,6 +123,57 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
+        /// ストリームの先頭データからエンコーディング（BOM付き/なし UTF-16, UTF-8, Shift-JIS/CP932）を自動判定します。
+        /// </summary>
+        public static Encoding DetectTextEncoding(Stream stream)
+        {
+            long origPos = stream.Position;
+            try
+            {
+                byte[] head = new byte[Math.Min(4096, (int)(stream.Length - origPos))];
+                int bytesRead = stream.Read(head, 0, head.Length);
+                stream.Position = origPos;
+
+                if (bytesRead >= 2)
+                {
+                    if (head[0] == 0xFF && head[1] == 0xFE) return Encoding.Unicode;
+                    if (head[0] == 0xFE && head[1] == 0xFF) return Encoding.BigEndianUnicode;
+                }
+                if (bytesRead >= 3 && head[0] == 0xEF && head[1] == 0xBB && head[2] == 0xBF)
+                {
+                    return Encoding.UTF8;
+                }
+
+                // BOMなし UTF-16LE ヒューリスティック
+                int nullCount = 0;
+                for (int i = 1; i < bytesRead; i += 2)
+                {
+                    if (head[i] == 0x00) nullCount++;
+                }
+                if (bytesRead >= 8 && nullCount > (bytesRead / 4))
+                {
+                    return Encoding.Unicode;
+                }
+
+                // UTF-8 Strict 判定（不正シーケンス検知で CP932 へフォールバック）
+                try
+                {
+                    var strictUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+                    strictUtf8.GetString(head, 0, bytesRead);
+                    return Encoding.UTF8;
+                }
+                catch (DecoderFallbackException)
+                {
+                    return SjisEncoding;
+                }
+            }
+            finally
+            {
+                stream.Position = origPos;
+            }
+        }
+
+        /// <summary>
         /// プレーンテキストファイルからエンコーディング自動判別（UTF-8, UTF-16LE/BE, Shift-JIS/CP932）で本文を抽出します。
         /// </summary>
         public static async Task<string?> ExtractPlainTextAsync(string filePath, CancellationToken ct = default)
@@ -132,53 +183,8 @@ namespace FolderMorpher.Services
                 using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 if (fs.Length == 0) return null;
 
-                // 1. BOM および UTF-16 判定
-                byte[] head = new byte[Math.Min(4096, (int)fs.Length)];
-                int bytesRead = await fs.ReadAsync(head.AsMemory(0, head.Length), ct);
-                fs.Position = 0;
-
-                if (bytesRead >= 2)
-                {
-                    if (head[0] == 0xFF && head[1] == 0xFE)
-                    {
-                        return await ReadStreamWithEncodingAsync(fs, Encoding.Unicode, ct); // UTF-16 LE
-                    }
-                    if (head[0] == 0xFE && head[1] == 0xFF)
-                    {
-                        return await ReadStreamWithEncodingAsync(fs, Encoding.BigEndianUnicode, ct); // UTF-16 BE
-                    }
-                }
-                if (bytesRead >= 3 && head[0] == 0xEF && head[1] == 0xBB && head[2] == 0xBF)
-                {
-                    return await ReadStreamWithEncodingAsync(fs, Encoding.UTF8, ct); // UTF-8 with BOM
-                }
-
-                // 2. BOMなし UTF-16LE ヒューリスティック判定
-                int nullCount = 0;
-                for (int i = 1; i < bytesRead; i += 2)
-                {
-                    if (head[i] == 0x00) nullCount++;
-                }
-                if (bytesRead >= 8 && nullCount > (bytesRead / 4))
-                {
-                    return await ReadStreamWithEncodingAsync(fs, Encoding.Unicode, ct);
-                }
-
-                // 3. UTF-8 (Strict) 試行 ➔ 失敗時に Shift-JIS (CP932) フォールバック
-                try
-                {
-                    var strictUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
-                    using var reader = new StreamReader(fs, strictUtf8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
-                    char[] buffer = new char[Math.Min(MaxCharsPerDocument, (int)Math.Min(fs.Length, MaxCharsPerDocument))];
-                    int charsRead = await reader.ReadBlockAsync(buffer.AsMemory(0, buffer.Length), ct);
-                    return charsRead > 0 ? new string(buffer, 0, charsRead) : null;
-                }
-                catch (DecoderFallbackException)
-                {
-                    // UTF-8 デコード失敗（不正シーケンス検知） ➔ 日本語ファイルサーバー標準の Shift-JIS (CP932) で再読込
-                    fs.Position = 0;
-                    return await ReadStreamWithEncodingAsync(fs, SjisEncoding, ct);
-                }
+                Encoding encoding = DetectTextEncoding(fs);
+                return await ReadStreamWithEncodingAsync(fs, encoding, ct);
             }
             catch
             {
@@ -194,7 +200,66 @@ namespace FolderMorpher.Services
             return charsRead > 0 ? new string(buffer, 0, charsRead) : null;
         }
 
-        #region Live走査用 高速ストリーム検索（Early Exit 対応・正本の単一化）
+        #region Live Stream Search for FileTree Scan (Zero-Temp Diskless)
+
+        /// <summary>
+        /// テキストファイルをストリーム走査し、キーワード群の包含判定とスニペット抽出を高速実行（Early Exit対応）。
+        /// Shift-JIS (CP932) および UTF-8/UTF-16 に完全対応。
+        /// </summary>
+        public static async Task<string?> SearchTextContentAsync(string filePath, IReadOnlyList<string> keywords, CancellationToken ct)
+        {
+            if (keywords.Count == 0) return null;
+
+            try
+            {
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, true);
+                if (fs.Length == 0) return null;
+
+                // 先頭バイトでバイナリ早期脱落判定
+                byte[] head = new byte[Math.Min(1024, (int)fs.Length)];
+                int bytesRead = await fs.ReadAsync(head.AsMemory(0, head.Length), ct);
+                fs.Position = 0;
+
+                int nulls = 0;
+                for (int i = 0; i < bytesRead; i++) if (head[i] == 0) nulls++;
+                bool isUtf16 = (bytesRead >= 2 && ((head[0] == 0xFF && head[1] == 0xFE) || (head[0] == 0xFE && head[1] == 0xFF)));
+                if (!isUtf16 && nulls >= 2) return null; // 純粋なバイナリは即座に脱落
+
+                Encoding encoding = DetectTextEncoding(fs);
+
+                // 行単位ストリーム走査
+                using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true);
+                var foundKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                string? firstSnippet = null;
+
+                string? line;
+                while ((line = await reader.ReadLineAsync(ct)) != null)
+                {
+                    foreach (var kw in keywords)
+                    {
+                        if (!foundKeywords.Contains(kw))
+                        {
+                            int idx = line.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
+                            if (idx >= 0)
+                            {
+                                foundKeywords.Add(kw);
+                                if (firstSnippet == null)
+                                {
+                                    firstSnippet = ExtractSnippet(line, idx, kw.Length);
+                                }
+                            }
+                        }
+                    }
+
+                    if (foundKeywords.Count == keywords.Count)
+                    {
+                        return firstSnippet ?? keywords[0];
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
 
         /// <summary>
         /// Officeファイル（Excel/Word/PowerPoint）をストリーム走査し、キーワード群の包含判定を高速実行（Early Exit対応）。
@@ -292,71 +357,6 @@ namespace FolderMorpher.Services
             }
             catch { }
             return false;
-        }
-
-        /// <summary>
-        /// プレーンテキストファイルをストリーム走査し、キーワード群の包含判定を高速実行（UTF-8/16/Shift-JIS対応・Early Exit対応）。
-        /// </summary>
-        public static async Task<string?> SearchTextContentAsync(string filePath, IReadOnlyList<string> keywords, CancellationToken ct)
-        {
-            if (keywords.Count == 0) return null;
-
-            try
-            {
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, true);
-                if (fs.Length == 0) return null;
-
-                // 先頭バイトでエンコーディング判定
-                byte[] head = new byte[Math.Min(4096, (int)fs.Length)];
-                int bytesRead = await fs.ReadAsync(head.AsMemory(0, head.Length), ct);
-                fs.Position = 0;
-
-                Encoding encoding = Encoding.UTF8;
-                if (bytesRead >= 2)
-                {
-                    if (head[0] == 0xFF && head[1] == 0xFE) encoding = Encoding.Unicode;
-                    else if (head[0] == 0xFE && head[1] == 0xFF) encoding = Encoding.BigEndianUnicode;
-                    else
-                    {
-                        // バイナリ早期脱落判定
-                        int nulls = 0;
-                        for (int i = 0; i < bytesRead; i++) if (head[i] == 0) nulls++;
-                        if (nulls >= 2) return null; // 純粋なバイナリは即座に脱落
-                    }
-                }
-
-                // 行単位ストリーム走査
-                using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true);
-                var foundKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                string? firstSnippet = null;
-
-                string? line;
-                while ((line = await reader.ReadLineAsync(ct)) != null)
-                {
-                    foreach (var kw in keywords)
-                    {
-                        if (!foundKeywords.Contains(kw))
-                        {
-                            int idx = line.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
-                            if (idx >= 0)
-                            {
-                                foundKeywords.Add(kw);
-                                if (firstSnippet == null)
-                                {
-                                    firstSnippet = ExtractSnippet(line, idx, kw.Length);
-                                }
-                            }
-                        }
-                    }
-
-                    if (foundKeywords.Count == keywords.Count)
-                    {
-                        return firstSnippet ?? keywords[0];
-                    }
-                }
-            }
-            catch { }
-            return null;
         }
 
         #endregion

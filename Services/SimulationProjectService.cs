@@ -49,7 +49,7 @@ namespace AstraSize.Services
             return project;
         }
 
-        private static void LinkParentsAndLevels(SimFolderNode node, SimFolderNode? parent, int level)
+        public static void LinkParentsAndLevels(SimFolderNode node, SimFolderNode? parent, int level)
         {
             node.Parent = parent;
             node.Level = level;

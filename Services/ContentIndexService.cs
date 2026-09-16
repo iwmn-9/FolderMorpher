@@ -804,6 +804,7 @@ namespace FolderMorpher.Services
 
                     cmd.CommandText = sql;
 
+                    var deduplicated = new Dictionary<string, SearchResultItem>(StringComparer.OrdinalIgnoreCase);
                     using var reader = cmd.ExecuteReader();
                     while (reader.Read())
                     {
@@ -835,7 +836,7 @@ namespace FolderMorpher.Services
                             ? (keywords.Count > 0 ? $"Indexed (FTS5): {string.Join(", ", keywords)}" : "Indexed: Content Match")
                             : (keywords.Count > 0 ? $"Indexed: {string.Join(", ", keywords)}" : "Indexed: Property Match");
 
-                        results.Add(new SearchResultItem
+                        var item = new SearchResultItem
                         {
                             Name = Path.GetFileName(fullPath),
                             FullPath = fullPath,
@@ -846,8 +847,22 @@ namespace FolderMorpher.Services
                             IsDirectory = false,
                             ContentSnippet = snippet,
                             MatchedReason = reason
-                        });
+                        };
+
+                        if (deduplicated.TryGetValue(fullPath, out var existing))
+                        {
+                            // スニペットがある方を優先してマージ
+                            if (string.IsNullOrEmpty(existing.ContentSnippet) && !string.IsNullOrEmpty(snippet))
+                            {
+                                deduplicated[fullPath] = item;
+                            }
+                        }
+                        else
+                        {
+                            deduplicated[fullPath] = item;
+                        }
                     }
+                    results.AddRange(deduplicated.Values);
                 }
 
                 return results;

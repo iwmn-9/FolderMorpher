@@ -407,10 +407,83 @@ namespace AstraSize
             }
         }
 
+        #region Undo Infrastructure (Tab 3: Migration Studio)
+        private void PushUndoSnapshot()
+        {
+            try
+            {
+                var json = System.Text.Json.JsonSerializer.Serialize(_simRootFolders);
+                if (_simUndoStack.Count >= MaxSimUndoDepth)
+                {
+                    var items = _simUndoStack.ToArray();
+                    _simUndoStack.Clear();
+                    for (int i = items.Length - 2; i >= 0; i--)
+                    {
+                        _simUndoStack.Push(items[i]);
+                    }
+                }
+                _simUndoStack.Push(json);
+                UpdateUndoButtonState();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"PushUndoSnapshot error: {ex}");
+            }
+        }
+
+        private void UpdateUndoButtonState()
+        {
+            if (SimUndoButton != null)
+            {
+                SimUndoButton.IsEnabled = _simUndoStack.Count > 0;
+            }
+        }
+
+        private void PerformUndo()
+        {
+            if (_simUndoStack.Count == 0) return;
+
+            try
+            {
+                var json = _simUndoStack.Pop();
+                var restoredRoots = System.Text.Json.JsonSerializer.Deserialize<List<SimFolderNode>>(json);
+                if (restoredRoots != null)
+                {
+                    _simRootFolders.Clear();
+                    foreach (var root in restoredRoots)
+                    {
+                        SimulationProjectService.LinkParentsAndLevels(root, null, 0);
+                        _simRootFolders.Add(root);
+                    }
+
+                    _selectedSimNode = null;
+                    SimSelectedFolderNameText.Text = "(未選択)";
+                    SimMappedSourcesItemsControl.ItemsSource = null;
+                    SimAclCardsItemsControl.ItemsSource = null;
+                    UpdateSimCloneButtonState();
+                    UpdateUndoButtonState();
+
+                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                    ShowToast(isJa ? "↩️ 直前の変更を取り消しました" : "↩️ Undo: Reverted last tree change");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"PerformUndo error: {ex}");
+            }
+        }
+
+        private void SimUndoButton_Click(object sender, RoutedEventArgs e)
+        {
+            PerformUndo();
+        }
+        #endregion
+
         private void SimCloneSelectedButton_Click(object sender, RoutedEventArgs e)
         {
             if (SimSourceTreeView.SelectedItem is FileItemNode selected)
             {
+                PushUndoSnapshot();
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                 if (_selectedSimNode != null)
                 {
@@ -442,6 +515,7 @@ namespace AstraSize
 
         private void SimAddRootFolderButton_Click(object sender, RoutedEventArgs e)
         {
+            PushUndoSnapshot();
             var newFolder = new SimFolderNode
             {
                 Name = $"0{_simRootFolders.Count + 1}_新設ルートフォルダ",
@@ -479,6 +553,28 @@ namespace AstraSize
             _isSimNodeDragging = false;
             _simNodeDroppedInTree = false;
             _simDragCancelled = false;
+
+            // ツリーのアイテム以外の余白をクリックした場合は選択解除（新設ルート配置へ復元）
+            var dep = e.OriginalSource as DependencyObject;
+            bool hitItem = false;
+            while (dep != null && dep != SimMockTreeView)
+            {
+                if (dep is TreeViewItem)
+                {
+                    hitItem = true;
+                    break;
+                }
+                dep = System.Windows.Media.VisualTreeHelper.GetParent(dep);
+            }
+            if (!hitItem && _selectedSimNode != null)
+            {
+                _selectedSimNode.IsSelected = false;
+                _selectedSimNode = null;
+                SimSelectedFolderNameText.Text = "(未選択)";
+                SimMappedSourcesItemsControl.ItemsSource = null;
+                SimAclCardsItemsControl.ItemsSource = null;
+                UpdateSimCloneButtonState();
+            }
         }
 
         private void SimMockTreeView_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -525,6 +621,7 @@ namespace AstraSize
 
                             if (isOutside || effects == DragDropEffects.None)
                             {
+                                PushUndoSnapshot();
                                 if (node.Parent != null)
                                 {
                                     node.Parent.Children.Remove(node);
@@ -543,8 +640,8 @@ namespace AstraSize
                                 }
 
                                 ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
-                                    ? $"🗑️ フォルダ「{node.Name}」をツリーから削除しました"
-                                    : $"🗑️ Deleted folder '{node.Name}' from tree");
+                                    ? $"🗑️ 「{node.Name}」をツリーから削除しました (Ctrl+Zで復元可能)"
+                                    : $"🗑️ Deleted '{node.Name}' from tree (Undo with Ctrl+Z)");
                             }
                         }
                     }
@@ -563,52 +660,59 @@ namespace AstraSize
                 e.Data.GetDataPresent("FolderMorpherSimNode") ||
                 e.Data.GetDataPresent(typeof(AdPrincipalItem)))
             {
-                e.Effects = DragDropEffects.Copy | DragDropEffects.Move;
+                e.Effects = DragDropEffects.Move | DragDropEffects.Copy;
                 e.Handled = true;
 
-                // 1. ドロップ対象ノードの視覚的ハイライト
-                var target = GetSimNodeFromDragEvent(e);
-                if (target != _currentDragOverSimNode)
+                // Auto-Scroll during drag near edges
+                var scrollViewer = FindVisualParent<ScrollViewer>(SimMockTreeView);
+                if (scrollViewer != null)
                 {
-                    if (_currentDragOverSimNode != null) _currentDragOverSimNode.IsDragOverTarget = false;
-                    _currentDragOverSimNode = target;
-                    if (_currentDragOverSimNode != null) _currentDragOverSimNode.IsDragOverTarget = true;
+                    Point pos = e.GetPosition(scrollViewer);
+                    const double scrollThreshold = 25.0;
+                    if (pos.Y < scrollThreshold)
+                    {
+                        scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - 16);
+                    }
+                    else if (pos.Y > scrollViewer.ActualHeight - scrollThreshold)
+                    {
+                        scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset + 16);
+                    }
                 }
 
-                // 2. ホバー自動展開（Auto-Expand on Hover: 閉じたフォルダ上で400ms静止で開く）
-                if (target != null && !target.IsExpanded && target.Children.Count > 0)
+                // Auto-expand on hover
+                var targetNode = GetSimNodeFromDragEvent(e);
+                if (targetNode != null)
                 {
-                    if (_simHoverExpandCandidate != target)
+                    if (_currentDragOverSimNode != targetNode)
                     {
-                        _simHoverExpandCandidate = target;
+                        if (_currentDragOverSimNode != null) _currentDragOverSimNode.IsDragOverTarget = false;
+                        _currentDragOverSimNode = targetNode;
+                        _currentDragOverSimNode.IsDragOverTarget = true;
+                    }
+
+                    if (!targetNode.IsExpanded && targetNode.Children.Count > 0)
+                    {
+                        if (_simHoverExpandCandidate != targetNode)
+                        {
+                            _simHoverExpandCandidate = targetNode;
+                            _simHoverExpandTimer.Stop();
+                            _simHoverExpandTimer.Start();
+                        }
+                    }
+                    else
+                    {
                         _simHoverExpandTimer.Stop();
-                        _simHoverExpandTimer.Start();
+                        _simHoverExpandCandidate = null;
                     }
                 }
                 else
                 {
-                    if (_simHoverExpandCandidate != null)
-                    {
-                        _simHoverExpandCandidate = null;
-                        _simHoverExpandTimer.Stop();
-                    }
+                    ClearSimDragState();
                 }
-
-                // 3. 上下端自動スクロール（Auto-Scroll on Drag）
-                Point mousePos = e.GetPosition(SimMockTreeView);
-                var scrollViewer = FindVisualChild<ScrollViewer>(SimMockTreeView);
-                if (scrollViewer != null)
-                {
-                    const double scrollZone = 25.0;
-                    if (mousePos.Y >= 0 && mousePos.Y < scrollZone)
-                    {
-                        scrollViewer.ScrollToVerticalOffset(Math.Max(0, scrollViewer.VerticalOffset - 14));
-                    }
-                    else if (mousePos.Y > SimMockTreeView.ActualHeight - scrollZone && mousePos.Y <= SimMockTreeView.ActualHeight)
-                    {
-                        scrollViewer.ScrollToVerticalOffset(Math.Min(scrollViewer.ScrollableHeight, scrollViewer.VerticalOffset + 14));
-                    }
-                }
+            }
+            else
+            {
+                e.Effects = DragDropEffects.None;
             }
         }
 
@@ -625,13 +729,20 @@ namespace AstraSize
             // Case 1: Drop source folder from left explorer (Create subfolder with full ACL & hierarchy)
             if (e.Data.GetData("FolderMorpherSourceNode") is FileItemNode src)
             {
-                var effectiveTarget = target ?? _selectedSimNode ?? _simRootFolders.FirstOrDefault();
-                if (effectiveTarget != null)
+                PushUndoSnapshot();
+                if (target != null)
                 {
-                    var newSub = CreateSimNodeFromSourceWithAcl(src, effectiveTarget, effectiveTarget.Level + 1);
-                    effectiveTarget.Children.Add(newSub);
-                    effectiveTarget.IsExpanded = true;
-                    ShowToast($"📁 「{src.Name}」を「{effectiveTarget.Name}」配下にサブフォルダ化（権限・階層継承）しました");
+                    var newSub = CreateSimNodeFromSourceWithAcl(src, target, target.Level + 1);
+                    target.Children.Add(newSub);
+                    target.IsExpanded = true;
+                    ShowToast($"📁 「{src.Name}」を「{target.Name}」配下にサブフォルダ化（権限・階層継承）しました");
+                }
+                else
+                {
+                    // 空白ドロップは選択状態に関係なく第1階層（新設ルート）として配置
+                    var newRoot = CreateSimNodeFromSourceWithAcl(src, null, 0);
+                    _simRootFolders.Add(newRoot);
+                    ShowToast($"📁 「{src.Name}」を第1階層（ルート）として配置しました");
                 }
                 return;
             }
@@ -650,6 +761,7 @@ namespace AstraSize
                         return;
                     }
 
+                    PushUndoSnapshot();
                     // 現在の親から切り離す
                     if (movingNode.Parent != null) movingNode.Parent.Children.Remove(movingNode);
                     else _simRootFolders.Remove(movingNode);
@@ -672,6 +784,7 @@ namespace AstraSize
                     {
                         if (movingNode.Parent == null) return;
 
+                        PushUndoSnapshot();
                         movingNode.Parent.Children.Remove(movingNode);
                         movingNode.Parent = null;
                         UpdateDescendantLevels(movingNode, 0);
@@ -693,6 +806,7 @@ namespace AstraSize
                 var effectiveTarget = target ?? _selectedSimNode ?? _simRootFolders.FirstOrDefault();
                 if (effectiveTarget != null)
                 {
+                    PushUndoSnapshot();
                     AssignAdPrincipal(effectiveTarget, principal);
                 }
                 return;
@@ -874,6 +988,7 @@ namespace AstraSize
                 return;
             }
 
+            PushUndoSnapshot();
             var entry = new SimAclEntry
             {
                 AccountName = principal.AccountName,
@@ -896,6 +1011,7 @@ namespace AstraSize
             {
                 if (node.Parent != null)
                 {
+                    PushUndoSnapshot();
                     node.Parent.Children.Remove(node);
                     node.Parent = null;
                     node.Level = 0;
@@ -911,6 +1027,7 @@ namespace AstraSize
             {
                 if (node.Parent == null) return;
 
+                PushUndoSnapshot();
                 var currentParent = node.Parent;
                 currentParent.Children.Remove(node);
 
@@ -939,6 +1056,7 @@ namespace AstraSize
                 int idx = siblings.IndexOf(node);
                 if (idx > 0)
                 {
+                    PushUndoSnapshot();
                     var newParent = siblings[idx - 1];
                     siblings.Remove(node);
                     node.Parent = newParent;
@@ -960,6 +1078,7 @@ namespace AstraSize
         {
             if (_selectedSimNode != null)
             {
+                PushUndoSnapshot();
                 var child = new SimFolderNode
                 {
                     Name = $"サブフォルダ_{_selectedSimNode.Children.Count + 1}",
@@ -987,6 +1106,7 @@ namespace AstraSize
                 var prompt = Microsoft.VisualBasic.Interaction.InputBox("新しいフォルダ名を入力してください:", "フォルダ名変更", _selectedSimNode.Name);
                 if (!string.IsNullOrWhiteSpace(prompt))
                 {
+                    PushUndoSnapshot();
                     _selectedSimNode.Name = prompt.Trim();
                     ShowToast($"フォルダ名を変更しました: {_selectedSimNode.Name}");
                 }
@@ -999,6 +1119,7 @@ namespace AstraSize
             {
                 if (MessageBox.Show($"フォルダ '{_selectedSimNode.Name}' を削除しますか？", "確認", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
                 {
+                    PushUndoSnapshot();
                     if (_selectedSimNode.Parent != null) _selectedSimNode.Parent.Children.Remove(_selectedSimNode);
                     else _simRootFolders.Remove(_selectedSimNode);
                     _selectedSimNode = null;
@@ -1011,6 +1132,7 @@ namespace AstraSize
         {
             if (_selectedSimNode != null)
             {
+                PushUndoSnapshot();
                 _selectedSimNode.InheritAcl = SimInheritCheckBox.IsChecked == true;
             }
         }
@@ -1019,6 +1141,7 @@ namespace AstraSize
         {
             if (sender is FrameworkElement fe && fe.Tag is SimAclEntry acl && _selectedSimNode != null)
             {
+                PushUndoSnapshot();
                 _selectedSimNode.AclEntries.Remove(acl);
                 _selectedSimNode.NotifyAclChanged();
                 ShowToast("アクセス権カードを解除しました");
@@ -1568,6 +1691,8 @@ namespace AstraSize
                         SimSourcePathTextBox.Text = project.SourceRootPath;
                         SimTargetRootTextBox.Text = project.TargetRootPath;
 
+                        _simUndoStack.Clear();
+                        UpdateUndoButtonState();
                         _simRootFolders.Clear();
                         foreach (var root in project.RootFolders) _simRootFolders.Add(root);
 
