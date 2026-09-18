@@ -573,6 +573,78 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(tempDir, true); } catch { }
                 }
             }
+
+            // -------------------------------------------------------------
+            // 7. ContentIndexService: MetadataFts (trigram), 短語LIKE, ScanGeneration 世代削除の検証
+            // -------------------------------------------------------------
+            {
+                string tempDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_MetaFtsTest_" + Guid.NewGuid().ToString("N"));
+                string dbDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_MetaFtsDb_" + Guid.NewGuid().ToString("N"));
+                string customDb = Path.Combine(dbDir, "TestMetaFts.db");
+                Directory.CreateDirectory(tempDir);
+                Directory.CreateDirectory(dbDir);
+                try
+                {
+                    var indexService = new ContentIndexService(customDb);
+
+                    // 1. ファイルを作成
+                    // - file1: 3文字以上キーワード "業務委託契約書_2026.xlsx" (本文なし)
+                    // - file2: 2文字キーワード "契約_覚書.txt" (本文に "最高機密プロジェクト")
+                    // - file3: 削除テスト用 "臨時ファイル_Temp.pdf" (本文なし)
+                    string file1 = Path.Combine(tempDir, "業務委託契約書_2026.xlsx");
+                    string file2 = Path.Combine(tempDir, "契約_覚書.txt");
+                    string file3 = Path.Combine(tempDir, "臨時ファイル_Temp.pdf");
+
+                    File.WriteAllBytes(file1, new byte[1024]);
+                    File.WriteAllText(file2, "本覚書の内容は最高機密プロジェクトに関する規定である。", Encoding.UTF8);
+                    File.WriteAllBytes(file3, new byte[2048]);
+
+                    var rep1 = await indexService.IndexFolderAsync(tempDir, null, CancellationToken.None);
+                    if (rep1.TotalDiscovered != 3)
+                        throw new Exception($"MetadataFts Test failed: Expected 3 discovered files, got {rep1.TotalDiscovered}.");
+
+                    // 2. MetadataFts trigram MATCH 検証 (3文字以上 "業務委託" または "契約書")
+                    var qTri = SearchQueryParser.Parse("業務委託");
+                    qTri.SearchContentMode = false; // ファイル名のみ
+                    var hitsTri = await indexService.SearchIndexedAsync(qTri, tempDir, CancellationToken.None);
+                    if (hitsTri.Count != 1 || !hitsTri[0].FullPath.EndsWith("業務委託契約書_2026.xlsx"))
+                        throw new Exception($"MetadataFts trigram MATCH failed: Expected file1 hit, got {hitsTri.Count} hits.");
+
+                    // 3. 短語 (1〜2文字 "契約") の f.Name LIKE フォールバック検証
+                    var qShort = SearchQueryParser.Parse("契約");
+                    qShort.SearchContentMode = false; // ファイル名のみ
+                    var hitsShort = await indexService.SearchIndexedAsync(qShort, tempDir, CancellationToken.None);
+                    // "業務委託契約書_2026.xlsx" と "契約_覚書.txt" の2件がヒットすること
+                    if (hitsShort.Count != 2)
+                        throw new Exception($"Metadata short-word LIKE fallback failed: Expected 2 hits for '契約', got {hitsShort.Count}.");
+
+                    // 4. ContentFts (rowid=FileId) と MetadataFts の UNION ハイブリッド検証
+                    // "最高機密" (file2の本文のみ) ＋ "業務委託" (file1のファイル名のみ)
+                    var qUnion1 = SearchQueryParser.Parse("最高機密");
+                    qUnion1.SearchContentMode = true; // 本文ON
+                    var hitsUnion1 = await indexService.SearchIndexedAsync(qUnion1, tempDir, CancellationToken.None);
+                    if (hitsUnion1.Count != 1 || !hitsUnion1[0].FullPath.EndsWith("契約_覚書.txt") || string.IsNullOrEmpty(hitsUnion1[0].ContentSnippet))
+                        throw new Exception($"ContentFts rowid MATCH failed: Expected file2 with snippet, got {hitsUnion1.Count} hits.");
+
+                    // 5. ScanGeneration による亡霊ファイル自動削除の検証
+                    // file3 をディスクから物理削除し、再インデックス
+                    File.Delete(file3);
+                    var rep2 = await indexService.IndexFolderAsync(tempDir, null, CancellationToken.None);
+                    if (rep2.DeletedCount != 1)
+                        throw new Exception($"ScanGeneration purge failed: Expected 1 deleted file, got {rep2.DeletedCount}.");
+
+                    // file3 ("臨時ファイル") を検索して 0 件であることを確認
+                    var qGhost = SearchQueryParser.Parse("臨時ファイル");
+                    var hitsGhost = await indexService.SearchIndexedAsync(qGhost, tempDir, CancellationToken.None);
+                    if (hitsGhost.Count != 0)
+                        throw new Exception("ScanGeneration purge failed: Ghost file was still present in index after re-scan.");
+                }
+                finally
+                {
+                    try { Directory.Delete(tempDir, true); } catch { }
+                    try { Directory.Delete(dbDir, true); } catch { }
+                }
+            }
         }
     }
 }

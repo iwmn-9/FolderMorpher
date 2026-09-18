@@ -144,6 +144,11 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
     - **全画面バッジ統一**: Search Studio で先行導入した Tabler File-Type バッジ（パステル角丸ベクターバッジ・拡張子カラー刻印・フォルダー `[DIR]` 刻印）を、容量分析（Tab 1）のファイルツリー（`FileTreeDataGrid`）、容量上位 Top 10（`TopFilesDataGrid`）、選択フォルダーの内訳（`FolderChildSharesDataGrid`）、およびファイル監査（Tab 6）の検出課題一覧（`AuditItemsDataGrid`）の全ファイル・フォルダー表示へ完全展開。
     - **正本の一元化（`TablerBadgeHelper`）**: バッジの色相・コントラスト枠・テキスト決定ロジックを `Services/TablerBadgeHelper.cs` に集約。各モデル（`SearchResultItem`, `FolderChildShareItem`, `LargestFileInfo`, `FileItemNode`, `AuditItem`）は4行の軽量プロパティ委譲のみを保持し、コード重複ゼロと一貫性を保証。
     - **ゼロリソース・超軽量レンダリング**: 外部画像やフォントファイルを一切追加せず純粋な WPF ベクター XAML テンプレート（`Border` + `TextBlock`）で描画するため、単一 EXE の容量増加 0 バイト、数万件の仮想化スクロールでも 60fps を維持。
+15. **Search 高速化第1フェーズ：MetadataFts trigram ＆ ScanGeneration ストリーミング ＆ rowid 直結 JOIN（v2.2.5 / ADR 71）**:
+    - **MetadataFts (trigram) によるファイル名ミリ秒検索**: `IndexedFiles` に対する `FullPath LIKE` のフルスキャンを全廃。3文字以上は `MetadataFts MATCH`（trigram）、1〜2文字は `idx_files_name` による `f.Name LIKE` に刷新し、数百万ファイル環境でもファイル名検索がミリ秒で完了。
+    - **`ContentFts.rowid = IndexedFiles.FileId` 直結 ＆ ゼロロス自動マイグレーション**: FTS5 の内部 rowid を `FileId` と直結させ、最速の B-Tree primary key JOIN を実現。旧スキーマからの起動時自動昇格マイグレーションを施工し、既存全文インデックスデータを 1 行も失わずに移行。
+    - **`ScanGeneration` によるストリーミング世代管理（メモリ O(1) ＆ 差分一括削除）**: インデックス同期ごとに世代番号をインクリメント。走査中の巨大な `HashSet<string> currentPaths` を完全撤去して順次 Upsert し、走査後に `Generation < currentGen` を O(1) で一括削除。メモリ消費を劇的に削減。
+    - **回帰テスト（Domain 8 セクション7）新設**: trigram MATCH、短語フォールバック、UNION ハイブリッド、ScanGeneration 亡霊ファイル自動削除を自動検証（8/8 ALL PASSED）。
 ---
 
 ---

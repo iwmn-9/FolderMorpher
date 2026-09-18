@@ -93,15 +93,19 @@ namespace FolderMorpher.Services
                     CREATE TABLE IF NOT EXISTS IndexedFiles (
                         FileId INTEGER PRIMARY KEY AUTOINCREMENT,
                         FullPath TEXT UNIQUE NOT NULL,
+                        Name TEXT NOT NULL DEFAULT '',
                         DirectoryPath TEXT NOT NULL,
                         SizeBytes INTEGER NOT NULL,
                         LastWriteTimeUtcTicks INTEGER NOT NULL,
                         Status INTEGER NOT NULL, -- 0: Pending, 1: Indexed, 2: Failed
                         IndexedAtUtcTicks INTEGER,
-                        ExtractorVersion INTEGER NOT NULL DEFAULT 1
+                        ExtractorVersion INTEGER NOT NULL DEFAULT 1,
+                        Generation INTEGER NOT NULL DEFAULT 0
                     );
                     CREATE INDEX IF NOT EXISTS idx_files_path ON IndexedFiles(FullPath);
                     CREATE INDEX IF NOT EXISTS idx_files_dir ON IndexedFiles(DirectoryPath);
+                    CREATE INDEX IF NOT EXISTS idx_files_name ON IndexedFiles(Name);
+                    CREATE INDEX IF NOT EXISTS idx_files_gen ON IndexedFiles(Generation);
 
                     CREATE TABLE IF NOT EXISTS IndexedRoots (
                         RootPath TEXT PRIMARY KEY COLLATE NOCASE,
@@ -109,28 +113,153 @@ namespace FolderMorpher.Services
                         CoverageComplete INTEGER NOT NULL DEFAULT 1,
                         LastCompletedUtcTicks INTEGER,
                         TotalFiles INTEGER NOT NULL DEFAULT 0,
-                        ExtractorVersion INTEGER NOT NULL DEFAULT 1
+                        ExtractorVersion INTEGER NOT NULL DEFAULT 1,
+                        CurrentGeneration INTEGER NOT NULL DEFAULT 0
                     );
 
-                    CREATE VIRTUAL TABLE IF NOT EXISTS ContentFts USING fts5(
-                        FileId UNINDEXED,
-                        Body,
+                    CREATE VIRTUAL TABLE IF NOT EXISTS MetadataFts USING fts5(
+                        Name,
                         tokenize = 'trigram'
                     );
                 ";
                 cmd.ExecuteNonQuery();
 
-                // マイグレーション: ExtractorVersion カラム追加 (既存DB対応)
+                // マイグレーション: ExtractorVersion / Name / Generation カラム追加 (既存DB対応)
                 try
                 {
                     using var alterCmd = conn.CreateCommand();
                     alterCmd.CommandText = "ALTER TABLE IndexedFiles ADD COLUMN ExtractorVersion INTEGER NOT NULL DEFAULT 1;";
                     alterCmd.ExecuteNonQuery();
                 }
-                catch
+                catch { }
+
+                try
                 {
-                    // 既にカラムが存在する場合は無視
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = "ALTER TABLE IndexedFiles ADD COLUMN Name TEXT NOT NULL DEFAULT '';";
+                    alterCmd.ExecuteNonQuery();
                 }
+                catch { }
+
+                try
+                {
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = "ALTER TABLE IndexedFiles ADD COLUMN Generation INTEGER NOT NULL DEFAULT 0;";
+                    alterCmd.ExecuteNonQuery();
+                }
+                catch { }
+
+                try
+                {
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = "ALTER TABLE IndexedRoots ADD COLUMN CurrentGeneration INTEGER NOT NULL DEFAULT 0;";
+                    alterCmd.ExecuteNonQuery();
+                }
+                catch { }
+
+                // マイグレーション: ContentFts の rowid=FileId 化（旧 FileId UNINDEXED スキーマからの自動昇格）
+                bool needCreateContentFts = true;
+                try
+                {
+                    using var checkCmd = conn.CreateCommand();
+                    checkCmd.CommandText = "SELECT sql FROM sqlite_master WHERE type='table' AND name='ContentFts';";
+                    var sqlObj = checkCmd.ExecuteScalar();
+                    if (sqlObj != null)
+                    {
+                        string sqlStr = sqlObj.ToString() ?? string.Empty;
+                        if (sqlStr.Contains("FileId", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // 旧スキーマ: FileId UNINDEXED 列が存在する ➔ 一時テーブル経由で rowid 形式へ移行
+                            using var migCmd = conn.CreateCommand();
+                            migCmd.CommandText = @"
+                                ALTER TABLE ContentFts RENAME TO ContentFts_Old;
+                                CREATE VIRTUAL TABLE ContentFts USING fts5(
+                                    Body,
+                                    tokenize = 'trigram'
+                                );
+                                INSERT INTO ContentFts (rowid, Body)
+                                SELECT CAST(FileId AS INTEGER), Body FROM ContentFts_Old WHERE FileId IS NOT NULL;
+                                DROP TABLE ContentFts_Old;
+                            ";
+                            migCmd.ExecuteNonQuery();
+                            needCreateContentFts = false;
+                        }
+                        else
+                        {
+                            needCreateContentFts = false;
+                        }
+                    }
+                }
+                catch { }
+
+                if (needCreateContentFts)
+                {
+                    try
+                    {
+                        using var createCmd = conn.CreateCommand();
+                        createCmd.CommandText = @"
+                            CREATE VIRTUAL TABLE IF NOT EXISTS ContentFts USING fts5(
+                                Body,
+                                tokenize = 'trigram'
+                            );";
+                        createCmd.ExecuteNonQuery();
+                    }
+                    catch { }
+                }
+
+                // マイグレーション: Name が空の既存レコードを一括補完
+                try
+                {
+                    var emptyNames = new List<(long FileId, string FullPath)>();
+                    using (var readCmd = conn.CreateCommand())
+                    {
+                        readCmd.CommandText = "SELECT FileId, FullPath FROM IndexedFiles WHERE Name = '' OR Name IS NULL;";
+                        using var reader = readCmd.ExecuteReader();
+                        while (reader.Read())
+                        {
+                            emptyNames.Add((reader.GetInt64(0), reader.GetString(1)));
+                        }
+                    }
+
+                    if (emptyNames.Count > 0)
+                    {
+                        using var trans = conn.BeginTransaction();
+                        foreach (var (fId, path) in emptyNames)
+                        {
+                            string fileName = Path.GetFileName(path);
+                            using var updCmd = conn.CreateCommand();
+                            updCmd.Transaction = trans;
+                            updCmd.CommandText = "UPDATE IndexedFiles SET Name = @name WHERE FileId = @fileId;";
+                            updCmd.Parameters.AddWithValue("@name", fileName);
+                            updCmd.Parameters.AddWithValue("@fileId", fId);
+                            updCmd.ExecuteNonQuery();
+                        }
+                        trans.Commit();
+                    }
+                }
+                catch { }
+
+                // マイグレーション: MetadataFts が空で IndexedFiles にレコードがある場合、初回一括同期
+                try
+                {
+                    long metaCount = 0;
+                    using (var countCmd = conn.CreateCommand())
+                    {
+                        countCmd.CommandText = "SELECT count(*) FROM MetadataFts;";
+                        var res = countCmd.ExecuteScalar();
+                        if (res != null) metaCount = Convert.ToInt64(res);
+                    }
+
+                    if (metaCount == 0)
+                    {
+                        using var fillCmd = conn.CreateCommand();
+                        fillCmd.CommandText = @"
+                            INSERT INTO MetadataFts (rowid, Name)
+                            SELECT FileId, Name FROM IndexedFiles WHERE Name != '';";
+                        fillCmd.ExecuteNonQuery();
+                    }
+                }
+                catch { }
             }
         }
 
@@ -297,10 +426,18 @@ namespace FolderMorpher.Services
 
                         if (fileId.HasValue)
                         {
+                            using (var cmdDelMeta = conn.CreateCommand())
+                            {
+                                cmdDelMeta.Transaction = trans;
+                                cmdDelMeta.CommandText = "DELETE FROM MetadataFts WHERE rowid = @fileId";
+                                cmdDelMeta.Parameters.AddWithValue("@fileId", fileId.Value);
+                                cmdDelMeta.ExecuteNonQuery();
+                            }
+
                             using (var cmdDelFts = conn.CreateCommand())
                             {
                                 cmdDelFts.Transaction = trans;
-                                cmdDelFts.CommandText = "DELETE FROM ContentFts WHERE FileId = @fileId";
+                                cmdDelFts.CommandText = "DELETE FROM ContentFts WHERE rowid = @fileId";
                                 cmdDelFts.Parameters.AddWithValue("@fileId", fileId.Value);
                                 cmdDelFts.ExecuteNonQuery();
                             }
@@ -337,18 +474,29 @@ namespace FolderMorpher.Services
                 var sw = Stopwatch.StartNew();
                 string normTarget = Path.GetFullPath(folderPath).TrimEnd('\\', '/');
 
-                // ルート状態を InProgress に登録
+                // ルートの CurrentGeneration を取得・インクリメントし、InProgress に登録
+                int currentGen = 1;
                 lock (_lock)
                 {
                     using var conn = new SqliteConnection(_connectionString);
                     conn.Open();
+                    using var cmdGet = conn.CreateCommand();
+                    cmdGet.CommandText = "SELECT CurrentGeneration FROM IndexedRoots WHERE RootPath = @root;";
+                    cmdGet.Parameters.AddWithValue("@root", normTarget);
+                    var genObj = cmdGet.ExecuteScalar();
+                    if (genObj != null && genObj != DBNull.Value)
+                    {
+                        currentGen = Convert.ToInt32(genObj) + 1;
+                    }
+
                     using var cmd = conn.CreateCommand();
                     cmd.CommandText = @"
-                        INSERT OR REPLACE INTO IndexedRoots (RootPath, Status, CoverageComplete, LastCompletedUtcTicks, TotalFiles, ExtractorVersion)
-                        VALUES (@root, 'InProgress', 0, @ticks, 0, @extVer);";
+                        INSERT OR REPLACE INTO IndexedRoots (RootPath, Status, CoverageComplete, LastCompletedUtcTicks, TotalFiles, ExtractorVersion, CurrentGeneration)
+                        VALUES (@root, 'InProgress', 0, @ticks, 0, @extVer, @gen);";
                     cmd.Parameters.AddWithValue("@root", normTarget);
                     cmd.Parameters.AddWithValue("@ticks", DateTime.UtcNow.Ticks);
                     cmd.Parameters.AddWithValue("@extVer", CurrentExtractorVersion);
+                    cmd.Parameters.AddWithValue("@gen", currentGen);
                     cmd.ExecuteNonQuery();
                 }
 
@@ -416,46 +564,12 @@ namespace FolderMorpher.Services
                         }
                     }
 
-                    // 4. 亡霊ファイル（削除・リネームで消失した旧パス）のクリーンアップ (Sol指摘2 & アクセス拒否保護)
-                    int deletedCount = 0;
-                    var currentPaths = new HashSet<string>(allFiles.Select(e => e.FullPath), StringComparer.OrdinalIgnoreCase);
-                    var ghostFileIds = existingMap
-                        .Where(kvp => !currentPaths.Contains(kvp.Key))
-                        .Select(kvp => kvp.Value.FileId)
-                        .ToList();
-
-                    // ★ 走査中にアクセス拒否（AccessDenied）があった場合は、ファイルが消えたのではなく読めなかっただけなので亡霊削除を抑止
-                    if (coverage.AccessDeniedFolders == 0 && ghostFileIds.Count > 0)
-                    {
-                        lock (_lock)
-                        {
-                            using var conn = new SqliteConnection(_connectionString);
-                            conn.Open();
-                            using var trans = conn.BeginTransaction();
-                            foreach (var gId in ghostFileIds)
-                            {
-                                using var delFts = conn.CreateCommand();
-                                delFts.Transaction = trans;
-                                delFts.CommandText = "DELETE FROM ContentFts WHERE FileId = @id";
-                                delFts.Parameters.AddWithValue("@id", gId);
-                                delFts.ExecuteNonQuery();
-
-                                using var delFile = conn.CreateCommand();
-                                delFile.Transaction = trans;
-                                delFile.CommandText = "DELETE FROM IndexedFiles WHERE FileId = @id";
-                                delFile.Parameters.AddWithValue("@id", gId);
-                                delFile.ExecuteNonQuery();
-                            }
-                            trans.Commit();
-                        }
-                        deletedCount = ghostFileIds.Count;
-                    }
-
                     int alreadyIndexed = 0;
                     int newlyIndexed = 0;
                     int failedCount = 0;
+                    var skippedFileIds = new List<long>();
 
-                    // 5-A. 非本文ファイル（zip, exe, 動画, 画像など）のメタデータを IndexedFiles に一括登録 (抜本案)
+                    // 4-A. 非本文ファイル（zip, exe, 動画, 画像など）のメタデータを IndexedFiles ＆ MetadataFts に登録
                     var metaToInsert = new List<ScannedFileEntry>();
                     foreach (var entry in metadataOnlyFiles)
                     {
@@ -465,6 +579,7 @@ namespace FolderMorpher.Services
                             if (meta.SizeBytes == entry.Length && meta.LastWriteTicks == currentTicks)
                             {
                                 alreadyIndexed++;
+                                skippedFileIds.Add(meta.FileId);
                                 continue;
                             }
                         }
@@ -482,20 +597,24 @@ namespace FolderMorpher.Services
                             foreach (var entry in metaToInsert)
                             {
                                 long currentTicks = entry.LastWriteTime.ToUniversalTime().Ticks;
+                                long fileId;
                                 if (existingMap.TryGetValue(entry.FullPath, out var meta))
                                 {
+                                    fileId = meta.FileId;
                                     using var cmdUpd = conn.CreateCommand();
                                     cmdUpd.Transaction = trans;
                                     cmdUpd.CommandText = @"
                                         UPDATE IndexedFiles 
-                                        SET SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, Status = 0, 
-                                            IndexedAtUtcTicks = @now, ExtractorVersion = @ver
+                                        SET Name = @name, SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, Status = 0, 
+                                            IndexedAtUtcTicks = @now, ExtractorVersion = @ver, Generation = @gen
                                         WHERE FileId = @fileId";
+                                    cmdUpd.Parameters.AddWithValue("@name", entry.Name);
                                     cmdUpd.Parameters.AddWithValue("@size", entry.Length);
                                     cmdUpd.Parameters.AddWithValue("@ticks", currentTicks);
                                     cmdUpd.Parameters.AddWithValue("@now", nowTicks);
                                     cmdUpd.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
-                                    cmdUpd.Parameters.AddWithValue("@fileId", meta.FileId);
+                                    cmdUpd.Parameters.AddWithValue("@gen", currentGen);
+                                    cmdUpd.Parameters.AddWithValue("@fileId", fileId);
                                     cmdUpd.ExecuteNonQuery();
                                 }
                                 else
@@ -503,15 +622,35 @@ namespace FolderMorpher.Services
                                     using var cmdIns = conn.CreateCommand();
                                     cmdIns.Transaction = trans;
                                     cmdIns.CommandText = @"
-                                        INSERT INTO IndexedFiles (FullPath, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion)
-                                        VALUES (@path, @dir, @size, @ticks, 0, @now, @ver);";
+                                        INSERT INTO IndexedFiles (FullPath, Name, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion, Generation)
+                                        VALUES (@path, @name, @dir, @size, @ticks, 0, @now, @ver, @gen);
+                                        SELECT last_insert_rowid();";
                                     cmdIns.Parameters.AddWithValue("@path", entry.FullPath);
+                                    cmdIns.Parameters.AddWithValue("@name", entry.Name);
                                     cmdIns.Parameters.AddWithValue("@dir", entry.DirectoryPath);
                                     cmdIns.Parameters.AddWithValue("@size", entry.Length);
                                     cmdIns.Parameters.AddWithValue("@ticks", currentTicks);
                                     cmdIns.Parameters.AddWithValue("@now", nowTicks);
                                     cmdIns.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
-                                    cmdIns.ExecuteNonQuery();
+                                    cmdIns.Parameters.AddWithValue("@gen", currentGen);
+                                    fileId = (long)cmdIns.ExecuteScalar()!;
+                                }
+
+                                // MetadataFts を更新
+                                using (var cmdDelMeta = conn.CreateCommand())
+                                {
+                                    cmdDelMeta.Transaction = trans;
+                                    cmdDelMeta.CommandText = "DELETE FROM MetadataFts WHERE rowid = @fileId;";
+                                    cmdDelMeta.Parameters.AddWithValue("@fileId", fileId);
+                                    cmdDelMeta.ExecuteNonQuery();
+                                }
+                                using (var cmdInsMeta = conn.CreateCommand())
+                                {
+                                    cmdInsMeta.Transaction = trans;
+                                    cmdInsMeta.CommandText = "INSERT INTO MetadataFts (rowid, Name) VALUES (@fileId, @name);";
+                                    cmdInsMeta.Parameters.AddWithValue("@fileId", fileId);
+                                    cmdInsMeta.Parameters.AddWithValue("@name", entry.Name);
+                                    cmdInsMeta.ExecuteNonQuery();
                                 }
                             }
                             trans.Commit();
@@ -519,9 +658,8 @@ namespace FolderMorpher.Services
                         newlyIndexed += metaToInsert.Count;
                     }
 
-                    // 5-B. 本文対象ファイル（Office/PDF/Text）の差分判定
+                    // 4-B. 本文対象ファイル（Office/PDF/Text）の差分判定
                     var toProcess = new List<ScannedFileEntry>();
-
                     foreach (var entry in contentTargets)
                     {
                         long currentTicks = entry.LastWriteTime.ToUniversalTime().Ticks;
@@ -531,6 +669,7 @@ namespace FolderMorpher.Services
                             if (meta.Status == 1 && meta.SizeBytes == entry.Length && meta.LastWriteTicks == currentTicks && meta.ExtractorVer == CurrentExtractorVersion)
                             {
                                 alreadyIndexed++;
+                                skippedFileIds.Add(meta.FileId);
                                 continue;
                             }
                         }
@@ -549,10 +688,32 @@ namespace FolderMorpher.Services
                         AlreadyIndexed = alreadyIndexed,
                         ProcessedCount = processedCount,
                         NewlyIndexedCount = newlyIndexed,
-                        DeletedCount = deletedCount,
+                        DeletedCount = 0,
                         StatusMessage = $"インデックス更新開始 (全ファイル: {totalDiscovered:N0} 件 / 本文抽出対象: {toProcess.Count:N0} 件 / 変更なしスキップ: {alreadyIndexed:N0} 件)",
                         Elapsed = sw.Elapsed
                     });
+
+                    // 4-C. スキップされたファイルの Generation を一括更新（バッチ 500件）
+                    if (skippedFileIds.Count > 0)
+                    {
+                        lock (_lock)
+                        {
+                            using var conn = new SqliteConnection(_connectionString);
+                            conn.Open();
+                            using var trans = conn.BeginTransaction();
+                            const int GenBatchSize = 500;
+                            for (int b = 0; b < skippedFileIds.Count; b += GenBatchSize)
+                            {
+                                var chunk = skippedFileIds.Skip(b).Take(GenBatchSize).ToList();
+                                using var cmdGen = conn.CreateCommand();
+                                cmdGen.Transaction = trans;
+                                cmdGen.CommandText = $"UPDATE IndexedFiles SET Generation = @gen WHERE FileId IN ({string.Join(",", chunk)});";
+                                cmdGen.Parameters.AddWithValue("@gen", currentGen);
+                                cmdGen.ExecuteNonQuery();
+                            }
+                            trans.Commit();
+                        }
+                    }
 
                     // 5. バッチ処理（50ファイルごとにトランザクションコミットしてディスクに永続化）
                     const int BatchSize = 50;
@@ -605,21 +766,23 @@ namespace FolderMorpher.Services
                                     cmdUpd.Transaction = trans;
                                     cmdUpd.CommandText = @"
                                         UPDATE IndexedFiles 
-                                        SET SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, Status = @status, 
-                                            IndexedAtUtcTicks = @now, ExtractorVersion = @ver
+                                        SET Name = @name, SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, Status = @status, 
+                                            IndexedAtUtcTicks = @now, ExtractorVersion = @ver, Generation = @gen
                                         WHERE FileId = @fileId";
+                                    cmdUpd.Parameters.AddWithValue("@name", entry.Name);
                                     cmdUpd.Parameters.AddWithValue("@size", entry.Length);
                                     cmdUpd.Parameters.AddWithValue("@ticks", currentTicks);
                                     cmdUpd.Parameters.AddWithValue("@status", item.Success ? 1 : 2);
                                     cmdUpd.Parameters.AddWithValue("@now", nowTicks);
                                     cmdUpd.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
+                                    cmdUpd.Parameters.AddWithValue("@gen", currentGen);
                                     cmdUpd.Parameters.AddWithValue("@fileId", fileId);
                                     cmdUpd.ExecuteNonQuery();
 
                                     // 既存の FTS エントリを削除
                                     using var cmdDelFts = conn.CreateCommand();
                                     cmdDelFts.Transaction = trans;
-                                    cmdDelFts.CommandText = "DELETE FROM ContentFts WHERE FileId = @fileId";
+                                    cmdDelFts.CommandText = "DELETE FROM ContentFts WHERE rowid = @fileId";
                                     cmdDelFts.Parameters.AddWithValue("@fileId", fileId);
                                     cmdDelFts.ExecuteNonQuery();
                                 }
@@ -628,24 +791,43 @@ namespace FolderMorpher.Services
                                     using var cmdIns = conn.CreateCommand();
                                     cmdIns.Transaction = trans;
                                     cmdIns.CommandText = @"
-                                        INSERT INTO IndexedFiles (FullPath, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion)
-                                        VALUES (@path, @dir, @size, @ticks, @status, @now, @ver);
+                                        INSERT INTO IndexedFiles (FullPath, Name, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion, Generation)
+                                        VALUES (@path, @name, @dir, @size, @ticks, @status, @now, @ver, @gen);
                                         SELECT last_insert_rowid();";
                                     cmdIns.Parameters.AddWithValue("@path", entry.FullPath);
+                                    cmdIns.Parameters.AddWithValue("@name", entry.Name);
                                     cmdIns.Parameters.AddWithValue("@dir", entry.DirectoryPath);
                                     cmdIns.Parameters.AddWithValue("@size", entry.Length);
                                     cmdIns.Parameters.AddWithValue("@ticks", currentTicks);
                                     cmdIns.Parameters.AddWithValue("@status", item.Success ? 1 : 2);
                                     cmdIns.Parameters.AddWithValue("@now", nowTicks);
                                     cmdIns.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
+                                    cmdIns.Parameters.AddWithValue("@gen", currentGen);
                                     fileId = (long)cmdIns.ExecuteScalar()!;
+                                }
+
+                                // MetadataFts を更新
+                                using (var cmdDelMeta = conn.CreateCommand())
+                                {
+                                    cmdDelMeta.Transaction = trans;
+                                    cmdDelMeta.CommandText = "DELETE FROM MetadataFts WHERE rowid = @fileId;";
+                                    cmdDelMeta.Parameters.AddWithValue("@fileId", fileId);
+                                    cmdDelMeta.ExecuteNonQuery();
+                                }
+                                using (var cmdInsMeta = conn.CreateCommand())
+                                {
+                                    cmdInsMeta.Transaction = trans;
+                                    cmdInsMeta.CommandText = "INSERT INTO MetadataFts (rowid, Name) VALUES (@fileId, @name);";
+                                    cmdInsMeta.Parameters.AddWithValue("@fileId", fileId);
+                                    cmdInsMeta.Parameters.AddWithValue("@name", entry.Name);
+                                    cmdInsMeta.ExecuteNonQuery();
                                 }
 
                                 if (item.Success && !string.IsNullOrWhiteSpace(item.Text))
                                 {
                                     using var cmdInsFts = conn.CreateCommand();
                                     cmdInsFts.Transaction = trans;
-                                    cmdInsFts.CommandText = "INSERT INTO ContentFts (FileId, Body) VALUES (@fileId, @body)";
+                                    cmdInsFts.CommandText = "INSERT INTO ContentFts (rowid, Body) VALUES (@fileId, @body)";
                                     cmdInsFts.Parameters.AddWithValue("@fileId", fileId);
                                     cmdInsFts.Parameters.AddWithValue("@body", item.Text);
                                     cmdInsFts.ExecuteNonQuery();
@@ -668,7 +850,7 @@ namespace FolderMorpher.Services
                             AlreadyIndexed = alreadyIndexed,
                             ProcessedCount = processedCount,
                             NewlyIndexedCount = newlyIndexed,
-                            DeletedCount = deletedCount,
+                            DeletedCount = 0,
                             FailedCount = failedCount,
                             CurrentFile = batch.LastOrDefault()?.Name ?? string.Empty,
                             StatusMessage = $"インデックス中 ({processedCount:N0} / {totalDiscovered:N0})",
@@ -676,20 +858,82 @@ namespace FolderMorpher.Services
                         });
                     }
 
-                    // 完了時に IndexedRoots を Complete に更新（中断されていないことの証明）
+                    // 6. 亡霊ファイルのクリーンアップ（ScanGeneration 世代管理: 走査中に見つからなかった旧世代ファイルを一括削除）
+                    int deletedCount = 0;
+                    if (coverage.AccessDeniedFolders == 0)
+                    {
+                        lock (_lock)
+                        {
+                            using var conn = new SqliteConnection(_connectionString);
+                            conn.Open();
+                            using var trans = conn.BeginTransaction();
+
+                            string dirPrefix = normTarget + "\\";
+                            string escPrefix = dirPrefix.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+
+                            var ghostFileIds = new List<long>();
+                            using (var cmdFind = conn.CreateCommand())
+                            {
+                                cmdFind.Transaction = trans;
+                                cmdFind.CommandText = @"
+                                    SELECT FileId FROM IndexedFiles 
+                                    WHERE (FullPath = @exact OR FullPath LIKE @prefix ESCAPE '\') 
+                                      AND Generation < @currentGen";
+                                cmdFind.Parameters.AddWithValue("@exact", normTarget);
+                                cmdFind.Parameters.AddWithValue("@prefix", escPrefix);
+                                cmdFind.Parameters.AddWithValue("@currentGen", currentGen);
+                                using var reader = cmdFind.ExecuteReader();
+                                while (reader.Read())
+                                {
+                                    ghostFileIds.Add(reader.GetInt64(0));
+                                }
+                            }
+
+                            if (ghostFileIds.Count > 0)
+                            {
+                                const int DelBatch = 500;
+                                for (int b = 0; b < ghostFileIds.Count; b += DelBatch)
+                                {
+                                    var chunk = ghostFileIds.Skip(b).Take(DelBatch).ToList();
+                                    string inClause = string.Join(",", chunk);
+
+                                    using var delMeta = conn.CreateCommand();
+                                    delMeta.Transaction = trans;
+                                    delMeta.CommandText = $"DELETE FROM MetadataFts WHERE rowid IN ({inClause});";
+                                    delMeta.ExecuteNonQuery();
+
+                                    using var delFts = conn.CreateCommand();
+                                    delFts.Transaction = trans;
+                                    delFts.CommandText = $"DELETE FROM ContentFts WHERE rowid IN ({inClause});";
+                                    delFts.ExecuteNonQuery();
+
+                                    using var delFiles = conn.CreateCommand();
+                                    delFiles.Transaction = trans;
+                                    delFiles.CommandText = $"DELETE FROM IndexedFiles WHERE FileId IN ({inClause});";
+                                    delFiles.ExecuteNonQuery();
+                                }
+                                deletedCount = ghostFileIds.Count;
+                            }
+
+                            trans.Commit();
+                        }
+                    }
+
+                    // 7. 完了時に IndexedRoots を Complete に更新（中断されていないことの証明 ＆ 世代永続化）
                     lock (_lock)
                     {
                         using var conn = new SqliteConnection(_connectionString);
                         conn.Open();
                         using var cmd = conn.CreateCommand();
                         cmd.CommandText = @"
-                            INSERT OR REPLACE INTO IndexedRoots (RootPath, Status, CoverageComplete, LastCompletedUtcTicks, TotalFiles, ExtractorVersion)
-                            VALUES (@root, 'Complete', @cov, @ticks, @total, @extVer);";
+                            INSERT OR REPLACE INTO IndexedRoots (RootPath, Status, CoverageComplete, LastCompletedUtcTicks, TotalFiles, ExtractorVersion, CurrentGeneration)
+                            VALUES (@root, 'Complete', @cov, @ticks, @total, @extVer, @gen);";
                         cmd.Parameters.AddWithValue("@root", normTarget);
                         cmd.Parameters.AddWithValue("@cov", coverage.AccessDeniedFolders == 0 ? 1 : 0);
                         cmd.Parameters.AddWithValue("@ticks", DateTime.UtcNow.Ticks);
                         cmd.Parameters.AddWithValue("@total", totalDiscovered);
                         cmd.Parameters.AddWithValue("@extVer", CurrentExtractorVersion);
+                        cmd.Parameters.AddWithValue("@gen", currentGen);
                         cmd.ExecuteNonQuery();
                     }
 
@@ -852,11 +1096,7 @@ namespace FolderMorpher.Services
                     }
                     else
                     {
-                        // キーワードあり: 本文 (FTS5) と ファイル名 (LIKE) のハイブリッド検索 (Name OR Content)
-                        // A. FTS5 本文検索クエリ
-                        var ftsClauses = new List<string>();
-                        ftsClauses.Add("f.Status = 1");
-
+                        // キーワードあり: 本文 (ContentFts) と ファイル名 (MetadataFts) のハイブリッド検索
                         var trigramWords = new List<string>();
                         foreach (var kw in keywords)
                         {
@@ -867,53 +1107,44 @@ namespace FolderMorpher.Services
                         }
 
                         hasTrigramMatch = trigramWords.Count > 0;
-                        if (hasTrigramMatch)
-                        {
-                            var matchTerms = trigramWords.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
-                            string ftsMatch = string.Join(" AND ", matchTerms);
-                            ftsClauses.Add("ContentFts MATCH @ftsQuery");
-                            cmd.Parameters.AddWithValue("@ftsQuery", ftsMatch);
-                        }
 
-                        for (int i = 0; i < shortWords.Count; i++)
-                        {
-                            string paramName = $"@shortWord_{i}";
-                            ftsClauses.Add($"(c.Body LIKE {paramName} ESCAPE '\\' OR f.FullPath LIKE {paramName} ESCAPE '\\')");
-                            string escVal = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                            cmd.Parameters.AddWithValue(paramName, escVal);
-                        }
-
-                        for (int i = 0; i < query.ExcludedWords.Count; i++)
-                        {
-                            string pName = $"@ftsEx_{i}";
-                            ftsClauses.Add($"(f.FullPath NOT LIKE {pName} ESCAPE '\\' AND c.Body NOT LIKE {pName} ESCAPE '\\')");
-                            string escEx = "%" + query.ExcludedWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                            cmd.Parameters.AddWithValue(pName, escEx);
-                        }
-
-                        string ftsWhereSql = string.Join(" AND ", ftsClauses) + commonWhereSql;
-                        string snippetExpr = hasTrigramMatch
-                            ? "snippet(ContentFts, 1, '【', '】', '...', 15) AS Snippet"
-                            : "SUBSTR(c.Body, 1, 120) AS Snippet";
-
-                        // B. ファイル名検索クエリ
+                        // A. ファイル名検索クエリ (MetadataFts MATCH または f.Name LIKE)
                         var nameClauses = new List<string>();
-                        // 本文検索明示時 (isExplicitContentSearch == true) は非本文ファイル (.zip, .exe) の混入を防止するため f.Status = 1 のみ
-                        // 通常検索時 (isExplicitContentSearch == false) は .zip, .exe を含む全ファイル f.Status >= 0
                         nameClauses.Add(isExplicitContentSearch ? "f.Status = 1" : "f.Status >= 0");
 
-                        for (int i = 0; i < keywords.Count; i++)
+                        string nameFromSql;
+                        if (hasTrigramMatch)
                         {
-                            string pName = $"@nameKw_{i}";
-                            nameClauses.Add($"f.FullPath LIKE {pName} ESCAPE '\\'");
-                            string escKw = "%" + keywords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                            cmd.Parameters.AddWithValue(pName, escKw);
+                            nameFromSql = "MetadataFts m JOIN IndexedFiles f ON m.rowid = f.FileId";
+                            var matchTerms = trigramWords.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
+                            string metaMatch = string.Join(" AND ", matchTerms);
+                            nameClauses.Add("MetadataFts MATCH @metaQuery");
+                            cmd.Parameters.AddWithValue("@metaQuery", metaMatch);
+
+                            for (int i = 0; i < shortWords.Count; i++)
+                            {
+                                string pName = $"@nameShort_{i}";
+                                nameClauses.Add($"f.Name LIKE {pName} ESCAPE '\\'");
+                                string escShort = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                                cmd.Parameters.AddWithValue(pName, escShort);
+                            }
+                        }
+                        else
+                        {
+                            nameFromSql = "IndexedFiles f";
+                            for (int i = 0; i < shortWords.Count; i++)
+                            {
+                                string pName = $"@nameShort_{i}";
+                                nameClauses.Add($"f.Name LIKE {pName} ESCAPE '\\'");
+                                string escShort = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                                cmd.Parameters.AddWithValue(pName, escShort);
+                            }
                         }
 
                         for (int i = 0; i < query.ExcludedWords.Count; i++)
                         {
                             string pName = $"@nameEx_{i}";
-                            nameClauses.Add($"f.FullPath NOT LIKE {pName} ESCAPE '\\'");
+                            nameClauses.Add($"f.Name NOT LIKE {pName} ESCAPE '\\'");
                             string escEx = "%" + query.ExcludedWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
                             cmd.Parameters.AddWithValue(pName, escEx);
                         }
@@ -922,24 +1153,57 @@ namespace FolderMorpher.Services
 
                         if (isExplicitContentSearch)
                         {
-                            // 本文も検索ON: 本文 (FTS5) と ファイル名 (LIKE) のハイブリッド検索 (Name OR Content)
+                            // B. 本文検索クエリ (ContentFts)
+                            var ftsClauses = new List<string>();
+                            ftsClauses.Add("f.Status = 1");
+
+                            if (hasTrigramMatch)
+                            {
+                                var matchTerms = trigramWords.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
+                                string ftsMatch = string.Join(" AND ", matchTerms);
+                                ftsClauses.Add("ContentFts MATCH @ftsQuery");
+                                cmd.Parameters.AddWithValue("@ftsQuery", ftsMatch);
+                            }
+
+                            for (int i = 0; i < shortWords.Count; i++)
+                            {
+                                string paramName = $"@shortWord_{i}";
+                                ftsClauses.Add($"(c.Body LIKE {paramName} ESCAPE '\\' OR f.Name LIKE {paramName} ESCAPE '\\')");
+                                string escVal = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                                cmd.Parameters.AddWithValue(paramName, escVal);
+                            }
+
+                            for (int i = 0; i < query.ExcludedWords.Count; i++)
+                            {
+                                string pName = $"@ftsEx_{i}";
+                                ftsClauses.Add($"(f.Name NOT LIKE {pName} ESCAPE '\\' AND c.Body NOT LIKE {pName} ESCAPE '\\')");
+                                string escEx = "%" + query.ExcludedWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                                cmd.Parameters.AddWithValue(pName, escEx);
+                            }
+
+                            string ftsWhereSql = string.Join(" AND ", ftsClauses) + commonWhereSql;
+                            string snippetExpr = hasTrigramMatch
+                                ? "snippet(ContentFts, 0, '【', '】', '...', 15) AS Snippet"
+                                : "SUBSTR(c.Body, 1, 120) AS Snippet";
+
+                            // 本文も検索ON: 本文 (ContentFts) と ファイル名 (MetadataFts/f.Name) のハイブリッド UNION
                             sql = $@"
                                 SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, {snippetExpr}
                                 FROM ContentFts c
-                                JOIN IndexedFiles f ON c.FileId = f.FileId
+                                JOIN IndexedFiles f ON c.rowid = f.FileId
                                 WHERE {ftsWhereSql}
                                 UNION
                                 SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet
-                                FROM IndexedFiles f
+                                FROM {nameFromSql}
                                 WHERE {nameWhereSql}
                                 LIMIT 500";
                         }
                         else
                         {
-                            // 本文も検索OFF: ファイル名・パス・属性のみの高速検索（FTS結合コストゼロ）
+                            // 本文も検索OFF: ファイル名・属性のみの超高速検索（MetadataFts / f.Name）
                             sql = $@"
                                 SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet
-                                FROM IndexedFiles f
+                                FROM {nameFromSql}
                                 WHERE {nameWhereSql}
                                 LIMIT 500";
                         }
@@ -1074,6 +1338,7 @@ namespace FolderMorpher.Services
                 conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
+                    DELETE FROM MetadataFts;
                     DELETE FROM ContentFts;
                     DELETE FROM IndexedFiles;
                     DELETE FROM IndexedRoots;

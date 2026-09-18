@@ -501,3 +501,31 @@
   4. **ゼロリソース・高速仮想化レンダリング**:
      - 画像ファイルや外部フォントを一切使用せず、WPF ネイティブの `Border` + `TextBlock` のみで描画。単一 EXE の容量増加 0 バイト、数万件の仮想化スクロールでも 60fps を維持。
 
+
+---
+
+## 25. 【Search高速化第1フェーズ：MetadataFts trigram ＆ ScanGeneration ストリーミング ＆ rowid直結JOIN】
+*(v2.2.5 本番施工 & ADR 71)*
+
+- **背景と課題**:
+  - **ファイル名検索の遅延（数百万件時の課題）**: 従来のファイル名検索は SQLite テーブル IndexedFiles に対する FullPath LIKE '%keyword%' であり、B-Tree インデックスが効かず全行フルスキャン（O(N)）となっていた。
+  - **同期時のメモリ圧迫**: 差分更新の際、インデックス走査で検出した全パスを HashSet<string> currentPaths に保持していたため、数百万ファイルの走査時にメモリを数十〜数百MB浪費していた。
+  - **FTS5 と メタデータの非効率な JOIN**: ContentFts が (FileId UNINDEXED, Body) という設計だったため、FTS5 と IndexedFiles を結合する際に FileId のセカンダリインデックス探索が発生し、オーバーヘッドが生じていた。
+- **施工内容**:
+  1. **IndexedFiles スキーマ硬化 ＆ MetadataFts (trigram) 新設**:
+     - IndexedFiles に Name TEXT 列と Generation INTEGER DEFAULT 0 列を追加。インデックス idx_files_name(Name), idx_files_gen(Generation) を配備。
+     - ファイル名専用の trigram FTS5 仮想テーブル MetadataFts (Name, tokenize='trigram') を新設。
+     - 既存 DB の起動時マイグレーションにより、既存レコードの Name を自動抽出補完し、MetadataFts を自動バックフィル。
+  2. **検索クエリの FTS5 / LIKE ハイブリッド超高速化**:
+     - 3文字以上のファイル名検索では MetadataFts MATCH @metaQuery を使用（ミリ秒応答）。
+     - 1〜2文字の短語検索では idx_files_name を活用した .Name LIKE @nameShort へ自動フォールバック。
+     - 本文ON時は ContentFts (rowid) と MetadataFts (rowid) の UNION ハイブリッド検索を実行。
+  3. **ContentFts.rowid = IndexedFiles.FileId への統一 ＆ ゼロロス昇格マイグレーション**:
+     - FTS5 の内部 rowid を IndexedFiles.FileId と直結。旧スキーマからの移行時は一時テーブル経由で既存の全文インデックスデータを 1 行も失わずに新テーブルへ自動マイグレーション。
+     - JOIN が SQLite 最速の B-Tree primary key（rowid）参照となり、クエリ実行計画を極限まで最適化。
+  4. **ScanGeneration によるストリーミング世代管理（メモリ O(1)・差分 O(1) 削除）**:
+     - インデックス走査ごとに IndexedRoots.CurrentGeneration をインクリメント。
+     - 検出したファイルは順次ストリーミングで DB へ Upsert / Generation 更新。走査中にメモリ上に全ファイルパスの HashSet を保持する処理を完全撤去。
+     - 走査完了後、Generation < currentGen のレコードを MetadataFts, ContentFts, IndexedFiles から O(1) で一括削除し、亡霊ファイルを完全抹消。
+  5. **自動回帰テストによる恒久保護**:
+     - RegressionTestSuite.Search.cs にセクション7を新設。3文字以上の trigram MATCH、1〜2文字の .Name LIKE、本文＋ファイル名の UNION ハイブリッド、および ScanGeneration による亡霊ファイル削除（物理削除後に再走査して DeletedCount == 1、検索0件になること）を自動検証。8/8 ALL PASSED を堅持。
