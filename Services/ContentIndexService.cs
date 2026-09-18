@@ -417,6 +417,50 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
+        /// 指定パスに最も深く合致する IndexedRoot の CurrentGeneration を取得する。
+        /// 合致する Root がない場合は 1 を返す。
+        /// </summary>
+        public int GetGenerationForPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return 1;
+            lock (_lock)
+            {
+                using var conn = new SqliteConnection(_connectionString);
+                conn.Open();
+                return GetGenerationForPathInternal(conn, path);
+            }
+        }
+
+        private static int GetGenerationForPathInternal(SqliteConnection conn, string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return 1;
+            string norm = Path.GetFullPath(path).TrimEnd('\\', '/');
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT RootPath, CurrentGeneration FROM IndexedRoots;";
+
+            string? bestRootPath = null;
+            int bestGen = 1;
+
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                string root = reader.GetString(0).TrimEnd('\\', '/');
+                if (norm.Equals(root, StringComparison.OrdinalIgnoreCase) ||
+                    norm.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (bestRootPath == null || root.Length > bestRootPath.Length)
+                    {
+                        bestRootPath = root;
+                        bestGen = reader.IsDBNull(1) ? 1 : reader.GetInt32(1);
+                    }
+                }
+            }
+
+            return Math.Max(1, bestGen);
+        }
+
+        /// <summary>
         /// 指定パスに対応する最深Rootの最終インデックス完了日時 (UTC) を取得。
         /// インデックスが存在しない、または未完了の場合は null を返す。
         /// </summary>
@@ -504,26 +548,30 @@ namespace FolderMorpher.Services
                     {
                         ct.ThrowIfCancellationRequested();
 
-                        long? fileId = null;
+                        var fileIdsToDelete = new List<long>();
+                        string dirPrefix = path.TrimEnd('\\', '/') + "\\";
+                        string escPrefix = dirPrefix.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+
                         using (var cmdSelect = conn.CreateCommand())
                         {
                             cmdSelect.Transaction = trans;
-                            cmdSelect.CommandText = "SELECT FileId FROM IndexedFiles WHERE FullPath = @path";
+                            cmdSelect.CommandText = "SELECT FileId FROM IndexedFiles WHERE FullPath = @path OR FullPath LIKE @prefix ESCAPE '\\'";
                             cmdSelect.Parameters.AddWithValue("@path", path);
-                            var result = cmdSelect.ExecuteScalar();
-                            if (result != null && result != DBNull.Value)
+                            cmdSelect.Parameters.AddWithValue("@prefix", escPrefix);
+                            using var reader = cmdSelect.ExecuteReader();
+                            while (reader.Read())
                             {
-                                fileId = Convert.ToInt64(result);
+                                fileIdsToDelete.Add(reader.GetInt64(0));
                             }
                         }
 
-                        if (fileId.HasValue)
+                        foreach (var fileId in fileIdsToDelete)
                         {
                             using (var cmdDelMeta = conn.CreateCommand())
                             {
                                 cmdDelMeta.Transaction = trans;
                                 cmdDelMeta.CommandText = "DELETE FROM MetadataFts WHERE rowid = @fileId";
-                                cmdDelMeta.Parameters.AddWithValue("@fileId", fileId.Value);
+                                cmdDelMeta.Parameters.AddWithValue("@fileId", fileId);
                                 cmdDelMeta.ExecuteNonQuery();
                             }
 
@@ -531,7 +579,7 @@ namespace FolderMorpher.Services
                             {
                                 cmdDelFts.Transaction = trans;
                                 cmdDelFts.CommandText = "DELETE FROM ContentFts WHERE rowid = @fileId";
-                                cmdDelFts.Parameters.AddWithValue("@fileId", fileId.Value);
+                                cmdDelFts.Parameters.AddWithValue("@fileId", fileId);
                                 cmdDelFts.ExecuteNonQuery();
                             }
 
@@ -539,7 +587,7 @@ namespace FolderMorpher.Services
                             {
                                 cmdDelFile.Transaction = trans;
                                 cmdDelFile.CommandText = "DELETE FROM IndexedFiles WHERE FileId = @fileId";
-                                cmdDelFile.Parameters.AddWithValue("@fileId", fileId.Value);
+                                cmdDelFile.Parameters.AddWithValue("@fileId", fileId);
                                 cmdDelFile.ExecuteNonQuery();
                             }
 
@@ -1340,7 +1388,7 @@ namespace FolderMorpher.Services
 
                         // A. ファイル名検索クエリ (MetadataFts MATCH または f.Name LIKE)
                         var nameClauses = new List<string>();
-                        nameClauses.Add(isExplicitContentSearch ? "f.Status = 1" : "f.Status >= 0");
+                        nameClauses.Add("f.Status >= 0");
 
                         string nameFromSql;
                         if (hasTrigramMatch)
@@ -1615,9 +1663,9 @@ namespace FolderMorpher.Services
                                 child.Name,
                                 dir,
                                 0,
-                                lastWrite,
-                                lastWrite,
                                 creation,
+                                lastWrite,
+                                lastWrite,
                                 FileAttributes.Directory));
                         }
                         else
@@ -1627,9 +1675,9 @@ namespace FolderMorpher.Services
                                 child.Name,
                                 dir,
                                 child.Size,
-                                lastWrite,
-                                lastWrite,
                                 creation,
+                                lastWrite,
+                                lastWrite,
                                 FileAttributes.Normal));
                         }
                     }
@@ -1717,13 +1765,7 @@ namespace FolderMorpher.Services
 
                         if (targetGen == 1)
                         {
-                            using var cmdGen = conn.CreateCommand();
-                            cmdGen.CommandText = "SELECT MAX(CurrentGeneration) FROM IndexedRoots;";
-                            var maxGenObj = cmdGen.ExecuteScalar();
-                            if (maxGenObj != null && maxGenObj != DBNull.Value)
-                            {
-                                targetGen = Math.Max(1, Convert.ToInt32(maxGenObj));
-                            }
+                            targetGen = GetGenerationForPathInternal(conn, fullPath);
                         }
 
                         using var trans = conn.BeginTransaction();

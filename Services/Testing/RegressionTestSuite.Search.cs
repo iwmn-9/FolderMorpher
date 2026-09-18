@@ -375,12 +375,19 @@ namespace FolderMorpher.Services.Testing
                     if (!exeHits.Any(h => h.FullPath.EndsWith("Installer_Tool.exe")))
                         throw new Exception("ContentIndexService 抜本案検証失敗: 拡張子検索 ext:exe で Installer_Tool.exe がヒットしませんでした。");
 
-                    // 一方で本文検索モード (SearchContentMode = true) では、非本文ファイルはFTS対象外のためヒットしないこと
-                    var qZipContent = SearchQueryParser.Parse("Deploy_Package");
+                    // 一方で本文検索モード (SearchContentMode = true) でも、ファイル名が合致する場合は非本文ファイル（ZIP）がヒットすること (ADR 76)
+                    var qZipName = SearchQueryParser.Parse("Deploy_Package");
+                    qZipName.SearchContentMode = true;
+                    var zipNameHits = await indexService.SearchIndexedAsync(qZipName, tempDir, CancellationToken.None);
+                    if (!zipNameHits.Any(h => h.FullPath.EndsWith("Deploy_Package.zip")))
+                        throw new Exception("ContentIndexService ADR 76検証失敗: ファイル名が合致する非本文ファイル Deploy_Package.zip が本文検索モードで除外されました。");
+
+                    // ファイル名に含まれない本文キーワードで検索した場合は、非本文ファイルはFTS対象外のためヒットしないこと
+                    var qZipContent = SearchQueryParser.Parse("最高機密");
                     qZipContent.SearchContentMode = true;
                     var zipContentHits = await indexService.SearchIndexedAsync(qZipContent, tempDir, CancellationToken.None);
                     if (zipContentHits.Any(h => h.FullPath.EndsWith("Deploy_Package.zip")))
-                        throw new Exception("ContentIndexService 抜本案検証失敗: 本文検索モードで非本文ファイルがFTS結果に混入しました。");
+                        throw new Exception("ContentIndexService 抜本案検証失敗: 本文検索モードで名前不一致の非本文ファイルがFTS結果に混入しました。");
 
                     // H. 最深Root判定検証 (親がCompleteでも子がErrorの場合は中断漏れとしてfalseを返すこと)
                     string subErrorDir = Path.Combine(tempDir, "SubProject_Broken");
@@ -812,6 +819,88 @@ namespace FolderMorpher.Services.Testing
                 finally
                 {
                     try { Directory.Delete(dirTestRoot, true); } catch { }
+                }
+
+                // -------------------------------------------------------------
+                // 5. セクション 10: 本文ON時名前ヒット（Status>=0）＆ 最深Root Generation ＆ Subtree Purge (ADR 76)
+                // -------------------------------------------------------------
+                string s10Root = Path.Combine(Path.GetTempPath(), "FM_S10Test_" + Guid.NewGuid().ToString("N"));
+                string s10Db = Path.Combine(s10Root, "S10Index.db");
+                Directory.CreateDirectory(s10Root);
+
+                try
+                {
+                    // A. 本文ON時でも非本文ファイル（ZIP）やフォルダーが名前一致でヒットすること
+                    string s10SubDir = Path.Combine(s10Root, "契約関連フォルダー");
+                    Directory.CreateDirectory(s10SubDir);
+                    string s10Zip = Path.Combine(s10Root, "契約書_アーカイブ.zip");
+                    File.WriteAllBytes(s10Zip, new byte[] { 0x50, 0x4B, 0x03, 0x04 }); // PK
+                    string s10Txt = Path.Combine(s10SubDir, "契約約款.txt");
+                    File.WriteAllText(s10Txt, "通常テキストの本文です", Encoding.UTF8);
+
+                    var s10Service = new ContentIndexService(s10Db);
+                    await s10Service.IndexFolderAsync(s10Root, null, CancellationToken.None);
+
+                    // 「本文も検索」ON ＋ 「フォルダも含める」ON で「契約」を検索
+                    var qContentOn = SearchQueryParser.Parse("契約");
+                    qContentOn.SearchContentMode = true; // 本文も検索 ON！
+                    qContentOn.IncludeFolders = true;    // フォルダも含める ON！
+
+                    var s10Hits = await s10Service.SearchIndexedAsync(qContentOn, s10Root, CancellationToken.None);
+
+                    bool hitZip = s10Hits.Any(h => h.FullPath.EndsWith("契約書_アーカイブ.zip"));
+                    bool hitDir = s10Hits.Any(h => h.IsDirectory && h.Name == "契約関連フォルダー");
+                    bool hitTxt = s10Hits.Any(h => h.FullPath.EndsWith("契約約款.txt"));
+
+                    if (!hitZip)
+                        throw new Exception("ADR 76 Verification Failed: Non-content file (ZIP) did not hit when SearchContentMode=true.");
+                    if (!hitDir)
+                        throw new Exception("ADR 76 Verification Failed: Directory did not hit when SearchContentMode=true & IncludeFolders=true.");
+                    if (!hitTxt)
+                        throw new Exception("ADR 76 Verification Failed: Text file did not hit when SearchContentMode=true.");
+
+                    // B. 最深Root Generation の検証 (親 Root Gen 50, 子 Root Gen 2)
+                    string parentRoot = Path.Combine(s10Root, "ParentRoot");
+                    string childRoot = Path.Combine(parentRoot, "ChildDept");
+                    Directory.CreateDirectory(childRoot);
+
+                    using (var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={s10Db}"))
+                    {
+                        conn.Open();
+                        using var cmdIns = conn.CreateCommand();
+                        cmdIns.CommandText = @"
+                            INSERT INTO IndexedRoots (RootPath, Status, CoverageComplete, LastCompletedUtcTicks, TotalFiles, ExtractorVersion, CurrentGeneration)
+                            VALUES (@parent, 'Complete', 1, 1000, 10, 1, 50);
+                            INSERT INTO IndexedRoots (RootPath, Status, CoverageComplete, LastCompletedUtcTicks, TotalFiles, ExtractorVersion, CurrentGeneration)
+                            VALUES (@child, 'Complete', 1, 1000, 5, 1, 2);";
+                        cmdIns.Parameters.AddWithValue("@parent", parentRoot);
+                        cmdIns.Parameters.AddWithValue("@child", childRoot);
+                        cmdIns.ExecuteNonQuery();
+                    }
+
+                    string fileInChild = Path.Combine(childRoot, "child_file.txt");
+                    string fileInParent = Path.Combine(parentRoot, "parent_file.txt");
+
+                    int genChild = s10Service.GetGenerationForPath(fileInChild);
+                    int genParent = s10Service.GetGenerationForPath(fileInParent);
+
+                    if (genChild != 2)
+                        throw new Exception($"ADR 76 Verification Failed: Expected child file Gen=2 (deepest root), got {genChild}");
+                    if (genParent != 50)
+                        throw new Exception($"ADR 76 Verification Failed: Expected parent file Gen=50, got {genParent}");
+
+                    // C. Subtree Purge の検証 (ディレクトリを指定してPurgeすると配下全ファイル・フォルダが消去されること)
+                    int purgedCount = await s10Service.PurgeFilesAsync(new[] { s10SubDir });
+                    if (purgedCount < 2) // 契約関連フォルダー (1) + 契約約款.txt (1) = 最低2件
+                        throw new Exception($"ADR 76 Subtree Purge Failed: Expected >=2 items purged for subtree, got {purgedCount}");
+
+                    var hitsAfterPurge = await s10Service.SearchIndexedAsync(qContentOn, s10Root, CancellationToken.None);
+                    if (hitsAfterPurge.Any(h => h.FullPath.Contains("契約関連フォルダー") || h.FullPath.Contains("契約約款.txt")))
+                        throw new Exception("ADR 76 Subtree Purge Failed: Subtree items still exist in indexed results after purge.");
+                }
+                finally
+                {
+                    try { Directory.Delete(s10Root, true); } catch { }
                 }
             }
         }

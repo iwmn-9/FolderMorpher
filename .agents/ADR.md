@@ -630,3 +630,27 @@
      - `MainWindow.Search.cs` の `CalculateRelevanceScore` において、生クエリ文字列ではなく `SearchQueryParser.Parse` 後の純粋な `Keywords` および `ExactPhrases` のみを取り出してスコアリング。構文トークンによる歪みを完全排除。
   6. **自動回帰テストによる恒久保護**:
      - `RegressionTestSuite.Search.cs` に「セクション 9: Folder インデックス検索（IsDirectory）＆ 自前DB除外 ＆ 世代競合防止」を新設。全 8 ドメイン 8/8 ALL PASSED を自動検証・堅持。
+
+---
+
+### ADR 76: 本文ON時名前ヒット意味論統一（Status>=0） ＆ MFT引数順正本化 ＆ 最深Root Generation解決 ＆ Subtree Purge
+*(v2.2.6 本番施工 & ADR 76)*
+
+- **背景と課題**:
+  - **本文検索ON時の名前ヒット消失**: `SearchIndexedAsync` の Metadata name branch において `isExplicitContentSearch` が真の場合に `f.Status = 1` を要求していたため、フォルダーや ZIP・画像・EXE などの非本文ファイル（`Status = 0`）が名前一致しているにもかかわらず除外されていた。直接走査（Live Search）では名前一致なら非本文ファイルもヒットするため、経路による意味論の乖離が生じていた。
+  - **MFT ScannedFileEntry の引数順逆転**: `EnumerateEntriesViaMftAsync` で `ScannedFileEntry` のコンストラクタ引数順が誤って `lastWrite, lastWrite, creation` となっており、CreationTime と LastAccessTime が入れ替わっていた。
+  - **Watcher の Generation が全 Root の MAX に依存**: `UpsertSingleFileAsync` で `SELECT MAX(CurrentGeneration) FROM IndexedRoots` を使用していたため、世代が進んだ Root A（Gen 50）と浅い Root B（Gen 2）が混在する環境で Root B の新着ファイルに Gen 50 が付与され、次回 Full Scan 時のクリーンアップから漏れて亡霊化するリスクがあった。
+  - **ディレクトリ Rename/Delete 時の子孫取り残し**: 単一パスの完全一致 DELETE では、フォルダーが削除・リネームされた際に配下の子孫ファイルが SQLite 上に残存・亡霊化するリスクがあった。
+- **施工内容**:
+  1. **本文ON時名前ヒット意味論統一（`f.Status >= 0`）**:
+     - `MetadataFts` ファイル名検索ブランチの抽出条件を `f.Status >= 0` に固定。
+     - 「本文も検索」ON ＋ 「フォルダも含める」ON でも、フォルダーや ZIP・画像等の非本文ファイルが名前一致で確実にヒットするよう Live Search と意味論を完全統一。Content branch（`ContentFts`）のみ `f.Status = 1` を維持し、非本文ファイルの中身マッチ誤判定を防止。
+  2. **MFT `ScannedFileEntry` 引数順の正本化**:
+     - `EnumerateEntriesViaMftAsync` での引数順を `creation, lastWrite, lastWrite` に修正。MFT 経由でも作成日時・更新日時が正しく格納され、作成日時ソートが意図通りに機能。
+  3. **最深 Root の Generation 解決（`GetGenerationForPath`）**:
+     - `SELECT MAX(CurrentGeneration) FROM IndexedRoots;` を全廃。対象パスに最も深く合致する `IndexedRoots` の `CurrentGeneration` を解決する `GetGenerationForPath` / `GetGenerationForPathInternal` を実装。マルチ Root 運用時の世代混入を完全排除。
+  4. **ディレクトリ Subtree Purge ＆ Watcher Dirty Reconciliation**:
+     - `PurgeFilesAsync` において、`WHERE FullPath = @path OR FullPath LIKE @prefix ESCAPE '\'` により、指定パス自身および配下の全子孫を一括削除する Subtree Purge へ拡張。
+     - `ContentIndexWatcherService` でフォルダーの作成・名前変更を検知した際に `_indexService.MarkRootDirty(path)` を発行し、子孫の再同期（Reconciliation）を担保。
+  5. **自動回帰テストによる恒久保護**:
+     - `RegressionTestSuite.Search.cs` に「セクション 10: 本文ON時名前ヒット（Status>=0）＆ 最深Root Generation ＆ Subtree Purge」を新設。全 8 ドメイン 8/8 ALL PASSED を自動検証・堅持。

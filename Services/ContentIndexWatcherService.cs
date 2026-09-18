@@ -227,6 +227,10 @@ namespace FolderMorpher.Services
                     foreach (var path in toUpsert)
                     {
                         await _indexService.UpsertSingleFileAsync(path);
+                        if (Directory.Exists(path))
+                        {
+                            _indexService.MarkRootDirty(path);
+                        }
                     }
                 }
 

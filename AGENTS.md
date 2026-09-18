@@ -169,7 +169,12 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
     - **Folder インデックス検索（IsDirectory）＆ trigram MATCH**: `IndexedFiles` に `IsDirectory` カラムを追加（自動マイグレーション）。`SafeFileEnumerator` に `includeDirectories: true` を指定してフォルダーも列挙・インデックス登録。`IncludeFolders = true` 時にフォルダーもミリ秒で trigram MATCH 取得可能に。
     - **MFT Fast Track 作成日時正常化**: $FILE_NAME 属性 offset +0x08 から真の作成日時（`CreationTime`）を解析し、`ScannedFileEntry` まで貫通。
     - **Relevance Score 構文ノイズ排除**: `SearchQueryParser.Parse` により `ext:`, `size:`, `>` 等の構文トークンをスコア計算から排除し、純粋なキーワード・フレーズのみでスコアリング。
-    - **回帰テスト（Domain 8 セクション 9）新設**: 自前DB除外、フォルダー検索 ON/OFF、世代競合防止を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+20. **本文ON時名前ヒット意味論統一（Status>=0） ＆ MFT引数順正本化 ＆ 最深Root Generation解決 ＆ Subtree Purge（v2.2.6 / ADR 76）**:
+    - **本文ON時名前ヒット意味論統一（`f.Status >= 0`）**: `SearchIndexedAsync` の Metadata name branch において `f.Status >= 0` を固定。「本文も検索」ON ＋ 「フォルダも含める」ON でも、フォルダーや ZIP・画像・EXE などの非本文ファイルが名前一致で確実にヒットするよう Live Search と意味論を完全統一。Content branch（`ContentFts`）のみ `f.Status = 1` を維持し、非本文ファイルへの誤ヒットを防止。
+    - **MFT `ScannedFileEntry` 引数順正本化**: `EnumerateEntriesViaMftAsync` での引数順を `creation, lastWrite, lastWrite` に修正。CreationTime と LastAccessTime の入れ替わりを解消。
+    - **最深 Root の Generation 解決（`GetGenerationForPath`）**: `SELECT MAX(CurrentGeneration) FROM IndexedRoots;` を全廃。対象パスに最も深く合致する `IndexedRoots` の `CurrentGeneration` を解決する `GetGenerationForPath` を配備。マルチ Root 運用時の別 Root 世代混入を完全排除。
+    - **ディレクトリ Subtree Purge ＆ Watcher Reconciliation**: `PurgeFilesAsync` を `WHERE FullPath = @path OR FullPath LIKE @prefix ESCAPE '\'` に拡張し、フォルダー削除・リネーム時に配下全子孫を一括抹消。Watcher でのフォルダー作成・変更時は親 Root を `MarkRootDirty` して再同期を担保。
+    - **回帰テスト（Domain 8 セクション 10）新設**: 本文ON時名前ヒット、最深Root Generation、Subtree Purge を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
 ---
 
 ---
