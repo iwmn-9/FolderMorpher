@@ -1659,7 +1659,10 @@
                                                 <ColumnDefinition Width="Auto"/> <!-- Size & Date -->
                                             </Grid.ColumnDefinitions>
 
-                                            <TextBlock Text="{Binding TypeIcon}" FontSize="15" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <!-- Tabler File-Type Badge Icon -->
+                                            <Border Width="28" Height="20" Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorderBrush}" BorderThickness="1.2" CornerRadius="4" Margin="0,0,9,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding BadgeText}" FontSize="8.5" FontWeight="ExtraBold" Foreground="{Binding BadgeForeground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
                                             <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                             
                                             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
