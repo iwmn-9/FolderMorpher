@@ -411,9 +411,23 @@
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate DataType="{x:Type models:LargestFileInfo}">
                                                 <StackPanel Orientation="Horizontal" Margin="4,0">
-                                                    <Border Width="26" Height="18" Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorderBrush}" BorderThickness="1.2" CornerRadius="3" Margin="0,0,7,0" VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding BadgeText}" FontSize="8" FontWeight="ExtraBold" Foreground="{Binding BadgeForeground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
+                                                    <Grid Width="22" Height="22" Margin="0,0,7,0" VerticalAlignment="Center">
+                                                        <Viewbox Width="19" Height="21" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <Canvas Width="24" Height="26">
+                                                                <Path Data="M 14 2 L 6 2 A 2 2 0 0 0 4 4 L 4 22 A 2 2 0 0 0 6 24 L 18 24 A 2 2 0 0 0 20 22 L 20 8 L 14 2 Z"
+                                                                      Fill="{Binding BadgeBackground}" Stroke="{Binding BadgeBorderBrush}" StrokeThickness="1.5"
+                                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                                <Path Data="M 14 2 L 14 7 A 1 1 0 0 0 15 8 L 20 8"
+                                                                      Fill="Transparent" Stroke="{Binding BadgeBorderBrush}" StrokeThickness="1.5"
+                                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                            </Canvas>
+                                                        </Viewbox>
+                                                        <Border Background="{Binding BadgeBorderBrush}" CornerRadius="2" Padding="2,0.3"
+                                                                HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,1.5">
+                                                            <TextBlock Text="{Binding BadgeText}" FontSize="6.5" FontWeight="Heavy" Foreground="#FFFFFF"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Border>
+                                                    </Grid>
                                                     <TextBlock Text="{Binding Name}" FontSize="11.5" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
                                             </DataTemplate>
@@ -1360,9 +1374,23 @@
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <StackPanel Orientation="Horizontal" Margin="4,0">
-                                                <Border Width="26" Height="18" Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorderBrush}" BorderThickness="1.2" CornerRadius="3" Margin="0,0,7,0" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding BadgeText}" FontSize="8" FontWeight="ExtraBold" Foreground="{Binding BadgeForeground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
+                                                <Grid Width="22" Height="22" Margin="0,0,7,0" VerticalAlignment="Center">
+                                                    <Viewbox Width="19" Height="21" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <Canvas Width="24" Height="26">
+                                                            <Path Data="M 14 2 L 6 2 A 2 2 0 0 0 4 4 L 4 22 A 2 2 0 0 0 6 24 L 18 24 A 2 2 0 0 0 20 22 L 20 8 L 14 2 Z"
+                                                                  Fill="{Binding BadgeBackground}" Stroke="{Binding BadgeBorderBrush}" StrokeThickness="1.5"
+                                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                            <Path Data="M 14 2 L 14 7 A 1 1 0 0 0 15 8 L 20 8"
+                                                                  Fill="Transparent" Stroke="{Binding BadgeBorderBrush}" StrokeThickness="1.5"
+                                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                    <Border Background="{Binding BadgeBorderBrush}" CornerRadius="2" Padding="2,0.3"
+                                                            HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,1.5">
+                                                        <TextBlock Text="{Binding BadgeText}" FontSize="6.5" FontWeight="Heavy" Foreground="#FFFFFF"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </Grid>
                                                 <TextBlock Text="{Binding FileName}" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
                                         </DataTemplate>
