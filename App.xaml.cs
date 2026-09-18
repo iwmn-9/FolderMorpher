@@ -251,7 +251,54 @@ namespace AstraSize
                             else if (forceLang == "ja") FolderMorpher.Services.LocalizationService.Instance.SetLanguage(FolderMorpher.Services.AppLanguage.Japanese);
 
                             if (selectTab == 1) mw.NavTabSearch.IsChecked = true;
+                            else if (selectTab == 11)
+                            {
+                                mw.NavTabSearch.IsChecked = true;
+                                mw.SearchInputBox.Text = "契約書 2026";
+                                var item1 = new FolderMorpher.Models.SearchResultItem
+                                {
+                                    Name = "2026年度_業務委託基本契約書_改定版.xlsx",
+                                    FullPath = @"\\FileServer\Legal\Contracts\2026\2026年度_業務委託基本契約書_改定版.xlsx",
+                                    DirectoryPath = @"\\FileServer\Legal\Contracts\2026",
+                                    SizeBytes = 2485760,
+                                    LastWriteTime = DateTime.Now.AddDays(-2),
+                                    Extension = ".xlsx",
+                                    ContentSnippet = "…第12条（機密保持条項）：本契約に基づき開示された【最高機密プロジェクト】に関する技術情報および…",
+                                    MatchedReason = "本文一致 (FTS5 trigram MATCH)"
+                                };
+                                var item2 = new FolderMorpher.Models.SearchResultItem
+                                {
+                                    Name = "契約締結伺い_20260401.pdf",
+                                    FullPath = @"\\FileServer\Legal\Approvals\契約締結伺い_20260401.pdf",
+                                    DirectoryPath = @"\\FileServer\Legal\Approvals",
+                                    SizeBytes = 845210,
+                                    LastWriteTime = DateTime.Now.AddDays(-5),
+                                    Extension = ".pdf",
+                                    ContentSnippet = "…上記件名の通り、2026年度の新規契約締結について決裁を仰ぎます。予算措置は別紙参照…",
+                                    MatchedReason = "本文一致 (PDF iFilter)"
+                                };
+                                var item3 = new FolderMorpher.Models.SearchResultItem
+                                {
+                                    Name = "契約一覧台帳_2026.csv",
+                                    FullPath = @"\\FileServer\Legal\Ledgers\契約一覧台帳_2026.csv",
+                                    DirectoryPath = @"\\FileServer\Legal\Ledgers",
+                                    SizeBytes = 124800,
+                                    LastWriteTime = DateTime.Now.AddHours(-14),
+                                    Extension = ".csv",
+                                    MatchedReason = "ファイル名完全一致"
+                                };
+                                mw.SearchResults.Add(item1);
+                                mw.SearchResults.Add(item2);
+                                mw.SearchResults.Add(item3);
+                                mw.SearchListView.SelectedItem = item1;
+
+                                mw.SearchKpiHitCountText.Text = "3 件";
+                                mw.SearchKpiTotalSizeText.Text = "3.3 MB";
+                                mw.SearchKpiElapsedText.Text = "0.04s";
+                                mw.SearchStatusText.Text = "⚡ インデックス高速検索完了: 3 件ヒット (38 ms)";
+                            }
                             else if (selectTab == 2) mw.NavTabLiveAcl.IsChecked = true;
+
                             else if (selectTab == 22)
                             {
                                 mw.NavTabLiveAcl.IsChecked = true;

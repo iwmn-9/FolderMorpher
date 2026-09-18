@@ -525,14 +525,25 @@ namespace AstraSize
             {
                 SearchKpiHitCountText.Text = isJa ? "0 件" : "0 items";
             }
-            if (ColSearchType != null) ColSearchType.Header = Strings.ColSearchTypeHeader;
-            if (ColSearchName != null) ColSearchName.Header = Strings.ColSearchNameHeader;
-            if (ColSearchSize != null) ColSearchSize.Header = Strings.ColSearchSizeHeader;
-            if (ColSearchModified != null) ColSearchModified.Header = Strings.ColSearchModifiedHeader;
-            if (ColSearchExt != null) ColSearchExt.Header = Strings.ColSearchExtHeader;
-            if (ColSearchPathLen != null) ColSearchPathLen.Header = Strings.ColSearchPathLenHeader;
-            if (ColSearchMatch != null) ColSearchMatch.Header = Strings.ColSearchMatchHeader;
-            if (ColSearchFullPath != null) ColSearchFullPath.Header = Strings.ColSearchFullPathHeader;
+            // Search Detail Pane & Toolbar Localizations
+            if (SearchExportExcelBtn != null) SearchExportExcelBtn.Content = isJa ? "📊 Excel" : "📊 Excel";
+            if (SearchExportCsvBtn != null) SearchExportCsvBtn.Content = isJa ? "📑 CSV" : "📑 CSV";
+            if (SearchDetailEmptyText != null) SearchDetailEmptyText.Text = isJa ? "項目を選択すると詳細を表示します" : "Select an item to view details";
+            if (SearchDetailOpenBtn != null) SearchDetailOpenBtn.Content = isJa ? "📄 開く" : "📄 Open";
+            if (SearchDetailExploreBtn != null) SearchDetailExploreBtn.Content = isJa ? "📂 エクスプローラー" : "📂 Explorer";
+            if (SearchDetailPathLabel != null) SearchDetailPathLabel.Text = isJa ? "完全パス:" : "Full Path:";
+            if (SearchDetailCopyPathBtn != null) SearchDetailCopyPathBtn.Content = isJa ? "📋 パスをコピー" : "📋 Copy Path";
+            if (SearchDetailSizeLabel != null) SearchDetailSizeLabel.Text = isJa ? "容量:" : "Size:";
+            if (SearchDetailDateLabel != null) SearchDetailDateLabel.Text = isJa ? "最終更新:" : "Modified:";
+            if (SearchDetailLenLabel != null) SearchDetailLenLabel.Text = isJa ? "文字数:" : "Length:";
+            if (SearchDetailReasonLabel != null) SearchDetailReasonLabel.Text = isJa ? "一致理由:" : "Match Reason:";
+            if (SearchDetailSnippetLabel != null) SearchDetailSnippetLabel.Text = isJa ? "📄 本文抜粋 (マッチ周辺):" : "📄 Content Snippet (Match Context):";
+            if (SearchDetailStudioLabel != null) SearchDetailStudioLabel.Text = isJa ? "スタジオ連携" : "Studio Hub Transfers";
+            if (SearchDetailLiveAclBtn != null) SearchDetailLiveAclBtn.Content = isJa ? "🛡️ Live ACL" : "🛡️ Live ACL";
+            if (SearchDetailSimBtn != null) SearchDetailSimBtn.Content = isJa ? "🚀 移行スタジオ" : "🚀 Simulation";
+            if (SearchDetailAuditBtn != null) SearchDetailAuditBtn.Content = isJa ? "🧹 ファイル監査" : "🧹 Audit";
+            if (SearchDetailLinkFixBtn != null) SearchDetailLinkFixBtn.Content = isJa ? "🔗 リンク修復" : "🔗 LinkFix";
+
 
             // Settings Modal
             SettingsButton.ToolTip = isJa ? "環境設定 / Settings" : "Settings";

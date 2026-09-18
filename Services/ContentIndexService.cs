@@ -262,6 +262,69 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
+        /// アクセス権喪失や削除により参照不能となったファイル群を、SQLite FTS5 インデックスから安全に抹消（パージ）する。
+        /// </summary>
+        public async Task<int> PurgeFilesAsync(IEnumerable<string> fullPaths, CancellationToken ct = default)
+        {
+            var pathList = fullPaths?.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+            if (pathList == null || pathList.Count == 0) return 0;
+
+            return await Task.Run(() =>
+            {
+                int purgedCount = 0;
+                lock (_lock)
+                {
+                    using var conn = new SqliteConnection(_connectionString);
+                    conn.Open();
+                    using var trans = conn.BeginTransaction();
+
+                    foreach (var path in pathList)
+                    {
+                        ct.ThrowIfCancellationRequested();
+
+                        long? fileId = null;
+                        using (var cmdSelect = conn.CreateCommand())
+                        {
+                            cmdSelect.Transaction = trans;
+                            cmdSelect.CommandText = "SELECT FileId FROM IndexedFiles WHERE FullPath = @path";
+                            cmdSelect.Parameters.AddWithValue("@path", path);
+                            var result = cmdSelect.ExecuteScalar();
+                            if (result != null && result != DBNull.Value)
+                            {
+                                fileId = Convert.ToInt64(result);
+                            }
+                        }
+
+                        if (fileId.HasValue)
+                        {
+                            using (var cmdDelFts = conn.CreateCommand())
+                            {
+                                cmdDelFts.Transaction = trans;
+                                cmdDelFts.CommandText = "DELETE FROM ContentFts WHERE FileId = @fileId";
+                                cmdDelFts.Parameters.AddWithValue("@fileId", fileId.Value);
+                                cmdDelFts.ExecuteNonQuery();
+                            }
+
+                            using (var cmdDelFile = conn.CreateCommand())
+                            {
+                                cmdDelFile.Transaction = trans;
+                                cmdDelFile.CommandText = "DELETE FROM IndexedFiles WHERE FileId = @fileId";
+                                cmdDelFile.Parameters.AddWithValue("@fileId", fileId.Value);
+                                cmdDelFile.ExecuteNonQuery();
+                            }
+
+                            purgedCount++;
+                        }
+                    }
+
+                    trans.Commit();
+                }
+                return purgedCount;
+            }, ct);
+        }
+
+
+        /// <summary>
         /// 指定したフォルダーのファイルを走査し、差分更新およびレジューム（前回の続き）でインデックスを作成する。
         /// </summary>
         public async Task<IndexProgressReport> IndexFolderAsync(

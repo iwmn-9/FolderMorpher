@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Security;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,15 +29,18 @@ namespace AstraSize
         private CancellationTokenSource? _searchCts;
         private DispatcherTimer? _searchDebounceTimer;
         private readonly ObservableCollection<SearchResultItem> _searchResults = new();
+        public ObservableCollection<SearchResultItem> SearchResults => _searchResults;
         private List<SearchResultItem> _allSearchResults = new();
+
         private long _searchGeneration = 0;
 
         public void InitializeSearchStudio()
         {
-            if (SearchDataGrid != null)
+            if (SearchListView != null)
             {
-                SearchDataGrid.ItemsSource = _searchResults;
+                SearchListView.ItemsSource = _searchResults;
             }
+
 
             _searchDebounceTimer = new DispatcherTimer
             {
@@ -203,8 +208,10 @@ namespace AstraSize
             }
             _searchResults.Clear();
             _allSearchResults.Clear();
+            UpdateSearchDetailPane(null);
             UpdateSearchKpi(0, 0, TimeSpan.Zero);
         }
+
 
         private void SearchDirectBrowseButton_Click(object sender, RoutedEventArgs e)
         {
@@ -308,6 +315,8 @@ namespace AstraSize
             {
                 _searchResults.Clear();
                 _allSearchResults.Clear();
+                UpdateSearchDetailPane(null);
+
 
                 // ⚡ スマートルーティング判定:
                 // 1. FTS5インデックスが存在するか？
@@ -318,8 +327,11 @@ namespace AstraSize
                     // 📑 ルート1: SQLite FTS5 事前インデックス全文検索 (ミリ秒応答)
                     bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                     var sw = Stopwatch.StartNew();
-                    var hits = await _contentIndex.SearchIndexedAsync(query, targetFolder, ct);
+                    var rawHits = await _contentIndex.SearchIndexedAsync(query, targetFolder, ct);
+                    // 🛡️ JIT 権限照合＆自動自浄: アクセス権のないファイルや消失したファイルを即時除外し、裏でインデックスからパージ
+                    var hits = await VerifyAndFilterPermissionsAsync(rawHits, ct);
                     sw.Stop();
+
 
                     if (currentGen == Volatile.Read(ref _searchGeneration))
                     {
@@ -515,15 +527,81 @@ namespace AstraSize
 
         private SearchResultItem? GetSelectedSearchItem()
         {
-            return SearchDataGrid?.SelectedItem as SearchResultItem;
+            return SearchListView?.SelectedItem as SearchResultItem;
         }
 
-        private void SearchDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        private void SearchListView_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
             SearchContextMenu_Open_Click(sender, e);
         }
 
+        private void SearchListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdateSearchDetailPane(GetSelectedSearchItem());
+        }
+
+        private void UpdateSearchDetailPane(SearchResultItem? item)
+        {
+            if (SearchDetailEmptyPanel == null || SearchDetailContentPanel == null) return;
+
+            if (item == null)
+            {
+                SearchDetailEmptyPanel.Visibility = Visibility.Visible;
+                SearchDetailContentPanel.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            SearchDetailEmptyPanel.Visibility = Visibility.Collapsed;
+            SearchDetailContentPanel.Visibility = Visibility.Visible;
+
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+
+            if (SearchDetailIconText != null) SearchDetailIconText.Text = item.TypeIcon;
+            if (SearchDetailNameText != null) SearchDetailNameText.Text = item.Name;
+            if (SearchDetailExtText != null)
+            {
+                SearchDetailExtText.Text = item.IsDirectory
+                    ? (isJa ? "フォルダー" : "Folder")
+                    : (string.IsNullOrEmpty(item.Extension) ? "-" : item.Extension.ToUpperInvariant());
+            }
+            if (SearchDetailPathTextBox != null) SearchDetailPathTextBox.Text = item.FullPath;
+            if (SearchDetailSizeVal != null) SearchDetailSizeVal.Text = item.FormattedSize;
+            if (SearchDetailDateVal != null) SearchDetailDateVal.Text = item.FormattedDate;
+            if (SearchDetailLenVal != null) SearchDetailLenVal.Text = isJa ? $"{item.PathLength} 文字" : $"{item.PathLength} chars";
+            if (SearchDetailReasonVal != null) SearchDetailReasonVal.Text = string.IsNullOrWhiteSpace(item.MatchedReason) ? "-" : item.MatchedReason;
+
+            if (SearchDetailSnippetPanel != null && SearchDetailSnippetTextBox != null)
+            {
+                if (item.HasSnippet)
+                {
+                    SearchDetailSnippetPanel.Visibility = Visibility.Visible;
+                    SearchDetailSnippetTextBox.Text = item.ContentSnippet;
+                }
+                else
+                {
+                    SearchDetailSnippetPanel.Visibility = Visibility.Collapsed;
+                    SearchDetailSnippetTextBox.Text = string.Empty;
+                }
+            }
+        }
+
+        private void SearchDetailOpenBtn_Click(object sender, RoutedEventArgs e)
+        {
+            SearchContextMenu_Open_Click(sender, e);
+        }
+
+        private void SearchDetailExploreBtn_Click(object sender, RoutedEventArgs e)
+        {
+            SearchContextMenu_Explore_Click(sender, e);
+        }
+
+        private void SearchDetailCopyPathBtn_Click(object sender, RoutedEventArgs e)
+        {
+            SearchContextMenu_CopyPath_Click(sender, e);
+        }
+
         private void SearchContextMenu_Open_Click(object sender, RoutedEventArgs e)
+
         {
             var item = GetSelectedSearchItem();
             if (item != null && (File.Exists(item.FullPath) || Directory.Exists(item.FullPath)))
@@ -813,5 +891,110 @@ namespace AstraSize
         }
 
         #endregion
+
+        #region JIT Permission Verification & Auto-Purge
+
+        /// <summary>
+        /// 検索ヒットしたファイル群の読み取りアクセス権を高速並列検証し、
+        /// アクセス拒否（権限剥奪）やファイル消失を検知した場合は結果から除外して裏でDBから自動パージする。
+        /// </summary>
+        private async Task<List<SearchResultItem>> VerifyAndFilterPermissionsAsync(List<SearchResultItem> items, CancellationToken ct)
+        {
+            if (items == null || items.Count == 0) return items ?? new List<SearchResultItem>();
+
+            var accessibleItems = new ConcurrentBag<SearchResultItem>();
+            var inaccessiblePaths = new ConcurrentBag<string>();
+
+            var po = new ParallelOptions
+            {
+                MaxDegreeOfParallelism = 16,
+                CancellationToken = ct
+            };
+
+            await Parallel.ForEachAsync(items, po, (item, token) =>
+            {
+                token.ThrowIfCancellationRequested();
+                if (CanAccessItem(item))
+                {
+                    accessibleItems.Add(item);
+                }
+                else
+                {
+                    inaccessiblePaths.Add(item.FullPath);
+                }
+                return ValueTask.CompletedTask;
+            });
+
+            // アクセス不能（権限剥奪または削除）なファイルを検知した場合、裏でインデックスから安全にパージ
+            if (!inaccessiblePaths.IsEmpty)
+            {
+                var pathsToPurge = inaccessiblePaths.ToList();
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _contentIndex.PurgeFilesAsync(pathsToPurge, CancellationToken.None);
+                    }
+                    catch
+                    {
+                        // バックグラウンドパージの例外はサイレントに処理
+                    }
+                });
+            }
+
+            // 元の順序を維持して返却
+            var accessibleSet = new HashSet<string>(accessibleItems.Select(x => x.FullPath), StringComparer.OrdinalIgnoreCase);
+            return items.Where(x => accessibleSet.Contains(x.FullPath)).ToList();
+        }
+
+        private static bool CanAccessItem(SearchResultItem item)
+        {
+            try
+            {
+                if (item.IsDirectory)
+                {
+                    return Directory.Exists(item.FullPath);
+                }
+                else
+                {
+                    if (!File.Exists(item.FullPath)) return false;
+                    // 実際に読み取りオープン可能か検証 (共有モードを広く取ってロック中の誤検知を回避)
+                    using var fs = new FileStream(item.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    return true;
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+            catch (SecurityException)
+            {
+                return false;
+            }
+            catch (FileNotFoundException)
+            {
+                return false;
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return false;
+            }
+            catch (PathTooLongException)
+            {
+                return false;
+            }
+            catch (IOException)
+            {
+                // 共有違反（他プロセスが排他ロック中等）はファイル自体は存在し権限もあるためアクセス可能とみなす
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        #endregion
     }
 }
+

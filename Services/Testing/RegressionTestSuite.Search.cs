@@ -521,6 +521,59 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(tempDir, true); } catch { }
                 }
             }
+
+            // -------------------------------------------------------------
+            // 6. ContentIndexService: アクセス権喪失・削除ファイルの自動パージ (PurgeFilesAsync) の検証
+            // -------------------------------------------------------------
+            {
+                string tempDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_PurgeTest_" + Guid.NewGuid().ToString("N"));
+                string customDb = Path.Combine(tempDir, "TestPurge.db");
+                Directory.CreateDirectory(tempDir);
+                try
+                {
+                    var indexService = new ContentIndexService(customDb);
+
+                    // 1. ファイルを2つ作成してインデックス化
+                    string file1 = Path.Combine(tempDir, "Confidential_Doc1.txt");
+                    string file2 = Path.Combine(tempDir, "Confidential_Doc2.txt");
+                    File.WriteAllText(file1, "機密データ内容: プロジェクトAlphaの設計書", Encoding.UTF8);
+                    File.WriteAllText(file2, "機密データ内容: プロジェクトBetaの予算書", Encoding.UTF8);
+
+                    await indexService.IndexFolderAsync(tempDir, null, CancellationToken.None);
+
+                    // 2. 本文検索で2件ヒットすることを確認
+                    var qAll = SearchQueryParser.Parse("機密データ");
+                    qAll.SearchContentMode = true;
+                    var hitsAll = await indexService.SearchIndexedAsync(qAll, tempDir, CancellationToken.None);
+                    if (hitsAll.Count != 2)
+                        throw new Exception($"PurgeFilesAsync test failed: Expected 2 initial hits, got {hitsAll.Count}.");
+
+                    // 3. file1 をパージ (アクセス拒否や削除をシミュレート)
+                    int purged = await indexService.PurgeFilesAsync(new[] { file1 }, CancellationToken.None);
+                    if (purged != 1)
+                        throw new Exception($"PurgeFilesAsync test failed: Expected 1 purged file, got {purged}.");
+
+                    // 4. 再度検索: file1 は完全に除外され、file2 のみ1件ヒットすること
+                    var hitsAfter = await indexService.SearchIndexedAsync(qAll, tempDir, CancellationToken.None);
+                    if (hitsAfter.Count != 1)
+                        throw new Exception($"PurgeFilesAsync test failed: Expected 1 hit after purge, got {hitsAfter.Count}.");
+
+                    if (!string.Equals(hitsAfter[0].FullPath, file2, StringComparison.OrdinalIgnoreCase))
+                        throw new Exception($"PurgeFilesAsync test failed: Remaining hit should be file2, got {hitsAfter[0].FullPath}.");
+
+                    // 5. 本文OFF (ファイル名検索) でも file1 が IndexedFiles から完全抹消されていること
+                    var qName = SearchQueryParser.Parse("Confidential_Doc1");
+                    qName.SearchContentMode = false;
+                    var hitsName = await indexService.SearchIndexedAsync(qName, tempDir, CancellationToken.None);
+                    if (hitsName.Count != 0)
+                        throw new Exception("PurgeFilesAsync test failed: Purged file was still present in IndexedFiles table.");
+                }
+                finally
+                {
+                    try { Directory.Delete(tempDir, true); } catch { }
+                }
+            }
         }
     }
 }
+
