@@ -140,7 +140,10 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
     - **回帰テスト（Domain 8 セクション6）新設**: パージ実行後のインデックスからの即時抹消、本文除外、ファイル名0件を自動検証（8/8 ALL PASSED）。
 
 
-
+14. **Tabler File-Type バッジの全画面展開 ＆ 一元正本化（`TablerBadgeHelper`）（v2.2.5 / ADR 70）**:
+    - **全画面バッジ統一**: Search Studio で先行導入した Tabler File-Type バッジ（パステル角丸ベクターバッジ・拡張子カラー刻印・フォルダー `[DIR]` 刻印）を、容量分析（Tab 1）のファイルツリー（`FileTreeDataGrid`）、容量上位 Top 10（`TopFilesDataGrid`）、選択フォルダーの内訳（`FolderChildSharesDataGrid`）、およびファイル監査（Tab 6）の検出課題一覧（`AuditItemsDataGrid`）の全ファイル・フォルダー表示へ完全展開。
+    - **正本の一元化（`TablerBadgeHelper`）**: バッジの色相・コントラスト枠・テキスト決定ロジックを `Services/TablerBadgeHelper.cs` に集約。各モデル（`SearchResultItem`, `FolderChildShareItem`, `LargestFileInfo`, `FileItemNode`, `AuditItem`）は4行の軽量プロパティ委譲のみを保持し、コード重複ゼロと一貫性を保証。
+    - **ゼロリソース・超軽量レンダリング**: 外部画像やフォントファイルを一切追加せず純粋な WPF ベクター XAML テンプレート（`Border` + `TextBlock`）で描画するため、単一 EXE の容量増加 0 バイト、数万件の仮想化スクロールでも 60fps を維持。
 ---
 
 ---

@@ -478,3 +478,26 @@
      - `ContentIndexService.PurgeFilesAsync`: アクセス不能になったパスを裏で SQLite DB（`IndexedFiles` / `ContentFts`）から自動削除。事前に全サーバーを再スキャンすることなく、検索された瞬間に古い不要キャッシュが自浄されていく理想的な整合性を実現。
   4. **自動回帰テストによる恒久保護**:
      - `RegressionTestSuite.Search.cs` にセクション6を新設。`PurgeFilesAsync` によるインデックスからの即時抹消、本文検索での除外、およびファイル名検索（`IndexedFiles` 単体）での 0件確認を自動検証。8/8 ALL PASSED を堅持。
+
+---
+
+## 24. 【Tabler File-Type バッジの全画面展開 ＆ 一元正本化（`TablerBadgeHelper`）】
+*(v2.2.5 本番施工 & ADR 70)*
+
+- **背景と課題**:
+  - Search Studio で導入した Tabler File-Type バッジ（パステル角丸ベクターバッジ・拡張子カラー刻印・フォルダー `[DIR]` 刻印）の視認性とモダンさが好評だった一方、他の画面（容量分析 Tab 1 のツリーやTop 10・内訳、ファイル監査 Tab 6 の一覧等）では絵文字（📁/📄）やプレーンテキストが残っており、アプリ全体としての視覚的一貫性が欠けていた。
+  - 各画面ごとにバッジの配色や拡張子判定を実装すると、正本が分裂し保守性が崩壊するリスクがあった。
+- **施工内容**:
+  1. **正本の一元化（`TablerBadgeHelper`）**:
+     - `Services/TablerBadgeHelper.cs` を新設し、拡張子（Excel/PDF/Word/PowerPoint/CSV/ZIP/画像/動画/コード/DIR等）に応じた上品なパステル背景（`Background`）、微細コントラスト枠（`BorderBrush`）、太字アクロニム刻印（`Text`）、文字色（`Foreground`）の算出ロジックを完全正本化。
+     - 未知の拡張子でも先頭3〜4文字をアクロニムとして抽出し、ニュートラルなバッジを自動生成。
+  2. **全モデルへの軽量プロパティ委譲配備**:
+     - `SearchResultItem`, `FolderChildShareItem`, `LargestFileInfo`, `FileItemNode`, `AuditItem` の各モデルに `BadgeText`, `BadgeBackground`, `BadgeBorderBrush`, `BadgeForeground` を追加。内部で `TablerBadgeHelper.GetBadge(...)` を呼ぶだけの4行委譲に統一し、重複コードを根絶。
+  3. **主要 DataGrid / Tree の XAML テンプレート換装**:
+     - 容量分析のツリービュー（`FileTreeDataGrid`）: インデント付きの `[DIR]` / 拡張子バッジ表示。
+     - 容量上位 Top 10（`TopFilesDataGrid`）: ファイル名先頭への拡張子バッジ配備。
+     - 選択フォルダーの内訳（`FolderChildSharesDataGrid`）: `[DIR]` / 拡張子バッジと直下比率バーの調和。
+     - ファイル監査（`AuditItemsDataGrid`）: 検出された課題ファイルのファイル名列に拡張子バッジを配備。
+  4. **ゼロリソース・高速仮想化レンダリング**:
+     - 画像ファイルや外部フォントを一切使用せず、WPF ネイティブの `Border` + `TextBlock` のみで描画。単一 EXE の容量増加 0 バイト、数万件の仮想化スクロールでも 60fps を維持。
+

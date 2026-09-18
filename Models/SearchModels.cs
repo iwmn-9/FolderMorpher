@@ -165,98 +165,11 @@ namespace FolderMorpher.Models
 
         #region Tabler File-Type Badge Properties
 
-        public string BadgeText
-        {
-            get
-            {
-                if (IsDirectory) return "DIR";
-                var ext = (Extension ?? string.Empty).TrimStart('.').ToUpperInvariant();
-                if (string.IsNullOrEmpty(ext)) return "FILE";
-                if (ext.Length > 4) return ext.Substring(0, 4);
-                return ext;
-            }
-        }
-
-        public string BadgeBackground
-        {
-            get
-            {
-                if (IsDirectory) return "#EFF6FF"; // Blue-50
-                var ext = (Extension ?? string.Empty).ToLowerInvariant();
-                return ext switch
-                {
-                    ".xlsx" or ".xls" or ".xlsm" => "#ECFDF5",             // Green-50
-                    ".csv" or ".tsv" => "#F0FDF4",                         // Emerald-50
-                    ".pdf" => "#FEF2F2",                                   // Red-50
-                    ".docx" or ".doc" => "#EFF6FF",                        // Blue-50
-                    ".pptx" or ".ppt" => "#FFF7ED",                        // Orange-50
-                    ".txt" or ".log" or ".md" => "#F8FAFC",                // Slate-50
-                    ".zip" or ".7z" or ".rar" or ".tar" or ".gz" => "#FEF3C7", // Amber-50
-                    ".jpg" or ".jpeg" or ".png" or ".gif" or ".bmp" or ".webp" or ".svg" => "#F5F3FF", // Purple-50
-                    ".mp4" or ".mov" or ".avi" or ".mkv" or ".wmv" => "#ECFEFF", // Cyan-50
-                    ".mp3" or ".wav" or ".m4a" or ".flac" => "#FDF2F8",    // Pink-50
-                    ".exe" or ".msi" => "#F1F5F9",                         // Slate-100
-                    ".ps1" or ".bat" or ".cmd" or ".sh" => "#F0FDF4",      // Emerald-50
-                    ".sql" or ".db" or ".sqlite" => "#EEF2FF",             // Indigo-50
-                    ".json" or ".xml" or ".yaml" or ".yml" => "#F0FDFA",   // Teal-50
-                    _ => "#F8FAFC"
-                };
-            }
-        }
-
-        public string BadgeBorderBrush
-        {
-            get
-            {
-                if (IsDirectory) return "#60A5FA"; // Blue-400
-                var ext = (Extension ?? string.Empty).ToLowerInvariant();
-                return ext switch
-                {
-                    ".xlsx" or ".xls" or ".xlsm" => "#10B981",             // Green-500
-                    ".csv" or ".tsv" => "#34D399",                         // Emerald-400
-                    ".pdf" => "#EF4444",                                   // Red-500
-                    ".docx" or ".doc" => "#3B82F6",                        // Blue-500
-                    ".pptx" or ".ppt" => "#F97316",                        // Orange-500
-                    ".txt" or ".log" or ".md" => "#94A3B8",                // Slate-400
-                    ".zip" or ".7z" or ".rar" or ".tar" or ".gz" => "#F59E0B", // Amber-500
-                    ".jpg" or ".jpeg" or ".png" or ".gif" or ".bmp" or ".webp" or ".svg" => "#8B5CF6", // Purple-500
-                    ".mp4" or ".mov" or ".avi" or ".mkv" or ".wmv" => "#06B6D4", // Cyan-500
-                    ".mp3" or ".wav" or ".m4a" or ".flac" => "#EC4899",    // Pink-500
-                    ".exe" or ".msi" => "#64748B",                         // Slate-500
-                    ".ps1" or ".bat" or ".cmd" or ".sh" => "#10B981",      // Emerald-500
-                    ".sql" or ".db" or ".sqlite" => "#6366F1",              // Indigo-500
-                    ".json" or ".xml" or ".yaml" or ".yml" => "#14B8A6",    // Teal-500
-                    _ => "#CBD5E1"                                         // Slate-300
-                };
-            }
-        }
-
-        public string BadgeForeground
-        {
-            get
-            {
-                if (IsDirectory) return "#2563EB"; // Blue-600
-                var ext = (Extension ?? string.Empty).ToLowerInvariant();
-                return ext switch
-                {
-                    ".xlsx" or ".xls" or ".xlsm" => "#059669",             // Green-600
-                    ".csv" or ".tsv" => "#059669",                         // Emerald-600
-                    ".pdf" => "#DC2626",                                   // Red-600
-                    ".docx" or ".doc" => "#2563EB",                        // Blue-600
-                    ".pptx" or ".ppt" => "#EA580C",                        // Orange-600
-                    ".txt" or ".log" or ".md" => "#475569",                // Slate-600
-                    ".zip" or ".7z" or ".rar" or ".tar" or ".gz" => "#D97706", // Amber-600
-                    ".jpg" or ".jpeg" or ".png" or ".gif" or ".bmp" or ".webp" or ".svg" => "#7C3AED", // Purple-600
-                    ".mp4" or ".mov" or ".avi" or ".mkv" or ".wmv" => "#0891B2", // Cyan-600
-                    ".mp3" or ".wav" or ".m4a" or ".flac" => "#DB2777",    // Pink-600
-                    ".exe" or ".msi" => "#334155",                         // Slate-700
-                    ".ps1" or ".bat" or ".cmd" or ".sh" => "#059669",      // Emerald-600
-                    ".sql" or ".db" or ".sqlite" => "#4F46E5",             // Indigo-600
-                    ".json" or ".xml" or ".yaml" or ".yml" => "#0D9488",   // Teal-600
-                    _ => "#475569"                                         // Slate-600
-                };
-            }
-        }
+        private TablerBadgeInfo BadgeInfo => TablerBadgeHelper.GetBadge(Extension, IsDirectory);
+        public string BadgeText => BadgeInfo.Text;
+        public string BadgeBackground => BadgeInfo.Background;
+        public string BadgeBorderBrush => BadgeInfo.BorderBrush;
+        public string BadgeForeground => BadgeInfo.Foreground;
 
         #endregion
 

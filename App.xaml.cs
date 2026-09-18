@@ -308,6 +308,160 @@ namespace AstraSize
                             else if (selectTab == 4) mw.NavTabLinkFix.IsChecked = true;
                             else if (selectTab == 5) mw.NavTabAudit.IsChecked = true;
                             else if (selectTab == 6) mw.NavTabMedia.IsChecked = true;
+                            else if (selectTab == 100)
+                            {
+                                mw.NavTabStorage.IsChecked = true;
+                                var rootNode = new AstraSize.Models.FileItemNode
+                                {
+                                    Name = "D:\\SharedData",
+                                    FullPath = "D:\\SharedData",
+                                    Size = 120L * 1024 * 1024 * 1024,
+                                    FileCount = 4500,
+                                    FolderCount = 120,
+                                    IsDirectory = true,
+                                    Level = 0,
+                                    LastModified = DateTime.Now.AddDays(-1)
+                                };
+                                var child1 = new AstraSize.Models.FileItemNode
+                                {
+                                    Name = "01_プロジェクト管理",
+                                    FullPath = "D:\\SharedData\\01_プロジェクト管理",
+                                    Size = 45L * 1024 * 1024 * 1024,
+                                    FileCount = 1200,
+                                    FolderCount = 30,
+                                    IsDirectory = true,
+                                    Level = 1,
+                                    LastModified = DateTime.Now.AddDays(-2)
+                                };
+                                var child2 = new AstraSize.Models.FileItemNode
+                                {
+                                    Name = "プロジェクト計画書_2026.xlsx",
+                                    FullPath = "D:\\SharedData\\01_プロジェクト管理\\プロジェクト計画書_2026.xlsx",
+                                    Size = 350L * 1024 * 1024,
+                                    FileCount = 1,
+                                    FolderCount = 0,
+                                    IsDirectory = false,
+                                    Level = 2,
+                                    LastModified = DateTime.Now.AddDays(-3)
+                                };
+                                var child3 = new AstraSize.Models.FileItemNode
+                                {
+                                    Name = "システム要件定義書.docx",
+                                    FullPath = "D:\\SharedData\\01_プロジェクト管理\\システム要件定義書.docx",
+                                    Size = 120L * 1024 * 1024,
+                                    FileCount = 1,
+                                    FolderCount = 0,
+                                    IsDirectory = false,
+                                    Level = 2,
+                                    LastModified = DateTime.Now.AddDays(-5)
+                                };
+                                var child4 = new AstraSize.Models.FileItemNode
+                                {
+                                    Name = "アーキテクチャ図_v2.pdf",
+                                    FullPath = "D:\\SharedData\\01_プロジェクト管理\\アーキテクチャ図_v2.pdf",
+                                    Size = 85L * 1024 * 1024,
+                                    FileCount = 1,
+                                    FolderCount = 0,
+                                    IsDirectory = false,
+                                    Level = 2,
+                                    LastModified = DateTime.Now.AddDays(-10)
+                                };
+                                var child5 = new AstraSize.Models.FileItemNode
+                                {
+                                    Name = "バックアップアーカイブ.zip",
+                                    FullPath = "D:\\SharedData\\01_プロジェクト管理\\バックアップアーカイブ.zip",
+                                    Size = 2500L * 1024 * 1024,
+                                    FileCount = 1,
+                                    FolderCount = 0,
+                                    IsDirectory = false,
+                                    Level = 2,
+                                    LastModified = DateTime.Now.AddDays(-20)
+                                };
+                                rootNode.Children.Add(child1);
+                                child1.Children.Add(child2);
+                                child1.Children.Add(child3);
+                                child1.Children.Add(child4);
+                                child1.Children.Add(child5);
+
+                                var flatList = new List<AstraSize.Models.FileItemNode> { rootNode, child1, child2, child3, child4, child5 };
+                                mw.FileTreeDataGrid.ItemsSource = flatList;
+
+                                var shares = new List<AstraSize.Models.FolderChildShareItem>
+                                {
+                                    new AstraSize.Models.FolderChildShareItem { Name = "01_プロジェクト管理", FullPath = child1.FullPath, Size = child1.Size, IsDirectory = true, RelativeSharePercentage = 37.5 },
+                                    new AstraSize.Models.FolderChildShareItem { Name = "バックアップアーカイブ.zip", FullPath = child5.FullPath, Size = child5.Size, IsDirectory = false, RelativeSharePercentage = 2.1 },
+                                    new AstraSize.Models.FolderChildShareItem { Name = "プロジェクト計画書_2026.xlsx", FullPath = child2.FullPath, Size = child2.Size, IsDirectory = false, RelativeSharePercentage = 0.3 }
+                                };
+                                mw.FolderChildSharesDataGrid.ItemsSource = shares;
+
+                                var topFiles = new List<AstraSize.Models.LargestFileInfo>
+                                {
+                                    new AstraSize.Models.LargestFileInfo { Name = "バックアップアーカイブ.zip", FullPath = child5.FullPath, Size = child5.Size, Extension = ".zip" },
+                                    new AstraSize.Models.LargestFileInfo { Name = "プロジェクト計画書_2026.xlsx", FullPath = child2.FullPath, Size = child2.Size, Extension = ".xlsx" },
+                                    new AstraSize.Models.LargestFileInfo { Name = "システム要件定義書.docx", FullPath = child3.FullPath, Size = child3.Size, Extension = ".docx" }
+                                };
+                                mw.TopFilesDataGrid.ItemsSource = topFiles;
+                                mw.PathTextBox.Text = @"D:\SharedData";
+                                mw.ScannedSizeTextBlock.Text = "120.00 GB";
+                                mw.TotalFilesTextBlock.Text = "4,500 ファイル / 120 フォルダ";
+                            }
+                            else if (selectTab == 105)
+                            {
+                                mw.NavTabAudit.IsChecked = true;
+                                var auditItems = new List<FolderMorpher.Models.AuditItem>
+                                {
+                                    new FolderMorpher.Models.AuditItem
+                                    {
+                                        IssueType = FolderMorpher.Models.AuditIssueType.Duplicate,
+                                        FileName = "2026年度予算案_最終版.xlsx",
+                                        FullPath = @"D:\SharedData\Finance\2026年度予算案_最終版.xlsx",
+                                        DirectoryPath = @"D:\SharedData\Finance",
+                                        Size = 4520000,
+                                        LastWriteTime = DateTime.Now.AddDays(-10),
+                                        DuplicateGroupId = "GRP-001",
+                                        IsOriginalCandidate = true,
+                                        Detail = "原本候補 (SHA256照合済)"
+                                    },
+                                    new FolderMorpher.Models.AuditItem
+                                    {
+                                        IssueType = FolderMorpher.Models.AuditIssueType.Duplicate,
+                                        FileName = "2026年度予算案_コピー.xlsx",
+                                        FullPath = @"D:\SharedData\Backup\2026年度予算案_コピー.xlsx",
+                                        DirectoryPath = @"D:\SharedData\Backup",
+                                        Size = 4520000,
+                                        LastWriteTime = DateTime.Now.AddDays(-12),
+                                        DuplicateGroupId = "GRP-001",
+                                        IsOriginalCandidate = false,
+                                        Detail = "重複ファイル (削除可能)"
+                                    },
+                                    new FolderMorpher.Models.AuditItem
+                                    {
+                                        IssueType = FolderMorpher.Models.AuditIssueType.Dormant,
+                                        FileName = "旧基幹システム設計書_v1.0.pdf",
+                                        FullPath = @"D:\SharedData\Archive\旧基幹システム設計書_v1.0.pdf",
+                                        DirectoryPath = @"D:\SharedData\Archive",
+                                        Size = 18450000,
+                                        LastWriteTime = DateTime.Now.AddYears(-4),
+                                        Detail = "最終アクセス: 4年前 (未参照)"
+                                    },
+                                    new FolderMorpher.Models.AuditItem
+                                    {
+                                        IssueType = FolderMorpher.Models.AuditIssueType.PathTooLong,
+                                        FileName = "long_path_architecture_specification_document_final_revised.docx",
+                                        FullPath = @"D:\SharedData\Very\Long\Path\Deeply\Nested\Directory\Structure\For\Enterprise\Storage\Management\long_path_architecture_specification_document_final_revised.docx",
+                                        DirectoryPath = @"D:\SharedData\Very\Long\Path\Deeply\Nested\Directory\Structure\For\Enterprise\Storage\Management",
+                                        Size = 820000,
+                                        LastWriteTime = DateTime.Now.AddDays(-40),
+                                        Detail = "パス長: 254文字 (危険域 240字超)"
+                                    }
+                                };
+                                mw.AuditItemsDataGrid.ItemsSource = auditItems;
+                                mw.AuditPathTextBox.Text = @"D:\SharedData";
+                                mw.AuditKpiTotalFiles.Text = "12,450 件";
+                                mw.AuditKpiDupWasted.Text = "4.5 MB";
+                                mw.AuditKpiDormantSize.Text = "18.4 MB";
+                                mw.AuditKpiPathLimits.Text = "1 件";
+                            }
                             else if (selectTab == 98)
                             {
                                 var testSnapshots = new List<AstraSize.Models.ScanSnapshot>

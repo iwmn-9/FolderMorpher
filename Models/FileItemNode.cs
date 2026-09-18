@@ -89,6 +89,12 @@ namespace AstraSize.Models
 
         public string IconGlyph => IsDirectory ? "📁" : "📄";
 
+        private TablerBadgeInfo BadgeInfo => TablerBadgeHelper.GetBadge(FullPath, IsDirectory);
+        public string BadgeText => BadgeInfo.Text;
+        public string BadgeBackground => BadgeInfo.Background;
+        public string BadgeBorderBrush => BadgeInfo.BorderBrush;
+        public string BadgeForeground => BadgeInfo.Foreground;
+
         public FontWeight FontWeight => IsDirectory ? FontWeights.Bold : FontWeights.Normal;
 
         public Thickness IndentMargin
@@ -255,6 +261,12 @@ namespace AstraSize.Models
         public string FormattedSize => FileItemNode.FormatBytes(Size);
         public bool IsDirectory { get; set; }
         public string IconGlyph => IsDirectory ? "📁" : "📄";
+
+        private TablerBadgeInfo BadgeInfo => TablerBadgeHelper.GetBadge(FullPath, IsDirectory);
+        public string BadgeText => BadgeInfo.Text;
+        public string BadgeBackground => BadgeInfo.Background;
+        public string BadgeBorderBrush => BadgeInfo.BorderBrush;
+        public string BadgeForeground => BadgeInfo.Foreground;
         public double RelativeSharePercentage { get; set; }
         public string RelativeShareFormatted => $"{RelativeSharePercentage:F1}%";
         public int FileCount { get; set; }

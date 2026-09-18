@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FolderMorpher.Services;
 
 namespace AstraSize.Models
 {
@@ -11,6 +12,12 @@ namespace AstraSize.Models
         public string FormattedSize => FileItemNode.FormatBytes(Size);
         public string Extension { get; set; } = string.Empty;
         public string Category { get; set; } = string.Empty;
+
+        private TablerBadgeInfo BadgeInfo => TablerBadgeHelper.GetBadge(string.IsNullOrEmpty(Extension) ? FullPath : Extension, false);
+        public string BadgeText => BadgeInfo.Text;
+        public string BadgeBackground => BadgeInfo.Background;
+        public string BadgeBorderBrush => BadgeInfo.BorderBrush;
+        public string BadgeForeground => BadgeInfo.Foreground;
     }
 
     public class ExtensionStat

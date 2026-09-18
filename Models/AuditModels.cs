@@ -42,6 +42,12 @@ namespace FolderMorpher.Models
         public string DirectoryPath { get; set; } = string.Empty;
         public long Size { get; set; }
         public string SizeFormatted => FormatHelper.FormatBytes(Size, 2);
+
+        private TablerBadgeInfo BadgeInfo => TablerBadgeHelper.GetBadge(FileName, false);
+        public string BadgeText => BadgeInfo.Text;
+        public string BadgeBackground => BadgeInfo.Background;
+        public string BadgeBorderBrush => BadgeInfo.BorderBrush;
+        public string BadgeForeground => BadgeInfo.Foreground;
         public DateTime LastWriteTime { get; set; }
         public DateTime LastAccessTime { get; set; }
         public AuditIssueType IssueType { get; set; }
