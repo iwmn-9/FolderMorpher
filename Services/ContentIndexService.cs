@@ -97,6 +97,7 @@ namespace FolderMorpher.Services
                         DirectoryPath TEXT NOT NULL,
                         SizeBytes INTEGER NOT NULL,
                         LastWriteTimeUtcTicks INTEGER NOT NULL,
+                        CreationTimeUtcTicks INTEGER NOT NULL DEFAULT 0,
                         Status INTEGER NOT NULL, -- 0: Pending, 1: Indexed, 2: Failed
                         IndexedAtUtcTicks INTEGER,
                         ExtractorVersion INTEGER NOT NULL DEFAULT 1,
@@ -124,7 +125,7 @@ namespace FolderMorpher.Services
                 ";
                 cmd.ExecuteNonQuery();
 
-                // マイグレーション: ExtractorVersion / Name / Generation カラム追加 (既存DB対応)
+                // マイグレーション: ExtractorVersion / Name / Generation / CreationTimeUtcTicks カラム追加 (既存DB対応)
                 try
                 {
                     using var alterCmd = conn.CreateCommand();
@@ -145,6 +146,14 @@ namespace FolderMorpher.Services
                 {
                     using var alterCmd = conn.CreateCommand();
                     alterCmd.CommandText = "ALTER TABLE IndexedFiles ADD COLUMN Generation INTEGER NOT NULL DEFAULT 0;";
+                    alterCmd.ExecuteNonQuery();
+                }
+                catch { }
+
+                try
+                {
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = "ALTER TABLE IndexedFiles ADD COLUMN CreationTimeUtcTicks INTEGER NOT NULL DEFAULT 0;";
                     alterCmd.ExecuteNonQuery();
                 }
                 catch { }
@@ -618,6 +627,7 @@ namespace FolderMorpher.Services
                             foreach (var entry in metaToInsert)
                             {
                                 long currentTicks = entry.LastWriteTime.ToUniversalTime().Ticks;
+                                long creationTicks = entry.CreationTime.ToUniversalTime().Ticks;
                                 long fileId;
                                 if (existingMap.TryGetValue(entry.FullPath, out var meta))
                                 {
@@ -626,12 +636,13 @@ namespace FolderMorpher.Services
                                     cmdUpd.Transaction = trans;
                                     cmdUpd.CommandText = @"
                                         UPDATE IndexedFiles 
-                                        SET Name = @name, SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, Status = 0, 
+                                        SET Name = @name, SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, CreationTimeUtcTicks = @cTicks, Status = 0, 
                                             IndexedAtUtcTicks = @now, ExtractorVersion = @ver, Generation = @gen
                                         WHERE FileId = @fileId";
                                     cmdUpd.Parameters.AddWithValue("@name", entry.Name);
                                     cmdUpd.Parameters.AddWithValue("@size", entry.Length);
                                     cmdUpd.Parameters.AddWithValue("@ticks", currentTicks);
+                                    cmdUpd.Parameters.AddWithValue("@cTicks", creationTicks);
                                     cmdUpd.Parameters.AddWithValue("@now", nowTicks);
                                     cmdUpd.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
                                     cmdUpd.Parameters.AddWithValue("@gen", currentGen);
@@ -643,14 +654,15 @@ namespace FolderMorpher.Services
                                     using var cmdIns = conn.CreateCommand();
                                     cmdIns.Transaction = trans;
                                     cmdIns.CommandText = @"
-                                        INSERT INTO IndexedFiles (FullPath, Name, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion, Generation)
-                                        VALUES (@path, @name, @dir, @size, @ticks, 0, @now, @ver, @gen);
+                                        INSERT INTO IndexedFiles (FullPath, Name, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, CreationTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion, Generation)
+                                        VALUES (@path, @name, @dir, @size, @ticks, @cTicks, 0, @now, @ver, @gen);
                                         SELECT last_insert_rowid();";
                                     cmdIns.Parameters.AddWithValue("@path", entry.FullPath);
                                     cmdIns.Parameters.AddWithValue("@name", entry.Name);
                                     cmdIns.Parameters.AddWithValue("@dir", entry.DirectoryPath);
                                     cmdIns.Parameters.AddWithValue("@size", entry.Length);
                                     cmdIns.Parameters.AddWithValue("@ticks", currentTicks);
+                                    cmdIns.Parameters.AddWithValue("@cTicks", creationTicks);
                                     cmdIns.Parameters.AddWithValue("@now", nowTicks);
                                     cmdIns.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
                                     cmdIns.Parameters.AddWithValue("@gen", currentGen);
@@ -777,6 +789,7 @@ namespace FolderMorpher.Services
                             {
                                 var entry = item.Entry;
                                 long currentTicks = entry.LastWriteTime.ToUniversalTime().Ticks;
+                                long creationTicks = entry.CreationTime.ToUniversalTime().Ticks;
                                 long nowTicks = DateTime.UtcNow.Ticks;
 
                                 long fileId;
@@ -787,12 +800,13 @@ namespace FolderMorpher.Services
                                     cmdUpd.Transaction = trans;
                                     cmdUpd.CommandText = @"
                                         UPDATE IndexedFiles 
-                                        SET Name = @name, SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, Status = @status, 
+                                        SET Name = @name, SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, CreationTimeUtcTicks = @cTicks, Status = @status, 
                                             IndexedAtUtcTicks = @now, ExtractorVersion = @ver, Generation = @gen
                                         WHERE FileId = @fileId";
                                     cmdUpd.Parameters.AddWithValue("@name", entry.Name);
                                     cmdUpd.Parameters.AddWithValue("@size", entry.Length);
                                     cmdUpd.Parameters.AddWithValue("@ticks", currentTicks);
+                                    cmdUpd.Parameters.AddWithValue("@cTicks", creationTicks);
                                     cmdUpd.Parameters.AddWithValue("@status", item.Success ? 1 : 2);
                                     cmdUpd.Parameters.AddWithValue("@now", nowTicks);
                                     cmdUpd.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
@@ -812,14 +826,15 @@ namespace FolderMorpher.Services
                                     using var cmdIns = conn.CreateCommand();
                                     cmdIns.Transaction = trans;
                                     cmdIns.CommandText = @"
-                                        INSERT INTO IndexedFiles (FullPath, Name, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion, Generation)
-                                        VALUES (@path, @name, @dir, @size, @ticks, @status, @now, @ver, @gen);
+                                        INSERT INTO IndexedFiles (FullPath, Name, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, CreationTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion, Generation)
+                                        VALUES (@path, @name, @dir, @size, @ticks, @cTicks, @status, @now, @ver, @gen);
                                         SELECT last_insert_rowid();";
                                     cmdIns.Parameters.AddWithValue("@path", entry.FullPath);
                                     cmdIns.Parameters.AddWithValue("@name", entry.Name);
                                     cmdIns.Parameters.AddWithValue("@dir", entry.DirectoryPath);
                                     cmdIns.Parameters.AddWithValue("@size", entry.Length);
                                     cmdIns.Parameters.AddWithValue("@ticks", currentTicks);
+                                    cmdIns.Parameters.AddWithValue("@cTicks", creationTicks);
                                     cmdIns.Parameters.AddWithValue("@status", item.Success ? 1 : 2);
                                     cmdIns.Parameters.AddWithValue("@now", nowTicks);
                                     cmdIns.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
@@ -1110,7 +1125,7 @@ namespace FolderMorpher.Services
                         // キーワードなし（属性検索のみ）: IndexedFiles 単体検索
                         string whereSql = commonWhereClauses.Count > 0 ? string.Join(" AND ", commonWhereClauses) : "1=1";
                         sql = $@"
-                            SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet
+                            SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet, f.CreationTimeUtcTicks
                             FROM IndexedFiles f
                             WHERE {whereSql}
                             LIMIT 500";
@@ -1209,12 +1224,12 @@ namespace FolderMorpher.Services
 
                             // 本文も検索ON: 本文 (ContentFts) と ファイル名 (MetadataFts/f.Name) のハイブリッド UNION
                             sql = $@"
-                                SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, {snippetExpr}
+                                SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, {snippetExpr}, f.CreationTimeUtcTicks
                                 FROM ContentFts c
                                 JOIN IndexedFiles f ON c.rowid = f.FileId
                                 WHERE {ftsWhereSql}
                                 UNION
-                                SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet
+                                SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet, f.CreationTimeUtcTicks
                                 FROM {nameFromSql}
                                 WHERE {nameWhereSql}
                                 LIMIT 500";
@@ -1223,7 +1238,7 @@ namespace FolderMorpher.Services
                         {
                             // 本文も検索OFF: ファイル名・属性のみの超高速検索（MetadataFts / f.Name）
                             sql = $@"
-                                SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet
+                                SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet, f.CreationTimeUtcTicks
                                 FROM {nameFromSql}
                                 WHERE {nameWhereSql}
                                 LIMIT 500";
@@ -1242,6 +1257,7 @@ namespace FolderMorpher.Services
                         long size = reader.GetInt64(2);
                         long ticks = reader.GetInt64(3);
                         string snippet = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
+                        long cTicks = reader.IsDBNull(5) ? 0 : reader.GetInt64(5);
 
                         if (!string.IsNullOrEmpty(snippet) && !hasTrigramMatch && shortWords.Count > 0)
                         {
@@ -1271,6 +1287,7 @@ namespace FolderMorpher.Services
                             DirectoryPath = dirPath,
                             SizeBytes = size,
                             LastWriteTime = new DateTime(ticks, DateTimeKind.Utc).ToLocalTime(),
+                            CreationTime = cTicks > 0 ? new DateTime(cTicks, DateTimeKind.Utc).ToLocalTime() : DateTime.MinValue,
                             Extension = Path.GetExtension(fullPath).ToLowerInvariant(),
                             IsDirectory = false,
                             ContentSnippet = snippet,
@@ -1429,6 +1446,7 @@ namespace FolderMorpher.Services
                     string dir = fi.DirectoryName ?? string.Empty;
                     long size = fi.Length;
                     long ticks = fi.LastWriteTimeUtc.Ticks;
+                    long cTicks = fi.CreationTimeUtc.Ticks;
                     long nowTicks = DateTime.UtcNow.Ticks;
 
                     var supportedExts = ContentExtractionService.SupportedExtensions;
@@ -1472,13 +1490,14 @@ namespace FolderMorpher.Services
                             cmdUpd.Transaction = trans;
                             cmdUpd.CommandText = @"
                                 UPDATE IndexedFiles 
-                                SET Name = @name, DirectoryPath = @dir, SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, 
+                                SET Name = @name, DirectoryPath = @dir, SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, CreationTimeUtcTicks = @cTicks,
                                     Status = @status, IndexedAtUtcTicks = @now, ExtractorVersion = @ver
                                 WHERE FileId = @fileId;";
                             cmdUpd.Parameters.AddWithValue("@name", name);
                             cmdUpd.Parameters.AddWithValue("@dir", dir);
                             cmdUpd.Parameters.AddWithValue("@size", size);
                             cmdUpd.Parameters.AddWithValue("@ticks", ticks);
+                            cmdUpd.Parameters.AddWithValue("@cTicks", cTicks);
                             cmdUpd.Parameters.AddWithValue("@status", success ? 1 : 2);
                             cmdUpd.Parameters.AddWithValue("@now", nowTicks);
                             cmdUpd.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
@@ -1502,14 +1521,15 @@ namespace FolderMorpher.Services
                             using var cmdIns = conn.CreateCommand();
                             cmdIns.Transaction = trans;
                             cmdIns.CommandText = @"
-                                INSERT INTO IndexedFiles (FullPath, Name, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion, Generation)
-                                VALUES (@path, @name, @dir, @size, @ticks, @status, @now, @ver, 0);
+                                INSERT INTO IndexedFiles (FullPath, Name, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, CreationTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion, Generation)
+                                VALUES (@path, @name, @dir, @size, @ticks, @cTicks, @status, @now, @ver, 0);
                                 SELECT last_insert_rowid();";
                             cmdIns.Parameters.AddWithValue("@path", fullPath);
                             cmdIns.Parameters.AddWithValue("@name", name);
                             cmdIns.Parameters.AddWithValue("@dir", dir);
                             cmdIns.Parameters.AddWithValue("@size", size);
                             cmdIns.Parameters.AddWithValue("@ticks", ticks);
+                            cmdIns.Parameters.AddWithValue("@cTicks", cTicks);
                             cmdIns.Parameters.AddWithValue("@status", success ? 1 : 2);
                             cmdIns.Parameters.AddWithValue("@now", nowTicks);
                             cmdIns.Parameters.AddWithValue("@ver", CurrentExtractorVersion);

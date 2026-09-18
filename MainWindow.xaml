@@ -296,9 +296,23 @@
                                                         Visibility="{Binding HasChildren, Converter={StaticResource BoolToVis}}">
                                                     <TextBlock Text="{Binding ExpandIcon}" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextSecondary}"/>
                                                 </Button>
-                                                <Border Width="26" Height="18" Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorderBrush}" BorderThickness="1.2" CornerRadius="3" Margin="0,0,7,0" VerticalAlignment="Center">
-                                                    <TextBlock Text="{Binding BadgeText}" FontSize="8" FontWeight="ExtraBold" Foreground="{Binding BadgeForeground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
+                                                <Grid Width="26" Height="18" Margin="0,0,7,0" VerticalAlignment="Center">
+                                                    <!-- Folder Vector Icon (IsDirectory == True) -->
+                                                    <Border Visibility="{Binding IsDirectory, Converter={StaticResource BoolToVis}}"
+                                                            Background="#FEF3C7" BorderBrush="#D97706" BorderThickness="1.2" CornerRadius="3">
+                                                        <Viewbox Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <Canvas Width="24" Height="24">
+                                                                <Path Data="M 3 7 A 2 2 0 0 1 5 5 L 9 5 L 11 7 L 19 7 A 2 2 0 0 1 21 9 L 21 17 A 2 2 0 0 1 19 19 L 5 19 A 2 2 0 0 1 3 17 Z"
+                                                                      Fill="#FDE68A" Stroke="#D97706" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                            </Canvas>
+                                                        </Viewbox>
+                                                    </Border>
+                                                    <!-- File-Type Badge (IsDirectory == False) -->
+                                                    <Border Visibility="{Binding IsDirectory, Converter={StaticResource InverseBoolToVis}}"
+                                                            Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorderBrush}" BorderThickness="1.2" CornerRadius="3">
+                                                        <TextBlock Text="{Binding BadgeText}" FontSize="8" FontWeight="ExtraBold" Foreground="{Binding BadgeForeground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </Grid>
                                                 <TextBlock Text="{Binding Name}" FontWeight="{Binding FontWeight}" FontSize="12.5" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
                                         </DataTemplate>
@@ -406,9 +420,23 @@
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate DataType="{x:Type models:FolderChildShareItem}">
                                                 <StackPanel Orientation="Horizontal" Margin="4,0">
-                                                    <Border Width="26" Height="18" Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorderBrush}" BorderThickness="1.2" CornerRadius="3" Margin="0,0,7,0" VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding BadgeText}" FontSize="8" FontWeight="ExtraBold" Foreground="{Binding BadgeForeground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
+                                                    <Grid Width="26" Height="18" Margin="0,0,7,0" VerticalAlignment="Center">
+                                                        <!-- Folder Vector Icon (IsDirectory == True) -->
+                                                        <Border Visibility="{Binding IsDirectory, Converter={StaticResource BoolToVis}}"
+                                                                Background="#FEF3C7" BorderBrush="#D97706" BorderThickness="1.2" CornerRadius="3">
+                                                            <Viewbox Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                <Canvas Width="24" Height="24">
+                                                                    <Path Data="M 3 7 A 2 2 0 0 1 5 5 L 9 5 L 11 7 L 19 7 A 2 2 0 0 1 21 9 L 21 17 A 2 2 0 0 1 19 19 L 5 19 A 2 2 0 0 1 3 17 Z"
+                                                                          Fill="#FDE68A" Stroke="#D97706" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                                </Canvas>
+                                                            </Viewbox>
+                                                        </Border>
+                                                        <!-- File-Type Badge (IsDirectory == False) -->
+                                                        <Border Visibility="{Binding IsDirectory, Converter={StaticResource InverseBoolToVis}}"
+                                                                Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorderBrush}" BorderThickness="1.2" CornerRadius="3">
+                                                            <TextBlock Text="{Binding BadgeText}" FontSize="8" FontWeight="ExtraBold" Foreground="{Binding BadgeForeground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Border>
+                                                    </Grid>
                                                     <TextBlock Text="{Binding Name}" FontWeight="Medium" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
                                             </DataTemplate>
@@ -1611,79 +1639,27 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <!-- List Header Toolbar with Filter Chips & Sort Dropdown -->
+                        <!-- List Header Toolbar with Sort Dropdown -->
                         <Grid Grid.Row="0" Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
                             <!-- Title -->
-                            <TextBlock x:Name="SearchTableTitleText" Text="検索結果一覧" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                            <TextBlock x:Name="SearchTableTitleText" Text="検索結果一覧" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A" VerticalAlignment="Center"/>
                             <TextBlock x:Name="SearchTableHintText" Visibility="Collapsed"/>
 
-                            <!-- Filter Chips -->
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                <Button x:Name="SearchFilterAllBtn" Content="すべて" Click="SearchFilterChip_Click" Tag="All"
-                                        Height="24" Padding="10,0" FontSize="11" FontWeight="SemiBold"
-                                        Background="#2563EB" Foreground="#FFFFFF" BorderThickness="1" BorderBrush="#2563EB" Margin="0,0,6,0">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="12"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                                <Button x:Name="SearchFilterDocsBtn" Content="📄 文書" Click="SearchFilterChip_Click" Tag="Documents"
-                                        Height="24" Padding="10,0" FontSize="11" FontWeight="Medium"
-                                        Background="#F8FAFC" Foreground="#475569" BorderThickness="1" BorderBrush="#E2E8F0" Margin="0,0,6,0">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="12"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                                <Button x:Name="SearchFilterMediaBtn" Content="🖼️ メディア" Click="SearchFilterChip_Click" Tag="Media"
-                                        Height="24" Padding="10,0" FontSize="11" FontWeight="Medium"
-                                        Background="#F8FAFC" Foreground="#475569" BorderThickness="1" BorderBrush="#E2E8F0" Margin="0,0,6,0">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="12"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                                <Button x:Name="SearchFilterArchivesBtn" Content="📦 圧縮" Click="SearchFilterChip_Click" Tag="Archives"
-                                        Height="24" Padding="10,0" FontSize="11" FontWeight="Medium"
-                                        Background="#F8FAFC" Foreground="#475569" BorderThickness="1" BorderBrush="#E2E8F0" Margin="0,0,6,0">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="12"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                                <Button x:Name="SearchFilterOthersBtn" Content="⚙️ その他" Click="SearchFilterChip_Click" Tag="Others"
-                                        Height="24" Padding="10,0" FontSize="11" FontWeight="Medium"
-                                        Background="#F8FAFC" Foreground="#475569" BorderThickness="1" BorderBrush="#E2E8F0">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="12"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                            </StackPanel>
-
                             <!-- Sort Dropdown -->
-                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock x:Name="SearchSortLabel" Text="並び替え:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <ComboBox x:Name="SearchSortComboBox" Height="26" Width="170" FontSize="11"
+                                <ComboBox x:Name="SearchSortComboBox" Height="26" Width="180" FontSize="11"
                                           SelectionChanged="SearchSortComboBox_SelectionChanged">
                                     <ComboBoxItem Content="🎯 関連度順" Tag="Relevance" IsSelected="True"/>
                                     <ComboBoxItem Content="🕒 更新日時 (新しい順)" Tag="DateDesc"/>
                                     <ComboBoxItem Content="⏳ 更新日時 (古い順)" Tag="DateAsc"/>
-                                    <ComboBoxItem Content="📦 サイズ (大きい順)" Tag="SizeDesc"/>
-                                    <ComboBoxItem Content="📄 サイズ (小さい順)" Tag="SizeAsc"/>
-                                    <ComboBoxItem Content="🔤 名前 (A-Z)" Tag="NameAsc"/>
-                                    <ComboBoxItem Content="🔤 名前 (Z-A)" Tag="NameDesc"/>
+                                    <ComboBoxItem Content="✨ 作成日時 (新しい順)" Tag="CreatedDesc"/>
+                                    <ComboBoxItem Content="📅 作成日時 (古い順)" Tag="CreatedAsc"/>
                                 </ComboBox>
                             </StackPanel>
                         </Grid>
@@ -1753,23 +1729,39 @@
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto"/> <!-- Icon -->
                                                 <ColumnDefinition Width="*"/>    <!-- Name -->
-                                                <ColumnDefinition Width="Auto"/> <!-- Size & Date -->
+                                                <ColumnDefinition Width="Auto"/> <!-- Size & Dates -->
                                             </Grid.ColumnDefinitions>
 
-                                            <!-- Tabler File-Type Badge Icon -->
-                                            <Border Width="28" Height="20" Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorderBrush}" BorderThickness="1.2" CornerRadius="4" Margin="0,0,9,0" VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding BadgeText}" FontSize="8.5" FontWeight="ExtraBold" Foreground="{Binding BadgeForeground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
+                                            <!-- Tabler File-Type Badge or Folder Vector Icon -->
+                                            <Grid Width="28" Height="20" Margin="0,0,9,0" VerticalAlignment="Center">
+                                                <!-- Folder Vector Icon (IsDirectory == True) -->
+                                                <Border Visibility="{Binding IsDirectory, Converter={StaticResource BoolToVis}}"
+                                                        Background="#FEF3C7" BorderBrush="#D97706" BorderThickness="1.2" CornerRadius="4">
+                                                    <Viewbox Width="13" Height="13" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <Canvas Width="24" Height="24">
+                                                            <Path Data="M 3 7 A 2 2 0 0 1 5 5 L 9 5 L 11 7 L 19 7 A 2 2 0 0 1 21 9 L 21 17 A 2 2 0 0 1 19 19 L 5 19 A 2 2 0 0 1 3 17 Z"
+                                                                  Fill="#FDE68A" Stroke="#D97706" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                </Border>
+
+                                                <!-- File-Type Badge (IsDirectory == False) -->
+                                                <Border Visibility="{Binding IsDirectory, Converter={StaticResource InverseBoolToVis}}"
+                                                        Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorderBrush}" BorderThickness="1.2" CornerRadius="4">
+                                                    <TextBlock Text="{Binding BadgeText}" FontSize="8.5" FontWeight="ExtraBold" Foreground="{Binding BadgeForeground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                            </Grid>
                                             <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                             
                                             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
                                                 <TextBlock Text="{Binding FormattedSize}" FontWeight="Bold" FontSize="12" Foreground="#2563EB" Typography.NumeralAlignment="Tabular" VerticalAlignment="Center"/>
-                                                <TextBlock Text="{Binding FormattedDate}" FontSize="11" Foreground="#64748B" Typography.NumeralAlignment="Tabular" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding FormattedDate}" FontSize="11" Foreground="#64748B" Typography.NumeralAlignment="Tabular" Margin="10,0,0,0" VerticalAlignment="Center" ToolTip="更新日時 (Last Modified)"/>
+                                                <TextBlock Text="{Binding FormattedCreatedDate}" FontSize="10.5" Foreground="#94A3B8" Typography.NumeralAlignment="Tabular" Margin="8,0,0,0" VerticalAlignment="Center" ToolTip="作成日時 (Created)"/>
                                             </StackPanel>
                                         </Grid>
 
                                         <!-- Row 1: Folder Path + Jump to Folder Button -->
-                                        <Grid Grid.Row="1" Margin="23,3,0,0">
+                                        <Grid Grid.Row="1" Margin="37,3,0,0">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
@@ -1782,7 +1774,7 @@
                                         </Grid>
 
                                         <!-- Row 2: Content Snippet (Only visible if snippet exists) -->
-                                        <Border Grid.Row="2" Margin="23,6,0,0" Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="8,5"
+                                        <Border Grid.Row="2" Margin="37,6,0,0" Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="8,5"
                                                 Visibility="{Binding HasSnippet, Converter={StaticResource BoolToVis}}">
                                             <TextBlock Text="{Binding ContentSnippet}" FontSize="11.5" Foreground="#334155" TextWrapping="Wrap" MaxHeight="44" TextTrimming="CharacterEllipsis" LineHeight="16"/>
                                         </Border>

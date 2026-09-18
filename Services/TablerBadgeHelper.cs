@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 
 namespace FolderMorpher.Services
@@ -18,7 +18,7 @@ namespace FolderMorpher.Services
         {
             if (isDirectory)
             {
-                return new TablerBadgeInfo("DIR", "#EFF6FF", "#60A5FA", "#2563EB"); // Blue-50 / Blue-400 / Blue-600
+                return new TablerBadgeInfo(string.Empty, "#FEF3C7", "#D97706", "#B45309"); // Amber-50 / Amber-600 / Amber-700
             }
 
             string ext = string.Empty;

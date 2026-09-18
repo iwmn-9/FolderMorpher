@@ -33,7 +33,6 @@ namespace AstraSize
         public ObservableCollection<SearchResultItem> SearchResults => _searchResults;
         private List<SearchResultItem> _allSearchResults = new();
 
-        private string _selectedFilterCategory = "All";
         private string _selectedSortType = "Relevance";
 
         private long _searchGeneration = 0;
@@ -214,9 +213,7 @@ namespace AstraSize
             }
             _searchResults.Clear();
             _allSearchResults.Clear();
-            _selectedFilterCategory = "All";
             _selectedSortType = "Relevance";
-            UpdateFilterChipStyles();
             if (SearchSortComboBox != null) SearchSortComboBox.SelectedIndex = 0;
             UpdateSearchKpi(0, 0, TimeSpan.Zero);
         }
@@ -952,63 +949,65 @@ namespace AstraSize
             }
         }
 
-        #region Filter & Sort & Watcher
+        #region Sort & Watcher
 
-        private static readonly HashSet<string> DocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
+        private static int CalculateRelevanceScore(SearchResultItem item, string rawQuery)
         {
-            ".xlsx", ".xls", ".docx", ".doc", ".pptx", ".ppt", ".pdf", ".txt", ".csv", ".tsv", ".md", ".json", ".xml", ".log", ".rtf", ".odt", ".ods", ".odp"
-        };
+            if (string.IsNullOrWhiteSpace(rawQuery)) return 0;
+            int score = 0;
 
-        private static readonly HashSet<string> MediaExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tif", ".tiff",
-            ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm", ".m4v",
-            ".mp3", ".wav", ".m4a", ".flac", ".aac", ".ogg", ".wma"
-        };
+            var keywords = rawQuery.Split(new[] { ' ', '　' }, StringSplitOptions.RemoveEmptyEntries)
+                                   .Select(k => k.Trim().Trim('"', '*'))
+                                   .Where(k => !string.IsNullOrEmpty(k))
+                                   .ToList();
 
-        private static readonly HashSet<string> ArchiveExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".zip", ".7z", ".rar", ".tar", ".gz", ".cab", ".iso", ".bz2", ".xz", ".tgz"
-        };
+            if (keywords.Count == 0) return 0;
 
-        private void SearchFilterChip_Click(object sender, RoutedEventArgs e)
-        {
-            if (sender is Button btn && btn.Tag is string tag)
+            string name = item.Name ?? string.Empty;
+            string nameWithoutExt = Path.GetFileNameWithoutExtension(name);
+            string dir = item.DirectoryPath ?? string.Empty;
+            string snippet = item.ContentSnippet ?? string.Empty;
+
+            foreach (var kw in keywords)
             {
-                _selectedFilterCategory = tag;
-                UpdateFilterChipStyles();
-                ApplyFilterAndSort();
+                // 1. ファイル名完全一致（拡張子除く、または拡張子含む）
+                if (string.Equals(name, kw, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(nameWithoutExt, kw, StringComparison.OrdinalIgnoreCase))
+                {
+                    score += 100;
+                }
+                // 2. ファイル名前方一致
+                else if (name.StartsWith(kw, StringComparison.OrdinalIgnoreCase) ||
+                         nameWithoutExt.StartsWith(kw, StringComparison.OrdinalIgnoreCase))
+                {
+                    score += 50;
+                }
+                // 3. ファイル名部分一致
+                else if (name.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    score += 30;
+                }
+
+                // 4. ディレクトリパスに含まれる
+                if (dir.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    score += 10;
+                }
+
+                // 5. 本文スニペットに含まれる
+                if (!string.IsNullOrEmpty(snippet) && snippet.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    score += 15;
+                }
             }
-        }
 
-        private void UpdateFilterChipStyles()
-        {
-            var chips = new[]
-            {
-                (SearchFilterAllBtn, "All"),
-                (SearchFilterDocsBtn, "Documents"),
-                (SearchFilterMediaBtn, "Media"),
-                (SearchFilterArchivesBtn, "Archives"),
-                (SearchFilterOthersBtn, "Others")
-            };
+            // 6. 鮮度加点（直近に更新されたファイルほど優先）
+            var age = DateTime.Now - item.LastWriteTime;
+            if (age.TotalDays <= 7) score += 5;
+            else if (age.TotalDays <= 30) score += 3;
+            else if (age.TotalDays <= 365) score += 1;
 
-            var activeBg = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom("#2563EB")!;
-            var activeFg = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom("#FFFFFF")!;
-            var activeBorder = activeBg;
-
-            var normalBg = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom("#F8FAFC")!;
-            var normalFg = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom("#475569")!;
-            var normalBorder = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom("#E2E8F0")!;
-
-            foreach (var (btn, cat) in chips)
-            {
-                if (btn == null) continue;
-                bool isActive = string.Equals(_selectedFilterCategory, cat, StringComparison.OrdinalIgnoreCase);
-                btn.Background = isActive ? activeBg : normalBg;
-                btn.Foreground = isActive ? activeFg : normalFg;
-                btn.BorderBrush = isActive ? activeBorder : normalBorder;
-                btn.FontWeight = isActive ? FontWeights.SemiBold : FontWeights.Medium;
-            }
+            return score;
         }
 
         private void SearchSortComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1029,38 +1028,16 @@ namespace AstraSize
             }
 
             IEnumerable<SearchResultItem> filtered = _allSearchResults;
+            string currentQuery = SearchInputBox?.Text?.Trim() ?? string.Empty;
 
-            // 1. カテゴリフィルター
-            switch (_selectedFilterCategory)
-            {
-                case "Documents":
-                    filtered = filtered.Where(x => !x.IsDirectory && DocumentExtensions.Contains(x.Extension));
-                    break;
-                case "Media":
-                    filtered = filtered.Where(x => !x.IsDirectory && MediaExtensions.Contains(x.Extension));
-                    break;
-                case "Archives":
-                    filtered = filtered.Where(x => !x.IsDirectory && ArchiveExtensions.Contains(x.Extension));
-                    break;
-                case "Others":
-                    filtered = filtered.Where(x => x.IsDirectory || (!DocumentExtensions.Contains(x.Extension) && !MediaExtensions.Contains(x.Extension) && !ArchiveExtensions.Contains(x.Extension)));
-                    break;
-                case "All":
-                default:
-                    break;
-            }
-
-            // 2. ソート
             filtered = _selectedSortType switch
             {
                 "DateDesc" => filtered.OrderByDescending(x => x.LastWriteTime),
                 "DateAsc" => filtered.OrderBy(x => x.LastWriteTime),
-                "SizeDesc" => filtered.OrderByDescending(x => x.SizeBytes),
-                "SizeAsc" => filtered.OrderBy(x => x.SizeBytes),
-                "NameAsc" => filtered.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase),
-                "NameDesc" => filtered.OrderByDescending(x => x.Name, StringComparer.OrdinalIgnoreCase),
-                "Relevance" => filtered,
-                _ => filtered
+                "CreatedDesc" => filtered.OrderByDescending(x => x.CreationTime),
+                "CreatedAsc" => filtered.OrderBy(x => x.CreationTime),
+                "Relevance" => filtered.OrderByDescending(x => CalculateRelevanceScore(x, currentQuery)).ThenByDescending(x => x.LastWriteTime),
+                _ => filtered.OrderByDescending(x => CalculateRelevanceScore(x, currentQuery)).ThenByDescending(x => x.LastWriteTime)
             };
 
             var list = filtered.ToList();
@@ -1071,26 +1048,17 @@ namespace AstraSize
                 _searchResults.Add(item);
             }
 
-            // メトリクスバーの更新（動的カウント表示）
+            // メトリクスバーの更新（件数・合計サイズ）
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             if (SearchKpiHitCountText != null)
             {
-                if (_selectedFilterCategory == "All" || list.Count == _allSearchResults.Count)
-                {
-                    SearchKpiHitCountText.Text = isJa ? $"{list.Count:N0} 件" : $"{list.Count:N0} items";
-                }
-                else
-                {
-                    SearchKpiHitCountText.Text = isJa
-                        ? $"{list.Count:N0} 件 (全体 {_allSearchResults.Count:N0} 件)"
-                        : $"{list.Count:N0} (of {_allSearchResults.Count:N0})";
-                }
+                SearchKpiHitCountText.Text = isJa ? $"{list.Count:N0} 件" : $"{list.Count:N0} items";
             }
 
             if (SearchKpiTotalSizeText != null)
             {
-                long filteredBytes = list.Sum(x => x.SizeBytes);
-                SearchKpiTotalSizeText.Text = FormatHelper.FormatBytes(filteredBytes);
+                long totalBytes = list.Sum(x => x.SizeBytes);
+                SearchKpiTotalSizeText.Text = FormatHelper.FormatBytes(totalBytes);
             }
         }
 

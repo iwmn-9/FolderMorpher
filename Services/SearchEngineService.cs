@@ -70,6 +70,7 @@ namespace FolderMorpher.Services
                             DirectoryPath = Path.GetDirectoryName(node.FullPath) ?? string.Empty,
                             SizeBytes = node.SizeBytes,
                             LastWriteTime = node.LastModified ?? DateTime.MinValue,
+                            CreationTime = node.CreationTime ?? node.LastModified ?? DateTime.MinValue,
                             Extension = node.IsDirectory ? string.Empty : Path.GetExtension(node.Name).ToLowerInvariant(),
                             IsDirectory = node.IsDirectory,
                             MatchedReason = matchReason
@@ -178,6 +179,7 @@ namespace FolderMorpher.Services
                             DirectoryPath = entry.DirectoryPath,
                             SizeBytes = entry.Length,
                             LastWriteTime = entry.LastWriteTime,
+                            CreationTime = entry.CreationTime,
                             Extension = isDir ? string.Empty : Path.GetExtension(entry.Name).ToLowerInvariant(),
                             IsDirectory = isDir,
                             MatchedReason = matchReason

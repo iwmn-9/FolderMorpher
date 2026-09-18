@@ -262,6 +262,7 @@ namespace AstraSize
                                     DirectoryPath = @"\\FileServer\Legal\Contracts\2026",
                                     SizeBytes = 2485760,
                                     LastWriteTime = DateTime.Now.AddDays(-2),
+                                    CreationTime = DateTime.Now.AddMonths(-6),
                                     Extension = ".xlsx",
                                     ContentSnippet = "…第12条（機密保持条項）：本契約に基づき開示された【最高機密プロジェクト】に関する技術情報および…",
                                     MatchedReason = "本文一致 (FTS5 trigram MATCH)"
@@ -273,6 +274,7 @@ namespace AstraSize
                                     DirectoryPath = @"\\FileServer\Legal\Approvals",
                                     SizeBytes = 845210,
                                     LastWriteTime = DateTime.Now.AddDays(-5),
+                                    CreationTime = DateTime.Now.AddMonths(-2),
                                     Extension = ".pdf",
                                     ContentSnippet = "…上記件名の通り、2026年度の新規契約締結について決裁を仰ぎます。予算措置は別紙参照…",
                                     MatchedReason = "本文一致 (PDF iFilter)"
@@ -284,18 +286,32 @@ namespace AstraSize
                                     DirectoryPath = @"\\FileServer\Legal\Ledgers",
                                     SizeBytes = 124800,
                                     LastWriteTime = DateTime.Now.AddHours(-14),
+                                    CreationTime = DateTime.Now.AddMonths(-1),
                                     Extension = ".csv",
                                     MatchedReason = "ファイル名完全一致"
+                                };
+                                var item4 = new FolderMorpher.Models.SearchResultItem
+                                {
+                                    Name = "2026_プロジェクト管理資料",
+                                    FullPath = @"\\FileServer\Legal\Contracts\2026_プロジェクト管理資料",
+                                    DirectoryPath = @"\\FileServer\Legal\Contracts",
+                                    SizeBytes = 15420000,
+                                    LastWriteTime = DateTime.Now.AddDays(-1),
+                                    CreationTime = DateTime.Now.AddMonths(-3),
+                                    Extension = "",
+                                    IsDirectory = true,
+                                    MatchedReason = "フォルダー名一致"
                                 };
                                 mw.SearchResults.Add(item1);
                                 mw.SearchResults.Add(item2);
                                 mw.SearchResults.Add(item3);
+                                mw.SearchResults.Add(item4);
                                 mw.SearchListView.SelectedItem = item1;
 
-                                mw.SearchKpiHitCountText.Text = "3 件";
-                                mw.SearchKpiTotalSizeText.Text = "3.3 MB";
+                                mw.SearchKpiHitCountText.Text = "4 件";
+                                mw.SearchKpiTotalSizeText.Text = "18.8 MB";
                                 mw.SearchKpiElapsedText.Text = "0.04s";
-                                mw.SearchStatusText.Text = "⚡ インデックス高速検索完了: 3 件ヒット (38 ms)";
+                                mw.SearchStatusText.Text = "⚡ インデックス高速検索完了: 4 件ヒット (38 ms)";
                             }
                             else if (selectTab == 2) mw.NavTabLiveAcl.IsChecked = true;
 

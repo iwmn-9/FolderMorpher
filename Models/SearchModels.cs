@@ -93,6 +93,7 @@ namespace FolderMorpher.Models
         private string _directoryPath = string.Empty;
         private long _sizeBytes;
         private DateTime _lastWriteTime;
+        private DateTime _creationTime;
         private string _extension = string.Empty;
         private bool _isDirectory;
         private string? _contentSnippet;
@@ -128,6 +129,12 @@ namespace FolderMorpher.Models
             set { _lastWriteTime = value; OnPropertyChanged(); OnPropertyChanged(nameof(FormattedDate)); }
         }
 
+        public DateTime CreationTime
+        {
+            get => _creationTime;
+            set { _creationTime = value; OnPropertyChanged(); OnPropertyChanged(nameof(FormattedCreatedDate)); }
+        }
+
         public string Extension
         {
             get => _extension;
@@ -154,6 +161,7 @@ namespace FolderMorpher.Models
 
         public string FormattedSize => IsDirectory ? "-" : FormatHelper.FormatBytes(SizeBytes, 2);
         public string FormattedDate => LastWriteTime != DateTime.MinValue ? LastWriteTime.ToString("yyyy/MM/dd HH:mm:ss") : "-";
+        public string FormattedCreatedDate => CreationTime != DateTime.MinValue ? CreationTime.ToString("yyyy/MM/dd HH:mm:ss") : "-";
         public int PathLength => FullPath.Length;
         public bool HasSnippet => !string.IsNullOrWhiteSpace(ContentSnippet);
         public string TypeIcon => IsDirectory ? "\U0001F4C1" : GetFileIcon(Extension);

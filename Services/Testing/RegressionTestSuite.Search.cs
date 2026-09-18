@@ -715,44 +715,36 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(watchDbDir, true); } catch { }
                 }
 
-                // 3. 検索結果フィルター＆ソートの論理検証
+                // 3. 検索結果ソート（更新日時新旧、作成日時新旧、関連度）およびフォルダーバッジ検証
                 var mockItems = new List<SearchResultItem>
                 {
-                    new() { Name = "報告書.xlsx", FullPath = @"C:\Docs\報告書.xlsx", Extension = ".xlsx", SizeBytes = 5000, LastWriteTime = new DateTime(2026, 1, 1), IsDirectory = false },
-                    new() { Name = "仕様書.pdf", FullPath = @"C:\Docs\仕様書.pdf", Extension = ".pdf", SizeBytes = 20000, LastWriteTime = new DateTime(2026, 2, 1), IsDirectory = false },
-                    new() { Name = "写真.jpg", FullPath = @"C:\Photos\写真.jpg", Extension = ".jpg", SizeBytes = 100000, LastWriteTime = new DateTime(2026, 3, 1), IsDirectory = false },
-                    new() { Name = "アーカイブ.zip", FullPath = @"C:\Backup\アーカイブ.zip", Extension = ".zip", SizeBytes = 50000, LastWriteTime = new DateTime(2026, 4, 1), IsDirectory = false },
-                    new() { Name = "Tool.exe", FullPath = @"C:\Bin\Tool.exe", Extension = ".exe", SizeBytes = 3000, LastWriteTime = new DateTime(2026, 5, 1), IsDirectory = false },
-                    new() { Name = "SubFolder", FullPath = @"C:\SubFolder", Extension = "", SizeBytes = 0, LastWriteTime = new DateTime(2026, 6, 1), IsDirectory = true }
+                    new() { Name = "報告書.xlsx", FullPath = @"C:\Docs\報告書.xlsx", Extension = ".xlsx", SizeBytes = 5000, LastWriteTime = new DateTime(2026, 1, 1), CreationTime = new DateTime(2025, 1, 1), IsDirectory = false },
+                    new() { Name = "仕様書.pdf", FullPath = @"C:\Docs\仕様書.pdf", Extension = ".pdf", SizeBytes = 20000, LastWriteTime = new DateTime(2026, 2, 1), CreationTime = new DateTime(2025, 6, 1), IsDirectory = false },
+                    new() { Name = "写真.jpg", FullPath = @"C:\Photos\写真.jpg", Extension = ".jpg", SizeBytes = 100000, LastWriteTime = new DateTime(2026, 3, 1), CreationTime = new DateTime(2025, 12, 1), IsDirectory = false },
+                    new() { Name = "SubFolder", FullPath = @"C:\SubFolder", Extension = "", SizeBytes = 0, LastWriteTime = new DateTime(2026, 6, 1), CreationTime = new DateTime(2026, 1, 1), IsDirectory = true }
                 };
 
-                // Documents フィルター検証
-                var docExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".xlsx", ".pdf", ".docx", ".txt" };
-                var docs = mockItems.Where(x => !x.IsDirectory && docExts.Contains(x.Extension)).ToList();
-                if (docs.Count != 2 || !docs.Any(x => x.Name == "報告書.xlsx") || !docs.Any(x => x.Name == "仕様書.pdf"))
-                    throw new Exception($"Filter logic failed: Expected 2 document items, got {docs.Count}.");
+                // 作成日時降順ソート検証
+                var sortedByCreatedDesc = mockItems.OrderByDescending(x => x.CreationTime).ToList();
+                if (sortedByCreatedDesc[0].Name != "SubFolder" || sortedByCreatedDesc[1].Name != "写真.jpg")
+                    throw new Exception("Sort logic failed: CreationTime descending order incorrect.");
 
-                // Media フィルター検証
-                var mediaExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".png", ".mp4" };
-                var media = mockItems.Where(x => !x.IsDirectory && mediaExts.Contains(x.Extension)).ToList();
-                if (media.Count != 1 || media[0].Name != "写真.jpg")
-                    throw new Exception($"Filter logic failed: Expected 1 media item, got {media.Count}.");
+                // 作成日時昇順ソート検証
+                var sortedByCreatedAsc = mockItems.OrderBy(x => x.CreationTime).ToList();
+                if (sortedByCreatedAsc[0].Name != "報告書.xlsx" || sortedByCreatedAsc[1].Name != "仕様書.pdf")
+                    throw new Exception("Sort logic failed: CreationTime ascending order incorrect.");
 
-                // Archives フィルター検証
-                var archiveExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".zip", ".7z" };
-                var archives = mockItems.Where(x => !x.IsDirectory && archiveExts.Contains(x.Extension)).ToList();
-                if (archives.Count != 1 || archives[0].Name != "アーカイブ.zip")
-                    throw new Exception($"Filter logic failed: Expected 1 archive item, got {archives.Count}.");
-
-                // サイズ降順ソート検証
-                var sortedBySizeDesc = mockItems.OrderByDescending(x => x.SizeBytes).ToList();
-                if (sortedBySizeDesc[0].Name != "写真.jpg" || sortedBySizeDesc[1].Name != "アーカイブ.zip")
-                    throw new Exception("Sort logic failed: Size descending order incorrect.");
-
-                // 日時降順ソート検証
+                // 更新日時降順ソート検証
                 var sortedByDateDesc = mockItems.OrderByDescending(x => x.LastWriteTime).ToList();
-                if (sortedByDateDesc[0].Name != "SubFolder" || sortedByDateDesc[1].Name != "Tool.exe")
+                if (sortedByDateDesc[0].Name != "SubFolder" || sortedByDateDesc[1].Name != "写真.jpg")
                     throw new Exception("Sort logic failed: Date descending order incorrect.");
+
+                // フォルダーバッジが "DIR" ではなく空文字（ベクター描画対応）であることを検証
+                var folderBadge = TablerBadgeHelper.GetBadge(@"C:\SubFolder", isDirectory: true);
+                if (!string.IsNullOrEmpty(folderBadge.Text))
+                    throw new Exception($"TablerBadgeHelper failed: Folder badge text must be empty (vector rendering), got '{folderBadge.Text}'.");
+                if (folderBadge.Background != "#FEF3C7" || folderBadge.BorderBrush != "#D97706")
+                    throw new Exception("TablerBadgeHelper failed: Folder badge color must be Amber palette.");
             }
         }
     }
