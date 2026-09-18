@@ -149,6 +149,11 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
     - **`ContentFts.rowid = IndexedFiles.FileId` 直結 ＆ ゼロロス自動マイグレーション**: FTS5 の内部 rowid を `FileId` と直結させ、最速の B-Tree primary key JOIN を実現。旧スキーマからの起動時自動昇格マイグレーションを施工し、既存全文インデックスデータを 1 行も失わずに移行。
     - **`ScanGeneration` によるストリーミング世代管理（メモリ O(1) ＆ 差分一括削除）**: インデックス同期ごとに世代番号をインクリメント。走査中の巨大な `HashSet<string> currentPaths` を完全撤去して順次 Upsert し、走査後に `Generation < currentGen` を O(1) で一括削除。メモリ消費を劇的に削減。
     - **回帰テスト（Domain 8 セクション7）新設**: trigram MATCH、短語フォールバック、UNION ハイブリッド、ScanGeneration 亡霊ファイル自動削除を自動検証（8/8 ALL PASSED）。
+16. **Search 高速化第2・第3フェーズ ＆ 検索結果フィルター・並び替え（v2.2.5 / ADR 72）**:
+    - **Change Notify (`FileSystemWatcher`) リアルタイム差分同期**: インデックス済みフォルダーを常駐監視し、ファイルの作成・更新・削除・名前変更を 300ms デバウンス集約して SQLite に即時反映。検索結果表示中も自動再検索を行い、手動再同期なしでインデックスが常に最新を維持。
+    - **MFT Fast Track 直接走査連携（秒速インデックス化）**: 管理者権限かつNTFSローカルドライブの場合、raw NTFS の MFT 一括読み出しを実行し、数十万ファイルのディレクトリ列挙を 1〜2 秒で完了。UNC や一般権限環境では `SafeFileEnumerator`（並列度2）へ自動フォールバック。
+    - **検索結果のフィルターチップ ＆ 並び替え（Filter & Sort）**: 検索結果ヘッダーに Fluent ピル型フィルターチップ（すべて / 📄 文書 / 🖼️ メディア / 📦 圧縮 / ⚙️ その他）と並び替え ComboBox（関連度 / 日時 / サイズ / 名前）を配備。インメモリ 0ms で瞬時に絞り込み・ソートが完了し、メトリクスバー（件数・容量）も動的連動。日英完全対応。
+    - **回帰テスト（Domain 8 セクション8）新設**: Watcher 差分同期、MFT 事前保護、フィルター・ソート論理を自動検証（8/8 ALL PASSED）。
 ---
 
 ---

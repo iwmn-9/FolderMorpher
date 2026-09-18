@@ -26,21 +26,27 @@ namespace AstraSize
     {
         private readonly SearchEngineService _searchEngine = new();
         private readonly ContentIndexService _contentIndex = new();
+        private ContentIndexWatcherService? _indexWatcher;
         private CancellationTokenSource? _searchCts;
         private DispatcherTimer? _searchDebounceTimer;
         private readonly ObservableCollection<SearchResultItem> _searchResults = new();
         public ObservableCollection<SearchResultItem> SearchResults => _searchResults;
         private List<SearchResultItem> _allSearchResults = new();
 
+        private string _selectedFilterCategory = "All";
+        private string _selectedSortType = "Relevance";
+
         private long _searchGeneration = 0;
 
         public void InitializeSearchStudio()
         {
+            _indexWatcher = new ContentIndexWatcherService(_contentIndex);
+            _indexWatcher.ChangesApplied += OnWatcherChangesApplied;
+
             if (SearchListView != null)
             {
                 SearchListView.ItemsSource = _searchResults;
             }
-
 
             _searchDebounceTimer = new DispatcherTimer
             {
@@ -208,6 +214,10 @@ namespace AstraSize
             }
             _searchResults.Clear();
             _allSearchResults.Clear();
+            _selectedFilterCategory = "All";
+            _selectedSortType = "Relevance";
+            UpdateFilterChipStyles();
+            if (SearchSortComboBox != null) SearchSortComboBox.SelectedIndex = 0;
             UpdateSearchKpi(0, 0, TimeSpan.Zero);
         }
 
@@ -334,12 +344,9 @@ namespace AstraSize
                     if (currentGen == Volatile.Read(ref _searchGeneration))
                     {
                         _allSearchResults = hits;
-                        foreach (var item in hits)
-                        {
-                            _searchResults.Add(item);
-                        }
-                        long totalBytes = hits.Sum(h => h.SizeBytes);
-                        UpdateSearchKpi(hits.Count, totalBytes, sw.Elapsed);
+                        ApplyFilterAndSort();
+                        long totalBytes = _searchResults.Sum(h => h.SizeBytes);
+                        UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
                         if (SearchStatusText != null)
                         {
                             SearchStatusText.Text = isJa
@@ -353,6 +360,10 @@ namespace AstraSize
                     {
                         TriggerBackgroundIndexUpdate(targetFolder, force: false);
                     }
+                    if (hasTarget)
+                    {
+                        _indexWatcher?.StartWatching(targetFolder);
+                    }
                 }
                 else if (hasScannedTree && !query.SearchContentMode)
                 {
@@ -361,16 +372,17 @@ namespace AstraSize
                     if (currentGen == Volatile.Read(ref _searchGeneration))
                     {
                         _allSearchResults = results;
-                        if (_searchResults.Count == 0 && results.Count > 0)
-                        {
-                            foreach (var item in results) _searchResults.Add(item);
-                        }
+                        ApplyFilterAndSort();
                     }
 
                     // インデックス同期を裏で自動トリガー（15分クールダウン制御付き）
                     if (hasTarget && !isAutoRefresh)
                     {
                         TriggerBackgroundIndexUpdate(targetFolder, force: false);
+                    }
+                    if (hasTarget)
+                    {
+                        _indexWatcher?.StartWatching(targetFolder);
                     }
                 }
                 else
@@ -388,12 +400,17 @@ namespace AstraSize
                     if (currentGen == Volatile.Read(ref _searchGeneration))
                     {
                         _allSearchResults = results;
+                        ApplyFilterAndSort();
                     }
 
                     // 走査完了後、裏でインデックスを自動蓄積
                     if (hasTarget && !isAutoRefresh)
                     {
                         TriggerBackgroundIndexUpdate(targetFolder, force: false);
+                    }
+                    if (hasTarget)
+                    {
+                        _indexWatcher?.StartWatching(targetFolder);
                     }
                 }
             }
@@ -934,6 +951,161 @@ namespace AstraSize
                 return false;
             }
         }
+
+        #region Filter & Sort & Watcher
+
+        private static readonly HashSet<string> DocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".xlsx", ".xls", ".docx", ".doc", ".pptx", ".ppt", ".pdf", ".txt", ".csv", ".tsv", ".md", ".json", ".xml", ".log", ".rtf", ".odt", ".ods", ".odp"
+        };
+
+        private static readonly HashSet<string> MediaExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tif", ".tiff",
+            ".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm", ".m4v",
+            ".mp3", ".wav", ".m4a", ".flac", ".aac", ".ogg", ".wma"
+        };
+
+        private static readonly HashSet<string> ArchiveExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".zip", ".7z", ".rar", ".tar", ".gz", ".cab", ".iso", ".bz2", ".xz", ".tgz"
+        };
+
+        private void SearchFilterChip_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string tag)
+            {
+                _selectedFilterCategory = tag;
+                UpdateFilterChipStyles();
+                ApplyFilterAndSort();
+            }
+        }
+
+        private void UpdateFilterChipStyles()
+        {
+            var chips = new[]
+            {
+                (SearchFilterAllBtn, "All"),
+                (SearchFilterDocsBtn, "Documents"),
+                (SearchFilterMediaBtn, "Media"),
+                (SearchFilterArchivesBtn, "Archives"),
+                (SearchFilterOthersBtn, "Others")
+            };
+
+            var activeBg = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom("#2563EB")!;
+            var activeFg = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom("#FFFFFF")!;
+            var activeBorder = activeBg;
+
+            var normalBg = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom("#F8FAFC")!;
+            var normalFg = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom("#475569")!;
+            var normalBorder = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFrom("#E2E8F0")!;
+
+            foreach (var (btn, cat) in chips)
+            {
+                if (btn == null) continue;
+                bool isActive = string.Equals(_selectedFilterCategory, cat, StringComparison.OrdinalIgnoreCase);
+                btn.Background = isActive ? activeBg : normalBg;
+                btn.Foreground = isActive ? activeFg : normalFg;
+                btn.BorderBrush = isActive ? activeBorder : normalBorder;
+                btn.FontWeight = isActive ? FontWeights.SemiBold : FontWeights.Medium;
+            }
+        }
+
+        private void SearchSortComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (SearchSortComboBox?.SelectedItem is ComboBoxItem item && item.Tag is string tag)
+            {
+                _selectedSortType = tag;
+                ApplyFilterAndSort();
+            }
+        }
+
+        private void ApplyFilterAndSort()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(ApplyFilterAndSort);
+                return;
+            }
+
+            IEnumerable<SearchResultItem> filtered = _allSearchResults;
+
+            // 1. カテゴリフィルター
+            switch (_selectedFilterCategory)
+            {
+                case "Documents":
+                    filtered = filtered.Where(x => !x.IsDirectory && DocumentExtensions.Contains(x.Extension));
+                    break;
+                case "Media":
+                    filtered = filtered.Where(x => !x.IsDirectory && MediaExtensions.Contains(x.Extension));
+                    break;
+                case "Archives":
+                    filtered = filtered.Where(x => !x.IsDirectory && ArchiveExtensions.Contains(x.Extension));
+                    break;
+                case "Others":
+                    filtered = filtered.Where(x => x.IsDirectory || (!DocumentExtensions.Contains(x.Extension) && !MediaExtensions.Contains(x.Extension) && !ArchiveExtensions.Contains(x.Extension)));
+                    break;
+                case "All":
+                default:
+                    break;
+            }
+
+            // 2. ソート
+            filtered = _selectedSortType switch
+            {
+                "DateDesc" => filtered.OrderByDescending(x => x.LastWriteTime),
+                "DateAsc" => filtered.OrderBy(x => x.LastWriteTime),
+                "SizeDesc" => filtered.OrderByDescending(x => x.SizeBytes),
+                "SizeAsc" => filtered.OrderBy(x => x.SizeBytes),
+                "NameAsc" => filtered.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase),
+                "NameDesc" => filtered.OrderByDescending(x => x.Name, StringComparer.OrdinalIgnoreCase),
+                "Relevance" => filtered,
+                _ => filtered
+            };
+
+            var list = filtered.ToList();
+
+            _searchResults.Clear();
+            foreach (var item in list)
+            {
+                _searchResults.Add(item);
+            }
+
+            // メトリクスバーの更新（動的カウント表示）
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+            if (SearchKpiHitCountText != null)
+            {
+                if (_selectedFilterCategory == "All" || list.Count == _allSearchResults.Count)
+                {
+                    SearchKpiHitCountText.Text = isJa ? $"{list.Count:N0} 件" : $"{list.Count:N0} items";
+                }
+                else
+                {
+                    SearchKpiHitCountText.Text = isJa
+                        ? $"{list.Count:N0} 件 (全体 {_allSearchResults.Count:N0} 件)"
+                        : $"{list.Count:N0} (of {_allSearchResults.Count:N0})";
+                }
+            }
+
+            if (SearchKpiTotalSizeText != null)
+            {
+                long filteredBytes = list.Sum(x => x.SizeBytes);
+                SearchKpiTotalSizeText.Text = FormatHelper.FormatBytes(filteredBytes);
+            }
+        }
+
+        private void OnWatcherChangesApplied(object? sender, IReadOnlyList<string> changedPaths)
+        {
+            Dispatcher.InvokeAsync(() =>
+            {
+                if (!string.IsNullOrWhiteSpace(SearchDirectTargetTextBox?.Text) && _allSearchResults.Count > 0)
+                {
+                    ExecuteSearch(isIncremental: false, isAutoRefresh: true);
+                }
+            });
+        }
+
+        #endregion
 
         #endregion
     }

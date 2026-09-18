@@ -511,13 +511,34 @@ namespace FolderMorpher.Services
 
                 try
                 {
-                    // 1. 並列2固定でファイル一覧を一括列挙 (I/O最小化 & カバレッジ追跡)
-                    var scannedEntries = await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
-                        normTarget,
-                        "*.*",
-                        coverage: coverage,
-                        onProgress: null,
-                        ct: ct);
+                    // 1. ファイル一覧を一括列挙 (MFT Fast Track または 並列2 SafeFileEnumerator)
+                    List<ScannedFileEntry> scannedEntries;
+                    if (AstraSize.Services.Mft.MftScanService.CanUseMft(normTarget))
+                    {
+                        try
+                        {
+                            scannedEntries = await EnumerateEntriesViaMftAsync(normTarget, ct);
+                        }
+                        catch
+                        {
+                            // MFT 直接走査に失敗した場合は安全に通常走査へフォールバック
+                            scannedEntries = await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
+                                normTarget,
+                                "*.*",
+                                coverage: coverage,
+                                onProgress: null,
+                                ct: ct);
+                        }
+                    }
+                    else
+                    {
+                        scannedEntries = await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
+                            normTarget,
+                            "*.*",
+                            coverage: coverage,
+                            onProgress: null,
+                            ct: ct);
+                    }
 
                     // 2. ファイルを全ファイルと本文対象ファイルに分類 (抜本案: 全ファイルメタデータ登録 ＋ 本文対象のみFTS)
                     var allFiles = scannedEntries
@@ -1345,6 +1366,183 @@ namespace FolderMorpher.Services
                     VACUUM;";
                 cmd.ExecuteNonQuery();
             }
+        }
+
+        private async Task<List<ScannedFileEntry>> EnumerateEntriesViaMftAsync(string rootPath, CancellationToken ct)
+        {
+            var mftService = new AstraSize.Services.Mft.MftScanService();
+            var (rootNode, _) = await mftService.ScanPathAsync(rootPath, progress: null, ct);
+
+            var result = new List<ScannedFileEntry>();
+            var stack = new Stack<AstraSize.Models.FileItemNode>();
+            stack.Push(rootNode);
+
+            string normRoot = Path.GetFullPath(rootPath).TrimEnd('\\', '/');
+
+            while (stack.Count > 0)
+            {
+                ct.ThrowIfCancellationRequested();
+                var current = stack.Pop();
+
+                if (current.Children != null)
+                {
+                    foreach (var child in current.Children)
+                    {
+                        if (child.IsDirectory)
+                        {
+                            stack.Push(child);
+                        }
+                        else
+                        {
+                            string dir = Path.GetDirectoryName(child.FullPath) ?? normRoot;
+                            DateTime lastWrite = child.LastModified ?? DateTime.UtcNow;
+                            result.Add(new ScannedFileEntry(
+                                child.FullPath,
+                                child.Name,
+                                dir,
+                                child.Size,
+                                lastWrite,
+                                lastWrite,
+                                lastWrite,
+                                FileAttributes.Normal));
+                        }
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// 単一ファイルの作成・更新をリアルタイムにインデックスDBに反映する（Watcher連携用）。
+        /// </summary>
+        public async Task UpsertSingleFileAsync(string fullPath, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(fullPath) || !File.Exists(fullPath)) return;
+
+            await Task.Run(async () =>
+            {
+                try
+                {
+                    var fi = new FileInfo(fullPath);
+                    string name = fi.Name;
+                    string dir = fi.DirectoryName ?? string.Empty;
+                    long size = fi.Length;
+                    long ticks = fi.LastWriteTimeUtc.Ticks;
+                    long nowTicks = DateTime.UtcNow.Ticks;
+
+                    var supportedExts = ContentExtractionService.SupportedExtensions;
+                    const long MaxIndexFileSize = 50L * 1024 * 1024; // 50MB
+                    bool isContentTarget = size <= MaxIndexFileSize && supportedExts.Contains(fi.Extension);
+
+                    string? extractedText = null;
+                    bool success = true;
+
+                    if (isContentTarget)
+                    {
+                        try
+                        {
+                            extractedText = await ContentExtractionService.ExtractTextAsync(fullPath, ct);
+                        }
+                        catch
+                        {
+                            success = false;
+                        }
+                    }
+
+                    lock (_lock)
+                    {
+                        using var conn = new SqliteConnection(_connectionString);
+                        conn.Open();
+                        using var trans = conn.BeginTransaction();
+
+                        long? fileId = null;
+                        using (var cmdSel = conn.CreateCommand())
+                        {
+                            cmdSel.Transaction = trans;
+                            cmdSel.CommandText = "SELECT FileId FROM IndexedFiles WHERE FullPath = @path";
+                            cmdSel.Parameters.AddWithValue("@path", fullPath);
+                            var res = cmdSel.ExecuteScalar();
+                            if (res != null && res != DBNull.Value) fileId = Convert.ToInt64(res);
+                        }
+
+                        if (fileId.HasValue)
+                        {
+                            using var cmdUpd = conn.CreateCommand();
+                            cmdUpd.Transaction = trans;
+                            cmdUpd.CommandText = @"
+                                UPDATE IndexedFiles 
+                                SET Name = @name, DirectoryPath = @dir, SizeBytes = @size, LastWriteTimeUtcTicks = @ticks, 
+                                    Status = @status, IndexedAtUtcTicks = @now, ExtractorVersion = @ver
+                                WHERE FileId = @fileId;";
+                            cmdUpd.Parameters.AddWithValue("@name", name);
+                            cmdUpd.Parameters.AddWithValue("@dir", dir);
+                            cmdUpd.Parameters.AddWithValue("@size", size);
+                            cmdUpd.Parameters.AddWithValue("@ticks", ticks);
+                            cmdUpd.Parameters.AddWithValue("@status", success ? 1 : 2);
+                            cmdUpd.Parameters.AddWithValue("@now", nowTicks);
+                            cmdUpd.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
+                            cmdUpd.Parameters.AddWithValue("@fileId", fileId.Value);
+                            cmdUpd.ExecuteNonQuery();
+
+                            using var cmdDelFts = conn.CreateCommand();
+                            cmdDelFts.Transaction = trans;
+                            cmdDelFts.CommandText = "DELETE FROM ContentFts WHERE rowid = @fileId";
+                            cmdDelFts.Parameters.AddWithValue("@fileId", fileId.Value);
+                            cmdDelFts.ExecuteNonQuery();
+
+                            using var cmdDelMeta = conn.CreateCommand();
+                            cmdDelMeta.Transaction = trans;
+                            cmdDelMeta.CommandText = "DELETE FROM MetadataFts WHERE rowid = @fileId";
+                            cmdDelMeta.Parameters.AddWithValue("@fileId", fileId.Value);
+                            cmdDelMeta.ExecuteNonQuery();
+                        }
+                        else
+                        {
+                            using var cmdIns = conn.CreateCommand();
+                            cmdIns.Transaction = trans;
+                            cmdIns.CommandText = @"
+                                INSERT INTO IndexedFiles (FullPath, Name, DirectoryPath, SizeBytes, LastWriteTimeUtcTicks, Status, IndexedAtUtcTicks, ExtractorVersion, Generation)
+                                VALUES (@path, @name, @dir, @size, @ticks, @status, @now, @ver, 0);
+                                SELECT last_insert_rowid();";
+                            cmdIns.Parameters.AddWithValue("@path", fullPath);
+                            cmdIns.Parameters.AddWithValue("@name", name);
+                            cmdIns.Parameters.AddWithValue("@dir", dir);
+                            cmdIns.Parameters.AddWithValue("@size", size);
+                            cmdIns.Parameters.AddWithValue("@ticks", ticks);
+                            cmdIns.Parameters.AddWithValue("@status", success ? 1 : 2);
+                            cmdIns.Parameters.AddWithValue("@now", nowTicks);
+                            cmdIns.Parameters.AddWithValue("@ver", CurrentExtractorVersion);
+                            fileId = (long)cmdIns.ExecuteScalar()!;
+                        }
+
+                        using (var cmdInsMeta = conn.CreateCommand())
+                        {
+                            cmdInsMeta.Transaction = trans;
+                            cmdInsMeta.CommandText = "INSERT INTO MetadataFts (rowid, Name) VALUES (@fileId, @name);";
+                            cmdInsMeta.Parameters.AddWithValue("@fileId", fileId.Value);
+                            cmdInsMeta.Parameters.AddWithValue("@name", name);
+                            cmdInsMeta.ExecuteNonQuery();
+                        }
+
+                        if (isContentTarget && !string.IsNullOrWhiteSpace(extractedText))
+                        {
+                            using var cmdInsFts = conn.CreateCommand();
+                            cmdInsFts.Transaction = trans;
+                            cmdInsFts.CommandText = "INSERT INTO ContentFts (rowid, Body) VALUES (@fileId, @body);";
+                            cmdInsFts.Parameters.AddWithValue("@fileId", fileId.Value);
+                            cmdInsFts.Parameters.AddWithValue("@body", extractedText);
+                            cmdInsFts.ExecuteNonQuery();
+                        }
+
+                        trans.Commit();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ContentIndexService] UpsertSingleFileAsync error: {ex.Message}");
+                }
+            }, ct);
         }
     }
 }

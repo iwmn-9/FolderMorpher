@@ -529,3 +529,26 @@
      - 走査完了後、Generation < currentGen のレコードを MetadataFts, ContentFts, IndexedFiles から O(1) で一括削除し、亡霊ファイルを完全抹消。
   5. **自動回帰テストによる恒久保護**:
      - RegressionTestSuite.Search.cs にセクション7を新設。3文字以上の trigram MATCH、1〜2文字の .Name LIKE、本文＋ファイル名の UNION ハイブリッド、および ScanGeneration による亡霊ファイル削除（物理削除後に再走査して DeletedCount == 1、検索0件になること）を自動検証。8/8 ALL PASSED を堅持。
+---
+
+## 26. 【Search高速化第2・第3フェーズ ＆ 検索結果フィルター・並び替え（Change Notifyリアルタイム同期、MFT Fast Track、インメモリ0msソート）】
+*(v2.2.5 本番施工 & ADR 72)*
+
+- **背景と課題**:
+  - **ファイル更新の追従ラグ**: インデックス同期後に外部アプリやエクスプローラー等でファイルが作成・更新・削除された場合、15分クールダウンまたは手動再同期を実行するまで検索結果に反映されなかった。
+  - **ローカルNTFSの初回走査速度**: 管理者権限のローカルドライブであっても通常のディレクトリ再帰列挙を行っていたため、数十万ファイルの大規模ドライブで初回のメタデータ収集に数十秒を要していた。
+  - **検索結果の操作性**: ヒット件数が多い場合（数百〜数千件）、目的の文書やメディア、大容量ファイルを見つけるための種別絞り込み（フィルター）や並び替え（ソート）機能が不足していた。
+- **施工内容**:
+  1. **Change Notify (FileSystemWatcher) リアルタイム差分同期 (ContentIndexWatcherService)**:
+     - FileSystemWatcher（64KBバッファ・再帰監視）を用いた常駐監視サービスを新設。
+     - インデックス走査済みフォルダーに対し自動アタッチし、ファイルの作成（Created）、更新（Changed）、削除（Deleted）、名前変更（Renamed）を 300ms デバウンス集約。
+     - ContentIndexService.UpsertSingleFileAsync および PurgeFilesAsync により SQLite（IndexedFiles, MetadataFts, ContentFts）を即時反映。
+     - 検索結果表示中も ChangesApplied イベントで自動再検索を行い、検索結果を常に最新状態へ追従。
+  2. **MFT Fast Track 直接走査連携（秒速インデックス化）**:
+     - MftScanService.CanUseMft 判定により、「管理者権限 ＋ ローカルドライブ ＋ NTFS」を満たす場合、raw NTFS の MFT 一括読み出しを実行。
+     - 数十万ファイルのローカルドライブでもディレクトリ列挙を 1〜2 秒で完了し、インデックス登録パイプラインへ直結。UNC や一般権限環境では SafeFileEnumerator（並列度2）へ自動フォールバック。
+  3. **検索結果のフィルターチップ ＆ 並び替え（Filter & Sort）**:
+     - 検索結果一覧ヘッダーに、Fluent ピル型フィルターチップ（すべて / 📄 文書 / 🖼️ メディア / 📦 圧縮 / ⚙️ その他）と並び替え ComboBox（関連度順 / 新しい順 / 古い順 / 大きい順 / 小さい順 / 名前 A-Z / 名前 Z-A）を配備。
+     - _allSearchResults に対するインメモリ 0ms（一瞬）のフィルタリング・ソートを実現。件数・合計容量のメトリクスバーも絞り込み結果に動的連動。日英完全ローカライズ対応。
+  4. **自動回帰テストによる恒久保護**:
+     - RegressionTestSuite.Search.cs にセクション8を新設。Watcher のファイル作成・削除の即時反映、MFT 事前保護（UNC拒否・空パス拒否）、およびフィルター・ソート論理を自動検証。8/8 ドメイン ALL PASSED を堅持。

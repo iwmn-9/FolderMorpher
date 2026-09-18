@@ -525,6 +525,28 @@ namespace AstraSize
             {
                 SearchKpiHitCountText.Text = isJa ? "0 件" : "0 items";
             }
+
+            // Search Filter Chips & Sort
+            if (SearchFilterAllBtn != null) SearchFilterAllBtn.Content = isJa ? "すべて" : "All";
+            if (SearchFilterDocsBtn != null) SearchFilterDocsBtn.Content = isJa ? "📄 文書" : "📄 Docs";
+            if (SearchFilterMediaBtn != null) SearchFilterMediaBtn.Content = isJa ? "🖼️ メディア" : "🖼️ Media";
+            if (SearchFilterArchivesBtn != null) SearchFilterArchivesBtn.Content = isJa ? "📦 圧縮" : "📦 Archives";
+            if (SearchFilterOthersBtn != null) SearchFilterOthersBtn.Content = isJa ? "⚙️ その他" : "⚙️ Others";
+            if (SearchSortLabel != null) SearchSortLabel.Text = isJa ? "並び替え:" : "Sort by:";
+            if (SearchSortComboBox != null)
+            {
+                var items = SearchSortComboBox.Items;
+                if (items.Count >= 7)
+                {
+                    if (items[0] is ComboBoxItem c0) c0.Content = isJa ? "🎯 関連度順" : "🎯 Relevance";
+                    if (items[1] is ComboBoxItem c1) c1.Content = isJa ? "🕒 更新日時 (新しい順)" : "🕒 Newest First";
+                    if (items[2] is ComboBoxItem c2) c2.Content = isJa ? "⏳ 更新日時 (古い順)" : "⏳ Oldest First";
+                    if (items[3] is ComboBoxItem c3) c3.Content = isJa ? "📦 サイズ (大きい順)" : "📦 Largest First";
+                    if (items[4] is ComboBoxItem c4) c4.Content = isJa ? "📄 サイズ (小さい順)" : "📄 Smallest First";
+                    if (items[5] is ComboBoxItem c5) c5.Content = isJa ? "🔤 名前 (A-Z)" : "🔤 Name (A-Z)";
+                    if (items[6] is ComboBoxItem c6) c6.Content = isJa ? "🔤 名前 (Z-A)" : "🔤 Name (Z-A)";
+                }
+            }
             if (_searchResults != null)
             {
                 foreach (var item in _searchResults)

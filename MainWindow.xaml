@@ -1611,10 +1611,81 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <!-- List Header Toolbar -->
+                        <!-- List Header Toolbar with Filter Chips & Sort Dropdown -->
                         <Grid Grid.Row="0" Margin="0,0,0,10">
-                            <TextBlock x:Name="SearchTableTitleText" Text="検索結果一覧" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A" VerticalAlignment="Center"/>
-                            <TextBlock x:Name="SearchTableHintText" Text="" Visibility="Collapsed"/>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Title -->
+                            <TextBlock x:Name="SearchTableTitleText" Text="検索結果一覧" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                            <TextBlock x:Name="SearchTableHintText" Visibility="Collapsed"/>
+
+                            <!-- Filter Chips -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button x:Name="SearchFilterAllBtn" Content="すべて" Click="SearchFilterChip_Click" Tag="All"
+                                        Height="24" Padding="10,0" FontSize="11" FontWeight="SemiBold"
+                                        Background="#2563EB" Foreground="#FFFFFF" BorderThickness="1" BorderBrush="#2563EB" Margin="0,0,6,0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="12"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                                <Button x:Name="SearchFilterDocsBtn" Content="📄 文書" Click="SearchFilterChip_Click" Tag="Documents"
+                                        Height="24" Padding="10,0" FontSize="11" FontWeight="Medium"
+                                        Background="#F8FAFC" Foreground="#475569" BorderThickness="1" BorderBrush="#E2E8F0" Margin="0,0,6,0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="12"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                                <Button x:Name="SearchFilterMediaBtn" Content="🖼️ メディア" Click="SearchFilterChip_Click" Tag="Media"
+                                        Height="24" Padding="10,0" FontSize="11" FontWeight="Medium"
+                                        Background="#F8FAFC" Foreground="#475569" BorderThickness="1" BorderBrush="#E2E8F0" Margin="0,0,6,0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="12"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                                <Button x:Name="SearchFilterArchivesBtn" Content="📦 圧縮" Click="SearchFilterChip_Click" Tag="Archives"
+                                        Height="24" Padding="10,0" FontSize="11" FontWeight="Medium"
+                                        Background="#F8FAFC" Foreground="#475569" BorderThickness="1" BorderBrush="#E2E8F0" Margin="0,0,6,0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="12"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                                <Button x:Name="SearchFilterOthersBtn" Content="⚙️ その他" Click="SearchFilterChip_Click" Tag="Others"
+                                        Height="24" Padding="10,0" FontSize="11" FontWeight="Medium"
+                                        Background="#F8FAFC" Foreground="#475569" BorderThickness="1" BorderBrush="#E2E8F0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="12"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </StackPanel>
+
+                            <!-- Sort Dropdown -->
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock x:Name="SearchSortLabel" Text="並び替え:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox x:Name="SearchSortComboBox" Height="26" Width="170" FontSize="11"
+                                          SelectionChanged="SearchSortComboBox_SelectionChanged">
+                                    <ComboBoxItem Content="🎯 関連度順" Tag="Relevance" IsSelected="True"/>
+                                    <ComboBoxItem Content="🕒 更新日時 (新しい順)" Tag="DateDesc"/>
+                                    <ComboBoxItem Content="⏳ 更新日時 (古い順)" Tag="DateAsc"/>
+                                    <ComboBoxItem Content="📦 サイズ (大きい順)" Tag="SizeDesc"/>
+                                    <ComboBoxItem Content="📄 サイズ (小さい順)" Tag="SizeAsc"/>
+                                    <ComboBoxItem Content="🔤 名前 (A-Z)" Tag="NameAsc"/>
+                                    <ComboBoxItem Content="🔤 名前 (Z-A)" Tag="NameDesc"/>
+                                </ComboBox>
+                            </StackPanel>
                         </Grid>
 
                         <!-- Modern Search Results ListView -->

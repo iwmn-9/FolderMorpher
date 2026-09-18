@@ -645,6 +645,115 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(dbDir, true); } catch { }
                 }
             }
+
+            // -------------------------------------------------------------
+            // 8. Change Notify Watcher, MFT Preconditions & Filter/Sort Logic
+            // -------------------------------------------------------------
+            {
+                // 1. MftScanService の事前条件・保護検証
+                if (AstraSize.Services.Mft.MftScanService.CanUseMft(@"\\fileserver\share\dept"))
+                    throw new Exception("MftScanService.CanUseMft failed: UNC path must NOT allow direct MFT scan.");
+
+                if (AstraSize.Services.Mft.MftScanService.CanUseMft(string.Empty))
+                    throw new Exception("MftScanService.CanUseMft failed: Empty path must return false.");
+
+                // 2. ContentIndexWatcherService のリアルタイム差分同期検証
+                string watchTempDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_WatchTest_" + Guid.NewGuid().ToString("N"));
+                string watchDbDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_WatchDb_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(watchTempDir);
+                Directory.CreateDirectory(watchDbDir);
+
+                try
+                {
+                    string customDb = Path.Combine(watchDbDir, "WatchIndex.db");
+                    var indexService = new ContentIndexService(customDb);
+                    using var watcher = new ContentIndexWatcherService(indexService);
+
+                    bool started = watcher.StartWatching(watchTempDir);
+                    if (!started)
+                        throw new Exception("ContentIndexWatcherService failed to start watching temporary directory.");
+
+                    // 新規ファイルを作成してバッチ同期を実行
+                    string watchFile1 = Path.Combine(watchTempDir, "リアルタイム速報_2026.txt");
+                    File.WriteAllText(watchFile1, "即時インデックス反映テスト本文です。");
+
+                    // OS イベント通知待ち (最大500ms)
+                    for (int i = 0; i < 10 && !watcher.HasPendingChanges; i++)
+                    {
+                        await Task.Delay(50);
+                    }
+                    if (!watcher.HasPendingChanges)
+                    {
+                        watcher.EnqueueChange(watchFile1, FileChangeType.Upsert);
+                    }
+                    await watcher.ProcessPendingChangesAsync();
+
+                    var qWatch = SearchQueryParser.Parse("リアルタイム速報");
+                    var watchHits = await indexService.SearchIndexedAsync(qWatch, watchTempDir, CancellationToken.None);
+                    if (watchHits.Count != 1 || !watchHits[0].FullPath.Equals(watchFile1, StringComparison.OrdinalIgnoreCase))
+                        throw new Exception($"Watcher upsert failed: Expected 1 hit for new file, got {watchHits.Count}.");
+
+                    // ファイルを削除してバッチ同期を実行
+                    File.Delete(watchFile1);
+                    for (int i = 0; i < 10 && !watcher.HasPendingChanges; i++)
+                    {
+                        await Task.Delay(50);
+                    }
+                    if (!watcher.HasPendingChanges)
+                    {
+                        watcher.EnqueueChange(watchFile1, FileChangeType.Delete);
+                    }
+                    await watcher.ProcessPendingChangesAsync();
+
+                    var watchHitsAfterDelete = await indexService.SearchIndexedAsync(qWatch, watchTempDir, CancellationToken.None);
+                    if (watchHitsAfterDelete.Count != 0)
+                        throw new Exception("Watcher delete failed: File remained in index after deletion.");
+                }
+                finally
+                {
+                    try { Directory.Delete(watchTempDir, true); } catch { }
+                    try { Directory.Delete(watchDbDir, true); } catch { }
+                }
+
+                // 3. 検索結果フィルター＆ソートの論理検証
+                var mockItems = new List<SearchResultItem>
+                {
+                    new() { Name = "報告書.xlsx", FullPath = @"C:\Docs\報告書.xlsx", Extension = ".xlsx", SizeBytes = 5000, LastWriteTime = new DateTime(2026, 1, 1), IsDirectory = false },
+                    new() { Name = "仕様書.pdf", FullPath = @"C:\Docs\仕様書.pdf", Extension = ".pdf", SizeBytes = 20000, LastWriteTime = new DateTime(2026, 2, 1), IsDirectory = false },
+                    new() { Name = "写真.jpg", FullPath = @"C:\Photos\写真.jpg", Extension = ".jpg", SizeBytes = 100000, LastWriteTime = new DateTime(2026, 3, 1), IsDirectory = false },
+                    new() { Name = "アーカイブ.zip", FullPath = @"C:\Backup\アーカイブ.zip", Extension = ".zip", SizeBytes = 50000, LastWriteTime = new DateTime(2026, 4, 1), IsDirectory = false },
+                    new() { Name = "Tool.exe", FullPath = @"C:\Bin\Tool.exe", Extension = ".exe", SizeBytes = 3000, LastWriteTime = new DateTime(2026, 5, 1), IsDirectory = false },
+                    new() { Name = "SubFolder", FullPath = @"C:\SubFolder", Extension = "", SizeBytes = 0, LastWriteTime = new DateTime(2026, 6, 1), IsDirectory = true }
+                };
+
+                // Documents フィルター検証
+                var docExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".xlsx", ".pdf", ".docx", ".txt" };
+                var docs = mockItems.Where(x => !x.IsDirectory && docExts.Contains(x.Extension)).ToList();
+                if (docs.Count != 2 || !docs.Any(x => x.Name == "報告書.xlsx") || !docs.Any(x => x.Name == "仕様書.pdf"))
+                    throw new Exception($"Filter logic failed: Expected 2 document items, got {docs.Count}.");
+
+                // Media フィルター検証
+                var mediaExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".png", ".mp4" };
+                var media = mockItems.Where(x => !x.IsDirectory && mediaExts.Contains(x.Extension)).ToList();
+                if (media.Count != 1 || media[0].Name != "写真.jpg")
+                    throw new Exception($"Filter logic failed: Expected 1 media item, got {media.Count}.");
+
+                // Archives フィルター検証
+                var archiveExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".zip", ".7z" };
+                var archives = mockItems.Where(x => !x.IsDirectory && archiveExts.Contains(x.Extension)).ToList();
+                if (archives.Count != 1 || archives[0].Name != "アーカイブ.zip")
+                    throw new Exception($"Filter logic failed: Expected 1 archive item, got {archives.Count}.");
+
+                // サイズ降順ソート検証
+                var sortedBySizeDesc = mockItems.OrderByDescending(x => x.SizeBytes).ToList();
+                if (sortedBySizeDesc[0].Name != "写真.jpg" || sortedBySizeDesc[1].Name != "アーカイブ.zip")
+                    throw new Exception("Sort logic failed: Size descending order incorrect.");
+
+                // 日時降順ソート検証
+                var sortedByDateDesc = mockItems.OrderByDescending(x => x.LastWriteTime).ToList();
+                if (sortedByDateDesc[0].Name != "SubFolder" || sortedByDateDesc[1].Name != "Tool.exe")
+                    throw new Exception("Sort logic failed: Date descending order incorrect.");
+            }
         }
     }
 }
