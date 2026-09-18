@@ -1577,259 +1577,122 @@
                     </Grid>
                 </Border>
 
-                <!-- Results Work Area: Split View (Modern Card List + Quick Detail Pane) -->
-                <Grid Grid.Row="2">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" MinWidth="360"/>
-                        <ColumnDefinition Width="8"/> <!-- Splitter -->
-                        <ColumnDefinition Width="340" MinWidth="260" MaxWidth="520"/>
-                    </Grid.ColumnDefinitions>
+                <!-- Results Work Area: Full-Width Modern Card List with In-Card Actions -->
+                <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="14,12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
 
-                    <!-- Left: Search Results Card List -->
-                    <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="14,12">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-
-                            <!-- List Header Toolbar -->
-                            <Grid Grid.Row="0" Margin="0,0,0,10">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock x:Name="SearchTableTitleText" Text="検索結果一覧" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="SearchTableHintText" Text="" Visibility="Collapsed"/>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                    <Button x:Name="SearchExportExcelBtn" Content="📊 Excel" Height="24" Padding="8,1" FontSize="11" Margin="0,0,4,0"
-                                            Style="{StaticResource FluentButtonSecondary}" Click="SearchExportExcelButton_Click" ToolTip="検索結果をExcelでエクスポート (.xlsx)"/>
-                                    <Button x:Name="SearchExportCsvBtn" Content="📑 CSV" Height="24" Padding="8,1" FontSize="11"
-                                            Style="{StaticResource FluentButtonSecondary}" Click="SearchExportCsvButton_Click" ToolTip="検索結果をCSVでエクスポート (.csv)"/>
-                                </StackPanel>
-                            </Grid>
-
-                            <!-- Modern Search Results ListView -->
-                            <ListBox x:Name="SearchListView" Grid.Row="1"
-                                     BorderThickness="0" Background="Transparent"
-                                     VirtualizingStackPanel.IsVirtualizing="True"
-                                     VirtualizingStackPanel.VirtualizationMode="Recycling"
-                                     ScrollViewer.CanContentScroll="True"
-                                     SelectionMode="Single"
-                                     SelectionChanged="SearchListView_SelectionChanged"
-                                     MouseDoubleClick="SearchListView_MouseDoubleClick">
-                                <ListBox.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="📄 ファイルを開く (Open)" Click="SearchContextMenu_Open_Click"/>
-                                        <MenuItem Header="📂 エクスプローラーで表示 (Explore)" Click="SearchContextMenu_Explore_Click"/>
-                                        <MenuItem Header="📋 フルパスをコピー (Copy Path)" Click="SearchContextMenu_CopyPath_Click"/>
-                                        <MenuItem Header="📋 ファイル名をコピー (Copy Name)" Click="SearchContextMenu_CopyName_Click"/>
-                                        <Separator/>
-                                        <MenuItem Header="🛡️ Live ACLで開く (Live ACL Control)" Click="SearchContextMenu_LiveAcl_Click"/>
-                                        <MenuItem Header="🚀 移行スタジオに追加 (Simulation)" Click="SearchContextMenu_Simulation_Click"/>
-                                        <MenuItem Header="🔗 リンク修復へ転送 (LinkFixer)" Click="SearchContextMenu_LinkFix_Click"/>
-                                        <MenuItem Header="🧹 ファイル整理・監査へ転送 (Audit &amp; Hygiene)" Click="SearchContextMenu_Audit_Click"/>
-                                        <Separator/>
-                                        <MenuItem Header="📊 検索結果をExcelでエクスポート (.xlsx)" Click="SearchExportExcelButton_Click"/>
-                                        <MenuItem Header="📑 検索結果をCSVでエクスポート (.csv)" Click="SearchExportCsvButton_Click"/>
-                                    </ContextMenu>
-                                </ListBox.ContextMenu>
-
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="ListBoxItem">
-                                        <Setter Property="Padding" Value="0"/>
-                                        <Setter Property="Margin" Value="0,0,0,6"/>
-                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="ListBoxItem">
-                                                    <Border x:Name="ItemBorder" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="12,10">
-                                                        <ContentPresenter/>
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter TargetName="ItemBorder" Property="Background" Value="#F8FAFC"/>
-                                                            <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#CBD5E1"/>
-                                                        </Trigger>
-                                                        <Trigger Property="IsSelected" Value="True">
-                                                            <Setter TargetName="ItemBorder" Property="Background" Value="#EFF6FF"/>
-                                                            <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#3B82F6"/>
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto"/>
-                                                <RowDefinition Height="Auto"/>
-                                                <RowDefinition Height="Auto"/>
-                                            </Grid.RowDefinitions>
-
-                                            <!-- Row 0: Icon + Name + Size + Date -->
-                                            <Grid Grid.Row="0">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/> <!-- Icon -->
-                                                    <ColumnDefinition Width="*"/>    <!-- Name -->
-                                                    <ColumnDefinition Width="Auto"/> <!-- Size & Date -->
-                                                </Grid.ColumnDefinitions>
-
-                                                <TextBlock Text="{Binding TypeIcon}" FontSize="15" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                                <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                                
-                                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
-                                                    <TextBlock Text="{Binding FormattedSize}" FontWeight="Bold" FontSize="12" Foreground="#2563EB" Typography.NumeralAlignment="Tabular" VerticalAlignment="Center"/>
-                                                    <TextBlock Text="{Binding FormattedDate}" FontSize="11" Foreground="#64748B" Typography.NumeralAlignment="Tabular" Margin="10,0,0,0" VerticalAlignment="Center"/>
-                                                </StackPanel>
-                                            </Grid>
-
-                                            <!-- Row 1: Folder Path -->
-                                            <TextBlock Grid.Row="1" Text="{Binding DirectoryPath}" FontSize="11" Foreground="#64748B" Margin="23,3,0,0" TextTrimming="CharacterEllipsis"/>
-
-                                            <!-- Row 2: Content Snippet (Only visible if snippet exists) -->
-                                            <Border Grid.Row="2" Margin="23,6,0,0" Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="8,5"
-                                                    Visibility="{Binding HasSnippet, Converter={StaticResource BoolToVis}}">
-                                                <TextBlock Text="{Binding ContentSnippet}" FontSize="11.5" Foreground="#334155" TextWrapping="Wrap" MaxHeight="44" TextTrimming="CharacterEllipsis" LineHeight="16"/>
-                                            </Border>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
+                        <!-- List Header Toolbar -->
+                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                            <TextBlock x:Name="SearchTableTitleText" Text="検索結果一覧" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="SearchTableHintText" Text="" Visibility="Collapsed"/>
                         </Grid>
-                    </Border>
 
-                    <!-- Splitter -->
-                    <GridSplitter Grid.Column="1" Width="8" Background="Transparent" HorizontalAlignment="Center" VerticalAlignment="Stretch"/>
+                        <!-- Modern Search Results ListView -->
+                        <ListBox x:Name="SearchListView" Grid.Row="1"
+                                 BorderThickness="0" Background="Transparent"
+                                 VirtualizingStackPanel.IsVirtualizing="True"
+                                 VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                 ScrollViewer.CanContentScroll="True"
+                                 SelectionMode="Single"
+                                 MouseDoubleClick="SearchListView_MouseDoubleClick">
+                            <ListBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="📄 ファイルを開く (Open)" Click="SearchContextMenu_Open_Click"/>
+                                    <MenuItem Header="📂 エクスプローラーで表示 (Explore)" Click="SearchContextMenu_Explore_Click"/>
+                                    <MenuItem Header="📋 フルパスをコピー (Copy Path)" Click="SearchContextMenu_CopyPath_Click"/>
+                                    <MenuItem Header="📋 ファイル名をコピー (Copy Name)" Click="SearchContextMenu_CopyName_Click"/>
+                                    <Separator/>
+                                    <MenuItem Header="🛡️ Live ACLで開く (Live ACL Control)" Click="SearchContextMenu_LiveAcl_Click"/>
+                                    <MenuItem Header="🚀 移行スタジオに追加 (Simulation)" Click="SearchContextMenu_Simulation_Click"/>
+                                    <MenuItem Header="🔗 リンク修復へ転送 (LinkFixer)" Click="SearchContextMenu_LinkFix_Click"/>
+                                    <MenuItem Header="🧹 ファイル整理・監査へ転送 (Audit &amp; Hygiene)" Click="SearchContextMenu_Audit_Click"/>
+                                    <Separator/>
+                                    <MenuItem Header="📊 検索結果をExcelでエクスポート (.xlsx)" Click="SearchExportExcelButton_Click"/>
+                                    <MenuItem Header="📑 検索結果をCSVでエクスポート (.csv)" Click="SearchExportCsvButton_Click"/>
+                                </ContextMenu>
+                            </ListBox.ContextMenu>
 
-                    <!-- Right: Quick Detail & Actions Pane -->
-                    <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="16,14">
-                        <Grid>
-                            <!-- Empty Selection State -->
-                            <StackPanel x:Name="SearchDetailEmptyPanel" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Visible">
-                                <TextBlock Text="🔍" FontSize="32" HorizontalAlignment="Center" Margin="0,0,0,8" Opacity="0.5"/>
-                                <TextBlock x:Name="SearchDetailEmptyText" Text="項目を選択すると詳細を表示します" FontSize="12" Foreground="#94A3B8" HorizontalAlignment="Center"/>
-                            </StackPanel>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="Margin" Value="0,0,0,6"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="ItemBorder" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="12,10">
+                                                    <ContentPresenter/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ItemBorder" Property="Background" Value="#F8FAFC"/>
+                                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#CBD5E1"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="ItemBorder" Property="Background" Value="#EFF6FF"/>
+                                                        <Setter TargetName="ItemBorder" Property="BorderBrush" Value="#3B82F6"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
 
-                            <!-- Populated Detail State -->
-                            <Grid x:Name="SearchDetailContentPanel" Visibility="Collapsed">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/> <!-- Header / Name / Quick Action Buttons -->
-                                    <RowDefinition Height="*"/>    <!-- Scrollable Properties & Snippet -->
-                                    <RowDefinition Height="Auto"/> <!-- Bottom Studio Transfer Buttons -->
-                                </Grid.RowDefinitions>
+                                        <!-- Row 0: Icon + Name + Size + Date -->
+                                        <Grid Grid.Row="0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/> <!-- Icon -->
+                                                <ColumnDefinition Width="*"/>    <!-- Name -->
+                                                <ColumnDefinition Width="Auto"/> <!-- Size & Date -->
+                                            </Grid.ColumnDefinitions>
 
-                                <!-- Header -->
-                                <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                                    <Grid Margin="0,0,0,8">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Border Width="36" Height="36" Background="#EFF6FF" CornerRadius="6" VerticalAlignment="Top" Margin="0,0,10,0">
-                                            <TextBlock x:Name="SearchDetailIconText" Text="📄" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock x:Name="SearchDetailNameText" Text="ファイル名" FontWeight="Bold" FontSize="13" Foreground="#0F172A" TextWrapping="Wrap"/>
-                                            <TextBlock x:Name="SearchDetailExtText" Text=".xlsx" FontSize="11" Foreground="#64748B" Margin="0,2,0,0"/>
-                                        </StackPanel>
-                                    </Grid>
-
-                                    <!-- Quick Action Bar -->
-                                    <Grid Margin="0,2,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Button x:Name="SearchDetailOpenBtn" Content="📄 開く" Height="28" Margin="0,0,3,0"
-                                                Style="{StaticResource FluentButtonPrimary}" Click="SearchDetailOpenBtn_Click" ToolTip="ファイルまたはフォルダーを開く"/>
-                                        <Button x:Name="SearchDetailExploreBtn" Grid.Column="1" Content="📂 エクスプローラー" Height="28" Margin="3,0,0,0"
-                                                Style="{StaticResource FluentButtonSecondary}" Click="SearchDetailExploreBtn_Click" ToolTip="エクスプローラーで選択表示"/>
-                                    </Grid>
-                                </StackPanel>
-
-                                <!-- Scrollable Properties -->
-                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,10">
-                                    <StackPanel>
-                                        <!-- Full Path with Copy Button -->
-                                        <TextBlock x:Name="SearchDetailPathLabel" Text="完全パス:" FontSize="11" FontWeight="SemiBold" Foreground="#475569" Margin="0,0,0,3"/>
-                                        <Grid Margin="0,0,0,6">
-                                            <TextBox x:Name="SearchDetailPathTextBox" IsReadOnly="True" Background="#F8FAFC" BorderBrush="#E2E8F0"
-                                                     FontSize="11" Padding="6,4" TextWrapping="Wrap" MaxHeight="72" VerticalScrollBarVisibility="Auto" FontFamily="{StaticResource MonoFont}"/>
+                                            <TextBlock Text="{Binding TypeIcon}" FontSize="15" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                            
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                                                <TextBlock Text="{Binding FormattedSize}" FontWeight="Bold" FontSize="12" Foreground="#2563EB" Typography.NumeralAlignment="Tabular" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding FormattedDate}" FontSize="11" Foreground="#64748B" Typography.NumeralAlignment="Tabular" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                            </StackPanel>
                                         </Grid>
-                                        <Button x:Name="SearchDetailCopyPathBtn" Content="📋 パスをコピー" Height="24" Margin="0,0,0,12" FontSize="11"
-                                                Style="{StaticResource FluentButtonSecondary}" Click="SearchDetailCopyPathBtn_Click"/>
 
-                                        <!-- Metadata Grid -->
-                                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,12">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                </Grid.ColumnDefinitions>
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="Auto"/>
-                                                    <RowDefinition Height="Auto"/>
-                                                </Grid.RowDefinitions>
-
-                                                <TextBlock x:Name="SearchDetailSizeLabel" Grid.Row="0" Grid.Column="0" Text="容量:" FontSize="11" Foreground="#64748B" Margin="0,2,8,2"/>
-                                                <TextBlock x:Name="SearchDetailSizeVal" Grid.Row="0" Grid.Column="1" Text="-" FontSize="11" FontWeight="SemiBold" Foreground="#0F172A" Margin="0,2,0,2"/>
-
-                                                <TextBlock x:Name="SearchDetailDateLabel" Grid.Row="1" Grid.Column="0" Text="最終更新:" FontSize="11" Foreground="#64748B" Margin="0,2,8,2"/>
-                                                <TextBlock x:Name="SearchDetailDateVal" Grid.Row="1" Grid.Column="1" Text="-" FontSize="11" Foreground="#0F172A" Margin="0,2,0,2"/>
-
-                                                <TextBlock x:Name="SearchDetailLenLabel" Grid.Row="2" Grid.Column="0" Text="文字数:" FontSize="11" Foreground="#64748B" Margin="0,2,8,2"/>
-                                                <TextBlock x:Name="SearchDetailLenVal" Grid.Row="2" Grid.Column="1" Text="-" FontSize="11" Foreground="#0F172A" Margin="0,2,0,2"/>
-
-                                                <TextBlock x:Name="SearchDetailReasonLabel" Grid.Row="3" Grid.Column="0" Text="一致理由:" FontSize="11" Foreground="#64748B" Margin="0,2,8,2"/>
-                                                <TextBlock x:Name="SearchDetailReasonVal" Grid.Row="3" Grid.Column="1" Text="-" FontSize="11" Foreground="#0F172A" TextWrapping="Wrap" Margin="0,2,0,2"/>
-                                            </Grid>
-                                        </Border>
-
-                                        <!-- Full Snippet (if available) -->
-                                        <StackPanel x:Name="SearchDetailSnippetPanel" Visibility="Collapsed" Margin="0,0,0,10">
-                                            <TextBlock x:Name="SearchDetailSnippetLabel" Text="📄 本文抜粋 (マッチ周辺):" FontSize="11" FontWeight="SemiBold" Foreground="#475569" Margin="0,0,0,4"/>
-                                            <Border Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="6" Padding="10,8">
-                                                <TextBox x:Name="SearchDetailSnippetTextBox" IsReadOnly="True" Background="Transparent" BorderThickness="0"
-                                                         FontSize="11.5" Foreground="#1E3A8A" TextWrapping="Wrap" MaxHeight="120" VerticalScrollBarVisibility="Auto"/>
-                                            </Border>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </ScrollViewer>
-
-                                <!-- Bottom Studio Transfers -->
-                                <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="0,8,0,0">
-                                    <StackPanel>
-                                        <TextBlock x:Name="SearchDetailStudioLabel" Text="スタジオ連携" FontSize="10.5" FontWeight="SemiBold" Foreground="#94A3B8" Margin="0,0,0,6"/>
-                                        <Grid Margin="0,0,0,4">
+                                        <!-- Row 1: Folder Path + Jump to Folder Button -->
+                                        <Grid Grid.Row="1" Margin="23,3,0,0">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <Button x:Name="SearchDetailLiveAclBtn" Content="🛡️ Live ACL" Height="26" Margin="0,0,2,0" FontSize="10.5"
-                                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchContextMenu_LiveAcl_Click" ToolTip="権限コントロールで開く"/>
-                                            <Button x:Name="SearchDetailSimBtn" Grid.Column="1" Content="🚀 移行スタジオ" Height="26" Margin="2,0,0,0" FontSize="10.5"
-                                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchContextMenu_Simulation_Click" ToolTip="移行スタジオの対象に追加"/>
+                                            <TextBlock Text="{Binding DirectoryPath}" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                            <Button Grid.Column="1" Content="{Binding JumpFolderText}" Height="22" Padding="8,1" Margin="8,0,0,0" FontSize="10.5"
+                                                    Style="{StaticResource FluentButtonSecondary}"
+                                                    Click="SearchItemJumpFolder_Click" Tag="{Binding}"
+                                                    ToolTip="{Binding JumpFolderToolTip}"/>
                                         </Grid>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <Button x:Name="SearchDetailAuditBtn" Content="🧹 ファイル監査" Height="26" Margin="0,0,2,0" FontSize="10.5"
-                                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchContextMenu_Audit_Click" ToolTip="ファイル整理・監査へ転送"/>
-                                            <Button x:Name="SearchDetailLinkFixBtn" Grid.Column="1" Content="🔗 リンク修復" Height="26" Margin="2,0,0,0" FontSize="10.5"
-                                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchContextMenu_LinkFix_Click" ToolTip="リンク修復へ転送"/>
-                                        </Grid>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                        </Grid>
-                    </Border>
-                </Grid>
+
+                                        <!-- Row 2: Content Snippet (Only visible if snippet exists) -->
+                                        <Border Grid.Row="2" Margin="23,6,0,0" Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="8,5"
+                                                Visibility="{Binding HasSnippet, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding ContentSnippet}" FontSize="11.5" Foreground="#334155" TextWrapping="Wrap" MaxHeight="44" TextTrimming="CharacterEllipsis" LineHeight="16"/>
+                                        </Border>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                </Border>
+
 
             </Grid>
 

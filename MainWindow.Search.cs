@@ -208,7 +208,6 @@ namespace AstraSize
             }
             _searchResults.Clear();
             _allSearchResults.Clear();
-            UpdateSearchDetailPane(null);
             UpdateSearchKpi(0, 0, TimeSpan.Zero);
         }
 
@@ -315,7 +314,6 @@ namespace AstraSize
             {
                 _searchResults.Clear();
                 _allSearchResults.Clear();
-                UpdateSearchDetailPane(null);
 
 
                 // ⚡ スマートルーティング判定:
@@ -535,69 +533,12 @@ namespace AstraSize
             SearchContextMenu_Open_Click(sender, e);
         }
 
-        private void SearchListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void SearchItemJumpFolder_Click(object sender, RoutedEventArgs e)
         {
-            UpdateSearchDetailPane(GetSelectedSearchItem());
-        }
-
-        private void UpdateSearchDetailPane(SearchResultItem? item)
-        {
-            if (SearchDetailEmptyPanel == null || SearchDetailContentPanel == null) return;
-
-            if (item == null)
+            if (sender is Button btn && btn.Tag is SearchResultItem item && !string.IsNullOrWhiteSpace(item.FullPath))
             {
-                SearchDetailEmptyPanel.Visibility = Visibility.Visible;
-                SearchDetailContentPanel.Visibility = Visibility.Collapsed;
-                return;
+                ShellHelper.SelectInExplorer(item.FullPath);
             }
-
-            SearchDetailEmptyPanel.Visibility = Visibility.Collapsed;
-            SearchDetailContentPanel.Visibility = Visibility.Visible;
-
-            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-
-            if (SearchDetailIconText != null) SearchDetailIconText.Text = item.TypeIcon;
-            if (SearchDetailNameText != null) SearchDetailNameText.Text = item.Name;
-            if (SearchDetailExtText != null)
-            {
-                SearchDetailExtText.Text = item.IsDirectory
-                    ? (isJa ? "フォルダー" : "Folder")
-                    : (string.IsNullOrEmpty(item.Extension) ? "-" : item.Extension.ToUpperInvariant());
-            }
-            if (SearchDetailPathTextBox != null) SearchDetailPathTextBox.Text = item.FullPath;
-            if (SearchDetailSizeVal != null) SearchDetailSizeVal.Text = item.FormattedSize;
-            if (SearchDetailDateVal != null) SearchDetailDateVal.Text = item.FormattedDate;
-            if (SearchDetailLenVal != null) SearchDetailLenVal.Text = isJa ? $"{item.PathLength} 文字" : $"{item.PathLength} chars";
-            if (SearchDetailReasonVal != null) SearchDetailReasonVal.Text = string.IsNullOrWhiteSpace(item.MatchedReason) ? "-" : item.MatchedReason;
-
-            if (SearchDetailSnippetPanel != null && SearchDetailSnippetTextBox != null)
-            {
-                if (item.HasSnippet)
-                {
-                    SearchDetailSnippetPanel.Visibility = Visibility.Visible;
-                    SearchDetailSnippetTextBox.Text = item.ContentSnippet;
-                }
-                else
-                {
-                    SearchDetailSnippetPanel.Visibility = Visibility.Collapsed;
-                    SearchDetailSnippetTextBox.Text = string.Empty;
-                }
-            }
-        }
-
-        private void SearchDetailOpenBtn_Click(object sender, RoutedEventArgs e)
-        {
-            SearchContextMenu_Open_Click(sender, e);
-        }
-
-        private void SearchDetailExploreBtn_Click(object sender, RoutedEventArgs e)
-        {
-            SearchContextMenu_Explore_Click(sender, e);
-        }
-
-        private void SearchDetailCopyPathBtn_Click(object sender, RoutedEventArgs e)
-        {
-            SearchContextMenu_CopyPath_Click(sender, e);
         }
 
         private void SearchContextMenu_Open_Click(object sender, RoutedEventArgs e)

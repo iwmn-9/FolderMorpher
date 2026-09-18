@@ -34,6 +34,8 @@ namespace FolderMorpher.Services
         public static string CopyPath => IsJa ? "📋 パスをコピー" : "📋 Copy Path";
         public static string OpenInExplorer => IsJa ? "📂 エクスプローラーで開く" : "📂 Open in Explorer";
         public static string RevealInExplorer => IsJa ? "📂 エクスプローラーで表示" : "📂 Reveal in Explorer";
+        public static string JumpFolder => IsJa ? "📂 階層を開く" : "📂 Open Folder";
+        public static string JumpFolderToolTip => IsJa ? "このファイルが存在するフォルダーをエクスプローラーで表示" : "Reveal containing folder in Explorer";
         public static string DoubleClickToOpen => IsJa ? "ダブルクリックでエクスプローラーを開く" : "Double-click to open in Explorer";
         public static string DoubleClickToDrillDown => IsJa ? "ダブルクリックで該当フォルダへドリルダウン" : "Double-click to drill down";
         public static string Delete => IsJa ? "🗑️ 削除" : "🗑️ Delete";

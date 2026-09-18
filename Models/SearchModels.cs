@@ -160,6 +160,14 @@ namespace FolderMorpher.Models
         public string DisplaySnippetOrReason => HasSnippet ? ContentSnippet! : MatchedReason;
 
         public bool IsPathLengthRisk => PathLength > 240;
+        public string JumpFolderText => Strings.JumpFolder;
+        public string JumpFolderToolTip => Strings.JumpFolderToolTip;
+
+        public void NotifyLanguageChanged()
+        {
+            OnPropertyChanged(nameof(JumpFolderText));
+            OnPropertyChanged(nameof(JumpFolderToolTip));
+        }
 
         private static string GetFileIcon(string ext)
         {
