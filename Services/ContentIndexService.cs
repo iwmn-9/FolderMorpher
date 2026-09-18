@@ -857,16 +857,29 @@ namespace FolderMorpher.Services
 
                         string nameWhereSql = string.Join(" AND ", nameClauses) + commonWhereSql;
 
-                        sql = $@"
-                            SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, {snippetExpr}
-                            FROM ContentFts c
-                            JOIN IndexedFiles f ON c.FileId = f.FileId
-                            WHERE {ftsWhereSql}
-                            UNION
-                            SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet
-                            FROM IndexedFiles f
-                            WHERE {nameWhereSql}
-                            LIMIT 500";
+                        if (isExplicitContentSearch)
+                        {
+                            // 本文も検索ON: 本文 (FTS5) と ファイル名 (LIKE) のハイブリッド検索 (Name OR Content)
+                            sql = $@"
+                                SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, {snippetExpr}
+                                FROM ContentFts c
+                                JOIN IndexedFiles f ON c.FileId = f.FileId
+                                WHERE {ftsWhereSql}
+                                UNION
+                                SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet
+                                FROM IndexedFiles f
+                                WHERE {nameWhereSql}
+                                LIMIT 500";
+                        }
+                        else
+                        {
+                            // 本文も検索OFF: ファイル名・パス・属性のみの高速検索（FTS結合コストゼロ）
+                            sql = $@"
+                                SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet
+                                FROM IndexedFiles f
+                                WHERE {nameWhereSql}
+                                LIMIT 500";
+                        }
                     }
 
                     cmd.CommandText = sql;

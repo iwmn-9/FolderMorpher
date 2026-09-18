@@ -1512,8 +1512,8 @@
                                 <TextBox x:Name="SearchDirectTargetTextBox" Height="28" FontSize="11" Padding="6,0" VerticalContentAlignment="Center" BorderBrush="#CBD5E1"/>
                                 <Button x:Name="SearchDirectBrowseButton" Grid.Column="1" Content="📁 参照..." Height="28" Margin="4,0,0,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="SearchDirectBrowseButton_Click" ToolTip="走査対象フォルダーを選択"/>
-                                <Button x:Name="SearchSyncIndexButton" Grid.Column="2" Content="⚡ 同期" Height="28" Margin="4,0,0,0" Padding="8,0" FontSize="11"
-                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchSyncIndexButton_Click" ToolTip="このフォルダーのインデックスを最新状態に同期します (差分更新)"/>
+                                <Button x:Name="SearchSyncIndexButton" Grid.Column="2" Content="↻" Width="28" Height="28" Margin="4,0,0,0" Padding="0" FontSize="13" FontWeight="Bold"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchSyncIndexButton_Click" ToolTip="インデックスを手動更新 (差分最新化)"/>
                             </Grid>
                         </Grid>
 

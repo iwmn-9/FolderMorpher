@@ -501,10 +501,10 @@ namespace AstraSize
             if (SearchDirectBrowseButton != null) SearchDirectBrowseButton.Content = Strings.BrowseWithFolder;
             if (SearchSyncIndexButton != null)
             {
-                SearchSyncIndexButton.Content = isJa ? "⚡ 同期" : "⚡ Sync";
+                SearchSyncIndexButton.Content = "↻";
                 SearchSyncIndexButton.ToolTip = isJa
-                    ? "このフォルダーのインデックスを最新状態に同期します (差分更新)"
-                    : "Synchronize this folder's index with latest file changes (Differential update)";
+                    ? "インデックスを手動更新 (差分最新化)"
+                    : "Refresh Index (Differential update)";
             }
             if (SearchKpiHitCountTitle != null) SearchKpiHitCountTitle.Text = Strings.SearchKpiHitCount;
             if (SearchKpiTotalSizeTitle != null) SearchKpiTotalSizeTitle.Text = Strings.SearchKpiTotalSize;

@@ -66,8 +66,8 @@ namespace AstraSize
         {
             if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath)) return;
 
-            // クールダウン判定（自動同期時は前回の同期から5分経過していない場合はスキップしてサーバー負荷抑制）
-            if (!force && !_contentIndex.NeedsBackgroundSync(folderPath, TimeSpan.FromMinutes(5)))
+            // クールダウン判定（自動同期時は前回の同期から15分経過していない場合はスキップしてサーバー負荷抑制）
+            if (!force && !_contentIndex.NeedsBackgroundSync(folderPath, TimeSpan.FromMinutes(15)))
             {
                 return;
             }
@@ -99,8 +99,24 @@ namespace AstraSize
                         {
                             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                             ShowToast(isJa
-                                ? $"⚡ インデックスを最新化しました (追加/更新: {report.NewlyIndexedCount:N0}件, 削除: {report.DeletedCount:N0}件)"
-                                : $"⚡ Index updated (Updated: {report.NewlyIndexedCount:N0}, Deleted: {report.DeletedCount:N0})");
+                                ? $"⚡ インデックスを最新化しました ({report.NewlyIndexedCount + report.DeletedCount:N0}件の変更)"
+                                : $"⚡ Index updated ({report.NewlyIndexedCount + report.DeletedCount:N0} changes)");
+
+                            // ★ 自動再検索: ユーザーが検索窓を開いたままであれば、最新インデックスから自動リフレッシュ
+                            string currentFolder = SearchDirectTargetTextBox?.Text?.Trim() ?? string.Empty;
+                            if (string.IsNullOrWhiteSpace(currentFolder))
+                            {
+                                var selectedTab = StorageTabs?.FirstOrDefault(t => t.IsSelected);
+                                if (selectedTab?.RootNode != null) currentFolder = selectedTab.RootNode.FullPath;
+                            }
+
+                            if (string.Equals(currentFolder, folderPath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (!string.IsNullOrWhiteSpace(SearchInputBox?.Text))
+                                {
+                                    ExecuteSearch(isIncremental: false, isAutoRefresh: true);
+                                }
+                            }
                         });
                     }
                     else if (force)
@@ -211,7 +227,7 @@ namespace AstraSize
 
         #region Search Execution Core (Smart Auto-Routing)
 
-        private async void ExecuteSearch(bool isIncremental)
+        private async void ExecuteSearch(bool isIncremental, bool isAutoRefresh = false)
         {
             string rawQuery = SearchInputBox?.Text?.Trim() ?? string.Empty;
             var query = SearchQueryParser.Parse(rawQuery);
@@ -322,8 +338,8 @@ namespace AstraSize
                         }
                     }
 
-                    // ⚡ インデックス検索完了後、裏で差分更新を自動トリガー（5分クールダウン制御でサーバー負荷ゼロ）
-                    if (hasTarget)
+                    // ⚡ インデックス検索完了後、裏で差分更新を自動トリガー（15分クールダウン制御でサーバー負荷抑制）
+                    if (hasTarget && !isAutoRefresh)
                     {
                         TriggerBackgroundIndexUpdate(targetFolder, force: false);
                     }
@@ -341,8 +357,8 @@ namespace AstraSize
                         }
                     }
 
-                    // インデックス同期を裏で自動トリガー（5分クールダウン制御付き）
-                    if (hasTarget)
+                    // インデックス同期を裏で自動トリガー（15分クールダウン制御付き）
+                    if (hasTarget && !isAutoRefresh)
                     {
                         TriggerBackgroundIndexUpdate(targetFolder, force: false);
                     }
@@ -365,7 +381,7 @@ namespace AstraSize
                     }
 
                     // 走査完了後、裏でインデックスを自動蓄積
-                    if (hasTarget)
+                    if (hasTarget && !isAutoRefresh)
                     {
                         TriggerBackgroundIndexUpdate(targetFolder, force: false);
                     }

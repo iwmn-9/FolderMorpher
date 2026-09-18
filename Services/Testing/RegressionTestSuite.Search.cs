@@ -277,6 +277,7 @@ namespace FolderMorpher.Services.Testing
 
                     // B. ミリ秒全文検索 (FTS5 trigram + snippet)
                     var qSecret = SearchQueryParser.Parse("最高機密");
+                    qSecret.SearchContentMode = true;
                     var ftsHits = await indexService.SearchIndexedAsync(qSecret, tempDir, CancellationToken.None);
                     if (ftsHits.Count == 0)
                         throw new Exception("ContentIndexService failed: Keyword '最高機密' not found in indexed search.");
@@ -285,20 +286,30 @@ namespace FolderMorpher.Services.Testing
                     if (!ftsDocFound)
                         throw new Exception("ContentIndexService failed: Confidential_Doc.txt with snippet was not found in FTS results.");
 
+                    // B1-2. 本文OFF (SearchContentMode = false) の時は、ファイル名に含まれない本文マッチが除外されること (Sol指摘: 意味論の厳格化)
+                    var qSecretOff = SearchQueryParser.Parse("最高機密");
+                    qSecretOff.SearchContentMode = false;
+                    var offHits = await indexService.SearchIndexedAsync(qSecretOff, tempDir, CancellationToken.None);
+                    if (offHits.Count > 0)
+                        throw new Exception("ContentIndexService failed: Content matches should NOT appear when SearchContentMode is false.");
+
                     // B2. 日本語2文字検索のハイブリッド検証 (Sol指摘: 3文字未満は trigram MATCH エラーにならず LIKE fallback で正確にヒットすること)
                     var qTwoChar = SearchQueryParser.Parse("契約");
+                    qTwoChar.SearchContentMode = true;
                     var twoCharHits = await indexService.SearchIndexedAsync(qTwoChar, tempDir, CancellationToken.None);
                     if (!twoCharHits.Any(h => h.FullPath.EndsWith("Contract_Doc.pdf")))
                         throw new Exception("ContentIndexService failed: 2-character Japanese keyword '契約' should hit Contract_Doc.pdf via LIKE fallback.");
 
                     // B3. 複数キーワード AND 検索 (Sol指摘: 単一フレーズ化せず個別トークンAND結合でヒットすること)
                     var qAndSearch = SearchQueryParser.Parse("予算 2026");
+                    qAndSearch.SearchContentMode = true;
                     var andHits = await indexService.SearchIndexedAsync(qAndSearch, tempDir, CancellationToken.None);
                     if (!andHits.Any(h => h.FullPath.EndsWith("予算_計画書.txt")))
                         throw new Exception("ContentIndexService failed: Multi-keyword AND search '予算 2026' did not hit 予算_計画書.txt.");
 
                     // B4. クエリ構文の SQL 貫通検証 (ext:txt size:<10MB !NoSuchWord)
                     var qFilter = SearchQueryParser.Parse("ext:txt size:<10MB !xyznotfound 最高機密");
+                    qFilter.SearchContentMode = true;
                     var filterHits = await indexService.SearchIndexedAsync(qFilter, tempDir, CancellationToken.None);
                     if (!filterHits.Any(h => h.FullPath.EndsWith("Confidential_Doc.txt")))
                         throw new Exception("ContentIndexService failed: Filtered indexed search with ext: and size: failed to hit Confidential_Doc.txt.");
@@ -321,6 +332,7 @@ namespace FolderMorpher.Services.Testing
 
                     // D. 新規ファイル検索
                     var qDyn = SearchQueryParser.Parse("アルファ版");
+                    qDyn.SearchContentMode = true;
                     var dynHits = await indexService.SearchIndexedAsync(qDyn, tempDir, CancellationToken.None);
                     if (!dynHits.Any(h => h.FullPath.EndsWith("Dynamic_Doc.txt")))
                         throw new Exception("ContentIndexService failed: Newly added Dynamic_Doc.txt was not found via FTS.");
