@@ -599,3 +599,34 @@
   3. **本文スニペット枠（Row 2）の完全撤去によるカードの均一化**:
      - 検索結果リストからグレーの本文プレビュー枠（Row 2）を撤去。
      - 全カードを均一な 2 行構造（上段: アイコン＋ファイル名＋サイズ＋更新・作成日時、下段: パス＋フォルダーを開くボタン）に統一し、スクロール時の快適性と一覧性を飛躍的に向上。
+
+---
+
+### ADR 75: 自前DB自己食い完全除外 ＆ Watcher×Full Scan世代競合防止 ＆ Folderインデックス検索（IsDirectory） ＆ MFT作成日時正常化 ＆ スコアリング構文ノイズ排除
+*(v2.2.6 本番施工 & ADR 75)*
+
+- **背景と課題**:
+  - **CI/回帰テストでの自前DB自己食い**: テスト用一時ディレクトリ直下に `TestIndex.db` を作成した際、走査エンジンが自身のリレーショナルDB（および `-wal`, `-shm`）を発見・インデックス登録してしまい、`newlyIndexed` 件数が不一致を起こしていた。
+  - **Watcher と Full Scan の世代競合（Generation Race）**: Full Scan の実行中に FileSystemWatcher が新着ファイルを検知して Generation 0 で INSERT すると、Full Scan 完了時の `DELETE WHERE Generation < currentGen` によって新着ファイルが亡霊ファイルとして誤消去されるリスクがあった。
+  - **インデックス検索でのフォルダーヒット非対応**: ライブ直接走査では「📁 フォルダも含める」でフォルダーがヒットするのに対し、高速インデックス検索（FTS5）ではファイルのみが登録されていたため、フォルダー検索で0件になっていた。
+  - **MFT Fast Track での作成日時欠落**: MFT 走査時に $FILE_NAME 属性の作成日時が取得されず、LastWriteTime が代入されていた。
+  - **関連度スコアへの構文トークン混入**: `ext:txt` や `size:<10MB` などの構文トークンがそのままキーワードとしてスコア計算に混入し、意図しないリランキングを引き起こしていた。
+- **施工内容**:
+  1. **自前DB自己食いの完全除外**:
+     - `ContentIndexService.IsDatabaseFile` を新設。対象パスが DB 本体（`_dbPath`）またはその関連ファイル（`-wal`, `-shm`, `-journal`）であるかを完全判定し、走査結果、インデックス登録、および Watcher イベントから 100% 除外。
+  2. **Watcher × Full Scan 世代競合防止 ＆ Deferred Flush**:
+     - `ContentIndexService._activeScanRoots`（スキャン中ルートと実行中世代の管理）および `ScanCompleted` イベントを実装。
+     - `ContentIndexWatcherService` は、スキャン中ルート配下のイベントを即座に適用せず保留（deferred）キューに退避。スキャン完了通知（`ScanCompleted`）を受信した直後に、最新世代（`currentGen`）として安全に一括適用（flush）。
+     - Watcher エラー（`watcher.Error`）発生時は即座に `MarkRootDirty` で次回整合対象としてマーク。
+  3. **Folder インデックス検索（IsDirectory）＆ trigram MATCH 貫通**:
+     - `IndexedFiles` テーブルに `IsDirectory INTEGER DEFAULT 0` カラムを追加（起動時 ALTER TABLE 自動マイグレーション）。
+     - `SafeFileEnumerator.EnumerateFileEntriesParallelAsync` に `includeDirectories: true` を指定してフォルダーも網羅走査。
+     - ディレクトリを `IndexedFiles` および `MetadataFts`（trigram）に登録。
+     - `SearchIndexedAsync` において、`query.IncludeFolders = false` 時は `f.IsDirectory = 0` でファイルのみ、`query.IncludeFolders = true` 時はフォルダーもミリ秒でヒットさせ、`SearchResultItem.IsDirectory` を正しく設定。
+  4. **MFT Fast Track の作成日時（CreationTime）正常化**:
+     - `MftRecordParser` において、$FILE_NAME 属性の offset +0x08 から真の作成日時（`CreationTime`）を解析。
+     - `RawMftItem` -> `FastNode` -> `FileItemNode` -> `ScannedFileEntry` へと作成日時を貫通させ、MFT 経由でも正確な作成日時ソートを実現。
+  5. **Relevance Score の構文ノイズ排除**:
+     - `MainWindow.Search.cs` の `CalculateRelevanceScore` において、生クエリ文字列ではなく `SearchQueryParser.Parse` 後の純粋な `Keywords` および `ExactPhrases` のみを取り出してスコアリング。構文トークンによる歪みを完全排除。
+  6. **自動回帰テストによる恒久保護**:
+     - `RegressionTestSuite.Search.cs` に「セクション 9: Folder インデックス検索（IsDirectory）＆ 自前DB除外 ＆ 世代競合防止」を新設。全 8 ドメイン 8/8 ALL PASSED を自動検証・堅持。

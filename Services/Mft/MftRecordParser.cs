@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Text;
 
 namespace AstraSize.Services.Mft
@@ -11,6 +11,7 @@ namespace AstraSize.Services.Mft
         public long Size;
         public bool IsDirectory;
         public DateTime LastModified;
+        public DateTime CreationTime;
     }
 
     public static class MftRecordParser
@@ -76,6 +77,7 @@ namespace AstraSize.Services.Mft
             ulong parentFrn = 0;
             long fileSize = 0;
             DateTime lastModified = DateTime.MinValue;
+            DateTime creationTime = DateTime.MinValue;
 
             while (attrOffset + 8 <= offset + recordSize)
             {
@@ -97,6 +99,12 @@ namespace AstraSize.Services.Mft
                     {
                         ulong rawParentFrn = BitConverter.ToUInt64(record, fnStart);
                         ulong parentRecord = rawParentFrn & 0x0000FFFFFFFFFFFF; // Lower 48 bits are record number
+
+                        long createTime = BitConverter.ToInt64(record, fnStart + 0x08);
+                        if (createTime > 0)
+                        {
+                            try { creationTime = DateTime.FromFileTimeUtc(createTime).ToLocalTime(); } catch { }
+                        }
 
                         long modFileTime = BitConverter.ToInt64(record, fnStart + 0x10);
                         if (modFileTime > 0)
@@ -158,7 +166,8 @@ namespace AstraSize.Services.Mft
                 Name = bestName,
                 Size = isDirectory ? 0 : Math.Max(0, fileSize),
                 IsDirectory = isDirectory,
-                LastModified = lastModified == DateTime.MinValue ? DateTime.Now : lastModified
+                LastModified = lastModified == DateTime.MinValue ? DateTime.Now : lastModified,
+                CreationTime = creationTime == DateTime.MinValue ? (lastModified == DateTime.MinValue ? DateTime.Now : lastModified) : creationTime
             };
 
             return true;

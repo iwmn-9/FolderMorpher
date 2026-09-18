@@ -163,6 +163,13 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
     - **全画面完全展開（残存長方形バッジの完全根絶）**: 検索スタジオ（`SearchListView`）および容量分析ツリー（`FileTreeDataGrid`）に加え、容量上位ファイル Top 10（`TopFilesDataGrid`）、選択フォルダーの内訳（`FolderChildSharesDataGrid`）、ファイル監査（`AuditItemsDataGrid`）に至るまで、旧来の長方形バッジを例外なく Option 1 書類ベクターアイコンへ完全統一。
     - **トーン統一フォルダーアイコン**: ファイルアイコンと同じ線幅（1.5）・角丸・立体ポケット構造（奥タブ `#FDE68A`、前ポケット `#FEF3C7`、輪郭 `#D97706`）で統一した Tabler フォルダーを配備。ファイルとフォルダーのデザイン言語を完全同期。
     - **検索結果カードの均一化（本文スニペット枠の撤去）**: ノイズとなっていたグレーの本文一致プレビュー枠（Row 2）を撤去し、すべてのカードを均一な 2 行構造（上段: アイコン＋名前＋サイズ＋更新・作成日時、下段: パス＋フォルダーを開くボタン）へ整線。一覧性と美観を極大化。
+19. **自前DB自己食い完全除外 ＆ Watcher×Full Scan世代競合防止 ＆ Folderインデックス検索（IsDirectory） ＆ MFT作成日時正常化 ＆ スコアリング構文ノイズ排除（v2.2.6 / ADR 75）**:
+    - **自前DB自己食いの完全除外（CI Green化）**: `ContentIndexService.IsDatabaseFile` を新設し、走査ディレクトリ直下に配置された自前 SQLite DB（`*.db`, `-wal`, `-shm`, `-journal`）を走査結果・インデックス・Watcher から 100% 除外。自己増殖および回帰テストの件数不一致を根本解消。
+    - **Watcher × Full Scan 世代競合防止 ＆ Deferred Flush**: Full Scan 実行中に Watcher が検知した変更を即座に適用せず保留（deferred）し、スキャン完了イベント（`ScanCompleted`）直後に最新世代番号（`currentGen`）として安全に一括適用（flush）。誤削除レースを完全排除。Watcher エラー時は即座に `MarkRootDirty` で次回同期を要求。
+    - **Folder インデックス検索（IsDirectory）＆ trigram MATCH**: `IndexedFiles` に `IsDirectory` カラムを追加（自動マイグレーション）。`SafeFileEnumerator` に `includeDirectories: true` を指定してフォルダーも列挙・インデックス登録。`IncludeFolders = true` 時にフォルダーもミリ秒で trigram MATCH 取得可能に。
+    - **MFT Fast Track 作成日時正常化**: $FILE_NAME 属性 offset +0x08 から真の作成日時（`CreationTime`）を解析し、`ScannedFileEntry` まで貫通。
+    - **Relevance Score 構文ノイズ排除**: `SearchQueryParser.Parse` により `ext:`, `size:`, `>` 等の構文トークンをスコア計算から排除し、純粋なキーワード・フレーズのみでスコアリング。
+    - **回帰テスト（Domain 8 セクション 9）新設**: 自前DB除外、フォルダー検索 ON/OFF、世代競合防止を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
 ---
 
 ---

@@ -956,10 +956,13 @@ namespace AstraSize
             if (string.IsNullOrWhiteSpace(rawQuery)) return 0;
             int score = 0;
 
-            var keywords = rawQuery.Split(new[] { ' ', '　' }, StringSplitOptions.RemoveEmptyEntries)
-                                   .Select(k => k.Trim().Trim('"', '*'))
-                                   .Where(k => !string.IsNullOrEmpty(k))
-                                   .ToList();
+            // SearchQueryParser を通して構文トークン (ext:, size:, !等) を除外し、純粋なキーワードとフレーズのみを抽出
+            var parsed = SearchQueryParser.Parse(rawQuery);
+            var keywords = parsed.Keywords.Concat(parsed.ExactPhrases)
+                                          .Where(k => !string.IsNullOrWhiteSpace(k))
+                                          .Select(k => k.Trim().Trim('"', '*'))
+                                          .Distinct(StringComparer.OrdinalIgnoreCase)
+                                          .ToList();
 
             if (keywords.Count == 0) return 0;
 

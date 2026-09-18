@@ -745,6 +745,74 @@ namespace FolderMorpher.Services.Testing
                     throw new Exception($"TablerBadgeHelper failed: Folder badge text must be empty (vector rendering), got '{folderBadge.Text}'.");
                 if (folderBadge.Background != "#FEF3C7" || folderBadge.BorderBrush != "#D97706")
                     throw new Exception("TablerBadgeHelper failed: Folder badge color must be Amber palette.");
+
+                // -------------------------------------------------------------
+                // 4. セクション 9: Folder インデックス検索（IsDirectory）＆ 自前DB除外 ＆ 世代競合防止
+                // -------------------------------------------------------------
+                string dirTestRoot = Path.Combine(Path.GetTempPath(), "FM_DirTest_" + Guid.NewGuid().ToString("N"));
+                string dirTestDb = Path.Combine(dirTestRoot, "SelfContainedIndex.db"); // 自前DBを走査ルート内に配置！
+                Directory.CreateDirectory(dirTestRoot);
+
+                try
+                {
+                    string subDir = Path.Combine(dirTestRoot, "2026_プロジェクト資料");
+                    Directory.CreateDirectory(subDir);
+                    string subFile = Path.Combine(subDir, "プロジェクト計画.txt");
+                    File.WriteAllText(subFile, "計画本文", Encoding.UTF8);
+
+                    var selfService = new ContentIndexService(dirTestDb);
+
+                    // A. 自前DB除外の検証
+                    if (!selfService.IsDatabaseFile(dirTestDb) ||
+                        !selfService.IsDatabaseFile(dirTestDb + "-wal") ||
+                        !selfService.IsDatabaseFile(dirTestDb + "-shm"))
+                    {
+                        throw new Exception("IsDatabaseFile failed: Database path or its WAL/SHM was not detected as database file.");
+                    }
+                    if (selfService.IsDatabaseFile(subFile))
+                    {
+                        throw new Exception("IsDatabaseFile failed: Normal text file was falsely identified as database file.");
+                    }
+
+                    // B. インデックス作成（自前DBが同居していても自己食いしないこと）
+                    var dirReport = await selfService.IndexFolderAsync(dirTestRoot, null, CancellationToken.None);
+                    if (dirReport.NewlyIndexedCount != 2) // プロジェクト計画.txt (1) + 2026_プロジェクト資料 (1) = 2 (SelfContainedIndex.dbは除外!)
+                    {
+                        throw new Exception($"Self-contained DB exclusion failed: Expected newlyIndexed=2 (1 file + 1 dir), got {dirReport.NewlyIndexedCount}");
+                    }
+
+                    // C. フォルダを含める=OFF（通常検索）: ファイルのみヒット
+                    var qNoDir = SearchQueryParser.Parse("プロジェクト");
+                    qNoDir.IncludeFolders = false;
+                    var hitsNoDir = await selfService.SearchIndexedAsync(qNoDir, dirTestRoot, CancellationToken.None);
+                    if (hitsNoDir.Any(h => h.IsDirectory))
+                    {
+                        throw new Exception("IncludeFolders=false failed: Directory appeared in search results.");
+                    }
+                    if (!hitsNoDir.Any(h => h.FullPath.EndsWith("プロジェクト計画.txt")))
+                    {
+                        throw new Exception("IncludeFolders=false failed: Text file did not hit.");
+                    }
+
+                    // D. フォルダを含める=ON: フォルダーも trigram MATCH でヒットすること
+                    var qWithDir = SearchQueryParser.Parse("プロジェクト");
+                    qWithDir.IncludeFolders = true;
+                    var hitsWithDir = await selfService.SearchIndexedAsync(qWithDir, dirTestRoot, CancellationToken.None);
+                    if (!hitsWithDir.Any(h => h.IsDirectory && h.Name.Contains("プロジェクト資料")))
+                    {
+                        throw new Exception("IncludeFolders=true failed: Directory '2026_プロジェクト資料' was not found via FTS.");
+                    }
+
+                    // E. 世代競合防止: スキャン中判定が正しく機能すること
+                    if (selfService.IsScanningRoot(dirTestRoot))
+                    {
+                        throw new Exception("IsScanningRoot failed: Scan already completed but still marked as active.");
+                    }
+                }
+                finally
+                {
+                    try { Directory.Delete(dirTestRoot, true); } catch { }
+                }
             }
         }
     }

@@ -34,8 +34,18 @@ namespace FolderMorpher.Services
         public ContentIndexWatcherService(ContentIndexService indexService)
         {
             _indexService = indexService ?? throw new ArgumentNullException(nameof(indexService));
+            _indexService.ScanCompleted += OnScanCompleted;
             // 300ms 間隔でキュー内の変更を集約バッチ処理
             _debounceTimer = new Timer(OnDebounceTick, null, Timeout.Infinite, Timeout.Infinite);
+        }
+
+        private void OnScanCompleted(string rootPath)
+        {
+            // フル走査完了時: 保留されていた変更を即座に Flush して最新状態を確定
+            if (!_disposed && !_pendingChanges.IsEmpty)
+            {
+                _debounceTimer.Change(50, Timeout.Infinite);
+            }
         }
 
         /// <summary>
@@ -75,6 +85,8 @@ namespace FolderMorpher.Services
                     watcher.Error += (s, e) =>
                     {
                         System.Diagnostics.Debug.WriteLine($"[Watcher] Error on {path}: {e.GetException()?.Message}");
+                        // バッファOverflow等のエラー時はDirtyマークを付け、次回検索時に15分クールダウンをバイパスして強制フル走査させる
+                        _indexService.MarkRootDirty(path);
                     };
 
                     watcher.EnableRaisingEvents = true;
@@ -130,6 +142,9 @@ namespace FolderMorpher.Services
         {
             if (_disposed || string.IsNullOrWhiteSpace(fullPath)) return;
 
+            // 自前DB関連ファイルはWatcherからも完全除外
+            if (_indexService.IsDatabaseFile(fullPath)) return;
+
             string ext = Path.GetExtension(fullPath);
             if (string.Equals(ext, ".tmp", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(ext, ".db", StringComparison.OrdinalIgnoreCase) ||
@@ -174,10 +189,19 @@ namespace FolderMorpher.Services
 
                 var toDelete = new List<string>();
                 var toUpsert = new List<string>();
+                var deferred = new List<KeyValuePair<string, FileChangeType>>();
 
                 foreach (var kvp in snapshot)
                 {
-                    if (kvp.Value == FileChangeType.Delete || !File.Exists(kvp.Key))
+                    // フル走査中のルート下の変更は保留（スキャン完了時のScanCompletedでflushされ最新Generationで安全適用）
+                    if (_indexService.IsScanningRoot(kvp.Key))
+                    {
+                        deferred.Add(kvp);
+                        continue;
+                    }
+
+                    bool exists = File.Exists(kvp.Key) || Directory.Exists(kvp.Key);
+                    if (kvp.Value == FileChangeType.Delete || !exists)
                     {
                         toDelete.Add(kvp.Key);
                     }
@@ -185,6 +209,12 @@ namespace FolderMorpher.Services
                     {
                         toUpsert.Add(kvp.Key);
                     }
+                }
+
+                // 走査中のため保留したアイテムをキューに復帰
+                foreach (var def in deferred)
+                {
+                    _pendingChanges[def.Key] = (def.Value, DateTime.UtcNow);
                 }
 
                 if (toDelete.Count > 0)
@@ -200,8 +230,11 @@ namespace FolderMorpher.Services
                     }
                 }
 
-                var appliedPaths = new List<string>(snapshot.Keys);
-                ChangesApplied?.Invoke(this, appliedPaths);
+                var appliedPaths = new List<string>(toDelete.Concat(toUpsert));
+                if (appliedPaths.Count > 0)
+                {
+                    ChangesApplied?.Invoke(this, appliedPaths);
+                }
             }
             catch (Exception ex)
             {

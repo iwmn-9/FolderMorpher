@@ -21,6 +21,7 @@ namespace AstraSize.Services.Mft
             public long Size;
             public bool IsDirectory;
             public DateTime LastModified;
+            public DateTime CreationTime;
             public List<FastNode> Children = new();
             public int FileCount;
             public int FolderCount;
@@ -181,7 +182,8 @@ namespace AstraSize.Services.Mft
                                     Name = item.Name,
                                     Size = item.Size,
                                     IsDirectory = item.IsDirectory,
-                                    LastModified = item.LastModified
+                                    LastModified = item.LastModified,
+                                    CreationTime = item.CreationTime
                                 };
                             }
                             currentRecordNum++;
@@ -376,6 +378,7 @@ namespace AstraSize.Services.Mft
                         FolderCount = fn.FolderCount,
                         IsDirectory = fn.IsDirectory,
                         LastModified = fn.LastModified,
+                        CreationTime = fn.CreationTime,
                         Level = level,
                         Parent = parent
                     };
