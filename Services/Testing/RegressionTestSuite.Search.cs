@@ -396,6 +396,73 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(tempDir, true); } catch { }
                 }
             }
+
+            // -------------------------------------------------------------
+            // 4. SearchDirectFolderAsync: ライブ直接走査における本文検索のフライング加算防止 & 非対応拡張子事前スキップ検証
+            // -------------------------------------------------------------
+            {
+                string tempDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_DirectContentTest_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(tempDir);
+                try
+                {
+                    // 1. テストファイル群の準備
+                    // A: ファイル名一致（画像だが名前一致で即時合格）
+                    string fileImgHit = Path.Combine(tempDir, "秘密_Scan.jpg");
+                    File.WriteAllBytes(fileImgHit, new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x01, 0x02 }); // 6 bytes
+
+                    // B: 本文一致（テキストで中身にキーワードあり）
+                    string fileTextHit = Path.Combine(tempDir, "Audit_Report.txt");
+                    File.WriteAllText(fileTextHit, "社内限定: 本文に秘密の暗号キーを含む", Encoding.UTF8);
+
+                    // C: 本文非対応＆名前不一致（画像、中身検索できずスキップされるべき）
+                    string fileImgMiss = Path.Combine(tempDir, "Unrelated_Photo.png");
+                    File.WriteAllBytes(fileImgMiss, new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A });
+
+                    // D: バイナリ非対応＆名前不一致（exe、中身検索できずスキップされるべき）
+                    string fileExeMiss = Path.Combine(tempDir, "Tool.exe");
+                    File.WriteAllBytes(fileExeMiss, new byte[] { 0x4D, 0x5A, 0x90, 0x00 });
+
+                    var qDirect = SearchQueryParser.Parse("秘密");
+                    qDirect.SearchContentMode = true;
+
+                    int maxProgressHitCount = 0;
+                    var progress = new Progress<SearchProgressReport>(r =>
+                    {
+                        if (r.HitCount > maxProgressHitCount)
+                        {
+                            maxProgressHitCount = r.HitCount;
+                        }
+                    });
+
+                    var hits = await searchEngine.SearchDirectFolderAsync(tempDir, qDirect, null, progress, CancellationToken.None);
+
+                    // ヒット数はちょうど2件（fileImgHit と fileTextHit）であること
+                    if (hits.Count != 2)
+                        throw new Exception($"SearchDirectFolderAsync Content Search failed: Expected 2 hits, got {hits.Count}");
+
+                    if (!hits.Any(h => h.FullPath == fileImgHit))
+                        throw new Exception("SearchDirectFolderAsync Content Search failed: '秘密_Scan.jpg' was not matched by name.");
+
+                    if (!hits.Any(h => h.FullPath == fileTextHit))
+                        throw new Exception("SearchDirectFolderAsync Content Search failed: 'Audit_Report.txt' was not matched by content.");
+
+                    if (hits.Any(h => h.FullPath == fileImgMiss || h.FullPath == fileExeMiss))
+                        throw new Exception("SearchDirectFolderAsync Content Search failed: Non-supported binary files (png/exe) without matching name were mistakenly matched.");
+
+                    // フライング加算防止検証: 途中進捗の HitCount が全ファイル数 (4件) に跳ね上がっていないこと
+                    if (maxProgressHitCount > 2)
+                        throw new Exception($"SearchDirectFolderAsync Content Search failed: Premature hit counting detected! Max reported progress hit count was {maxProgressHitCount}, expected <= 2.");
+
+                    long expectedBytes = new FileInfo(fileImgHit).Length + new FileInfo(fileTextHit).Length;
+                    long actualBytes = hits.Sum(h => h.SizeBytes);
+                    if (actualBytes != expectedBytes)
+                        throw new Exception($"SearchDirectFolderAsync Content Search failed: Total bytes mismatch. Expected {expectedBytes}, got {actualBytes}");
+                }
+                finally
+                {
+                    try { Directory.Delete(tempDir, true); } catch { }
+                }
+            }
         }
     }
 }

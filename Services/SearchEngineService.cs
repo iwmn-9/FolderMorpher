@@ -113,7 +113,16 @@ namespace FolderMorpher.Services
 
                 if (candidates.Count > 0)
                 {
-                    var contentResults = await FilterByContentAsync(candidates, query, progress, ct, batchYield);
+                    var contentResults = await FilterByContentAsync(
+                        candidates,
+                        query,
+                        progress,
+                        ct,
+                        batchYield,
+                        sw,
+                        initialHitCount: results.Count,
+                        initialTotalBytes: results.Sum(r => r.SizeBytes),
+                        scannedCount: scannedCount);
                     results.AddRange(contentResults);
                 }
 
@@ -177,8 +186,6 @@ namespace FolderMorpher.Services
                         if (needsDeepCheck)
                         {
                             candidates.Add(item);
-                            Interlocked.Increment(ref hitCount);
-                            Interlocked.Add(ref totalHitBytes, item.SizeBytes);
                         }
                         else
                         {
@@ -235,7 +242,16 @@ namespace FolderMorpher.Services
 
                 if (candidates.Count > 0)
                 {
-                    var contentResults = await FilterByContentAsync(candidates.ToList(), query, progress, ct, batchYield);
+                    var contentResults = await FilterByContentAsync(
+                        candidates.ToList(),
+                        query,
+                        progress,
+                        ct,
+                        batchYield,
+                        sw,
+                        initialHitCount: Volatile.Read(ref hitCount),
+                        initialTotalBytes: Volatile.Read(ref totalHitBytes),
+                        scannedCount: scannedCount);
                     results.AddRange(contentResults);
                 }
 
@@ -347,6 +363,12 @@ namespace FolderMorpher.Services
                 else
                 {
                     // 不足しているキーワードがある場合は本文検索の候補へ
+                    // ★本文抽出サポート対象外（画像、動画、exe、zip等）は候補になれないためスキップ（検索漏れゼロで高速化）
+                    if (!ContentExtractionService.SupportedExtensions.Contains(ext))
+                    {
+                        return false;
+                    }
+
                     needsDeepCheck = true;
                     reason = "Candidate for Content";
                     return true;
@@ -366,6 +388,21 @@ namespace FolderMorpher.Services
                     query.HasOfficeLinkOnly ||
                     !string.IsNullOrEmpty(query.OfficeLinkKeyword)))
                 {
+                    bool isDeepTarget = false;
+                    if (query.HasOfficeLinkOnly || !string.IsNullOrEmpty(query.OfficeLinkKeyword))
+                    {
+                        isDeepTarget = OfficeExtensions.Contains(ext);
+                    }
+                    else if (!string.IsNullOrEmpty(query.ContentKeyword))
+                    {
+                        isDeepTarget = ContentExtractionService.SupportedExtensions.Contains(ext);
+                    }
+
+                    if (!isDeepTarget)
+                    {
+                        return false;
+                    }
+
                     needsDeepCheck = true;
                     reason = "Candidate for Deep I/O";
                 }
@@ -468,6 +505,13 @@ namespace FolderMorpher.Services
                 }
                 else
                 {
+                    // 不足しているキーワードがある場合は本文検索の候補へ
+                    // ★本文抽出サポート対象外（画像、動画、exe、zip等）は候補になれないためスキップ（検索漏れゼロで高速化）
+                    if (!ContentExtractionService.SupportedExtensions.Contains(ext))
+                    {
+                        return false;
+                    }
+
                     needsDeepCheck = true;
                     reason = "Candidate for Content";
                     return true;
@@ -486,6 +530,21 @@ namespace FolderMorpher.Services
                     query.HasOfficeLinkOnly ||
                     !string.IsNullOrEmpty(query.OfficeLinkKeyword)))
                 {
+                    bool isDeepTarget = false;
+                    if (query.HasOfficeLinkOnly || !string.IsNullOrEmpty(query.OfficeLinkKeyword))
+                    {
+                        isDeepTarget = OfficeExtensions.Contains(ext);
+                    }
+                    else if (!string.IsNullOrEmpty(query.ContentKeyword))
+                    {
+                        isDeepTarget = ContentExtractionService.SupportedExtensions.Contains(ext);
+                    }
+
+                    if (!isDeepTarget)
+                    {
+                        return false;
+                    }
+
                     needsDeepCheck = true;
                     reason = "Candidate for Deep I/O";
                 }
@@ -514,11 +573,19 @@ namespace FolderMorpher.Services
             SearchQuery query,
             IProgress<SearchProgressReport>? progress,
             CancellationToken ct,
-            IProgress<IReadOnlyList<SearchResultItem>>? batchYield = null)
+            IProgress<IReadOnlyList<SearchResultItem>>? batchYield = null,
+            Stopwatch? sw = null,
+            int initialHitCount = 0,
+            long initialTotalBytes = 0,
+            int scannedCount = 0)
         {
             var matched = new ConcurrentBag<SearchResultItem>();
             var progressiveBatch = new List<SearchResultItem>();
             var batchLock = new object();
+
+            int currentHitCount = initialHitCount;
+            long currentTotalBytes = initialTotalBytes;
+            long lastReportMs = 0;
 
             // Determine target search keyword
             string targetContent = query.ContentKeyword ?? string.Empty;
@@ -555,6 +622,9 @@ namespace FolderMorpher.Services
             void EmitHit(SearchResultItem hit)
             {
                 matched.Add(hit);
+                Interlocked.Increment(ref currentHitCount);
+                Interlocked.Add(ref currentTotalBytes, hit.SizeBytes);
+
                 if (batchYield != null)
                 {
                     lock (batchLock)
@@ -632,7 +702,7 @@ namespace FolderMorpher.Services
                             }
                         }
                         // 3. Text files (.txt, .csv, .log, .json, code files, etc.)
-                        else if (TextExtensions.Contains(ext) || item.SizeBytes < 2 * 1024 * 1024)
+                        else if (TextExtensions.Contains(ext) || ContentExtractionService.SupportedExtensions.Contains(ext))
                         {
                             if (await ContentExtractionService.SearchTextContentAsync(item.FullPath, requiredKeywords, token) is { } snippet)
                             {
@@ -661,13 +731,17 @@ namespace FolderMorpher.Services
                 }
 
                 int c = Interlocked.Increment(ref processed);
-                if (c % 20 == 0 || c == total)
+                long elapsedMs = sw?.ElapsedMilliseconds ?? 0;
+                if (elapsedMs - Volatile.Read(ref lastReportMs) > 100 || c == total)
                 {
+                    Volatile.Write(ref lastReportMs, elapsedMs);
                     progress?.Report(new SearchProgressReport
                     {
-                        HitCount = matched.Count,
-                        ScannedCount = c,
-                        CurrentPath = $"Deep Search ({c}/{total}): {item.Name}",
+                        HitCount = Volatile.Read(ref currentHitCount),
+                        ScannedCount = scannedCount > 0 ? scannedCount : c,
+                        TotalHitBytes = Volatile.Read(ref currentTotalBytes),
+                        CurrentPath = $"📄 Deep Search ({c:N0}/{total:N0}): {item.Name}",
+                        Elapsed = sw?.Elapsed ?? TimeSpan.Zero,
                         IsCompleted = false
                     });
                 }
