@@ -296,22 +296,40 @@
                                                         Visibility="{Binding HasChildren, Converter={StaticResource BoolToVis}}">
                                                     <TextBlock Text="{Binding ExpandIcon}" FontSize="10" FontWeight="Bold" Foreground="{StaticResource TextSecondary}"/>
                                                 </Button>
-                                                <Grid Width="26" Height="18" Margin="0,0,7,0" VerticalAlignment="Center">
-                                                    <!-- Folder Vector Icon (IsDirectory == True) -->
-                                                    <Border Visibility="{Binding IsDirectory, Converter={StaticResource BoolToVis}}"
-                                                            Background="#FEF3C7" BorderBrush="#D97706" BorderThickness="1.2" CornerRadius="3">
-                                                        <Viewbox Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                            <Canvas Width="24" Height="24">
-                                                                <Path Data="M 3 7 A 2 2 0 0 1 5 5 L 9 5 L 11 7 L 19 7 A 2 2 0 0 1 21 9 L 21 17 A 2 2 0 0 1 19 19 L 5 19 A 2 2 0 0 1 3 17 Z"
-                                                                      Fill="#FDE68A" Stroke="#D97706" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                <!-- Option 1: Document / Folder Vector Icon -->
+                                                <Grid Width="22" Height="22" Margin="0,0,7,0" VerticalAlignment="Center">
+                                                    <!-- Harmonized Folder Vector Icon (IsDirectory == True) -->
+                                                    <Viewbox Visibility="{Binding IsDirectory, Converter={StaticResource BoolToVis}}"
+                                                             Width="21" Height="21" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <Canvas Width="24" Height="24">
+                                                            <Path Data="M 4 6 A 2 2 0 0 1 6 4 L 10 4 L 12 6 L 18 6 A 2 2 0 0 1 20 8 L 20 10 L 4 10 Z"
+                                                                  Fill="#FDE68A" Stroke="#D97706" StrokeThickness="1.5"
+                                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                            <Path Data="M 3 9 A 2 2 0 0 1 5 8 L 19 8 A 2 2 0 0 1 21 10 L 21 18 A 2 2 0 0 1 19 20 L 5 20 A 2 2 0 0 1 3 18 Z"
+                                                                  Fill="#FEF3C7" Stroke="#D97706" StrokeThickness="1.5"
+                                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                        </Canvas>
+                                                    </Viewbox>
+
+                                                    <!-- Option 1: Folded-Corner Document + Extension Badge (IsDirectory == False) -->
+                                                    <Grid Visibility="{Binding IsDirectory, Converter={StaticResource InverseBoolToVis}}"
+                                                          HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <Viewbox Width="19" Height="21" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <Canvas Width="24" Height="26">
+                                                                <Path Data="M 14 2 L 6 2 A 2 2 0 0 0 4 4 L 4 22 A 2 2 0 0 0 6 24 L 18 24 A 2 2 0 0 0 20 22 L 20 8 L 14 2 Z"
+                                                                      Fill="{Binding BadgeBackground}" Stroke="{Binding BadgeBorderBrush}" StrokeThickness="1.5"
+                                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                                <Path Data="M 14 2 L 14 7 A 1 1 0 0 0 15 8 L 20 8"
+                                                                      Fill="Transparent" Stroke="{Binding BadgeBorderBrush}" StrokeThickness="1.5"
+                                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
                                                             </Canvas>
                                                         </Viewbox>
-                                                    </Border>
-                                                    <!-- File-Type Badge (IsDirectory == False) -->
-                                                    <Border Visibility="{Binding IsDirectory, Converter={StaticResource InverseBoolToVis}}"
-                                                            Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorderBrush}" BorderThickness="1.2" CornerRadius="3">
-                                                        <TextBlock Text="{Binding BadgeText}" FontSize="8" FontWeight="ExtraBold" Foreground="{Binding BadgeForeground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
+                                                        <Border Background="{Binding BadgeBorderBrush}" CornerRadius="2" Padding="2,0.3"
+                                                                HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,1.5">
+                                                            <TextBlock Text="{Binding BadgeText}" FontSize="6.5" FontWeight="Heavy" Foreground="#FFFFFF"
+                                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Border>
+                                                    </Grid>
                                                 </Grid>
                                                 <TextBlock Text="{Binding Name}" FontWeight="{Binding FontWeight}" FontSize="12.5" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
@@ -420,22 +438,40 @@
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate DataType="{x:Type models:FolderChildShareItem}">
                                                 <StackPanel Orientation="Horizontal" Margin="4,0">
-                                                    <Grid Width="26" Height="18" Margin="0,0,7,0" VerticalAlignment="Center">
-                                                        <!-- Folder Vector Icon (IsDirectory == True) -->
-                                                        <Border Visibility="{Binding IsDirectory, Converter={StaticResource BoolToVis}}"
-                                                                Background="#FEF3C7" BorderBrush="#D97706" BorderThickness="1.2" CornerRadius="3">
-                                                            <Viewbox Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                                <Canvas Width="24" Height="24">
-                                                                    <Path Data="M 3 7 A 2 2 0 0 1 5 5 L 9 5 L 11 7 L 19 7 A 2 2 0 0 1 21 9 L 21 17 A 2 2 0 0 1 19 19 L 5 19 A 2 2 0 0 1 3 17 Z"
-                                                                          Fill="#FDE68A" Stroke="#D97706" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                    <!-- Option 1: Document / Folder Vector Icon -->
+                                                    <Grid Width="22" Height="22" Margin="0,0,7,0" VerticalAlignment="Center">
+                                                        <!-- Harmonized Folder Vector Icon (IsDirectory == True) -->
+                                                        <Viewbox Visibility="{Binding IsDirectory, Converter={StaticResource BoolToVis}}"
+                                                                 Width="21" Height="21" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <Canvas Width="24" Height="24">
+                                                                <Path Data="M 4 6 A 2 2 0 0 1 6 4 L 10 4 L 12 6 L 18 6 A 2 2 0 0 1 20 8 L 20 10 L 4 10 Z"
+                                                                      Fill="#FDE68A" Stroke="#D97706" StrokeThickness="1.5"
+                                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                                <Path Data="M 3 9 A 2 2 0 0 1 5 8 L 19 8 A 2 2 0 0 1 21 10 L 21 18 A 2 2 0 0 1 19 20 L 5 20 A 2 2 0 0 1 3 18 Z"
+                                                                      Fill="#FEF3C7" Stroke="#D97706" StrokeThickness="1.5"
+                                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                            </Canvas>
+                                                        </Viewbox>
+
+                                                        <!-- Option 1: Folded-Corner Document + Extension Badge (IsDirectory == False) -->
+                                                        <Grid Visibility="{Binding IsDirectory, Converter={StaticResource InverseBoolToVis}}"
+                                                              HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <Viewbox Width="19" Height="21" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                <Canvas Width="24" Height="26">
+                                                                    <Path Data="M 14 2 L 6 2 A 2 2 0 0 0 4 4 L 4 22 A 2 2 0 0 0 6 24 L 18 24 A 2 2 0 0 0 20 22 L 20 8 L 14 2 Z"
+                                                                          Fill="{Binding BadgeBackground}" Stroke="{Binding BadgeBorderBrush}" StrokeThickness="1.5"
+                                                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                                    <Path Data="M 14 2 L 14 7 A 1 1 0 0 0 15 8 L 20 8"
+                                                                          Fill="Transparent" Stroke="{Binding BadgeBorderBrush}" StrokeThickness="1.5"
+                                                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
                                                                 </Canvas>
                                                             </Viewbox>
-                                                        </Border>
-                                                        <!-- File-Type Badge (IsDirectory == False) -->
-                                                        <Border Visibility="{Binding IsDirectory, Converter={StaticResource InverseBoolToVis}}"
-                                                                Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorderBrush}" BorderThickness="1.2" CornerRadius="3">
-                                                            <TextBlock Text="{Binding BadgeText}" FontSize="8" FontWeight="ExtraBold" Foreground="{Binding BadgeForeground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                        </Border>
+                                                            <Border Background="{Binding BadgeBorderBrush}" CornerRadius="2" Padding="2,0.3"
+                                                                    HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,1.5">
+                                                                <TextBlock Text="{Binding BadgeText}" FontSize="6.5" FontWeight="Heavy" Foreground="#FFFFFF"
+                                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                            </Border>
+                                                        </Grid>
                                                     </Grid>
                                                     <TextBlock Text="{Binding Name}" FontWeight="Medium" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
@@ -1721,7 +1757,6 @@
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto"/>
                                             <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
                                         </Grid.RowDefinitions>
 
                                         <!-- Row 0: Icon + Name + Size + Date -->
@@ -1732,24 +1767,45 @@
                                                 <ColumnDefinition Width="Auto"/> <!-- Size & Dates -->
                                             </Grid.ColumnDefinitions>
 
-                                            <!-- Tabler File-Type Badge or Folder Vector Icon -->
-                                            <Grid Width="28" Height="20" Margin="0,0,9,0" VerticalAlignment="Center">
-                                                <!-- Folder Vector Icon (IsDirectory == True) -->
-                                                <Border Visibility="{Binding IsDirectory, Converter={StaticResource BoolToVis}}"
-                                                        Background="#FEF3C7" BorderBrush="#D97706" BorderThickness="1.2" CornerRadius="4">
-                                                    <Viewbox Width="13" Height="13" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                        <Canvas Width="24" Height="24">
-                                                            <Path Data="M 3 7 A 2 2 0 0 1 5 5 L 9 5 L 11 7 L 19 7 A 2 2 0 0 1 21 9 L 21 17 A 2 2 0 0 1 19 19 L 5 19 A 2 2 0 0 1 3 17 Z"
-                                                                  Fill="#FDE68A" Stroke="#D97706" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                            <!-- Option 1: Tabler Folded-Corner Document / Folder Vector Icon -->
+                                            <Grid Width="28" Height="26" Margin="0,0,9,0" VerticalAlignment="Center">
+                                                <!-- Harmonized Folder Vector Icon (IsDirectory == True) -->
+                                                <Viewbox Visibility="{Binding IsDirectory, Converter={StaticResource BoolToVis}}"
+                                                         Width="26" Height="26" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Canvas Width="24" Height="24">
+                                                        <!-- Back Tab -->
+                                                        <Path Data="M 4 6 A 2 2 0 0 1 6 4 L 10 4 L 12 6 L 18 6 A 2 2 0 0 1 20 8 L 20 10 L 4 10 Z"
+                                                              Fill="#FDE68A" Stroke="#D97706" StrokeThickness="1.5"
+                                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                        <!-- Front Pocket -->
+                                                        <Path Data="M 3 9 A 2 2 0 0 1 5 8 L 19 8 A 2 2 0 0 1 21 10 L 21 18 A 2 2 0 0 1 19 20 L 5 20 A 2 2 0 0 1 3 18 Z"
+                                                              Fill="#FEF3C7" Stroke="#D97706" StrokeThickness="1.5"
+                                                              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                    </Canvas>
+                                                </Viewbox>
+
+                                                <!-- Option 1: Folded-Corner Document + Extension Badge (IsDirectory == False) -->
+                                                <Grid Visibility="{Binding IsDirectory, Converter={StaticResource InverseBoolToVis}}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Viewbox Width="24" Height="26" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <Canvas Width="24" Height="26">
+                                                            <!-- Sheet body with pastel background & outline -->
+                                                            <Path Data="M 14 2 L 6 2 A 2 2 0 0 0 4 4 L 4 22 A 2 2 0 0 0 6 24 L 18 24 A 2 2 0 0 0 20 22 L 20 8 L 14 2 Z"
+                                                                  Fill="{Binding BadgeBackground}" Stroke="{Binding BadgeBorderBrush}" StrokeThickness="1.5"
+                                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                                            <!-- Folded Corner triangle -->
+                                                            <Path Data="M 14 2 L 14 7 A 1 1 0 0 0 15 8 L 20 8"
+                                                                  Fill="Transparent" Stroke="{Binding BadgeBorderBrush}" StrokeThickness="1.5"
+                                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
                                                         </Canvas>
                                                     </Viewbox>
-                                                </Border>
-
-                                                <!-- File-Type Badge (IsDirectory == False) -->
-                                                <Border Visibility="{Binding IsDirectory, Converter={StaticResource InverseBoolToVis}}"
-                                                        Background="{Binding BadgeBackground}" BorderBrush="{Binding BadgeBorderBrush}" BorderThickness="1.2" CornerRadius="4">
-                                                    <TextBlock Text="{Binding BadgeText}" FontSize="8.5" FontWeight="ExtraBold" Foreground="{Binding BadgeForeground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
+                                                    <!-- Extension Text Pill at Lower-Center of Document -->
+                                                    <Border Background="{Binding BadgeBorderBrush}" CornerRadius="2.5" Padding="2.5,0.5"
+                                                            HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,2.5">
+                                                        <TextBlock Text="{Binding BadgeText}" FontSize="7.5" FontWeight="Heavy" Foreground="#FFFFFF"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </Grid>
                                             </Grid>
                                             <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                                             
@@ -1772,12 +1828,6 @@
                                                     Click="SearchItemJumpFolder_Click" Tag="{Binding}"
                                                     ToolTip="{Binding JumpFolderToolTip}"/>
                                         </Grid>
-
-                                        <!-- Row 2: Content Snippet (Only visible if snippet exists) -->
-                                        <Border Grid.Row="2" Margin="37,6,0,0" Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="8,5"
-                                                Visibility="{Binding HasSnippet, Converter={StaticResource BoolToVis}}">
-                                            <TextBlock Text="{Binding ContentSnippet}" FontSize="11.5" Foreground="#334155" TextWrapping="Wrap" MaxHeight="44" TextTrimming="CharacterEllipsis" LineHeight="16"/>
-                                        </Border>
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
