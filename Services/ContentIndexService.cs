@@ -195,6 +195,73 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
+        /// 指定パスに対応する最深Rootの最終インデックス完了日時 (UTC) を取得。
+        /// インデックスが存在しない、または未完了の場合は null を返す。
+        /// </summary>
+        public DateTime? GetLastIndexCompletedUtc(string folderPath)
+        {
+            if (string.IsNullOrWhiteSpace(folderPath)) return null;
+            string norm = Path.GetFullPath(folderPath).TrimEnd('\\', '/');
+
+            lock (_lock)
+            {
+                using var conn = new SqliteConnection(_connectionString);
+                conn.Open();
+
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    SELECT RootPath, Status, CoverageComplete, ExtractorVersion, LastCompletedUtcTicks 
+                    FROM IndexedRoots";
+
+                string? bestRootPath = null;
+                long? bestTicks = null;
+
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    string root = reader.GetString(0).TrimEnd('\\', '/');
+                    if (norm.Equals(root, StringComparison.OrdinalIgnoreCase) ||
+                        norm.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (bestRootPath == null || root.Length > bestRootPath.Length)
+                        {
+                            bestRootPath = root;
+                            string status = reader.GetString(1);
+                            int coverage = reader.GetInt32(2);
+                            int extVer = reader.GetInt32(3);
+                            if (string.Equals(status, "Complete", StringComparison.OrdinalIgnoreCase) &&
+                                coverage == 1 && extVer == CurrentExtractorVersion && !reader.IsDBNull(4))
+                            {
+                                bestTicks = reader.GetInt64(4);
+                            }
+                            else
+                            {
+                                bestTicks = null;
+                            }
+                        }
+                    }
+                }
+
+                if (bestTicks.HasValue && bestTicks.Value > 0)
+                {
+                    return new DateTime(bestTicks.Value, DateTimeKind.Utc);
+                }
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 指定パスのインデックスがクールダウン期間を経過して差分同期が必要か判定。
+        /// インデックス未構築・未完了の場合は常に true を返す。
+        /// </summary>
+        public bool NeedsBackgroundSync(string folderPath, TimeSpan cooldown)
+        {
+            var lastUtc = GetLastIndexCompletedUtc(folderPath);
+            if (!lastUtc.HasValue) return true;
+            return (DateTime.UtcNow - lastUtc.Value) > cooldown;
+        }
+
+        /// <summary>
         /// 指定したフォルダーのファイルを走査し、差分更新およびレジューム（前回の続き）でインデックスを作成する。
         /// </summary>
         public async Task<IndexProgressReport> IndexFolderAsync(

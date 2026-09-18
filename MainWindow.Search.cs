@@ -62,24 +62,53 @@ namespace AstraSize
 
         private int _isBackgroundIndexing = 0;
 
-        private void TriggerBackgroundIndexUpdate(string? folderPath)
+        private void TriggerBackgroundIndexUpdate(string? folderPath, bool force = false)
         {
             if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath)) return;
-            if (Interlocked.CompareExchange(ref _isBackgroundIndexing, 1, 0) != 0) return;
+
+            // クールダウン判定（自動同期時は前回の同期から5分経過していない場合はスキップしてサーバー負荷抑制）
+            if (!force && !_contentIndex.NeedsBackgroundSync(folderPath, TimeSpan.FromMinutes(5)))
+            {
+                return;
+            }
+
+            if (Interlocked.CompareExchange(ref _isBackgroundIndexing, 1, 0) != 0)
+            {
+                if (force)
+                {
+                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                    ShowToast(isJa ? "⏳ 現在インデックス同期を実行中です..." : "⏳ Index synchronization is currently in progress...");
+                }
+                return;
+            }
+
+            if (force)
+            {
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                ShowToast(isJa ? "⚡ インデックス差分同期を開始しました..." : "⚡ Started index synchronization...");
+            }
 
             _ = Task.Run(async () =>
             {
                 try
                 {
                     var report = await _contentIndex.IndexFolderAsync(folderPath, progress: null, CancellationToken.None);
-                    if (report.NewlyIndexedCount > 0)
+                    if (report.NewlyIndexedCount > 0 || report.DeletedCount > 0)
                     {
                         Dispatcher.Invoke(() =>
                         {
                             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                             ShowToast(isJa
-                                ? $"⚡ インデックスを自動更新しました ({report.NewlyIndexedCount:N0}件)"
-                                : $"⚡ Background index updated ({report.NewlyIndexedCount:N0} files)");
+                                ? $"⚡ インデックスを最新化しました (追加/更新: {report.NewlyIndexedCount:N0}件, 削除: {report.DeletedCount:N0}件)"
+                                : $"⚡ Index updated (Updated: {report.NewlyIndexedCount:N0}, Deleted: {report.DeletedCount:N0})");
+                        });
+                    }
+                    else if (force)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                            ShowToast(isJa ? "インデックスは既に最新です (差分なし)" : "Index is already up-to-date (no changes)");
                         });
                     }
                 }
@@ -92,6 +121,32 @@ namespace AstraSize
                     Interlocked.Exchange(ref _isBackgroundIndexing, 0);
                 }
             });
+        }
+
+        private void SearchSyncIndexButton_Click(object sender, RoutedEventArgs e)
+        {
+            string targetFolder = SearchDirectTargetTextBox?.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(targetFolder))
+            {
+                var selectedTab = StorageTabs?.FirstOrDefault(t => t.IsSelected);
+                if (selectedTab?.RootNode != null && !string.IsNullOrWhiteSpace(selectedTab.RootNode.FullPath))
+                {
+                    targetFolder = selectedTab.RootNode.FullPath;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(targetFolder) || !Directory.Exists(targetFolder))
+            {
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                MessageBox.Show(
+                    isJa ? "同期対象のフォルダーまたはUNCパスを指定してください。" : "Please specify a valid folder or UNC path to synchronize.",
+                    isJa ? "インデックス同期" : "Index Synchronization",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            TriggerBackgroundIndexUpdate(targetFolder, force: true);
         }
 
         #region Search Input & Debounce
@@ -266,6 +321,12 @@ namespace AstraSize
                                 : $"⚡ Indexed search complete: {hits.Count:N0} hits ({sw.ElapsedMilliseconds} ms)";
                         }
                     }
+
+                    // ⚡ インデックス検索完了後、裏で差分更新を自動トリガー（5分クールダウン制御でサーバー負荷ゼロ）
+                    if (hasTarget)
+                    {
+                        TriggerBackgroundIndexUpdate(targetFolder, force: false);
+                    }
                 }
                 else if (hasScannedTree && !query.SearchContentMode)
                 {
@@ -280,10 +341,10 @@ namespace AstraSize
                         }
                     }
 
-                    // インデックス未構築ならバックグラウンド同期を自動トリガー
-                    if (!hasIndex && hasTarget)
+                    // インデックス同期を裏で自動トリガー（5分クールダウン制御付き）
+                    if (hasTarget)
                     {
-                        TriggerBackgroundIndexUpdate(targetFolder);
+                        TriggerBackgroundIndexUpdate(targetFolder, force: false);
                     }
                 }
                 else
@@ -306,7 +367,7 @@ namespace AstraSize
                     // 走査完了後、裏でインデックスを自動蓄積
                     if (hasTarget)
                     {
-                        TriggerBackgroundIndexUpdate(targetFolder);
+                        TriggerBackgroundIndexUpdate(targetFolder, force: false);
                     }
                 }
             }

@@ -463,6 +463,52 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(tempDir, true); } catch { }
                 }
             }
+
+            // -------------------------------------------------------------
+            // 5. ContentIndexService: インデックス完了日時 & 差分同期クールダウン (NeedsBackgroundSync) の検証
+            // -------------------------------------------------------------
+            {
+                string tempDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_CooldownTest_" + Guid.NewGuid().ToString("N"));
+                string customDb = Path.Combine(tempDir, "TestIndex.db");
+                Directory.CreateDirectory(tempDir);
+                try
+                {
+                    var indexService = new ContentIndexService(customDb);
+
+                    // 1. 未インデックス状態では NeedsBackgroundSync は true
+                    if (!indexService.NeedsBackgroundSync(tempDir, TimeSpan.FromMinutes(5)))
+                        throw new Exception("NeedsBackgroundSync failed: Unindexed folder should require sync (expected true).");
+
+                    if (indexService.GetLastIndexCompletedUtc(tempDir) != null)
+                        throw new Exception("GetLastIndexCompletedUtc failed: Unindexed folder should return null.");
+
+                    // 2. ファイルを1つ作ってインデックス作成
+                    string testFile = Path.Combine(tempDir, "Doc.txt");
+                    File.WriteAllText(testFile, "Hello World", Encoding.UTF8);
+                    await indexService.IndexFolderAsync(tempDir, null, CancellationToken.None);
+
+                    // 3. インデックス完了直後: 5分クールダウン内なので NeedsBackgroundSync は false (同期不要)
+                    if (indexService.NeedsBackgroundSync(tempDir, TimeSpan.FromMinutes(5)))
+                        throw new Exception("NeedsBackgroundSync failed: Freshly indexed folder should be in cooldown (expected false).");
+
+                    // 4. クールダウン0秒指定なら true (即時再同期可能)
+                    if (!indexService.NeedsBackgroundSync(tempDir, TimeSpan.Zero))
+                        throw new Exception("NeedsBackgroundSync failed: Zero cooldown should require sync (expected true).");
+
+                    // 5. GetLastIndexCompletedUtc が有効な直近のUTC日時を返すこと
+                    var completedUtc = indexService.GetLastIndexCompletedUtc(tempDir);
+                    if (!completedUtc.HasValue)
+                        throw new Exception("GetLastIndexCompletedUtc failed: Completed index should return non-null DateTime.");
+
+                    var diff = DateTime.UtcNow - completedUtc.Value;
+                    if (diff.TotalSeconds < 0 || diff.TotalSeconds > 60)
+                        throw new Exception($"GetLastIndexCompletedUtc failed: Returned timestamp {completedUtc.Value} is not within 60s of UTC now.");
+                }
+                finally
+                {
+                    try { Directory.Delete(tempDir, true); } catch { }
+                }
+            }
         }
     }
 }
