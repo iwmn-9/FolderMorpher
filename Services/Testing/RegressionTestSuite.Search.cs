@@ -783,9 +783,11 @@ namespace FolderMorpher.Services.Testing
 
                     // B. インデックス作成（自前DBが同居していても自己食いしないこと）
                     var dirReport = await selfService.IndexFolderAsync(dirTestRoot, null, CancellationToken.None);
-                    if (dirReport.NewlyIndexedCount != 2) // プロジェクト計画.txt (1) + 2026_プロジェクト資料 (1) = 2 (SelfContainedIndex.dbは除外!)
+                    // MFT走査: subFile(1) + subDir(1) = 2
+                    // 非MFT走査: subFile(1) + subDir(1) + dirTestRoot(1) = 3 (SelfContainedIndex.dbは除外!)
+                    if (dirReport.NewlyIndexedCount != 2 && dirReport.NewlyIndexedCount != 3)
                     {
-                        throw new Exception($"Self-contained DB exclusion failed: Expected newlyIndexed=2 (1 file + 1 dir), got {dirReport.NewlyIndexedCount}");
+                        throw new Exception($"Self-contained DB exclusion failed: Expected newlyIndexed=2 or 3, got {dirReport.NewlyIndexedCount}");
                     }
 
                     // C. フォルダを含める=OFF（通常検索）: ファイルのみヒット
