@@ -1,4 +1,4 @@
-﻿# FolderMorpher — AI Agent & Developer Architecture Guide
+# FolderMorpher — AI Agent & Developer Architecture Guide
 
 > **【AIメンテナ・自律継続規約】**  
 > 本プロジェクトは「自律完遂（自ら調査・修正・検証まで行い、完成状態で返す）」を基本方針とする。  
@@ -188,6 +188,12 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
     - **FTS5 ネイティブOR展開**: 3文字以上は `MetadataFts MATCH '("見積" OR "請求")'` でミリ秒取得。1〜2文字は SQL WHERE `f.Name LIKE` の OR 節へ自動最適化。
     - **全経路（ツリー・直接走査・本文）完全網羅**: インメモリ、直接走査、本文検索（Office / PDF / Text）すべてで `requiredGroups` による OR グループ充足判定を施工。
     - **回帰テスト（Domain 8 セクション 12）新設**: パーサー、FTS5、直接走査の全経路一致を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+23. **先行表示JIT権限検証 ＆ content:修飾子必須意味論 ＆ (Name OR Content) INTERSECT 積集合（v2.2.6 / ADR 79）**:
+    - **先行表示の JIT 権限照合（VerifyAndFilterPermissionsAsync）貫通**: 先行表示候補に対しても必ず JIT 権限検証を実施し、アクセス権のない古いIndexファイルの露出を完全に遮断。安全契約を最優先。
+    - **`content:` 修飾子の必須本文条件正本化 ＆ 先行表示抑止**: `content:キーワード` 指定時は本文検査通過まで確定ヒットとみなさないため先行表示を安全に抑止。全探索エンジンで独立した必須本文条件として確実に貫通。
+    - **Indexed Search の `(Name OR Content)` INTERSECT 積集合**: 各グループに対し `(Name matches G_i OR Content matches G_i)` の FileId 集合を構築し、全グループを SQLite の `INTERSECT` で積集合結合。フィールド跨ぎAND（例: 名前に「契約書」、本文に「2026」）を 100% 漏れなく検出し、Direct Search と Indexed Search の結果が数学的に完全一致。
+    - **生体反応タイマー（Stopwatch）正本化**: ストリーミングバッチ更新時に `searchTotalSw.Elapsed` を渡し、タイマーが 0ms に巻き戻る表示バグを解消。
+    - **回帰テスト（Domain 8 セクション 13）新設**: JIT権限、content:修飾子、フィールド跨ぎAND積集合を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
 ---
 
 ---

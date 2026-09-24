@@ -342,65 +342,59 @@ namespace FolderMorpher.Services
                 if (!query.CompiledRegex.IsMatch(name) && !query.CompiledRegex.IsMatch(fullPath)) return false;
             }
 
-            // ★ 「本文も検索」の名前 OR 本文意味論（複数キーワード・ORグループ対応）
-            if (query.SearchContentMode && !node.IsDirectory && string.IsNullOrEmpty(query.ContentKeyword))
-            {
-                bool allInName = MatchesKeywordGroups(name, fullPath, query);
+            // ★ 本文検査が必要なケースの判定（SearchContentMode または content: 指定時）
+            bool hasMandatoryContent = !string.IsNullOrEmpty(query.ContentKeyword);
 
-                if (allInName)
+            if (query.SearchContentMode)
+            {
+                if (node.IsDirectory) return false;
+
+                bool allInName = MatchesKeywordGroups(name, fullPath, query);
+                if (allInName && !hasMandatoryContent)
                 {
-                    // ファイル名/パスですべてのキーワードを満たしているなら即時合格（本文走査ゼロ）
+                    // ファイル名で通常キーワードを満たしており、必須content条件もなければ即時合格（本文走査ゼロ）
                     needsDeepCheck = false;
                     reason = "Name";
                     return true;
                 }
                 else
                 {
-                    // 不足しているキーワードがある場合は本文検索の候補へ
-                    // ★本文抽出サポート対象外（画像、動画、exe、zip等）は候補になれないためスキップ（検索漏れゼロで高速化）
-                    if (!ContentExtractionService.SupportedExtensions.Contains(ext))
-                    {
-                        return false;
-                    }
+                    // 不足キーワードがある、またはcontent:必須条件がある場合は本文抽出対応拡張子のみ候補へ
+                    if (!ContentExtractionService.SupportedExtensions.Contains(ext)) return false;
 
                     needsDeepCheck = true;
                     reason = "Candidate for Content";
                     return true;
                 }
             }
+            else if (hasMandatoryContent || query.HasOfficeLinkOnly || !string.IsNullOrEmpty(query.OfficeLinkKeyword))
+            {
+                // 通常検索（名前一致が必須）＋ 本文条件（content: または office-link）
+                if (!MatchesKeywordGroups(name, fullPath, query)) return false;
+                if (node.IsDirectory) return false;
+
+                bool isDeepTarget = false;
+                if (query.HasOfficeLinkOnly || !string.IsNullOrEmpty(query.OfficeLinkKeyword))
+                {
+                    isDeepTarget = OfficeExtensions.Contains(ext);
+                }
+                else if (hasMandatoryContent)
+                {
+                    isDeepTarget = ContentExtractionService.SupportedExtensions.Contains(ext);
+                }
+
+                if (!isDeepTarget) return false;
+
+                needsDeepCheck = true;
+                reason = "Candidate for Deep I/O";
+                return true;
+            }
             else
             {
-                // 通常検索、または明示的 content: 指定時
+                // 純粋な名前・属性検索
                 if (!MatchesKeywordGroups(name, fullPath, query)) return false;
-
-                if (!node.IsDirectory && (
-                    !string.IsNullOrEmpty(query.ContentKeyword) ||
-                    query.HasOfficeLinkOnly ||
-                    !string.IsNullOrEmpty(query.OfficeLinkKeyword)))
-                {
-                    bool isDeepTarget = false;
-                    if (query.HasOfficeLinkOnly || !string.IsNullOrEmpty(query.OfficeLinkKeyword))
-                    {
-                        isDeepTarget = OfficeExtensions.Contains(ext);
-                    }
-                    else if (!string.IsNullOrEmpty(query.ContentKeyword))
-                    {
-                        isDeepTarget = ContentExtractionService.SupportedExtensions.Contains(ext);
-                    }
-
-                    if (!isDeepTarget)
-                    {
-                        return false;
-                    }
-
-                    needsDeepCheck = true;
-                    reason = "Candidate for Deep I/O";
-                }
-                else
-                {
-                    needsDeepCheck = false;
-                    if (string.IsNullOrEmpty(reason)) reason = "Match";
-                }
+                needsDeepCheck = false;
+                if (string.IsNullOrEmpty(reason)) reason = "Match";
                 return true;
             }
         }
@@ -505,63 +499,59 @@ namespace FolderMorpher.Services
                 if (!query.CompiledRegex.IsMatch(name) && !query.CompiledRegex.IsMatch(fullPath)) return false;
             }
 
-            // ★ 「本文も検索」の名前 OR 本文意味論（複数キーワード・ORグループ対応）
-            if (query.SearchContentMode && !isDir && string.IsNullOrEmpty(query.ContentKeyword))
-            {
-                bool allInName = MatchesKeywordGroups(name, fullPath, query);
+            // ★ 本文検査が必要なケースの判定（SearchContentMode または content: 指定時）
+            bool hasMandatoryContent = !string.IsNullOrEmpty(query.ContentKeyword);
 
-                if (allInName)
+            if (query.SearchContentMode)
+            {
+                if (isDir) return false;
+
+                bool allInName = MatchesKeywordGroups(name, fullPath, query);
+                if (allInName && !hasMandatoryContent)
                 {
+                    // ファイル名で通常キーワードを満たしており、必須content条件もなければ即時合格（本文走査ゼロ）
                     needsDeepCheck = false;
                     reason = "Name";
                     return true;
                 }
                 else
                 {
-                    // 不足しているキーワードがある場合は本文検索の候補へ
-                    // ★本文抽出サポート対象外（画像、動画、exe、zip等）は候補になれないためスキップ（検索漏れゼロで高速化）
-                    if (!ContentExtractionService.SupportedExtensions.Contains(ext))
-                    {
-                        return false;
-                    }
+                    // 不足キーワードがある、またはcontent:必須条件がある場合は本文抽出対応拡張子のみ候補へ
+                    if (!ContentExtractionService.SupportedExtensions.Contains(ext)) return false;
 
                     needsDeepCheck = true;
                     reason = "Candidate for Content";
                     return true;
                 }
             }
+            else if (hasMandatoryContent || query.HasOfficeLinkOnly || !string.IsNullOrEmpty(query.OfficeLinkKeyword))
+            {
+                // 通常検索（名前一致が必須）＋ 本文条件（content: または office-link）
+                if (!MatchesKeywordGroups(name, fullPath, query)) return false;
+                if (isDir) return false;
+
+                bool isDeepTarget = false;
+                if (query.HasOfficeLinkOnly || !string.IsNullOrEmpty(query.OfficeLinkKeyword))
+                {
+                    isDeepTarget = OfficeExtensions.Contains(ext);
+                }
+                else if (hasMandatoryContent)
+                {
+                    isDeepTarget = ContentExtractionService.SupportedExtensions.Contains(ext);
+                }
+
+                if (!isDeepTarget) return false;
+
+                needsDeepCheck = true;
+                reason = "Candidate for Deep I/O";
+                return true;
+            }
             else
             {
+                // 純粋な名前・属性検索
                 if (!MatchesKeywordGroups(name, fullPath, query)) return false;
-
-                if (!isDir && (
-                    !string.IsNullOrEmpty(query.ContentKeyword) ||
-                    query.HasOfficeLinkOnly ||
-                    !string.IsNullOrEmpty(query.OfficeLinkKeyword)))
-                {
-                    bool isDeepTarget = false;
-                    if (query.HasOfficeLinkOnly || !string.IsNullOrEmpty(query.OfficeLinkKeyword))
-                    {
-                        isDeepTarget = OfficeExtensions.Contains(ext);
-                    }
-                    else if (!string.IsNullOrEmpty(query.ContentKeyword))
-                    {
-                        isDeepTarget = ContentExtractionService.SupportedExtensions.Contains(ext);
-                    }
-
-                    if (!isDeepTarget)
-                    {
-                        return false;
-                    }
-
-                    needsDeepCheck = true;
-                    reason = "Candidate for Deep I/O";
-                }
-                else
-                {
-                    needsDeepCheck = false;
-                    if (string.IsNullOrEmpty(reason)) reason = "Match";
-                }
+                needsDeepCheck = false;
+                if (string.IsNullOrEmpty(reason)) reason = "Match";
                 return true;
             }
         }
@@ -659,16 +649,20 @@ namespace FolderMorpher.Services
 
                     // ファイル名/パスに含まれていない未充足グループを特定
                     List<List<string>> requiredGroups = new();
+
+                    // 1. content: キーワードは本文検査に絶対必須
                     if (!string.IsNullOrEmpty(query.ContentKeyword))
                     {
                         requiredGroups.Add(new List<string> { query.ContentKeyword });
                     }
-                    else if (query.SearchContentMode)
-                    {
-                        var groups = query.KeywordGroups.Count > 0
-                            ? query.KeywordGroups
-                            : query.Keywords.Select(k => new List<string> { k }).ToList();
 
+                    // 2. 通常キーワードグループの処理（本文も検索ONなら、名前で満たしていないグループを本文で要求）
+                    var groups = query.KeywordGroups.Count > 0
+                        ? query.KeywordGroups
+                        : query.Keywords.Select(k => new List<string> { k }).ToList();
+
+                    if (query.SearchContentMode)
+                    {
                         foreach (var grp in groups)
                         {
                             bool matchedInName = false;

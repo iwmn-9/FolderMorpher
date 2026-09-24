@@ -704,3 +704,29 @@
      - FilterByContentAsync および ContentExtractionService.cs（Text, Office, PDF）において equiredGroups に対応し、名前で未充足のグループのみを本文から OR 探索。
   5. **自動回帰テストによる恒久保護**:
      - RegressionTestSuite.Search.cs に「セクション 12: カンマおよびパイプによるキーワードOR検索（AND of ORs）」を新設。パーサー、FTS5 インデックス、直接走査の全経路一致を自動検証（8/8 ALL PASSED）。
+
+---
+
+### ADR 79: 先行表示JIT権限検証 ＆ content:修飾子必須意味論 ＆ (Name OR Content) INTERSECT 積集合
+*(v2.2.6 本番施工 & ADR 79)*
+
+- **背景と課題**:
+  - **先行表示のJIT権限バイパス**: ADR 77 で導入した2フェーズプログレッシブ検索において、ファイル名一致候補（`onNameHitsReady`）が `VerifyAndFilterPermissionsAsync` を素通りして画面に即座に表示されていた。ACL剥奪後の古いIndexが存在した場合、数秒間とはいえ権限のないファイル情報が露出する安全契約違反が生じていた。
+  - **`content:` 修飾子の意味論破綻**: `content:社外秘` 単体時に先行表示用クエリで条件が空になり全ファイルが一時表示される問題、および `契約 content:社外秘` で `KeywordGroups` が採用されると `ContentKeyword` が条件から欠落する問題が存在した。
+  - **フィールド跨ぎANDの不整合**: ファイル名に「契約書」、本文に「2026」を持つファイルに対し、クエリ `契約書 2026`（本文も検索 ON）を実行した場合、Direct Search では正しくヒットするのに対し、Indexed Search では `MetadataFts`（両方名前要求）と `ContentFts`（両方本文要求）の UNION だったためヒットから漏れる不整合があった。
+  - **ストリーミング中KPIタイマーのリセットバグ**: `lastBatchUpdate.Restart()` 直後の `Elapsed`（0ms付近）を渡していたため、表示中の所要時間が不自然に戻る問題があった。
+- **施工内容**:
+  1. **先行表示の JIT 権限照合（VerifyAndFilterPermissionsAsync）貫通**:
+     - `MainWindow.Search.cs` の `OnNameHitsReady` コールバック内で、先行表示候補に対しても必ず `VerifyAndFilterPermissionsAsync` を非同期実行。権限が確認されたクリーンなアイテムのみを画面（`_allSearchResults`）へ描画。
+  2. **`content:` 修飾子の必須本文条件（Mandatory Content Condition）正本化 ＆ 先行表示抑止**:
+     - `content:キーワード` が指定されている場合、本文検査が通過するまで確定ヒットとみなさないため、プログレッシブ先行表示を安全に抑止。
+     - Direct Search（`SearchEngineService.cs`）および Indexed Search（`ContentIndexService.cs`）において、`content:` を独立した必須本文グループとして分離し、全探索エンジンで確実に本文一致を要求。
+  3. **Indexed Search の `(Name OR Content)` INTERSECT 積集合アーキテクチャ**:
+     - 各キーワードグループ $G_i$ に対し、`(Name matches $G_i$ OR Content matches $G_i$)` の FileId 集合を構築し、全グループを SQLite の `INTERSECT` で積集合結合。
+     - これにより、名前に「契約書」・本文に「2026」のようなフィールド跨ぎANDもミリ秒で 100% 漏れなく検出。Direct Search と Indexed Search の結果が数学的に完全一致。
+     - ヒットした `FileId` 群に対して、`ContentFts MATCH` によるスニペット一括抽出を安全に実行。
+  4. **生体反応タイマー（Stopwatch）の正本化**:
+     - ストリーミングバッチ更新時に、検索開始からの総経過時間を計測する `searchTotalSw.Elapsed` を渡し、タイマーが 0ms に巻き戻る表示バグを解消。
+  5. **自動回帰テストによる恒久保護**:
+     - `RegressionTestSuite.Search.cs` に「セクション 13: 安全契約（JIT権限）、content:修飾子の必須意味論、およびフィールド跨ぎAND積集合の検証」を新設。全 8 ドメイン 8/8 ALL PASSED を自動検証・堅持。
+

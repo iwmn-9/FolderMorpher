@@ -306,6 +306,7 @@ namespace AstraSize
             });
 
             var lastBatchUpdate = Stopwatch.StartNew();
+            var searchTotalSw = Stopwatch.StartNew();
             var batchYield = new Progress<IReadOnlyList<SearchResultItem>>(items =>
             {
                 if (currentGen != Volatile.Read(ref _searchGeneration)) return;
@@ -342,7 +343,7 @@ namespace AstraSize
                     lastBatchUpdate.Restart();
                     ApplyFilterAndSort();
                     long totalBytes = _searchResults.Sum(h => h.SizeBytes);
-                    UpdateSearchKpi(_searchResults.Count, totalBytes, lastBatchUpdate.Elapsed);
+                    UpdateSearchKpi(_searchResults.Count, totalBytes, searchTotalSw.Elapsed);
                     if (SearchStatusText != null && query.SearchContentMode)
                     {
                         SearchStatusText.Text = isJa
@@ -367,30 +368,40 @@ namespace AstraSize
                     bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                     var sw = Stopwatch.StartNew();
 
-                    void OnNameHitsReady(IReadOnlyList<SearchResultItem> nameHits)
+                    async void OnNameHitsReady(IReadOnlyList<SearchResultItem> nameHits)
                     {
                         if (currentGen != Volatile.Read(ref _searchGeneration)) return;
-                        Dispatcher.InvokeAsync(() =>
+
+                        try
                         {
+                            // 🛡️ JIT 権限照合＆自動自浄: 先行表示であってもアクセス権のないファイルは絶対に画面に出さない
+                            var verified = await VerifyAndFilterPermissionsAsync(nameHits.ToList(), ct);
                             if (currentGen != Volatile.Read(ref _searchGeneration)) return;
-                            _allSearchResults = nameHits.ToList();
-                            ApplyFilterAndSort();
-                            long totalBytes = _searchResults.Sum(h => h.SizeBytes);
-                            UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
-                            if (SearchStatusText != null)
+
+                            await Dispatcher.InvokeAsync(() =>
                             {
-                                SearchStatusText.Text = isJa
-                                    ? $"⚡ ファイル名一致: {_searchResults.Count:N0} 件 ({sw.ElapsedMilliseconds} ms) ―― 📄 本文を検索中..."
-                                    : $"⚡ Name matches: {_searchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms) ―― 📄 Searching content...";
-                            }
-                        });
+                                if (currentGen != Volatile.Read(ref _searchGeneration)) return;
+                                _allSearchResults = verified;
+                                ApplyFilterAndSort();
+                                long totalBytes = _searchResults.Sum(h => h.SizeBytes);
+                                UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
+                                if (SearchStatusText != null)
+                                {
+                                    SearchStatusText.Text = isJa
+                                        ? $"⚡ ファイル名一致: {_searchResults.Count:N0} 件 ({sw.ElapsedMilliseconds} ms) ―― 📄 本文を検索中..."
+                                        : $"⚡ Name matches: {_searchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms) ―― 📄 Searching content...";
+                                }
+                            });
+                        }
+                        catch (OperationCanceledException) { }
+                        catch { }
                     }
 
                     var rawHits = await _contentIndex.SearchIndexedAsync(
                         query,
                         targetFolder,
                         ct,
-                        onNameHitsReady: query.SearchContentMode ? OnNameHitsReady : null);
+                        onNameHitsReady: (query.SearchContentMode && string.IsNullOrEmpty(query.ContentKeyword)) ? OnNameHitsReady : null);
 
                     // 🛡️ JIT 権限照合＆自動自浄: アクセス権のないファイルや消失したファイルを即時除外し、裏でインデックスからパージ
                     var hits = await VerifyAndFilterPermissionsAsync(rawHits, ct);
@@ -427,23 +438,28 @@ namespace AstraSize
                     var sw = Stopwatch.StartNew();
 
                     // Step 2-1: まずツリーからファイル名・属性一致を超高速（0秒インメモリ）で先行表示！
-                    var nameOnlyQuery = query.Clone();
-                    nameOnlyQuery.SearchContentMode = false;
-                    nameOnlyQuery.ContentKeyword = string.Empty;
-
-                    var treeResults = await _searchEngine.SearchInMemoryAsync(scopedRoots, nameOnlyQuery, null, ct, null);
-                    if (currentGen == Volatile.Read(ref _searchGeneration))
+                    // ※ content: 指定がある場合は本文検査が必須のため先行表示は行わない
+                    var treeResults = new List<SearchResultItem>();
+                    if (string.IsNullOrEmpty(query.ContentKeyword))
                     {
-                        _allSearchResults = treeResults.ToList();
-                        ApplyFilterAndSort();
-                        long totalBytes = _searchResults.Sum(h => h.SizeBytes);
-                        UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
+                        var nameOnlyQuery = query.Clone();
+                        nameOnlyQuery.SearchContentMode = false;
+                        nameOnlyQuery.ContentKeyword = string.Empty;
 
-                        if (query.SearchContentMode && SearchStatusText != null)
+                        treeResults = await _searchEngine.SearchInMemoryAsync(scopedRoots, nameOnlyQuery, null, ct, null);
+                        if (currentGen == Volatile.Read(ref _searchGeneration))
                         {
-                            SearchStatusText.Text = isJa
-                                ? $"⚡ ツリーから即時表示: {_searchResults.Count:N0} 件 ({sw.ElapsedMilliseconds} ms) ―― 📄 本文を走査中..."
-                                : $"⚡ Instant tree matches: {_searchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms) ―― 📄 Searching content...";
+                            _allSearchResults = treeResults.ToList();
+                            ApplyFilterAndSort();
+                            long totalBytes = _searchResults.Sum(h => h.SizeBytes);
+                            UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
+
+                            if (query.SearchContentMode && SearchStatusText != null)
+                            {
+                                SearchStatusText.Text = isJa
+                                    ? $"⚡ ツリーから即時表示: {_searchResults.Count:N0} 件 ({sw.ElapsedMilliseconds} ms) ―― 📄 本文を走査中..."
+                                    : $"⚡ Instant tree matches: {_searchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms) ―― 📄 Searching content...";
+                            }
                         }
                     }
 

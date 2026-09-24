@@ -1015,6 +1015,89 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(s12Root, true); } catch { }
                 }
             }
+
+            // 13. 【ADR 79】安全契約（JIT権限）、content:修飾子の必須意味論、およびフィールド跨ぎAND積集合の検証
+            {
+                string s13Root = Path.Combine(Path.GetTempPath(), "FM_Reg_S13_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(s13Root);
+                string s13Db = Path.Combine(s13Root, "ContentIndex.db");
+
+                try
+                {
+                    // テストファイル準備
+                    // f1: ファイル名に「契約書」、本文に「2026年度プロジェクト」
+                    string f1 = Path.Combine(s13Root, "契約書_計画.txt");
+                    File.WriteAllText(f1, "2026年度プロジェクトの重要計画書です。", Encoding.UTF8);
+
+                    // f2: ファイル名「社外秘.txt」、本文「一般公開データ」
+                    string f2 = Path.Combine(s13Root, "社外秘.txt");
+                    File.WriteAllText(f2, "誰でも閲覧可能な一般公開データです。", Encoding.UTF8);
+
+                    // f3: ファイル名「議事録.txt」、本文「社外秘の取扱について」
+                    string f3 = Path.Combine(s13Root, "議事録.txt");
+                    File.WriteAllText(f3, "社外秘の取扱について厳格に管理する。", Encoding.UTF8);
+
+                    var s13Service = new ContentIndexService(s13Db);
+                    await s13Service.IndexFolderAsync(s13Root, null, CancellationToken.None);
+
+                    var engine = new SearchEngineService();
+
+                    // --- 検証 A: content:修飾子の必須意味論 ---
+                    // クエリ: content:社外秘
+                    var qContentOnly = SearchQueryParser.Parse("content:社外秘");
+                    
+                    // 1. 先行表示コールバックが抑止されること
+                    bool progressiveCalled = false;
+                    var hitsContentIndexed = await s13Service.SearchIndexedAsync(
+                        qContentOnly,
+                        s13Root,
+                        CancellationToken.None,
+                        onNameHitsReady: hits => { progressiveCalled = true; });
+
+                    if (progressiveCalled)
+                        throw new Exception("ADR 79 Verification Failed: Progressive name hits should be suppressed when content: modifier is present.");
+
+                    // 2. 本文に「社外秘」がある f3 のみがヒットし、ファイル名だけの f2 は除外されること
+                    if (hitsContentIndexed.Count != 1 || !hitsContentIndexed[0].FullPath.EndsWith("議事録.txt"))
+                        throw new Exception($"ADR 79 Indexed Content Modifier Failed: Expected 1 hit (議事録.txt), got {hitsContentIndexed.Count}");
+
+                    var hitsContentDirect = await engine.SearchDirectFolderAsync(s13Root, qContentOnly, null, null, CancellationToken.None);
+                    if (hitsContentDirect.Count != 1 || !hitsContentDirect[0].FullPath.EndsWith("議事録.txt"))
+                        throw new Exception($"ADR 79 Direct Content Modifier Failed: Expected 1 hit (議事録.txt), got {hitsContentDirect.Count}");
+
+                    // --- 検証 B: 複合クエリ「契約 content:社外秘」---
+                    var qCombined = SearchQueryParser.Parse("契約 content:社外秘");
+                    // f1（契約書だが社外秘なし）は除外、f3（社外秘だが契約なし）は除外 -> 0件
+                    var hitsCombined = await s13Service.SearchIndexedAsync(qCombined, s13Root, CancellationToken.None);
+                    if (hitsCombined.Count != 0)
+                        throw new Exception($"ADR 79 Combined Query Failed: Expected 0 hits for '契約 content:社外秘', got {hitsCombined.Count}");
+
+                    // --- 検証 C: フィールド跨ぎAND（ファイル名に契約書 ＋ 本文に2026）---
+                    // クエリ: 契約書 2026 （本文も検索 ON）
+                    var qCrossField = SearchQueryParser.Parse("契約書 2026");
+                    qCrossField.SearchContentMode = true;
+
+                    // 1. Indexed Search (FTS5 INTERSECT 積集合)
+                    var hitsCrossIndexed = await s13Service.SearchIndexedAsync(qCrossField, s13Root, CancellationToken.None);
+                    if (hitsCrossIndexed.Count != 1 || !hitsCrossIndexed[0].FullPath.EndsWith("契約書_計画.txt"))
+                        throw new Exception($"ADR 79 Cross-Field Indexed Search Failed: Expected 1 hit (契約書_計画.txt), got {hitsCrossIndexed.Count}");
+                    if (string.IsNullOrEmpty(hitsCrossIndexed[0].ContentSnippet) || !hitsCrossIndexed[0].ContentSnippet.Contains("2026"))
+                        throw new Exception("ADR 79 Cross-Field Indexed Search Failed: Snippet for 2026 was not generated.");
+
+                    // 2. Direct Search
+                    var hitsCrossDirect = await engine.SearchDirectFolderAsync(s13Root, qCrossField, null, null, CancellationToken.None);
+                    if (hitsCrossDirect.Count != 1 || !hitsCrossDirect[0].FullPath.EndsWith("契約書_計画.txt"))
+                        throw new Exception($"ADR 79 Cross-Field Direct Search Failed: Expected 1 hit (契約書_計画.txt), got {hitsCrossDirect.Count}");
+
+                    // 3. フィールド跨ぎANDで Direct Search と Indexed Search の結果が完全一致すること
+                    if (hitsCrossIndexed[0].FullPath != hitsCrossDirect[0].FullPath)
+                        throw new Exception("ADR 79 Cross-Field Parity Failed: Indexed and Direct search results do not match.");
+                }
+                finally
+                {
+                    try { Directory.Delete(s13Root, true); } catch { }
+                }
+            }
         }
     }
 }
