@@ -1410,23 +1410,67 @@ namespace FolderMorpher.Services.Testing
 
                     // 4. UpsertFileContentDirectlyAsync（便乗キャッシュ）のテスト
                     string cachedFile = Path.Combine(testRoot, "cached.txt");
-                    File.WriteAllText(cachedFile, "ダミー");
+                    string cachedContent = "ライブ検索で読んだ本文: SecretGamma_999";
+                    File.WriteAllText(cachedFile, cachedContent, Encoding.UTF8);
                     // メタデータを手動追加して便乗投入をテスト
                     rootNode.Children.Add(new AstraSize.Models.FileItemNode
                     {
                         FullPath = cachedFile,
                         Name = "cached.txt",
-                        Size = 20,
+                        Size = (long)Encoding.UTF8.GetByteCount(cachedContent),
                         LastModified = DateTime.UtcNow,
                         Parent = rootNode
                     });
                     await service.SyncFromStorageScanTreeAsync(rootNode, indexContent: false);
 
-                    await service.UpsertFileContentDirectlyAsync(cachedFile, "ライブ検索で読んだ本文: SecretGamma_999");
+                    await service.UpsertFileContentDirectlyAsync(cachedFile, cachedContent);
                     var qGamma = SearchQueryParser.Parse("content:SecretGamma_999");
                     var gammaHits = await service.SearchIndexedAsync(qGamma, testRoot);
                     if (gammaHits.Count != 1 || string.IsNullOrEmpty(gammaHits[0].ContentSnippet))
                         throw new Exception("ADR 83 failed: Opportunistic cache did not index content with snippet.");
+
+                    // 5. 【ADR 85: Mode C (contentless FTS5 ＆ Progressive Verify ＆ False Positive 排除)】
+                    string adr85Dir = Path.Combine(testRoot, "ADR85_Verification");
+                    Directory.CreateDirectory(adr85Dir);
+
+                    // A. Sol指摘の False Positive 排除テスト:
+                    // ABCD 検索に対し、ABC...BCD が離れている偽陽性ファイルと、連続 ABCD の真のファイルを生成
+                    string falseCandFile = Path.Combine(adr85Dir, "FalseCandidate.txt");
+                    File.WriteAllText(falseCandFile, "ABC 前半の文章です。ここには何の関係もない文章が挟まります。後半に BCD が現れます。", Encoding.UTF8);
+
+                    string trueMatchFile = Path.Combine(adr85Dir, "TrueMatch.txt");
+                    File.WriteAllText(trueMatchFile, "ここには連続した ABCD というキーワードが確実に含まれています。", Encoding.UTF8);
+
+                    string multiWordFile = Path.Combine(adr85Dir, "MultiTrigramDoc.txt");
+                    File.WriteAllText(multiWordFile, "極秘監査計画の全貌がここに記載されています。", Encoding.UTF8);
+
+                    // インデックス同期（本文付き）
+                    await service.IndexFolderAsync(adr85Dir, null, CancellationToken.None);
+
+                    // 検証1: "ABCD" で検索（3文字分解 AND: "ABC" AND "BCD"）
+                    // FTS5 MATCH 段階では両方が候補になるが、Progressive Verify により TrueMatch のみ 1 件確定すること
+                    var qAbcd = SearchQueryParser.Parse("ABCD");
+                    qAbcd.SearchContentMode = true;
+                    var abcdHits = await service.SearchIndexedAsync(qAbcd, adr85Dir, CancellationToken.None);
+
+                    if (abcdHits.Count != 1 || !abcdHits[0].FullPath.EndsWith("TrueMatch.txt"))
+                        throw new Exception($"ADR 85 failed: Expected 1 hit (TrueMatch.txt), but got {abcdHits.Count} hits (False positive was not eliminated).");
+                    if (string.IsNullOrEmpty(abcdHits[0].ContentSnippet) || !abcdHits[0].ContentSnippet!.Contains("ABCD"))
+                        throw new Exception("ADR 85 failed: Snippet for TrueMatch.txt did not contain 'ABCD'.");
+
+                    // 検証2: 4文字以上の日本語 3文字 trigram AND 結合（"極秘監査計画" -> "極秘監" AND "秘監査" AND "監査計" AND "査計画"）
+                    var qMulti = SearchQueryParser.Parse("content:極秘監査計画");
+                    var multiHits = await service.SearchIndexedAsync(qMulti, adr85Dir, CancellationToken.None);
+                    if (multiHits.Count != 1 || !multiHits[0].FullPath.EndsWith("MultiTrigramDoc.txt"))
+                        throw new Exception($"ADR 85 failed: Sliding-window trigram AND search failed for '極秘監査計画', got {multiHits.Count} hits.");
+
+                    // 検証3: Mode C contentless テーブルでの DELETE 動作（contentless_delete=1 の正常性）
+                    File.Delete(falseCandFile);
+                    await service.IndexFolderAsync(adr85Dir, null, CancellationToken.None);
+                    // 削除後もエラーなく検索が動作することを確認
+                    var postDeleteHits = await service.SearchIndexedAsync(qAbcd, adr85Dir, CancellationToken.None);
+                    if (postDeleteHits.Count != 1 || !postDeleteHits[0].FullPath.EndsWith("TrueMatch.txt"))
+                        throw new Exception("ADR 85 failed: Contentless delete caused unexpected search corruption.");
                 }
                 finally
                 {

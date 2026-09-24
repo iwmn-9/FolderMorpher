@@ -123,9 +123,25 @@ namespace AstraSize
                 {
                     forceLang = e.Args[i + 1];
                 }
-                else if (e.Args[i] == "--test-scan" && i + 1 < e.Args.Length)
+                else if (e.Args[i] == "--benchmark-trigram")
                 {
-                    testScanPath = e.Args[i + 1];
+                    ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await FolderMorpher.Services.Testing.TrigramBenchmark.RunAsync();
+                            Console.Out.Flush();
+                            Environment.Exit(0);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[BENCHMARK-ERROR] {ex}");
+                            Console.Out.Flush();
+                            Environment.Exit(1);
+                        }
+                    });
+                    return;
                 }
             }
 

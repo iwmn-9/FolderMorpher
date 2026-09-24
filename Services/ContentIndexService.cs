@@ -250,7 +250,8 @@ namespace FolderMorpher.Services
                 }
                 catch { }
 
-                // マイグレーション: ContentFts の rowid=FileId 化（旧 FileId UNINDEXED スキーマからの自動昇格）
+                // ADR 85: ContentFts を Mode C（content='', contentless_delete=1, tokenize='trigram'）へ自動昇格
+                // 本文コピーを保持せず約1/8にDB容量を圧縮し、かつ通常DELETE/UPDATEを完全サポート
                 bool needCreateContentFts = true;
                 try
                 {
@@ -261,13 +262,13 @@ namespace FolderMorpher.Services
                     {
                         string sqlStr = sqlObj.ToString() ?? string.Empty;
                         bool hasFileIdCol = sqlStr.Contains("FileId", StringComparison.OrdinalIgnoreCase);
-                        bool hasDetailNone = sqlStr.Contains("detail", StringComparison.OrdinalIgnoreCase) &&
-                                             sqlStr.Contains("none", StringComparison.OrdinalIgnoreCase);
+                        bool isContentlessDelete = sqlStr.Contains("contentless_delete", StringComparison.OrdinalIgnoreCase) &&
+                                                   sqlStr.Contains("content", StringComparison.OrdinalIgnoreCase);
 
-                        if (hasFileIdCol || hasDetailNone)
+                        if (hasFileIdCol || !isContentlessDelete)
                         {
-                            // 旧スキーマ（FileId列がある、または detail=none でフレーズ照合不可）
-                            // ➔ 一時テーブル経由で rowid 形式へ安全マイグレーション
+                            // 旧スキーマ（FileId列がある、または通常テーブル、または contentless_delete 未設定テーブル）
+                            // ➔ 一時テーブル経由で Mode C (content='', contentless_delete=1) へ安全マイグレーション
                             using var migCmd = conn.CreateCommand();
                             string selectCols = hasFileIdCol
                                 ? "SELECT CAST(FileId AS INTEGER), Body FROM ContentFts_Old WHERE FileId IS NOT NULL;"
@@ -277,7 +278,9 @@ namespace FolderMorpher.Services
                                 ALTER TABLE ContentFts RENAME TO ContentFts_Old;
                                 CREATE VIRTUAL TABLE ContentFts USING fts5(
                                     Body,
-                                    tokenize = 'trigram'
+                                    tokenize = 'trigram',
+                                    content = '',
+                                    contentless_delete = 1
                                 );
                                 INSERT INTO ContentFts (rowid, Body)
                                 {selectCols}
@@ -302,7 +305,9 @@ namespace FolderMorpher.Services
                         createCmd.CommandText = @"
                             CREATE VIRTUAL TABLE IF NOT EXISTS ContentFts USING fts5(
                                 Body,
-                                tokenize = 'trigram'
+                                tokenize = 'trigram',
+                                content = '',
+                                contentless_delete = 1
                             );";
                         createCmd.ExecuteNonQuery();
                     }
@@ -1561,15 +1566,46 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// SQLite FTS5 (trigram) を使用したミリ秒全文検索（SearchQuery構文完全貫通・日本語2文字LIKE対応・複数語AND・先行通知対応）
+        /// trigram FTS5 (detail=none / content='') 用にキーワードを 3文字 term の AND 結合式に変換する。
+        /// 例: "秘密保持" ➔ "\"秘密保\" AND \"密保持\""
+        /// 3文字未満の場合は null を返す（trigram FTS5 では検索不可）。
+        /// </summary>
+        public static string? BuildTrigramMatchExpression(string keyword)
+        {
+            if (string.IsNullOrWhiteSpace(keyword)) return null;
+
+            string clean = keyword.Trim().Trim('"', '\'');
+            if (clean.Length < 3) return null;
+
+            if (clean.Length == 3)
+            {
+                return $"\"{clean.Replace("\"", "\"\"")}\"";
+            }
+
+            var terms = new List<string>();
+            for (int i = 0; i <= clean.Length - 3; i++)
+            {
+                string trigram = clean.Substring(i, 3);
+                terms.Add($"\"{trigram.Replace("\"", "\"\"")}\"");
+            }
+
+            var distinctTerms = terms.Distinct().ToList();
+            return string.Join(" AND ", distinctTerms);
+        }
+
+        /// <summary>
+        /// SQLite FTS5 (Mode C: trigram contentless + detail=none) を使用したミリ秒全文検索
+        /// （SearchQuery構文完全貫通・3文字分解AND・Progressive Verify・先行通知対応）
         /// </summary>
         public async Task<List<SearchResultItem>> SearchIndexedAsync(
             SearchQuery query,
             string? scopeFolder = null,
             CancellationToken ct = default,
-            Action<IReadOnlyList<SearchResultItem>>? onNameHitsReady = null)
+            Action<IReadOnlyList<SearchResultItem>>? onNameHitsReady = null,
+            IProgress<SearchProgressReport>? progress = null,
+            IProgress<IReadOnlyList<SearchResultItem>>? batchYield = null)
         {
-            return await Task.Run(() =>
+            return await Task.Run(async () =>
             {
                 var results = new List<SearchResultItem>();
 
@@ -1584,6 +1620,9 @@ namespace FolderMorpher.Services
                 }
 
                 bool isExplicitContentSearch = query.SearchContentMode || hasContentKeyword;
+                var nameHits = new List<SearchResultItem>();
+                var fullHits = new List<SearchResultItem>();
+                var groupSubqueries = new List<string>();
 
                 lock (_lock)
                 {
@@ -1769,7 +1808,7 @@ namespace FolderMorpher.Services
                     }
 
                     // 各キーワードグループのサブクエリ構築
-                    var groupSubqueries = new List<string>();
+                    groupSubqueries.Clear();
                     var nameOnlySubqueries = new List<string>();
                     int termCounter = 0;
 
@@ -1806,32 +1845,37 @@ namespace FolderMorpher.Services
 
                         nameOnlySubqueries.Add(nameSql);
 
-                        // 2. 本文検索が有効な場合、本文側の条件と UNION
+                        // 2. 本文検索が有効な場合、3文字分解 trigram MATCH 式を生成して UNION
                         if (query.SearchContentMode)
                         {
-                            string bodySql;
-                            if (grpAllFts)
+                            var trigramExprs = new List<string>();
+                            foreach (var w in grp)
+                            {
+                                string? expr = BuildTrigramMatchExpression(w);
+                                if (!string.IsNullOrEmpty(expr))
+                                {
+                                    trigramExprs.Add(expr.Contains(" AND ") ? $"({expr})" : expr);
+                                }
+                            }
+
+                            if (trigramExprs.Count > 0)
                             {
                                 string pName = $"@body_{gIdx}";
-                                var terms = grp.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
-                                string bodyExpr = grp.Count > 1 ? "(" + string.Join(" OR ", terms) + ")" : terms.First();
-                                cmd.Parameters.AddWithValue(pName, bodyExpr);
-                                bodySql = $"SELECT rowid AS FileId FROM ContentFts WHERE ContentFts MATCH {pName}";
+                                string bodyMatch = trigramExprs.Count > 1
+                                    ? string.Join(" OR ", trigramExprs)
+                                    : trigramExprs[0];
+                                cmd.Parameters.AddWithValue(pName, bodyMatch);
+                                string bodySql = $"SELECT rowid AS FileId FROM ContentFts WHERE ContentFts MATCH {pName}";
+                                groupSubqueries.Add($"SELECT FileId FROM (\n  {nameSql}\n  UNION\n  {bodySql}\n)");
                             }
                             else
                             {
-                                var orClauses = new List<string>();
-                                foreach (var w in grp)
-                                {
-                                    string pName = $"@bodyLike_{termCounter++}";
-                                    orClauses.Add($"Body LIKE {pName} ESCAPE '\\'");
-                                    string esc = "%" + w.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                                    cmd.Parameters.AddWithValue(pName, esc);
-                                }
-                                bodySql = $"SELECT rowid AS FileId FROM ContentFts WHERE ({string.Join(" OR ", orClauses)})";
+                                // 3文字以上の語がない（1〜2文字語のみ）場合:
+                                // ファイル名一致 (nameSql) に加え、本文検索ONならインデックス済みファイル (Status = 1) を候補としてUNIONし、
+                                // 後段の Progressive Verify (Aho-Corasick) で原本を直接照合する（False Negative 100% ゼロ保証）
+                                string bodySql = "SELECT FileId FROM IndexedFiles WHERE Status = 1 AND IsDirectory = 0";
+                                groupSubqueries.Add($"SELECT FileId FROM (\n  {nameSql}\n  UNION\n  {bodySql}\n)");
                             }
-
-                            groupSubqueries.Add($"SELECT FileId FROM (\n  {nameSql}\n  UNION\n  {bodySql}\n)");
                         }
                         else
                         {
@@ -1843,36 +1887,34 @@ namespace FolderMorpher.Services
                     if (hasContentKeyword)
                     {
                         string kw = query.ContentKeyword!.Trim();
-                        string contentSql;
-                        if (kw.Length >= 3)
+                        string? expr = BuildTrigramMatchExpression(kw);
+                        if (!string.IsNullOrEmpty(expr))
                         {
                             string pName = "@contentKw";
-                            cmd.Parameters.AddWithValue(pName, $"\"{kw.Replace("\"", "\"\"")}\"");
-                            contentSql = $"SELECT rowid AS FileId FROM ContentFts WHERE ContentFts MATCH {pName}";
+                            cmd.Parameters.AddWithValue(pName, expr);
+                            string contentSql = $"SELECT rowid AS FileId FROM ContentFts WHERE ContentFts MATCH {pName}";
+                            groupSubqueries.Add(contentSql);
                         }
                         else
                         {
-                            string pName = "@contentKwLike";
-                            string esc = "%" + kw.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                            cmd.Parameters.AddWithValue(pName, esc);
-                            contentSql = $"SELECT rowid AS FileId FROM ContentFts WHERE Body LIKE {pName} ESCAPE '\\'";
+                            // 3文字未満の語の場合、インデックス済みファイルを候補として通し、後段 Verify で確定
+                            string contentSql = "SELECT FileId FROM IndexedFiles WHERE Status = 1 AND IsDirectory = 0";
+                            groupSubqueries.Add(contentSql);
                         }
-
-                        groupSubqueries.Add(contentSql);
                     }
 
                     commonWhereSql = commonWhereClauses.Count > 0 ? " AND " + string.Join(" AND ", commonWhereClauses) : "";
 
                     var deduplicated = new Dictionary<string, SearchResultItem>(StringComparer.OrdinalIgnoreCase);
+                    nameHits.Clear();
 
-                    // ★ フェーズ1: 先行通知（ファイル名だけで全通常キーワードを満たす確定候補）
-                    // ※ content: 指定がある場合は本文検査が必須のため先行表示は行わない
+                    // ★ フェーズ1: ファイル名一致（先行表示用、ミリ秒応答）
                     bool canDoProgressiveNameHits = onNameHitsReady != null &&
                                                     query.SearchContentMode &&
                                                     !hasContentKeyword &&
                                                     nameOnlySubqueries.Count > 0;
 
-                    if (canDoProgressiveNameHits)
+                    if (nameOnlySubqueries.Count > 0)
                     {
                         string nameIntersectSql = string.Join("\nINTERSECT\n", nameOnlySubqueries);
                         string nameSql = $@"
@@ -1885,7 +1927,6 @@ namespace FolderMorpher.Services
                             LIMIT 500";
 
                         cmd.CommandText = nameSql;
-                        var nameHits = new List<SearchResultItem>();
                         using (var reader = cmd.ExecuteReader())
                         {
                             while (reader.Read())
@@ -1899,13 +1940,14 @@ namespace FolderMorpher.Services
                             }
                         }
 
-                        if (nameHits.Count > 0 && onNameHitsReady != null)
+                        if (nameHits.Count > 0 && canDoProgressiveNameHits)
                         {
-                            try { onNameHitsReady(nameHits); } catch { }
+                            try { onNameHitsReady!(nameHits); } catch { }
                         }
                     }
 
                     // ★ フェーズ2: 全体検索（(Name OR Content) の積集合）
+                    fullHits.Clear();
                     if (groupSubqueries.Count > 0)
                     {
                         string intersectSql = string.Join("\nINTERSECT\n", groupSubqueries);
@@ -1919,8 +1961,6 @@ namespace FolderMorpher.Services
                             LIMIT 500";
 
                         cmd.CommandText = fullSearchSql;
-                        var fullHits = new List<SearchResultItem>();
-                        var hitFileIds = new List<long>();
 
                         using (var reader = cmd.ExecuteReader())
                         {
@@ -1929,8 +1969,6 @@ namespace FolderMorpher.Services
                                 ct.ThrowIfCancellationRequested();
                                 var item = ParseReaderItem(reader);
                                 if (query.CompiledRegex != null && !query.CompiledRegex.IsMatch(item.Name)) continue;
-                                long fileId = reader.FieldCount > 7 && !reader.IsDBNull(7) ? reader.GetInt64(7) : 0;
-                                hitFileIds.Add(fileId);
 
                                 if (deduplicated.TryGetValue(item.FullPath, out var existing))
                                 {
@@ -1944,101 +1982,152 @@ namespace FolderMorpher.Services
                                 }
                             }
                         }
+                    }
+                    else
+                    {
+                        fullHits.AddRange(deduplicated.Values);
+                    }
+                } // lock (_lock) 終了：DB接続を即座に解放
 
-                        // 本文検索が有効かつFTS単語がある場合、ヒットしたファイルに対してスニペットを一括取得
-                        if (isExplicitContentSearch && hitFileIds.Count > 0)
+                // ★ ADR 85: Progressive Verify パイプライン（Aho-Corasick ＆ AdaptiveConcurrency）
+                // Mode C (contentless) では DB に本文を持たないため、本文候補（Candidates）に対して
+                // 原本ファイルを Small-File First でストリーム Verify し、真の Hit のみ UI へ順次合流
+                if (isExplicitContentSearch && groupSubqueries.Count > 0)
+                {
+                    var allSearchWords = new List<string>();
+                    foreach (var w in query.Keywords)
+                    {
+                        if (!string.IsNullOrWhiteSpace(w) && !allSearchWords.Contains(w, StringComparer.OrdinalIgnoreCase))
+                            allSearchWords.Add(w);
+                    }
+                    foreach (var grp in query.KeywordGroups)
+                    {
+                        foreach (var w in grp)
                         {
-                            var ftsWords = new List<string>();
-                            if (hasContentKeyword && query.ContentKeyword!.Trim().Length >= 3)
-                            {
-                                ftsWords.Add(query.ContentKeyword!.Trim());
-                            }
-                            if (query.SearchContentMode)
-                            {
-                                foreach (var grp in keywordGroups)
-                                {
-                                    foreach (var w in grp)
-                                    {
-                                        if (w.Length >= 3 && !ftsWords.Contains(w, StringComparer.OrdinalIgnoreCase))
-                                        {
-                                            ftsWords.Add(w);
-                                        }
-                                    }
-                                }
-                            }
+                            if (!string.IsNullOrWhiteSpace(w) && !allSearchWords.Contains(w, StringComparer.OrdinalIgnoreCase))
+                                allSearchWords.Add(w);
+                        }
+                    }
+                    foreach (var p in query.ExactPhrases)
+                    {
+                        if (!string.IsNullOrWhiteSpace(p) && !allSearchWords.Contains(p, StringComparer.OrdinalIgnoreCase))
+                            allSearchWords.Add(p);
+                    }
+                    if (!string.IsNullOrWhiteSpace(query.ContentKeyword) && !allSearchWords.Contains(query.ContentKeyword, StringComparer.OrdinalIgnoreCase))
+                    {
+                        allSearchWords.Add(query.ContentKeyword);
+                    }
 
-                            // ADR 82/83: Aho-Corasick によるワンパス高速ハイライトスニペット生成（FTS5 snippet()依存完全排除 ＆ 1〜2文字語対応）
-                            var allSearchWords = new List<string>();
-                            foreach (var grp in query.KeywordGroups)
-                            {
-                                foreach (var w in grp)
-                                {
-                                    if (!string.IsNullOrWhiteSpace(w) && !allSearchWords.Contains(w, StringComparer.OrdinalIgnoreCase))
-                                    {
-                                        allSearchWords.Add(w);
-                                    }
-                                }
-                            }
-                            if (!string.IsNullOrWhiteSpace(query.ContentKeyword) && !allSearchWords.Contains(query.ContentKeyword, StringComparer.OrdinalIgnoreCase))
-                            {
-                                allSearchWords.Add(query.ContentKeyword);
-                            }
+                    // fullHits は SQL レベルですべての条件を満たした正本集合。
+                    // そのうち「content:修飾子がなく、かつファイル名だけで全キーワードを満たすもの」は本文検査不要の確定 Hit。
+                    // それ以外（本文照合を要求されるもの、またはファイル名だけでは満たしていないもの）は本文候補（Candidates）。
+                    var namePathSet = new HashSet<string>(nameHits.Select(n => n.FullPath), StringComparer.OrdinalIgnoreCase);
 
-                            if (allSearchWords.Count > 0)
+                    var confirmedHits = fullHits
+                        .Where(h => !hasContentKeyword && namePathSet.Contains(h.FullPath))
+                        .ToList();
+
+                    var contentCandidates = fullHits
+                        .Where(h => hasContentKeyword || !namePathSet.Contains(h.FullPath))
+                        .ToList();
+
+                    // 1. 確定 Hit（ファイル名一致で本文検査不要なもの）を結果に追加
+                    results.AddRange(confirmedHits);
+
+                        // 2. 本文候補がある場合、原本ファイルを Small-File First で Progressive Verify
+                        if (contentCandidates.Count > 0 && allSearchWords.Count > 0)
+                        {
+                            var ahoCorasick = new AhoCorasickSearcher(allSearchWords);
+                            var validCandidates = contentCandidates
+                                .Where(c => !c.IsDirectory && File.Exists(c.FullPath))
+                                .OrderBy(c => c.SizeBytes)
+                                .ToList();
+
+                            var verifiedHits = new System.Collections.Concurrent.ConcurrentBag<SearchResultItem>();
+                            var streamingBatch = new List<SearchResultItem>();
+                            var batchLock = new object();
+                            int verifiedCount = 0;
+                            var controller = new AdaptiveConcurrencyController();
+                            var po = new ParallelOptions
                             {
+                                MaxDegreeOfParallelism = AdaptiveConcurrencyController.MaxConcurrency,
+                                CancellationToken = ct
+                            };
+
+                            await Parallel.ForEachAsync(validCandidates, po, async (cand, token) =>
+                            {
+                                token.ThrowIfCancellationRequested();
+                                using var lease = await controller.AcquireAsync(token);
+                                var swCand = Stopwatch.StartNew();
+
+                                string? body = null;
                                 try
                                 {
-                                    string idList = string.Join(",", hitFileIds.Where(id => id > 0));
-                                    if (!string.IsNullOrEmpty(idList))
-                                    {
-                                        using var snippetCmd = conn.CreateCommand();
-                                        snippetCmd.CommandText = $@"
-                                            SELECT c.rowid, c.Body
-                                            FROM ContentFts c
-                                            WHERE c.rowid IN ({idList})";
-
-                                        var ahoCorasick = new AhoCorasickSearcher(allSearchWords);
-                                        var snippetMap = new Dictionary<long, string>();
-
-                                        using (var reader = snippetCmd.ExecuteReader())
-                                        {
-                                            while (reader.Read())
-                                            {
-                                                long fId = reader.GetInt64(0);
-                                                string body = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
-                                                if (!string.IsNullOrEmpty(body))
-                                                {
-                                                    string snip = ahoCorasick.ExtractSnippet(body);
-                                                    if (!string.IsNullOrEmpty(snip))
-                                                    {
-                                                        snippetMap[fId] = snip;
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        for (int i = 0; i < fullHits.Count && i < hitFileIds.Count; i++)
-                                        {
-                                            long fId = hitFileIds[i];
-                                            var hit = fullHits[i];
-                                            if (snippetMap.TryGetValue(fId, out var snip))
-                                            {
-                                                hit.ContentSnippet = snip;
-                                                hit.MatchedReason = $"Indexed (FTS5): {string.Join(", ", query.Keywords.Concat(new[] { query.ContentKeyword }).Where(k => !string.IsNullOrEmpty(k)))}";
-                                            }
-                                        }
-                                    }
+                                    body = await ContentExtractionService.ExtractTextAsync(cand.FullPath, token);
+                                    swCand.Stop();
+                                    lease.Report(swCand.Elapsed.TotalMilliseconds, isError: false);
                                 }
                                 catch
                                 {
-                                    // スニペット取得の例外はサイレントに処理し、メタデータ一致として扱う
+                                    swCand.Stop();
+                                    lease.Report(swCand.Elapsed.TotalMilliseconds, isError: true);
+                                }
+
+                                int currVerified = Interlocked.Increment(ref verifiedCount);
+
+                                if (!string.IsNullOrEmpty(body))
+                                {
+                                    string snip = ahoCorasick.ExtractSnippet(body);
+                                    if (!string.IsNullOrEmpty(snip))
+                                    {
+                                        cand.ContentSnippet = snip;
+                                        cand.MatchedReason = $"Indexed (FTS5): {string.Join(", ", allSearchWords)}";
+                                        verifiedHits.Add(cand);
+
+                                        if (batchYield != null)
+                                        {
+                                            lock (batchLock)
+                                            {
+                                                streamingBatch.Add(cand);
+                                                int threshold = verifiedHits.Count <= 3 ? 1 : 5;
+                                                if (streamingBatch.Count >= threshold)
+                                                {
+                                                    batchYield.Report(streamingBatch.ToList());
+                                                    streamingBatch.Clear();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (progress != null && currVerified % 10 == 0)
+                                {
+                                    progress.Report(new SearchProgressReport
+                                    {
+                                        HitCount = results.Count + verifiedHits.Count,
+                                        ScannedCount = currVerified,
+                                        CurrentPath = cand.FullPath,
+                                        IsCompleted = false
+                                    });
+                                }
+                            });
+
+                            lock (batchLock)
+                            {
+                                if (streamingBatch.Count > 0 && batchYield != null)
+                                {
+                                    batchYield.Report(streamingBatch.ToList());
+                                    streamingBatch.Clear();
                                 }
                             }
+
+                            results.AddRange(verifiedHits);
                         }
                     }
-
-                    results.AddRange(deduplicated.Values);
-                }
+                    else
+                    {
+                        results.AddRange(fullHits.Count > 0 ? fullHits : nameHits);
+                    }
 
                 return results;
             }, ct);

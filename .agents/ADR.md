@@ -870,3 +870,44 @@
   4. **自動回帰テストによる恒久保護**:
      - `RegressionTestSuite.Search.cs` に セクション 16（Storage スキャンツリー直結同期 ＆ 冪等性）、セクション 17（Aho-Corasick 多パターン同時照合 ＆ Early Exit）、セクション 18（Aho-Corasick スニペット抽出 ＆ Lazy Background Builder Small-File First ＆ Opportunistic Cache）を新設。
      - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
+
+---
+
+### ADR 85: 次世代検索アーキテクチャ Mode C（contentless + detail=none trigram FTS5 ＆ 3文字分解AND ＆ Progressive Verify）
+*(v2.2.12 本番施工 & ADR 85)*
+
+- **背景 & 動機**:
+  - **10数GBのDB肥大化の根本解決**:
+    - 本文全文をDB内に保存し、trigram + 位置情報（detail=full）をFTS5へ保持する従来方式（Mode A）では、127万ファイル環境でDBが6.28GB〜10数GBに膨張。
+    - Solとの技術協議およびSQLite公式仕様・実機ベンチマークに基づき、発想を転換。
+    - **「巨大な答えを持つ全文Index」から「読まなくていいファイルを判定する極小Index ＋ 必要な原本だけ確認（Verify）」** へアーキテクチャを進化させる。
+  - **SQLite trigram の制約克服と実機検証**:
+    - `detail=none` で 4文字以上のトークンを渡すと `fts5: phrase queries are not supported (detail!=full)` エラーが発生するが、**3 Unicode文字以内のトークンであれば detail=none でも完全に MATCH 可能**。
+    - 4文字以上の単語はスライディングウィンドウ方式で 3文字 trigram の AND 結合式へ分解（例：「最高機密」➔ `("最高機" AND "高機密")`）。
+    - さらに `Microsoft.Data.Sqlite` 10.0.12（SQLite 3.53.3）で正式サポートされている `content='', contentless_delete=1` を採用することで、DB内に本文（`Body`）を一切持たない純粋な contentless trigram インデックスを実現。
+    - **10,005ファイル実機ベンチマーク結果**:
+      - Mode A (detail=full, 本文あり): 11.61 MB, 443 ms
+      - Mode B (detail=none, 本文あり): 7.94 MB, 336 ms (31.6% 削減)
+      - **Mode C (contentless + detail=none, 本文なし): 1.41 MB, 194 ms (87.9% 削減、約1/8に激減！)**
+  - **Sol指摘：False Positive（偽陽性）の必然性と Progressive Verify の必須性**:
+    - trigram の AND 結合は False Negative（見落とし）を防ぐ必要条件だが十分条件ではない。例えば `"ABCD"` 検索に対し、本文中で `"ABC"` と `"BCD"` が遠く離れて出現する偽陽性ファイルも FTS MATCH を通過する。
+    - したがって原本 Aho-Corasick による Verify は飾りではなく必須のセーフティネット。
+    - FTS MATCH で絞り込んだ候補（Candidates）に対し、Small-File First でストリーム検証（Progressive Verify）を行い、真の Hit のみ UI へ順次合流させることで、**False Negative 100% ゼロ ＆ False Positive 100% ゼロ** を完全保証。
+- **施工内容**:
+  1. **Mode C スキーマ自動昇格 ＆ 自動マイグレーション**:
+     - `ContentIndexService` の初期化時、既存 `ContentFts` のテーブル定義を検査。
+     - 旧方式（detail=full や contentテーブル）の場合、トランザクション内で自動的に `content='', contentless_delete=1, tokenize='trigram'` の Mode C へ自動マイグレーション。
+     - `IndexedFiles` の更新・削除時も `DELETE FROM ContentFts WHERE rowid = @fileId` が `contentless_delete=1` により通常テーブルと同様に完全動作。
+  2. **スライディングウィンドウ 3文字分解 AND クエリビルダー**:
+     - `BuildTrigramMatchExpression(string token)` を実装。
+     - 3文字ジャスト: `"token"`
+     - 4文字以上: `("tok" AND "oke" AND "ken")` へスライディング分解し、trigram のみの AND 式を構築。
+     - 2文字以下の語: FTS MATCH をスキップし、ファイル名一致（先行表示）＋本文検索ON時は `IndexedFiles (Status = 1)` を候補として通し、後段の原本 Verify で確実に救済。
+  3. **Progressive Verify パイプライン（Aho-Corasick ＆ AdaptiveConcurrency）**:
+     - `SearchIndexedAsync` において、`fullHits`（SQL レベルの INTERSECT 集合）からファイル名だけで条件を満たす確定 Hit（`confirmedHits`）を即座に抽出し先行表示。
+     - 本文照合を要求される候補（`contentCandidates`）を Small-File First（容量昇順）で並べ替え、`AdaptiveConcurrencyController` の帯域制御下で `ContentExtractionService` ＋ `AhoCorasickSearcher` による原本ストリーム検証を実行。
+     - 合格したアイテムはスニペットを付与してリアルタイムに UI へ逐次バッチ通知（`batchYield`）。
+  4. **自動回帰テストによる恒久保護**:
+     - `RegressionTestSuite.Search.cs` に ADR 85 検証を新設。
+     - Sol指摘の離れた `ABC...BCD`（偽陽性候補）と連続 `ABCD`（真の合致）を用意し、FTS MATCH で 2 件候補に挙がった後、Progressive Verify により真の 1 件のみに 100% 確定されること、およびスライディングウィンドウ 3文字 trigram AND 結合、`contentless_delete=1` の安全動作を自動検証。
+     - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。

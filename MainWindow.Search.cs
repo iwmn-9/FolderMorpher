@@ -406,7 +406,9 @@ namespace AstraSize
                         query,
                         targetFolder,
                         ct,
-                        onNameHitsReady: (query.SearchContentMode && string.IsNullOrEmpty(query.ContentKeyword)) ? OnNameHitsReady : null);
+                        onNameHitsReady: (query.SearchContentMode && string.IsNullOrEmpty(query.ContentKeyword)) ? OnNameHitsReady : null,
+                        progress: progress,
+                        batchYield: batchYield);
 
                     // 🛡️ JIT 権限照合＆自動自浄: アクセス権のないファイルや消失したファイルを即時除外し、裏でインデックスからパージ
                     var hits = await VerifyAndFilterPermissionsAsync(rawHits, ct);
