@@ -1,4 +1,4 @@
-# FolderMorpher — AI Agent & Developer Architecture Guide
+﻿# FolderMorpher — AI Agent & Developer Architecture Guide
 
 > **【AIメンテナ・自律継続規約】**  
 > 本プロジェクトは「自律完遂（自ら調査・修正・検証まで行い、完成状態で返す）」を基本方針とする。  
@@ -230,8 +230,10 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 ### 配布用単一EXEの生成（Release self-contained・圧縮約74.5MB）
 ```powershell
 $env:PATH = "C:\Users\iwakura\.dotnet;" + $env:PATH
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
-Copy-Item -Path ".\bin\Release\net8.0-windows\win-x64\publish\FolderMorpher.exe" -Destination ".\FolderMorpher.exe" -Force
+& "$HOME\.dotnet\dotnet.exe" publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o ./publish
+# Google Drive同期時は社内互換のため2つとも配置すること
+Copy-Item ./publish/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderMorpher.exe" -Force
+Copy-Item ./publish/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderCleaner.exe" -Force
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
