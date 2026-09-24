@@ -250,8 +250,8 @@ namespace FolderMorpher.Services
                 }
                 catch { }
 
-                // ADR 85: ContentFts を Mode C（content='', contentless_delete=1, tokenize='trigram'）へ自動昇格
-                // 本文コピーを保持せず約1/8にDB容量を圧縮し、かつ通常DELETE/UPDATEを完全サポート
+                // ADR 85: ContentFts を Mode C（content='', contentless_delete=1, detail='none', tokenize='trigram'）へ自動昇格
+                // 本文コピーを保持せず、position情報も持たない（detail=none）極小インデックス
                 bool needCreateContentFts = true;
                 try
                 {
@@ -262,31 +262,61 @@ namespace FolderMorpher.Services
                     {
                         string sqlStr = sqlObj.ToString() ?? string.Empty;
                         bool hasFileIdCol = sqlStr.Contains("FileId", StringComparison.OrdinalIgnoreCase);
-                        bool isContentlessDelete = sqlStr.Contains("contentless_delete", StringComparison.OrdinalIgnoreCase) &&
-                                                   sqlStr.Contains("content", StringComparison.OrdinalIgnoreCase);
+                        bool isTrueModeC = sqlStr.Contains("contentless_delete", StringComparison.OrdinalIgnoreCase) &&
+                                           sqlStr.Contains("content", StringComparison.OrdinalIgnoreCase) &&
+                                           sqlStr.Contains("detail", StringComparison.OrdinalIgnoreCase) &&
+                                           sqlStr.Contains("none", StringComparison.OrdinalIgnoreCase);
 
-                        if (hasFileIdCol || !isContentlessDelete)
+                        if (hasFileIdCol || !isTrueModeC)
                         {
-                            // 旧スキーマ（FileId列がある、または通常テーブル、または contentless_delete 未設定テーブル）
-                            // ➔ 一時テーブル経由で Mode C (content='', contentless_delete=1) へ安全マイグレーション
-                            using var migCmd = conn.CreateCommand();
-                            string selectCols = hasFileIdCol
-                                ? "SELECT CAST(FileId AS INTEGER), Body FROM ContentFts_Old WHERE FileId IS NOT NULL;"
-                                : "SELECT rowid, Body FROM ContentFts_Old WHERE rowid IS NOT NULL;";
+                            // 旧スキーマ（FileId列がある、Mode A通常テーブル、または detail=none 未設定の半端なMode C）
+                            bool isOldContentless = sqlStr.Contains("contentless", StringComparison.OrdinalIgnoreCase) ||
+                                                    sqlStr.Contains("content = ''", StringComparison.OrdinalIgnoreCase) ||
+                                                    sqlStr.Contains("content=''", StringComparison.OrdinalIgnoreCase);
 
-                            migCmd.CommandText = $@"
-                                ALTER TABLE ContentFts RENAME TO ContentFts_Old;
-                                CREATE VIRTUAL TABLE ContentFts USING fts5(
-                                    Body,
-                                    tokenize = 'trigram',
-                                    content = '',
-                                    contentless_delete = 1
-                                );
-                                INSERT INTO ContentFts (rowid, Body)
-                                {selectCols}
-                                DROP TABLE ContentFts_Old;
-                            ";
-                            migCmd.ExecuteNonQuery();
+                            if (isOldContentless)
+                            {
+                                // 既に contentless だった場合（Body が保存されていないため SELECT 移行不可）
+                                // ➔ テーブルを detail='none' で再作成し、IndexedFiles の本文ステータスを未インデックスへリセット
+                                using var resetCmd = conn.CreateCommand();
+                                resetCmd.CommandText = @"
+                                    DROP TABLE IF EXISTS ContentFts;
+                                    CREATE VIRTUAL TABLE ContentFts USING fts5(
+                                        Body,
+                                        tokenize = 'trigram',
+                                        content = '',
+                                        contentless_delete = 1,
+                                        detail = 'none'
+                                    );
+                                    UPDATE IndexedFiles SET Status = 0 WHERE Status = 1;
+                                    UPDATE IndexedRoots SET LastCompletedUtcTicks = 0;
+                                ";
+                                resetCmd.ExecuteNonQuery();
+                            }
+                            else
+                            {
+                                // 旧 Mode A 通常テーブル（Body が保持されている）
+                                // ➔ 一時テーブル経由で新 Mode C へ安全データ引き継ぎ
+                                using var migCmd = conn.CreateCommand();
+                                string selectCols = hasFileIdCol
+                                    ? "SELECT CAST(FileId AS INTEGER), Body FROM ContentFts_Old WHERE FileId IS NOT NULL;"
+                                    : "SELECT rowid, Body FROM ContentFts_Old WHERE rowid IS NOT NULL;";
+
+                                migCmd.CommandText = $@"
+                                    ALTER TABLE ContentFts RENAME TO ContentFts_Old;
+                                    CREATE VIRTUAL TABLE ContentFts USING fts5(
+                                        Body,
+                                        tokenize = 'trigram',
+                                        content = '',
+                                        contentless_delete = 1,
+                                        detail = 'none'
+                                    );
+                                    INSERT INTO ContentFts (rowid, Body)
+                                    {selectCols}
+                                    DROP TABLE ContentFts_Old;
+                                ";
+                                migCmd.ExecuteNonQuery();
+                            }
                             needCreateContentFts = false;
                         }
                         else
@@ -307,7 +337,8 @@ namespace FolderMorpher.Services
                                 Body,
                                 tokenize = 'trigram',
                                 content = '',
-                                contentless_delete = 1
+                                contentless_delete = 1,
+                                detail = 'none'
                             );";
                         createCmd.ExecuteNonQuery();
                     }
