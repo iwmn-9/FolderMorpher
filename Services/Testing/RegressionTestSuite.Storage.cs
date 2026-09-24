@@ -28,6 +28,7 @@ namespace FolderMorpher.Services.Testing
             await TestUiBindingContractAndCacheExpansionStateAsync();
             TestStorageSessionAndAuditSortingContracts();
             await TestNativeDirectoryEnumeratorAndConcurrency2Async();
+            await TestPathCanonicalizerAndSha256CacheAsync();
         }
 
         private static async Task TestStorageHistoryTreeCacheAndDiffAsync()
@@ -533,6 +534,69 @@ namespace FolderMorpher.Services.Testing
             finally
             {
                 try { Directory.Delete(testDir, true); } catch { }
+            }
+        }
+
+        private static async Task TestPathCanonicalizerAndSha256CacheAsync()
+        {
+            // 1. PathCanonicalizer の正規化テスト
+            string uncPath = @"\\Server\Share\SubFolder\";
+            string normalizedUnc = PathCanonicalizer.Normalize(uncPath);
+            if (!normalizedUnc.Equals(@"\\Server\Share\SubFolder", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"PathCanonicalizer エラー: UNCパス正規化不正 (期待: \\\\Server\\Share\\SubFolder, 実際: {normalizedUnc})");
+            }
+
+            string extendedPath = @"\\?\C:\FolderName\File.txt";
+            string normalizedExtended = PathCanonicalizer.Normalize(extendedPath);
+            if (!normalizedExtended.Equals(@"C:\foldername\file.txt", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"PathCanonicalizer エラー: 拡張プレフィックス除去不正 (実際: {normalizedExtended})");
+            }
+
+            if (!PathCanonicalizer.AreSamePath(@"C:\Test\Sub", @"c:\test/sub/"))
+            {
+                throw new InvalidOperationException("PathCanonicalizer エラー: AreSamePath が一致しません");
+            }
+
+            if (!PathCanonicalizer.IsNetworkPath(@"\\server\share\folder"))
+            {
+                throw new InvalidOperationException("PathCanonicalizer エラー: IsNetworkPath が UNC を判定できません");
+            }
+
+            if (PathCanonicalizer.IsNetworkPath(@"C:\LocalFolder"))
+            {
+                throw new InvalidOperationException("PathCanonicalizer エラー: IsNetworkPath がローカルパスを誤判定しました");
+            }
+
+            // 2. TreeCache における Sha256 の保持 & JSON シリアライズ往復テスト
+            string testRoot = @"C:\TestFakeRoot\TreeShaTest";
+            var rootNode = new FileItemNode(testRoot, "TreeShaTest", 1024 * 1024, true);
+            var fileNode = new FileItemNode(Path.Combine(testRoot, "sample.bin"), "sample.bin", 1024, false)
+            {
+                Parent = rootNode,
+                Sha256 = "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+            };
+            rootNode.Children.Add(fileNode);
+
+            var historyService = new StorageHistoryService();
+            await historyService.SaveTreeCacheAsync(rootNode);
+
+            var restored = await historyService.LoadTreeCacheAsync(testRoot);
+            if (restored == null)
+            {
+                throw new InvalidOperationException("TreeCache 復元失敗: Sha256 テスト用キャッシュがロードできません。");
+            }
+
+            var restoredFile = restored.Children.FirstOrDefault(c => c.Name == "sample.bin");
+            if (restoredFile == null)
+            {
+                throw new InvalidOperationException("TreeCache 復元失敗: 子ノード sample.bin が存在しません。");
+            }
+
+            if (restoredFile.Sha256 != fileNode.Sha256)
+            {
+                throw new InvalidOperationException($"TreeCache Sha256 欠落エラー: 復元されたノードの Sha256 が一致しません (期待: {fileNode.Sha256}, 実際: {restoredFile.Sha256})");
             }
         }
     }

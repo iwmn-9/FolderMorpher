@@ -943,3 +943,38 @@
      - `RegressionTestSuite.Search.cs` に ADR 86 検証を追加。
      - `StripXmlTagsFast` の精度検証、550ファイル生成・520番目「設計」配置による 500件上限突破＆2文字日本語検索の完全性検証、および `SearchDirectFolderAsync` の Producer-Consumer パイプライン直接走査検証を実施。
      - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
+
+---
+
+### ADR 87: 検索専用 FTS5 DB 撤去 ＆ インメモリ ＋ Live走査一本化 ＆ Canonical Path ＆ TreeCache SHA-256
+*(v2.2.14 本番施工 & ADR 87)*
+
+- **背景 & 動機**:
+  - **検索専用 FTS5 DB の運用コストと肥大化の解消**:
+    - 検索専用の SQLite DB（`folder_morpher_search.db`）は、120万〜数百万ファイル環境で数GB〜10GB以上に肥大化し、ディスク・ネットワーク負荷や WAL ロック競合を発生させていた。
+    - 実態として、DBは検索専用にしか使われておらず、アプリ内にはすでに高速・軽量なスキャンツリー（インメモリおよびポータブルな `TreeCaches/*.json`）が存在していた。
+    - 加えて、Agent Ransack 流の Producer-Consumer Channel パイプライン（列挙と本文走査の完全並行化 ＋ 64KB SequentialScan ＋ XML高速タグ除去）が完成したことにより、重厚なインデックスがなくとも開始数百ミリ秒でストリーミング検索が可能となった。
+  - **ネットワークドライブ（Z:\）と UNC の二重化解消**:
+    - ネットワークドライブ（例: `Z:\`）と UNC パス（例: `\\server\share`）が、中身同一であるにもかかわらず別名として扱われ、キャッシュや検索走査が二重化する問題があった。
+  - **共有キャッシュツリー（JSON）への SHA-256 保持**:
+    - ファイルサーバー共有用の JSON キャッシュツリーに SHA-256 ハッシュ値を保持できるようにし、共有キャッシュのポータビリティと安全性を高めることが求められた。
+- **施工内容**:
+  1. **検索専用 FTS5 DB の完全撤去と 2 大柱への一本化**:
+     - `MainWindow.Search.cs` および `MainWindow.Storage.cs` から SQLite インデックス（`folder_morpher_search.db`、`_contentIndex`、`ContentIndexWatcherService`）のUI依存を完全に撤去。
+     - 検索ルートを「① スキャン済みツリー / 共有JSONキャッシュによる 0秒インメモリ検索（ファイル名・属性一致を先行表示 ＋ 本文ストリーミング合流）」および「② 未スキャンUNC / 初見フォルダに対する Agent Ransack 流 Live 直接走査（Channel パイプライン）」の 2 大柱へ一本化。
+     - 巨大なローカル SQLite DB の肥大化やロック競合、裏での常時ディスク・ネットワーク負荷を完全に根絶。
+  2. **パス正規化エンジン（`Services/PathCanonicalizer.cs`）新設**:
+     - `WNetGetConnectionW`（`mpr.dll`）により、ネットワークドライブ（例: `Z:\`）を実体の UNC パス（`\\server\share`）へ自動解決。
+     - 高速インメモリキャッシュ（`DriveToUncCache`）により Win32 API 呼び出しのオーバーヘッドをゼロ化。
+     - 拡張UNC（`\\?\`）の安全除去、末尾スラッシュの正規化、`AreSamePath` による大文字小文字・UNCマウント同一視判定を提供。
+  3. **キャッシュツリー（`TreeCaches`）の Canonical 統合 ＆ SHA-256 サポート**:
+     - `Models/FileItemNode.cs`: `public string? Sha256 { get; set; }` を追加。
+     - `Services/StorageHistoryService.cs`:
+       - `GetCacheFileName`: `PathCanonicalizer.Normalize` を適用し、`Z:\` でも `\\server\share` でも同一のキャッシュファイル名（ハッシュ）を生成・参照。
+       - `GetTreeCacheReadFilePath`: 過去バージョンで生成された非正規化ハッシュのキャッシュファイルも自動検知する後方互換フォールバックを完備。
+       - `TreeCacheNode`: `Sha256` プロパティを追加し、`ToCacheNode` / `FromCacheNode` でシームレスに相互変換・JSONシリアライズ。
+  4. **自動回帰テストによる恒久保護**:
+     - `Services/Testing/RegressionTestSuite.Storage.cs` に `TestPathCanonicalizerAndSha256CacheAsync` を追加（Domain 2）。
+     - パス正規化（UNC、拡張UNC、末尾スラッシュ、大文字小文字同一視、ネットワーク判定）および TreeCache における Sha256 の JSON シリアライズ往復・保持を自動検証。
+     - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
+

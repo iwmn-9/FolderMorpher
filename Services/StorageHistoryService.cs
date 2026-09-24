@@ -11,6 +11,8 @@ namespace AstraSize.Services
 {
     public class StorageHistoryService
     {
+        public static StorageHistoryService Instance { get; } = new();
+
         private readonly string _defaultLocalHistoryFilePath;
 
         public StorageHistoryService()
@@ -373,6 +375,16 @@ namespace AstraSize.Services
 
         private static string GetCacheFileName(string targetPath)
         {
+            var canonical = PathCanonicalizer.Normalize(targetPath);
+            var normalized = canonical.TrimEnd('\\', '/').ToLowerInvariant();
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            var bytes = System.Text.Encoding.UTF8.GetBytes(normalized);
+            var hash = sha.ComputeHash(bytes);
+            return $"{Convert.ToHexString(hash)}.json";
+        }
+
+        private static string GetLegacyCacheFileName(string targetPath)
+        {
             var normalized = targetPath.TrimEnd('\\', '/').ToLowerInvariant();
             using var sha = System.Security.Cryptography.SHA256.Create();
             var bytes = System.Text.Encoding.UTF8.GetBytes(normalized);
@@ -389,11 +401,26 @@ namespace AstraSize.Services
             {
                 var p = Path.Combine(readDir, fileName);
                 if (File.Exists(p)) primaryPath = p;
+                else
+                {
+                    // 過去バージョン互換フォールバック（未正規化パスのハッシュ）
+                    var legacyP = Path.Combine(readDir, GetLegacyCacheFileName(targetPath));
+                    if (File.Exists(legacyP)) primaryPath = legacyP;
+                }
             }
 
             var localBase = AppSettingsService.Instance.GetDefaultLocalBaseDirectory();
             var localPath = Path.Combine(localBase, "TreeCaches", fileName);
             bool localExists = File.Exists(localPath);
+            if (!localExists)
+            {
+                var legacyLocal = Path.Combine(localBase, "TreeCaches", GetLegacyCacheFileName(targetPath));
+                if (File.Exists(legacyLocal))
+                {
+                    localPath = legacyLocal;
+                    localExists = true;
+                }
+            }
 
             // フォールバック抑制チェック
             if (!AppSettingsService.Instance.Current.FallbackToLocalOnReadError && string.IsNullOrEmpty(primaryPath))
@@ -550,7 +577,9 @@ namespace AstraSize.Services
                 FolderCount = node.FolderCount,
                 IsDirectory = node.IsDirectory,
                 IsExpanded = node.IsExpanded,
-                LastModified = node.LastModified
+                LastModified = node.LastModified,
+                CreationTime = node.CreationTime,
+                Sha256 = node.Sha256
             };
 
             foreach (var child in node.Children)
@@ -572,6 +601,8 @@ namespace AstraSize.Services
                 IsDirectory = c.IsDirectory,
                 IsExpanded = c.IsExpanded,
                 LastModified = c.LastModified,
+                CreationTime = c.CreationTime,
+                Sha256 = c.Sha256,
                 Level = level,
                 Parent = parent
             };
@@ -598,6 +629,8 @@ namespace AstraSize.Services
         public bool IsDirectory { get; set; }
         public bool IsExpanded { get; set; }
         public DateTime? LastModified { get; set; }
+        public DateTime? CreationTime { get; set; }
+        public string? Sha256 { get; set; }
         public List<TreeCacheNode> Children { get; set; } = new();
     }
 

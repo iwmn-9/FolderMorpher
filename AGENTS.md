@@ -61,7 +61,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 | :--- | :--- | :--- | :--- | :--- |
 | **全体共通 / 左サイドバー** | `SidebarBorder`, `SidebarToggleButton` (L22-75) | `MainWindow.xaml.cs`<br>`MainWindow.Localization.cs` | `Converters/ValueConverters.cs` | 収縮対応ナビゲーション（幅220px ⇄ 58px）、グローバルステータスバー、通知トースト、言語切替（日英）、環境設定モーダル |
 | **Tab 1: 容量分析**<br>(Storage Explorer) | `StorageTabPanel` (L82-410)<br>`HistoryWindow.xaml` | `MainWindow.Storage.cs`<br>`HistoryWindow.xaml.cs` | `DiskScanService.cs`<br>`StorageHistoryService.cs`<br>`StorageForecastingService.cs`<br>`ScanTabModel.cs`<br>`FileItemNode.cs` | 複数タブスキャン、ドライブ空き容量メーター、全体占有率メーター、容量上位Top10（Explorer起動連動）、直下シェア内訳、推移グラフ直下の3連KPIハイライトカード（上限到達予測・日次ペース・R²信頼度） |
-| **Tab 2: ファイル検索**<br>(Search Studio) | `SearchTabPanel`<br>(`MainWindow.xaml`) | `MainWindow.Search.cs` | `SearchEngineService.cs`<br>`ContentIndexService.cs`<br>`ContentExtractionService.cs`<br>`SearchQueryParser.cs`<br>`PdfSearchHelper.cs`<br>`SearchModels.cs` | **全自動スマートルーティング（FTS5ミリ秒 ➔ 0秒インメモリ ➔ ライブ走査）**、**バックグラウンド自動インデックス同期**、**次世代 Mode C（contentless + detail=none trigram FTS5 ＆ 3文字分解AND ＆ Progressive Verify によりDBサイズ約1/8・False Negative/Positive ゼロ保証）**、**Agent Ransack 流 Producer-Consumer パイプライン（列挙と本文検査の完全並行化）**、**64KB SequentialScan & 高速1パスXMLタグ除去**、**2文字日本語検索漏れ根絶 ＆ 500件上限完全撤去**、**Storage スキャンツリー直結同期（二重I/Oゼロ）**、**Aho-Corasick 多パターン同時照合 ＆ 高速スニペット**、**Lazy Background Builder（Small-File First）＆ 便乗キャッシュ**、**Windows IFilter & 非圧縮対応純C#フォールバックによるPDF全文検索**、**Quiet Fluent 1行スリムメトリクスバー**、**フル幅モダンカードリスト ＆ Tabler File-Type バッジ**、Everything互換クエリ構文、右クリックから全スタジオへ連携およびExcel/CSV出力 |
+| **Tab 2: ファイル検索**<br>(Search Studio) | `SearchTabPanel`<br>(`MainWindow.xaml`) | `MainWindow.Search.cs` | `SearchEngineService.cs`<br>`PathCanonicalizer.cs`<br>`ContentExtractionService.cs`<br>`SearchQueryParser.cs`<br>`PdfSearchHelper.cs`<br>`SearchModels.cs` | **検索専用 FTS5 DB 撤去 ＆ インメモリ ＋ Agent Ransack 流 Live 直接走査への一本化（ローカルDB肥大化・ロック競合ゼロ）**、**スキャンツリー／共有 TreeCache JSON による 0秒インメモリ検索**、**パス正規化エンジン（PathCanonicalizer: Z:\ ⇄ UNC 自動解決＆同一視）**、**TreeCache SHA-256 サポート（共有キャッシュのポータビリティ向上）**、**Agent Ransack 流 Producer-Consumer パイプライン（列挙と本文検査の完全並行化）**、**64KB SequentialScan & 高速1パスXMLタグ除去**、**2文字日本語検索漏れ根絶 ＆ 500件上限完全撤去**、**Aho-Corasick 多パターン同時照合 ＆ 高速スニペット**、**Windows IFilter & 非圧縮対応純C#フォールバックによるPDF全文検索**、**Quiet Fluent 1行スリムメトリクスバー**、**フル幅モダンカードリスト ＆ Tabler File-Type バッジ**、Everything互換クエリ構文、右クリックから全スタジオへ連携およびExcel/CSV出力 |
 | **Tab 3: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `Views/LiveAclStudio.xaml`<br>(`LiveAclFolderView`, `LiveAclReverseView`, `LiveAclDiffModalOverlay`, `NewFolderModalOverlay`) | `Views/LiveAclStudio.xaml.cs` | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACL可視化・編集、**Dry-Run差分チェックモーダル（AclChangePlan貫通・継承変更警告・セマンティックVerify・SDDLロールバック）**、AD逆引き権限監査、均一幅ADアカウントカード、ADパレットUI統一、ADバックグラウンド自動同期、ツリーインライン新規フォルダー作成 |
 | **Tab 4: 移行スタジオ**<br>(Simulation Studio) | `SimulationTabPanel` (L608-995) | `MainWindow.Simulation.cs` | `SimulationProjectService.cs`<br>`MigrationPackageService.cs`<br>`MigrationPackageModels.cs`<br>`SimModels.cs` | 現行ファイルサーバーから新環境への仮想ツリー設計（N:1マッピング）、ACL引き継ぎ設計、ADパレット統一、全画面・全出力完全日英両対応、ヘッダーレイアウト整線、ガワ先行作成の実機DACLセマンティックVerify、エンタープライズ移行パッケージ出力（TargetRoot必須検証・Wave分割・Runbook Excel・安全停止手順・多重コピー防止/XD・%~dp0相対ログ・exit /b 1・遅延展開排除・Dry-Run bat同梱） |
 | **Tab 5: リンク修復**<br>(LinkFixer) | `LinkFixTabPanel` (L998-1094) | `MainWindow.LinkFix.cs` | `LinkFixService.cs`<br>`OfficeLinkFixService.cs` | サーバー移行後の切断ショートカット（.lnk）およびOffice内部リンク（.xlsx/.xlsm）検出・修復、**VBAマクロ非破壊保護＆通常XML混在時の部分修復（PartiallyFixed）**、全社配布用GPOログオンスクリプト（.ps1）生成 |
@@ -252,6 +252,18 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
       - Office 本文走査において生XMLでの事前キーワード存在チェック（Pre-Filter）を導入し、不要なタグ除去をスキップして即脱落。
     - **回帰テスト（Domain 8 セクション 20）新設**:
       - `StripXmlTagsFast` の精度、550ファイル生成・520番目「設計」配置による 500件上限突破＆2文字日本語検索の完全性、および `SearchDirectFolderAsync` の Producer-Consumer パイプライン直接走査を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+31. **検索専用 FTS5 DB 撤去 ＆ インメモリ ＋ Live走査一本化 ＆ Canonical Path ＆ TreeCache SHA-256（v2.2.14 / ADR 87）**:
+    - **ローカル全文DBの完全撤去（運用コスト・肥大化ゼロ）**:
+      - 検索専用の SQLite DB（`folder_morpher_search.db`、`_contentIndex`）を撤去し、数GB〜10GB以上のDB肥大化、WALロック競合、バックグラウンドでの不要なディスク・ネットワークアクセスを完全に根絶。
+      - 検索経路を「スキャン済みツリー／共有JSONキャッシュによる 0秒インメモリ検索」＋「未スキャンUNC／初見フォルダーに対する Agent Ransack 流 Live 直接走査（Producer-Consumer Channel パイプライン）」の 2 大柱へ一本化。
+    - **パス正規化エンジン（`PathCanonicalizer`: Z:\ ⇄ UNC 自動解決＆同一視）**:
+      - `WNetGetConnectionW`（`mpr.dll`）によりネットワークドライブ（`Z:\`）を実体の UNC パス（`\\server\share`）へ自動解決。
+      - キャッシュ・検索対象判定において、ドライブ割り当てやUNCの違いによらず同一フォルダーとして 100% 同一視。
+    - **共有キャッシュツリー（JSON）への SHA-256 サポート**:
+      - `FileItemNode` および `TreeCacheNode` に `Sha256` プロパティを追加。
+      - スキャンツリーの JSON キャッシュ（`TreeCaches/*.json`）にハッシュ値を保持・ポータブル共有可能に。
+    - **回帰テスト（Domain 2）新設**:
+      - `TestPathCanonicalizerAndSha256CacheAsync` により、パス正規化（UNC・拡張UNC・末尾スラッシュ・大文字小文字同一視・ネットワーク判定）および TreeCache での Sha256 の JSON シリアライズ往復保持を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
 ---
 
 ---

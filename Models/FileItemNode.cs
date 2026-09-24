@@ -19,6 +19,7 @@ namespace AstraSize.Models
         public bool IsDirectory { get; set; }
         public DateTime? LastModified { get; set; }
         public DateTime? CreationTime { get; set; }
+        public string? Sha256 { get; set; }
         public string? ErrorMessage { get; set; }
         public int Level { get; set; } = 0;
 

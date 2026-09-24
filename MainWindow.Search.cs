@@ -25,8 +25,6 @@ namespace AstraSize
     public partial class MainWindow
     {
         private readonly SearchEngineService _searchEngine = new();
-        private readonly ContentIndexService _contentIndex = new();
-        private ContentIndexWatcherService? _indexWatcher;
         private CancellationTokenSource? _searchCts;
         private DispatcherTimer? _searchDebounceTimer;
         private readonly ObservableCollection<SearchResultItem> _searchResults = new();
@@ -39,9 +37,6 @@ namespace AstraSize
 
         public void InitializeSearchStudio()
         {
-            _indexWatcher = new ContentIndexWatcherService(_contentIndex);
-            _indexWatcher.ChangesApplied += OnWatcherChangesApplied;
-
             if (SearchListView != null)
             {
                 SearchListView.ItemsSource = _searchResults;
@@ -67,109 +62,12 @@ namespace AstraSize
             // （チェックを入れた途端に検索が走り出す不快感を解消）
         }
 
-        private int _isBackgroundIndexing = 0;
-
-        private void TriggerBackgroundIndexUpdate(string? folderPath, bool force = false)
-        {
-            if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath)) return;
-
-            // クールダウン判定（自動同期時は前回の同期から15分経過していない場合はスキップしてサーバー負荷抑制）
-            if (!force && !_contentIndex.NeedsBackgroundSync(folderPath, TimeSpan.FromMinutes(15)))
-            {
-                return;
-            }
-
-            if (Interlocked.CompareExchange(ref _isBackgroundIndexing, 1, 0) != 0)
-            {
-                if (force)
-                {
-                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                    ShowToast(isJa ? "⏳ 現在インデックス同期を実行中です..." : "⏳ Index synchronization is currently in progress...");
-                }
-                return;
-            }
-
-            if (force)
-            {
-                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                ShowToast(isJa ? "⚡ インデックス差分同期を開始しました..." : "⚡ Started index synchronization...");
-            }
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    var report = await _contentIndex.IndexFolderAsync(folderPath, progress: null, CancellationToken.None);
-                    if (report.NewlyIndexedCount > 0 || report.DeletedCount > 0)
-                    {
-                        Dispatcher.Invoke(() =>
-                        {
-                            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                            ShowToast(isJa
-                                ? $"⚡ インデックスを最新化しました ({report.NewlyIndexedCount + report.DeletedCount:N0}件の変更)"
-                                : $"⚡ Index updated ({report.NewlyIndexedCount + report.DeletedCount:N0} changes)");
-
-                            // ★ 自動再検索: ユーザーが検索窓を開いたままであれば、最新インデックスから自動リフレッシュ
-                            string currentFolder = SearchDirectTargetTextBox?.Text?.Trim() ?? string.Empty;
-                            if (string.IsNullOrWhiteSpace(currentFolder))
-                            {
-                                var selectedTab = StorageTabs?.FirstOrDefault(t => t.IsSelected);
-                                if (selectedTab?.RootNode != null) currentFolder = selectedTab.RootNode.FullPath;
-                            }
-
-                            if (string.Equals(currentFolder, folderPath, StringComparison.OrdinalIgnoreCase))
-                            {
-                                if (!string.IsNullOrWhiteSpace(SearchInputBox?.Text))
-                                {
-                                    ExecuteSearch(isIncremental: false, isAutoRefresh: true);
-                                }
-                            }
-                        });
-                    }
-                    else if (force)
-                    {
-                        Dispatcher.Invoke(() =>
-                        {
-                            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                            ShowToast(isJa ? "インデックスは既に最新です (差分なし)" : "Index is already up-to-date (no changes)");
-                        });
-                    }
-                }
-                catch
-                {
-                    // バックグラウンドインデックス失敗はサイレントに処理
-                }
-                finally
-                {
-                    Interlocked.Exchange(ref _isBackgroundIndexing, 0);
-                }
-            });
-        }
-
         private void SearchSyncIndexButton_Click(object sender, RoutedEventArgs e)
         {
-            string targetFolder = SearchDirectTargetTextBox?.Text?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(targetFolder))
-            {
-                var selectedTab = StorageTabs?.FirstOrDefault(t => t.IsSelected);
-                if (selectedTab?.RootNode != null && !string.IsNullOrWhiteSpace(selectedTab.RootNode.FullPath))
-                {
-                    targetFolder = selectedTab.RootNode.FullPath;
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(targetFolder) || !Directory.Exists(targetFolder))
-            {
-                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                MessageBox.Show(
-                    isJa ? "同期対象のフォルダーまたはUNCパスを指定してください。" : "Please specify a valid folder or UNC path to synchronize.",
-                    isJa ? "インデックス同期" : "Index Synchronization",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-                return;
-            }
-
-            TriggerBackgroundIndexUpdate(targetFolder, force: true);
+            // 現在の入力条件で検索を再実行（最新化）
+            ExecuteSearch(isIncremental: false);
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+            ShowToast(isJa ? "🔄 検索結果を最新化しました" : "🔄 Refreshed search results");
         }
 
         #region Search Input & Debounce
@@ -358,95 +256,29 @@ namespace AstraSize
                 _searchResults.Clear();
                 _allSearchResults.Clear();
 
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                var sw = Stopwatch.StartNew();
+
                 // ⚡ スマートルーティング判定:
-                // 1. FTS5インデックスが存在するか？
-                bool hasIndex = hasTarget && _contentIndex.HasIndexForPath(targetFolder);
-
-                if (hasIndex && (query.SearchContentMode || !hasScannedTree))
+                // スキャン済みツリー（またはディスク/共有のJSONキャッシュ）が存在するか？
+                if (!hasScannedTree && hasTarget)
                 {
-                    // 📑 ルート1: SQLite FTS5 事前インデックス全文検索 (ミリ秒応答 ＆ 先行通知)
-                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                    var sw = Stopwatch.StartNew();
-                    int finalResultsCommitted = 0;
-
-                    async void OnNameHitsReady(IReadOnlyList<SearchResultItem> nameHits)
+                    try
                     {
-                        if (currentGen != Volatile.Read(ref _searchGeneration)) return;
-                        if (Volatile.Read(ref finalResultsCommitted) == 1) return;
-
-                        try
+                        var cachedRoot = await StorageHistoryService.Instance.LoadTreeCacheAsync(targetFolder);
+                        if (cachedRoot != null)
                         {
-                            // 🛡️ JIT 権限照合＆自動自浄: 先行表示であってもアクセス権のないファイルは絶対に画面に出さない
-                            var verified = await VerifyAndFilterPermissionsAsync(nameHits.ToList(), ct);
-                            if (currentGen != Volatile.Read(ref _searchGeneration)) return;
-                            if (Volatile.Read(ref finalResultsCommitted) == 1) return;
-
-                            await Dispatcher.InvokeAsync(() =>
-                            {
-                                if (currentGen != Volatile.Read(ref _searchGeneration)) return;
-                                if (Volatile.Read(ref finalResultsCommitted) == 1) return;
-
-                                _allSearchResults = verified;
-                                ApplyFilterAndSort();
-                                long totalBytes = _searchResults.Sum(h => h.SizeBytes);
-                                UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
-                                if (SearchStatusText != null)
-                                {
-                                    SearchStatusText.Text = isJa
-                                        ? $"⚡ ファイル名一致: {_searchResults.Count:N0} 件 ({sw.ElapsedMilliseconds} ms) ―― 📄 本文を検索中..."
-                                        : $"⚡ Name matches: {_searchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms) ―― 📄 Searching content...";
-                                }
-                            });
-                        }
-                        catch (OperationCanceledException) { }
-                        catch { }
-                    }
-
-                    var rawHits = await _contentIndex.SearchIndexedAsync(
-                        query,
-                        targetFolder,
-                        ct,
-                        onNameHitsReady: (query.SearchContentMode && string.IsNullOrEmpty(query.ContentKeyword)) ? OnNameHitsReady : null,
-                        progress: progress,
-                        batchYield: batchYield);
-
-                    // 🛡️ JIT 権限照合＆自動自浄: アクセス権のないファイルや消失したファイルを即時除外し、裏でインデックスからパージ
-                    var hits = await VerifyAndFilterPermissionsAsync(rawHits, ct);
-                    sw.Stop();
-
-                    if (currentGen == Volatile.Read(ref _searchGeneration))
-                    {
-                        Interlocked.Exchange(ref finalResultsCommitted, 1);
-                        _allSearchResults = hits;
-                        ApplyFilterAndSort();
-                        long totalBytes = _searchResults.Sum(h => h.SizeBytes);
-                        UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
-                        if (SearchStatusText != null)
-                        {
-                            SearchStatusText.Text = isJa
-                                ? $"⚡ インデックス高速検索完了: {hits.Count:N0} 件ヒット ({sw.ElapsedMilliseconds} ms)"
-                                : $"⚡ Indexed search complete: {hits.Count:N0} hits ({sw.ElapsedMilliseconds} ms)";
+                            scopedRoots.Add(cachedRoot);
+                            hasScannedTree = true;
                         }
                     }
-
-                    // ⚡ インデックス検索完了後、裏で差分更新を自動トリガー（15分クールダウン制御でサーバー負荷抑制）
-                    if (hasTarget && !isAutoRefresh)
-                    {
-                        TriggerBackgroundIndexUpdate(targetFolder, force: false);
-                    }
-                    if (hasTarget)
-                    {
-                        _indexWatcher?.StartWatching(targetFolder);
-                    }
+                    catch { }
                 }
-                else if (hasScannedTree)
-                {
-                    // 🚀 ルート2: スキャン済みツリー対象 (0秒インメモリ検索 ＋ 本文ストリーミング)
-                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                    var sw = Stopwatch.StartNew();
 
-                    // Step 2-1: まずツリーからファイル名・属性一致を超高速（0秒インメモリ）で先行表示！
-                    // ※ content: 指定がある場合は本文検査が必須のため先行表示は行わない
+                if (hasScannedTree)
+                {
+                    // 🚀 ルート1: スキャン済みツリー対象 (0秒インメモリ検索 ＋ 本文ストリーミング)
+                    // Step 1: まずツリーからファイル名・属性一致を超高速（0秒インメモリ）で先行表示！
                     var treeResults = new List<SearchResultItem>();
                     if (string.IsNullOrEmpty(query.ContentKeyword))
                     {
@@ -471,9 +303,9 @@ namespace AstraSize
                         }
                     }
 
-                    if (query.SearchContentMode)
+                    if (query.SearchContentMode && hasTarget)
                     {
-                        // Step 2-2: 本文検索がONの場合は、ライブ直接走査をバックグラウンド実行して本文ヒットを合流！
+                        // Step 2: 本文検索がONの場合は、ライブ直接走査をバックグラウンド実行して本文ヒットを合流！
                         var liveHits = await _searchEngine.SearchDirectFolderAsync(targetFolder, query, batchYield, progress, ct);
                         if (currentGen == Volatile.Read(ref _searchGeneration))
                         {
@@ -508,23 +340,19 @@ namespace AstraSize
                             }
                         }
                     }
-
-                    // インデックス同期を裏で自動トリガー（15分クールダウン制御付き）
-                    if (hasTarget && !isAutoRefresh)
+                    else if (!query.SearchContentMode && currentGen == Volatile.Read(ref _searchGeneration))
                     {
-                        TriggerBackgroundIndexUpdate(targetFolder, force: false);
-                    }
-                    if (hasTarget)
-                    {
-                        _indexWatcher?.StartWatching(targetFolder);
+                        if (SearchStatusText != null)
+                        {
+                            SearchStatusText.Text = isJa
+                                ? $"⚡ 0秒インメモリ検索完了: {_searchResults.Count:N0} 件ヒット ({sw.ElapsedMilliseconds} ms)"
+                                : $"⚡ Instant in-memory search complete: {_searchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms)";
+                        }
                     }
                 }
                 else
                 {
-                    // 🔍 ルート3: ライブ直接走査 (未スキャンUNC / 初見フォルダー / インデックス未構築時の本文検索)
-                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                    var sw = Stopwatch.StartNew();
-
+                    // 🔍 ルート2: ライブ直接走査 (未スキャンUNC / 初見フォルダー / Agent Ransack 流 Channel パイプライン)
                     if (SearchStatusText != null && currentGen == Volatile.Read(ref _searchGeneration))
                     {
                         SearchStatusText.Text = isJa
@@ -546,16 +374,6 @@ namespace AstraSize
                                 ? $"🔍 ライブ走査完了: {_searchResults.Count:N0} 件ヒット ({sw.ElapsedMilliseconds} ms)"
                                 : $"🔍 Live direct search complete: {_searchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms)";
                         }
-                    }
-
-                    // 走査完了後、裏でインデックスを自動蓄積
-                    if (hasTarget && !isAutoRefresh)
-                    {
-                        TriggerBackgroundIndexUpdate(targetFolder, force: false);
-                    }
-                    if (hasTarget)
-                    {
-                        _indexWatcher?.StartWatching(targetFolder);
                     }
                 }
             }
@@ -605,12 +423,12 @@ namespace AstraSize
                 return roots;
             }
 
-            string normTarget = targetFolder.Trim().TrimEnd('\\', '/');
+            string canonTarget = PathCanonicalizer.Normalize(targetFolder);
             foreach (var tab in StorageTabs)
             {
                 if (tab.RootNode == null) continue;
 
-                var matched = FindNodeByPathRecursive(tab.RootNode, normTarget);
+                var matched = FindNodeByPathRecursive(tab.RootNode, canonTarget);
                 if (matched != null)
                 {
                     roots.Add(matched);
@@ -621,17 +439,16 @@ namespace AstraSize
             return roots;
         }
 
-        private static FileItemNode? FindNodeByPathRecursive(FileItemNode current, string targetPath)
+        private static FileItemNode? FindNodeByPathRecursive(FileItemNode current, string canonTargetPath)
         {
-            string currentPath = current.FullPath.TrimEnd('\\', '/');
-            if (string.Equals(currentPath, targetPath, StringComparison.OrdinalIgnoreCase))
+            string canonCurrent = PathCanonicalizer.Normalize(current.FullPath);
+            if (string.Equals(canonCurrent, canonTargetPath, StringComparison.OrdinalIgnoreCase))
             {
                 return current;
             }
 
             // 配下にない場合は探索を枝刈り
-            if (!targetPath.StartsWith(currentPath + "\\", StringComparison.OrdinalIgnoreCase) &&
-                !targetPath.StartsWith(currentPath + "/", StringComparison.OrdinalIgnoreCase))
+            if (!canonTargetPath.StartsWith(canonCurrent + "\\", StringComparison.OrdinalIgnoreCase))
             {
                 return null;
             }
@@ -640,7 +457,7 @@ namespace AstraSize
             {
                 if (child.IsDirectory)
                 {
-                    var found = FindNodeByPathRecursive(child, targetPath);
+                    var found = FindNodeByPathRecursive(child, canonTargetPath);
                     if (found != null) return found;
                 }
             }
@@ -1028,22 +845,7 @@ namespace AstraSize
                 return ValueTask.CompletedTask;
             });
 
-            // アクセス不能（権限剥奪または削除）なファイルを検知した場合、裏でインデックスから安全にパージ
-            if (!inaccessiblePaths.IsEmpty)
-            {
-                var pathsToPurge = inaccessiblePaths.ToList();
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await _contentIndex.PurgeFilesAsync(pathsToPurge, CancellationToken.None);
-                    }
-                    catch
-                    {
-                        // バックグラウンドパージの例外はサイレントに処理
-                    }
-                });
-            }
+
 
             // 元の順序を維持して返却
             var accessibleSet = new HashSet<string>(accessibleItems.Select(x => x.FullPath), StringComparer.OrdinalIgnoreCase);
@@ -1213,16 +1015,7 @@ namespace AstraSize
             }
         }
 
-        private void OnWatcherChangesApplied(object? sender, IReadOnlyList<string> changedPaths)
-        {
-            Dispatcher.InvokeAsync(() =>
-            {
-                if (!string.IsNullOrWhiteSpace(SearchDirectTargetTextBox?.Text) && _allSearchResults.Count > 0)
-                {
-                    ExecuteSearch(isIncremental: false, isAutoRefresh: true);
-                }
-            });
-        }
+
 
         #endregion
 
