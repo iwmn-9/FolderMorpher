@@ -1,4 +1,4 @@
-# FolderMorpher — AI Agent & Developer Architecture Guide
+﻿# FolderMorpher — AI Agent & Developer Architecture Guide
 
 > **【AIメンテナ・自律継続規約】**  
 > 本プロジェクトは「自律完遂（自ら調査・修正・検証まで行い、完成状態で返す）」を基本方針とする。  
@@ -175,6 +175,14 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
     - **最深 Root の Generation 解決（`GetGenerationForPath`）**: `SELECT MAX(CurrentGeneration) FROM IndexedRoots;` を全廃。対象パスに最も深く合致する `IndexedRoots` の `CurrentGeneration` を解決する `GetGenerationForPath` を配備。マルチ Root 運用時の別 Root 世代混入を完全排除。
     - **ディレクトリ Subtree Purge ＆ Watcher Reconciliation**: `PurgeFilesAsync` を `WHERE FullPath = @path OR FullPath LIKE @prefix ESCAPE '\'` に拡張し、フォルダー削除・リネーム時に配下全子孫を一括抹消。Watcher でのフォルダー作成・変更時は親 Root を `MarkRootDirty` して再同期を担保。
     - **回帰テスト（Domain 8 セクション 10）新設**: 本文ON時名前ヒット、最深Root Generation、Subtree Purge を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+21. **「本文も検索」トグル自動実行解除 ＆ 2フェーズプログレッシブ検索（ファイル名ミリ秒先行表示 ＋ 本文ストリーミング合流）（v2.2.6 / ADR 77）**:
+    - **トグル切り替え時の勝手な自動検索を完全排除**: 「本文を含める」トグル（SearchContentCheckBox）をクリックした瞬間に無条件で検索が走り出す挙動を撤去。Enterキーまたは検索ボタン押下時のみ実行されるクリーンなUXへ是正。
+    - **2段階プログレッシブ検索（先行通知 callback ＆ 本文合流）**:
+      - SQLite インデックス検索において、onNameHitsReady コールバックを導入。ファイル名／属性条件（MetadataFts / .Name）クエリを先行実行し、0.002〜0.005 秒で画面に先行表示。続いて本文検索（ContentFts）を実行し、同一ファイルはスニペット優先でマージ、本文のみ一致ファイルを追加して最終確定。
+      - スキャン済みツリーがある場合はインメモリのツリーからファイル名一致を 0ms で画面に先行表示し、裏のライブ本文走査（FilterByContentAsync）結果をストリーミング合流。
+    - **ストリーミング通知の初期適応型バッチ化**: 走査中のヒット通知閾値を 1件 ➔ 5件 ➔ 25件 の初期適応型バッチへ最適化。1件目から即座に画面へ反映され、待たされ感を完全解消。
+    - **UI デバウンス整線**: atchYield によるストリーミング合流時、150ms デバウンス制御付きで ApplyFilterAndSort() を実行し、チラつきなく滑らかにリスト更新。
+    - **回帰テスト（Domain 8 セクション 11）新設**: 2段階プログレッシブ検索（先行通知 callback ＆ 本文合流）を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
 ---
 
 ---

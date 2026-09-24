@@ -903,6 +903,58 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(s10Root, true); } catch { }
                 }
             }
+
+            // 11. 【ADR 77】2段階プログレッシブ検索（ファイル名先行通知 & 本文合流）の検証
+            {
+                string s11Root = Path.Combine(Path.GetTempPath(), "FM_Reg_S11_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(s11Root);
+                string s11Db = Path.Combine(s11Root, "ContentIndex.db");
+
+                try
+                {
+                    // ファイル名一致用（本文なし）
+                    string nameMatchFile = Path.Combine(s11Root, "財務諸表_2026.csv");
+                    File.WriteAllText(nameMatchFile, "col1,col2,col3\n1,2,3", Encoding.UTF8);
+
+                    // 本文一致用（ファイル名にキーワードなし）
+                    string contentMatchFile = Path.Combine(s11Root, "internal_memo.txt");
+                    File.WriteAllText(contentMatchFile, "今年の財務諸表に関する打ち合わせ議事録です。", Encoding.UTF8);
+
+                    var s11Service = new ContentIndexService(s11Db);
+                    await s11Service.IndexFolderAsync(s11Root, null, CancellationToken.None);
+
+                    var qProgressive = SearchQueryParser.Parse("財務諸表");
+                    qProgressive.SearchContentMode = true;
+
+                    var earlyNameHits = new List<SearchResultItem>();
+                    var finalHits = await s11Service.SearchIndexedAsync(
+                        qProgressive,
+                        s11Root,
+                        ct: CancellationToken.None,
+                        onNameHitsReady: items => earlyNameHits.AddRange(items));
+
+                    // 1. ファイル名一致が先行通知 callback で届いていること
+                    if (!earlyNameHits.Any(h => h.FullPath.EndsWith("財務諸表_2026.csv")))
+                        throw new Exception("ADR 77 Verification Failed: Name-match file was not reported via early onNameHitsReady callback.");
+
+                    // 2. 本文のみ一致ファイルは先行通知には含まれていないこと（本文フェーズ前のため）
+                    if (earlyNameHits.Any(h => h.FullPath.EndsWith("internal_memo.txt")))
+                        throw new Exception("ADR 77 Verification Failed: Content-only match should not appear in early name-hits callback.");
+
+                    // 3. 最終結果にはファイル名一致と本文一致の両方が含まれていること
+                    if (!finalHits.Any(h => h.FullPath.EndsWith("財務諸表_2026.csv")))
+                        throw new Exception("ADR 77 Verification Failed: Name-match file missing from final hits.");
+                    var memoHit = finalHits.FirstOrDefault(h => h.FullPath.EndsWith("internal_memo.txt"));
+                    if (memoHit == null)
+                        throw new Exception("ADR 77 Verification Failed: Content-match file missing from final hits.");
+                    if (string.IsNullOrEmpty(memoHit.ContentSnippet))
+                        throw new Exception("ADR 77 Verification Failed: Content-match file has empty snippet in final hits.");
+                }
+                finally
+                {
+                    try { Directory.Delete(s11Root, true); } catch { }
+                }
+            }
         }
     }
 }

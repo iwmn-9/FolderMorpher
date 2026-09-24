@@ -81,6 +81,32 @@ namespace FolderMorpher.Models
             HasOfficeLinkOnly ||
             !string.IsNullOrEmpty(OfficeLinkKeyword) ||
             (SearchContentMode && Keywords.Count > 0);
+
+        public SearchQuery Clone()
+        {
+            return new SearchQuery
+            {
+                Keywords = new List<string>(Keywords),
+                ExactPhrases = new List<string>(ExactPhrases),
+                ExcludedWords = new List<string>(ExcludedWords),
+                Extensions = new HashSet<string>(Extensions, StringComparer.OrdinalIgnoreCase),
+                MinSizeBytes = MinSizeBytes,
+                MaxSizeBytes = MaxSizeBytes,
+                MinModifiedUtc = MinModifiedUtc,
+                MaxModifiedUtc = MaxModifiedUtc,
+                PathContains = new List<string>(PathContains),
+                MinPathLength = MinPathLength,
+                OnlyIllegalChars = OnlyIllegalChars,
+                DormantDays = DormantDays,
+                ContentKeyword = ContentKeyword,
+                SearchContentMode = SearchContentMode,
+                HasOfficeLinkOnly = HasOfficeLinkOnly,
+                OfficeLinkKeyword = OfficeLinkKeyword,
+                CompiledRegex = CompiledRegex,
+                IsDirectoryOnly = IsDirectoryOnly,
+                IncludeFolders = IncludeFolders
+            };
+        }
     }
 
     /// <summary>

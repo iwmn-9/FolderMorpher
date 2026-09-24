@@ -195,7 +195,8 @@ namespace FolderMorpher.Services
                             {
                                 results.Add(item);
                                 currentBatch.Add(item);
-                                if (currentBatch.Count >= 50)
+                                int threshold = results.Count <= 5 ? 1 : (results.Count <= 30 ? 5 : 25);
+                                if (currentBatch.Count >= threshold)
                                 {
                                     batchYield?.Report(currentBatch.ToList());
                                     currentBatch.Clear();
@@ -632,7 +633,8 @@ namespace FolderMorpher.Services
                     lock (batchLock)
                     {
                         progressiveBatch.Add(hit);
-                        if (progressiveBatch.Count >= 5)
+                        int threshold = matched.Count <= 3 ? 1 : 5;
+                        if (progressiveBatch.Count >= threshold)
                         {
                             batchYield.Report(progressiveBatch.ToList());
                             progressiveBatch.Clear();

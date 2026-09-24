@@ -654,3 +654,29 @@
      - `ContentIndexWatcherService` でフォルダーの作成・名前変更を検知した際に `_indexService.MarkRootDirty(path)` を発行し、子孫の再同期（Reconciliation）を担保。
   5. **自動回帰テストによる恒久保護**:
      - `RegressionTestSuite.Search.cs` に「セクション 10: 本文ON時名前ヒット（Status>=0）＆ 最深Root Generation ＆ Subtree Purge」を新設。全 8 ドメイン 8/8 ALL PASSED を自動検証・堅持。
+---
+
+### ADR 77: 「本文も検索」トグル自動実行解除 ＆ 2フェーズプログレッシブ検索（ファイル名ミリ秒先行表示 ＋ 本文ストリーミング合流）
+*(v2.2.6 本番施工 & ADR 77)*
+
+- **背景と課題**:
+  - **チェックボックス切り替え時の勝手な自動検索**: 「本文を含める」トグル（SearchContentCheckBox）をクリックした瞬間に ExecuteSearch(isIncremental: false) が無条件発火し、ユーザーが意図しないタイミングで重い検索処理が走り出すというUX上の違和感・不快感があった。
+  - **本文検索時のファイル名一致待ち（ブロッキング）**: 「本文も検索」ON時、従来の SQLite インデックス検索では MetadataFts と ContentFts を UNION していたため、本文 trigram / LIKE の全解析が完了するまでファイル名で即座にヒットするはずの候補すら画面に表示されず待たされていた。直接走査（Direct Search）でもバッチ閾値（50件）まで待たされる構造だった。
+- **施工内容**:
+  1. **トグル切り替え時の自動検索発火を完全排除**:
+     - MainWindow.Search.cs の SearchContentCheckBox_Checked / Unchecked イベントハンドラから無条件の ExecuteSearch 呼び出しを撤去。
+     - ユーザーが [Enter] キーを押すか、[検索] ボタンを押したタイミングでのみ検索が走るよう改修。
+  2. **SQLite インデックス検索の2段階プログレッシブ実行**:
+     - ContentIndexService.SearchIndexedAsync に onNameHitsReady コールバックを導入。
+     - 1フェーズ目: まずファイル名／属性条件（MetadataFts / .Name）のクエリを 0.002〜0.005 秒で即時実行し、onNameHitsReady 経由で UI へ先行通知。
+     - 2フェーズ目: 続いて本文検索（ContentFts）を実行し、同一ファイルはスニペット優先でマージ、本文のみ一致ファイルを追加して最終確定。
+  3. **スキャン済みツリー検索の先行ハイブリッド**:
+     - スキャン済みツリーが存在する場合、まずインメモリのツリーからファイル名一致候補を 0ms で画面に先行表示。
+     - その後、バックグラウンドのライブ本文走査（FilterByContentAsync）で本文一致をストリーミング合流・リランキング。
+  4. **ストリーミング通知の初期適応型バッチ化**:
+     - SearchEngineService.SearchDirectFolderAsync および FilterByContentAsync において、通知閾値を 1件 ➔ 5件 ➔ 25件 の初期適応型バッチへ最適化。
+     - 1件目の一致が検出された瞬間に UI へ即時ストリーミングされ、待たされ感を完全解消。
+  5. **UI パイプラインの整線とデバウンス**:
+     - atchYield によるストリーミング合流時、150ms のデバウンス制御付きで ApplyFilterAndSort() を実行し、ファイル名先行表示から本文合流までチラつきなく滑らかにリスト更新。
+  6. **自動回帰テストによる恒久保護**:
+     - RegressionTestSuite.Search.cs に「セクション 11: 2段階プログレッシブ検索（ファイル名先行通知 & 本文合流）」を新設。全 8 ドメイン 8/8 ALL PASSED を自動検証・堅持。

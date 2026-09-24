@@ -1252,12 +1252,13 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// SQLite FTS5 (trigram) を使用したミリ秒全文検索（SearchQuery構文完全貫通・日本語2文字LIKE対応・複数語AND）
+        /// SQLite FTS5 (trigram) を使用したミリ秒全文検索（SearchQuery構文完全貫通・日本語2文字LIKE対応・複数語AND・先行通知対応）
         /// </summary>
         public async Task<List<SearchResultItem>> SearchIndexedAsync(
             SearchQuery query,
             string? scopeFolder = null,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            Action<IReadOnlyList<SearchResultItem>>? onNameHitsReady = null)
         {
             return await Task.Run(() =>
             {
@@ -1358,147 +1359,18 @@ namespace FolderMorpher.Services
 
                     string commonWhereSql = commonWhereClauses.Count > 0 ? " AND " + string.Join(" AND ", commonWhereClauses) : "";
 
-                    string sql;
                     bool hasTrigramMatch = false;
                     var shortWords = new List<string>();
 
-                    if (keywords.Count == 0)
+                    SearchResultItem ParseReaderItem(SqliteDataReader reader, string snippetOverride = "")
                     {
-                        // キーワードなし（属性検索のみ）: IndexedFiles 単体検索
-                        string whereSql = commonWhereClauses.Count > 0 ? string.Join(" AND ", commonWhereClauses) : "1=1";
-                        sql = $@"
-                            SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet, f.CreationTimeUtcTicks, f.IsDirectory
-                            FROM IndexedFiles f
-                            WHERE {whereSql}
-                            LIMIT 500";
-                    }
-                    else
-                    {
-                        // キーワードあり: 本文 (ContentFts) と ファイル名 (MetadataFts) のハイブリッド検索
-                        var trigramWords = new List<string>();
-                        foreach (var kw in keywords)
-                        {
-                            if (string.IsNullOrWhiteSpace(kw)) continue;
-                            string trimmed = kw.Trim();
-                            if (trimmed.Length >= 3) trigramWords.Add(trimmed);
-                            else shortWords.Add(trimmed);
-                        }
-
-                        hasTrigramMatch = trigramWords.Count > 0;
-
-                        // A. ファイル名検索クエリ (MetadataFts MATCH または f.Name LIKE)
-                        var nameClauses = new List<string>();
-                        nameClauses.Add("f.Status >= 0");
-
-                        string nameFromSql;
-                        if (hasTrigramMatch)
-                        {
-                            nameFromSql = "MetadataFts m JOIN IndexedFiles f ON m.rowid = f.FileId";
-                            var matchTerms = trigramWords.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
-                            string metaMatch = string.Join(" AND ", matchTerms);
-                            nameClauses.Add("MetadataFts MATCH @metaQuery");
-                            cmd.Parameters.AddWithValue("@metaQuery", metaMatch);
-
-                            for (int i = 0; i < shortWords.Count; i++)
-                            {
-                                string pName = $"@nameShort_{i}";
-                                nameClauses.Add($"f.Name LIKE {pName} ESCAPE '\\'");
-                                string escShort = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                                cmd.Parameters.AddWithValue(pName, escShort);
-                            }
-                        }
-                        else
-                        {
-                            nameFromSql = "IndexedFiles f";
-                            for (int i = 0; i < shortWords.Count; i++)
-                            {
-                                string pName = $"@nameShort_{i}";
-                                nameClauses.Add($"f.Name LIKE {pName} ESCAPE '\\'");
-                                string escShort = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                                cmd.Parameters.AddWithValue(pName, escShort);
-                            }
-                        }
-
-                        for (int i = 0; i < query.ExcludedWords.Count; i++)
-                        {
-                            string pName = $"@nameEx_{i}";
-                            nameClauses.Add($"f.Name NOT LIKE {pName} ESCAPE '\\'");
-                            string escEx = "%" + query.ExcludedWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                            cmd.Parameters.AddWithValue(pName, escEx);
-                        }
-
-                        string nameWhereSql = string.Join(" AND ", nameClauses) + commonWhereSql;
-
-                        if (isExplicitContentSearch)
-                        {
-                            // B. 本文検索クエリ (ContentFts)
-                            var ftsClauses = new List<string>();
-                            ftsClauses.Add("f.Status = 1");
-
-                            if (hasTrigramMatch)
-                            {
-                                var matchTerms = trigramWords.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
-                                string ftsMatch = string.Join(" AND ", matchTerms);
-                                ftsClauses.Add("ContentFts MATCH @ftsQuery");
-                                cmd.Parameters.AddWithValue("@ftsQuery", ftsMatch);
-                            }
-
-                            for (int i = 0; i < shortWords.Count; i++)
-                            {
-                                string paramName = $"@shortWord_{i}";
-                                ftsClauses.Add($"(c.Body LIKE {paramName} ESCAPE '\\' OR f.Name LIKE {paramName} ESCAPE '\\')");
-                                string escVal = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                                cmd.Parameters.AddWithValue(paramName, escVal);
-                            }
-
-                            for (int i = 0; i < query.ExcludedWords.Count; i++)
-                            {
-                                string pName = $"@ftsEx_{i}";
-                                ftsClauses.Add($"(f.Name NOT LIKE {pName} ESCAPE '\\' AND c.Body NOT LIKE {pName} ESCAPE '\\')");
-                                string escEx = "%" + query.ExcludedWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                                cmd.Parameters.AddWithValue(pName, escEx);
-                            }
-
-                            string ftsWhereSql = string.Join(" AND ", ftsClauses) + commonWhereSql;
-                            string snippetExpr = hasTrigramMatch
-                                ? "snippet(ContentFts, 0, '【', '】', '...', 15) AS Snippet"
-                                : "SUBSTR(c.Body, 1, 120) AS Snippet";
-
-                            // 本文も検索ON: 本文 (ContentFts) と ファイル名 (MetadataFts/f.Name) のハイブリッド UNION
-                            sql = $@"
-                                SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, {snippetExpr}, f.CreationTimeUtcTicks, f.IsDirectory
-                                FROM ContentFts c
-                                JOIN IndexedFiles f ON c.rowid = f.FileId
-                                WHERE {ftsWhereSql}
-                                UNION
-                                SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet, f.CreationTimeUtcTicks, f.IsDirectory
-                                FROM {nameFromSql}
-                                WHERE {nameWhereSql}
-                                LIMIT 500";
-                        }
-                        else
-                        {
-                            // 本文も検索OFF: ファイル名・属性のみの超高速検索（MetadataFts / f.Name）
-                            sql = $@"
-                                SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet, f.CreationTimeUtcTicks, f.IsDirectory
-                                FROM {nameFromSql}
-                                WHERE {nameWhereSql}
-                                LIMIT 500";
-                        }
-                    }
-
-                    cmd.CommandText = sql;
-
-                    var deduplicated = new Dictionary<string, SearchResultItem>(StringComparer.OrdinalIgnoreCase);
-                    using var reader = cmd.ExecuteReader();
-                    while (reader.Read())
-                    {
-                        ct.ThrowIfCancellationRequested();
                         string fullPath = reader.GetString(0);
                         string dirPath = reader.GetString(1);
                         long size = reader.GetInt64(2);
                         long ticks = reader.GetInt64(3);
-                        string snippet = reader.IsDBNull(4) ? string.Empty : reader.GetString(4);
+                        string snippet = string.IsNullOrEmpty(snippetOverride)
+                            ? (reader.IsDBNull(4) ? string.Empty : reader.GetString(4))
+                            : snippetOverride;
                         long cTicks = reader.IsDBNull(5) ? 0 : reader.GetInt64(5);
                         int isDir = reader.FieldCount > 6 && !reader.IsDBNull(6) ? reader.GetInt32(6) : 0;
 
@@ -1514,11 +1386,6 @@ namespace FolderMorpher.Services
                             }
                         }
 
-                        if (query.CompiledRegex != null && !query.CompiledRegex.IsMatch(Path.GetFileName(fullPath)))
-                        {
-                            continue;
-                        }
-
                         string reason = !string.IsNullOrEmpty(snippet)
                             ? (keywords.Count > 0 ? $"Indexed (FTS5): {string.Join(", ", keywords)}" : "Indexed: Content Match")
                             : (keywords.Count > 0 ? $"Indexed: {string.Join(", ", keywords)}" : "Indexed: Property Match");
@@ -1526,7 +1393,7 @@ namespace FolderMorpher.Services
                         string itemName = Path.GetFileName(fullPath);
                         if (string.IsNullOrEmpty(itemName)) itemName = fullPath;
 
-                        var item = new SearchResultItem
+                        return new SearchResultItem
                         {
                             Name = itemName,
                             FullPath = fullPath,
@@ -1539,20 +1406,194 @@ namespace FolderMorpher.Services
                             ContentSnippet = snippet,
                             MatchedReason = reason
                         };
+                    }
 
-                        if (deduplicated.TryGetValue(fullPath, out var existing))
+                    if (keywords.Count == 0)
+                    {
+                        // キーワードなし（属性検索のみ）: IndexedFiles 単体検索
+                        string whereSql = commonWhereClauses.Count > 0 ? string.Join(" AND ", commonWhereClauses) : "1=1";
+                        cmd.CommandText = $@"
+                            SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet, f.CreationTimeUtcTicks, f.IsDirectory
+                            FROM IndexedFiles f
+                            WHERE {whereSql}
+                            LIMIT 500";
+
+                        using (var reader = cmd.ExecuteReader())
                         {
-                            // スニペットがある方を優先してマージ
-                            if (string.IsNullOrEmpty(existing.ContentSnippet) && !string.IsNullOrEmpty(snippet))
+                            while (reader.Read())
                             {
-                                deduplicated[fullPath] = item;
+                                ct.ThrowIfCancellationRequested();
+                                var item = ParseReaderItem(reader);
+                                if (query.CompiledRegex != null && !query.CompiledRegex.IsMatch(item.Name)) continue;
+                                results.Add(item);
                             }
                         }
-                        else
+
+                        if (onNameHitsReady != null && results.Count > 0)
                         {
-                            deduplicated[fullPath] = item;
+                            try { onNameHitsReady(results); } catch { }
+                        }
+
+                        return results;
+                    }
+
+                    // キーワードあり: 本文 (ContentFts) と ファイル名 (MetadataFts) のハイブリッド検索
+                    var trigramWords = new List<string>();
+                    foreach (var kw in keywords)
+                    {
+                        if (string.IsNullOrWhiteSpace(kw)) continue;
+                        string trimmed = kw.Trim();
+                        if (trimmed.Length >= 3) trigramWords.Add(trimmed);
+                        else shortWords.Add(trimmed);
+                    }
+
+                    hasTrigramMatch = trigramWords.Count > 0;
+
+                    // A. ファイル名検索クエリ (MetadataFts MATCH または f.Name LIKE)
+                    var nameClauses = new List<string>();
+                    nameClauses.Add("f.Status >= 0");
+
+                    string nameFromSql;
+                    if (hasTrigramMatch)
+                    {
+                        nameFromSql = "MetadataFts m JOIN IndexedFiles f ON m.rowid = f.FileId";
+                        var matchTerms = trigramWords.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
+                        string metaMatch = string.Join(" AND ", matchTerms);
+                        nameClauses.Add("MetadataFts MATCH @metaQuery");
+                        cmd.Parameters.AddWithValue("@metaQuery", metaMatch);
+
+                        for (int i = 0; i < shortWords.Count; i++)
+                        {
+                            string pName = $"@nameShort_{i}";
+                            nameClauses.Add($"f.Name LIKE {pName} ESCAPE '\\'");
+                            string escShort = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                            cmd.Parameters.AddWithValue(pName, escShort);
                         }
                     }
+                    else
+                    {
+                        nameFromSql = "IndexedFiles f";
+                        for (int i = 0; i < shortWords.Count; i++)
+                        {
+                            string pName = $"@nameShort_{i}";
+                            nameClauses.Add($"f.Name LIKE {pName} ESCAPE '\\'");
+                            string escShort = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                            cmd.Parameters.AddWithValue(pName, escShort);
+                        }
+                    }
+
+                    for (int i = 0; i < query.ExcludedWords.Count; i++)
+                    {
+                        string pName = $"@nameEx_{i}";
+                        nameClauses.Add($"f.Name NOT LIKE {pName} ESCAPE '\\'");
+                        string escEx = "%" + query.ExcludedWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                        cmd.Parameters.AddWithValue(pName, escEx);
+                    }
+
+                    string nameWhereSql = string.Join(" AND ", nameClauses) + commonWhereSql;
+
+                    string? ftsWhereSql = null;
+                    string? snippetExpr = null;
+
+                    if (isExplicitContentSearch)
+                    {
+                        // B. 本文検索クエリ (ContentFts)
+                        var ftsClauses = new List<string>();
+                        ftsClauses.Add("f.Status = 1");
+
+                        if (hasTrigramMatch)
+                        {
+                            var matchTerms = trigramWords.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
+                            string ftsMatch = string.Join(" AND ", matchTerms);
+                            ftsClauses.Add("ContentFts MATCH @ftsQuery");
+                            cmd.Parameters.AddWithValue("@ftsQuery", ftsMatch);
+                        }
+
+                        for (int i = 0; i < shortWords.Count; i++)
+                        {
+                            string paramName = $"@shortWord_{i}";
+                            ftsClauses.Add($"(c.Body LIKE {paramName} ESCAPE '\\' OR f.Name LIKE {paramName} ESCAPE '\\')");
+                            string escVal = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                            cmd.Parameters.AddWithValue(paramName, escVal);
+                        }
+
+                        for (int i = 0; i < query.ExcludedWords.Count; i++)
+                        {
+                            string pName = $"@ftsEx_{i}";
+                            ftsClauses.Add($"(f.Name NOT LIKE {pName} ESCAPE '\\' AND c.Body NOT LIKE {pName} ESCAPE '\\')");
+                            string escEx = "%" + query.ExcludedWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                            cmd.Parameters.AddWithValue(pName, escEx);
+                        }
+
+                        ftsWhereSql = string.Join(" AND ", ftsClauses) + commonWhereSql;
+                        snippetExpr = hasTrigramMatch
+                            ? "snippet(ContentFts, 0, '【', '】', '...', 15) AS Snippet"
+                            : "SUBSTR(c.Body, 1, 120) AS Snippet";
+                    }
+
+                    var deduplicated = new Dictionary<string, SearchResultItem>(StringComparer.OrdinalIgnoreCase);
+
+                    // ★ 2段階プログレッシブ実行:
+                    // 1. まずファイル名/属性マッチを即座に実行（0.002〜0.005秒）
+                    string nameSql = $@"
+                        SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet, f.CreationTimeUtcTicks, f.IsDirectory
+                        FROM {nameFromSql}
+                        WHERE {nameWhereSql}
+                        LIMIT 500";
+
+                    cmd.CommandText = nameSql;
+                    var nameHits = new List<SearchResultItem>();
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            ct.ThrowIfCancellationRequested();
+                            var item = ParseReaderItem(reader);
+                            if (query.CompiledRegex != null && !query.CompiledRegex.IsMatch(item.Name)) continue;
+                            nameHits.Add(item);
+                            deduplicated[item.FullPath] = item;
+                        }
+                    }
+
+                    // 先行通知コールバックがあれば、ファイル名ヒットを即座に通知（先行表示）
+                    if (onNameHitsReady != null && nameHits.Count > 0)
+                    {
+                        try { onNameHitsReady(nameHits); } catch { }
+                    }
+
+                    // 2. 本文検索が有効な場合、続いて ContentFts を実行してマージ（スニペット優先）
+                    if (isExplicitContentSearch && ftsWhereSql != null && snippetExpr != null)
+                    {
+                        string ftsSql = $@"
+                            SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, {snippetExpr}, f.CreationTimeUtcTicks, f.IsDirectory
+                            FROM ContentFts c
+                            JOIN IndexedFiles f ON c.rowid = f.FileId
+                            WHERE {ftsWhereSql}
+                            LIMIT 500";
+
+                        cmd.CommandText = ftsSql;
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                ct.ThrowIfCancellationRequested();
+                                var item = ParseReaderItem(reader);
+                                if (query.CompiledRegex != null && !query.CompiledRegex.IsMatch(item.Name)) continue;
+                                if (deduplicated.TryGetValue(item.FullPath, out var existing))
+                                {
+                                    if (string.IsNullOrEmpty(existing.ContentSnippet) && !string.IsNullOrEmpty(item.ContentSnippet))
+                                    {
+                                        deduplicated[item.FullPath] = item;
+                                    }
+                                }
+                                else
+                                {
+                                    deduplicated[item.FullPath] = item;
+                                }
+                            }
+                        }
+                    }
+
                     results.AddRange(deduplicated.Values);
                 }
 
