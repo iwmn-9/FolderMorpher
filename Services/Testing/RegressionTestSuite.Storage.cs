@@ -437,6 +437,97 @@ namespace FolderMorpher.Services.Testing
                     Task.WaitAll(tasks);
                     if (completions != 4)
                         throw new InvalidOperationException($"ADR 80 Concurrent slot lease expected 4 completions, got {completions}");
+
+                    // F. 【ADR 82】スロット上限厳格遵守 ＆ SlotLease ReleaseOnce 二重解放根絶検証
+                    // 1. CurrentConcurrency = 2 固定状態（ベースライン未確定フェーズ: 20サンプル < 50）で4タスクを同時投入し、
+                    //    実際に処理中の最大アクティブスロット数が厳格に <= 2 であること（同時実行上限の厳密遵守）
+                    var strictCtrl2 = new AdaptiveConcurrencyController();
+                    if (strictCtrl2.CurrentConcurrency != 2)
+                        throw new InvalidOperationException("ADR 82 Precondition: CurrentConcurrency should be 2");
+
+                    int maxObserved2 = 0;
+                    int activeCounter2 = 0;
+                    var tasksPhase1 = new Task[4];
+                    int completionsPhase1 = 0;
+
+                    for (int t = 0; t < 4; t++)
+                    {
+                        tasksPhase1[t] = Task.Run(async () =>
+                        {
+                            for (int cycle = 0; cycle < 5; cycle++)
+                            {
+                                using var lease = await strictCtrl2.AcquireAsync(CancellationToken.None);
+
+                                int currentActive = Interlocked.Increment(ref activeCounter2);
+                                int internalActive = strictCtrl2.ActiveSlots;
+                                int observed = Math.Max(currentActive, internalActive);
+
+                                int curMax;
+                                do
+                                {
+                                    curMax = Volatile.Read(ref maxObserved2);
+                                    if (observed <= curMax) break;
+                                } while (Interlocked.CompareExchange(ref maxObserved2, observed, curMax) != curMax);
+
+                                if (observed > 2)
+                                {
+                                    throw new InvalidOperationException($"ADR 82 Violation: Active slots exceeded limit 2! Observed: {observed}");
+                                }
+
+                                await Task.Delay(5); // クリティカルセクションで少し待機
+                                Interlocked.Decrement(ref activeCounter2);
+
+                                lease.Report(5.0, isError: false);
+                            }
+                            Interlocked.Increment(ref completionsPhase1);
+                        });
+                    }
+                    Task.WaitAll(tasksPhase1);
+
+                    if (completionsPhase1 != 4)
+                        throw new InvalidOperationException($"ADR 82 Expected 4 completions, got {completionsPhase1}");
+                    if (maxObserved2 > 2)
+                        throw new InvalidOperationException($"ADR 82 Max observed active slots ({maxObserved2}) exceeded Concurrency limit 2!");
+                    if (strictCtrl2.ActiveSlots != 0)
+                        throw new InvalidOperationException($"ADR 82 Slot leak or underflow detected: ActiveSlots = {strictCtrl2.ActiveSlots}");
+
+                    // 2. 様々な解放パターン（明示的Report、二重Report、Dispose単体）を混在させた高負荷並行テストで、
+                    //    スロットの二重解放やアンダーフロー（負数化）、リークが一切発生せず 0 に収束すること
+                    var multiReleaseCtrl = new AdaptiveConcurrencyController();
+                    var tasksPhase2 = new Task[8];
+                    int completionsPhase2 = 0;
+
+                    for (int t = 0; t < 8; t++)
+                    {
+                        tasksPhase2[t] = Task.Run(async () =>
+                        {
+                            for (int cycle = 0; cycle < 15; cycle++)
+                            {
+                                using var lease = await multiReleaseCtrl.AcquireAsync(CancellationToken.None);
+                                await Task.Delay(1);
+
+                                if (cycle % 3 == 0)
+                                {
+                                    // パターン1: 明示的 Report (その後の using Dispose による二重解放リスク検証)
+                                    lease.Report(5.0, isError: false);
+                                }
+                                else if (cycle % 3 == 1)
+                                {
+                                    // パターン2: 二重 Report 呼び出し
+                                    lease.Report(5.0, isError: false);
+                                    lease.Report(5.0, isError: false);
+                                }
+                                // パターン3: 何も呼ばず using Dispose に任せる
+                            }
+                            Interlocked.Increment(ref completionsPhase2);
+                        });
+                    }
+                    Task.WaitAll(tasksPhase2);
+
+                    if (completionsPhase2 != 8)
+                        throw new InvalidOperationException($"ADR 82 Expected 8 completions in Phase 2, got {completionsPhase2}");
+                    if (multiReleaseCtrl.ActiveSlots != 0)
+                        throw new InvalidOperationException($"ADR 82 Phase 2 slot leak or underflow detected: ActiveSlots = {multiReleaseCtrl.ActiveSlots}");
                 }
             }
             finally

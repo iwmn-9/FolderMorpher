@@ -791,3 +791,31 @@
      - RegressionTestSuite.Storage.cs の「セクション 7」に構造化 EnumerationFailureKind 分類および Emergency Window 早期崖落ち検証を追加。
      - 全 8 ドメイン 8/8 ALL PASSED を堅持。
 
+
+---
+
+### ADR 82: SlotLease 参照意味論 ＆ ReleaseOnce 二重解放根絶 ＆ ExactPhrase Direct/Indexed Parity
+*(v2.2.9 本番施工 & ADR 82)*
+
+- **背景 & 動機**:
+  - **SlotLease の mutable struct 防御コピー問題**: `public struct SlotLease : IDisposable` を `using var lease = ...` で利用した場合、C#仕様により `using` 変数は `readonly` となり、ミュータブルメソッド `lease.Report()` 呼び出し時に防御コピー（defensive copy）が発生する。その結果、コピー先で `_isReported = true` になっても元のインスタンスは `false` のまま残り、スコープ脱出時の `Dispose()` で二重に `ReleaseSlot()` が走る危険があった。これにより `_activeSlots` がアンダーフロー（負数化）すると、`current < limit` 判定を突き抜けて並列度上限（2/3/4）が崩壊する。
+  - **ExactPhrase の Direct / Indexed Parity の不整合**: Indexed Search では `"機密 保持"`（本文ON）で `(Name OR Content)` として評価されるのに対し、Direct Search では事前ファイル名検査で `target.IndexOf(phr) < 0` により本文を見る前にドロップされていた。
+  - **旧文字列エラー判定メソッドの残存**: `NativeDirectoryEnumerator` に `EnumerationFailureKind` が配備された後も、`AdaptiveConcurrencyController` 内に旧 `IsNetworkOrFatalError(string?)` が残存していた。
+- **施工内容**:
+  1. **SlotLease を sealed class へ改変 ＆ ReleaseOnce 一回解放の徹底**:
+     - `public sealed class SlotLease : IDisposable` へ変更し、参照意味論を確立。
+     - `private int _released;` を配備し、`Interlocked.Exchange(ref _released, 1) != 0` による `ReleaseOnce` イディオムを導入。
+     - `Report()`、`Dispose()`、二重呼び出し、例外等どの経路であってもスロット解放は厳格に 1 回のみ実行されることを保証。
+  2. **スロット上限・アンダーフロー防止ガード**:
+     - `ReleaseSlot` において、`int remaining = Interlocked.Decrement(ref _activeSlots);` が負数になった場合は `0` へ引き戻す安全ガードを配備。
+     - 外部からスロット状態を観測できるよう `public int ActiveSlots => Volatile.Read(ref _activeSlots);` を公開。
+  3. **ExactPhrase Direct / Indexed 完全 Parity**:
+     - `SearchEngineService.cs` の `MatchFile` および `MatchDirectEntry` において、`if (!query.SearchContentMode)` で囲み、本文ON時は名前検査でドロップしないよう改修。
+     - `MatchesKeywordGroups` で `ExactPhrases` も名前/パスに含まれているかを検証し、すべて満たしていれば名前一致（`needsDeepCheck = false`）で即合格。
+     - `FilterByContentAsync` の `requiredGroups` に `query.ExactPhrases` を統合し、名前で満たされていないフレーズを本文検査へ自動投入。
+  4. **旧 `IsNetworkOrFatalError(string?)` の物理削除**:
+     - 文字列信号線を完全に根絶し、`EnumerationFailureKind` 列挙型への正本一本化を完了。
+  5. **自動回帰テストによる恒久保護**:
+     - `RegressionTestSuite.Storage.cs` セクション 7 に、`CurrentConcurrency = 2` で 4 並列投入時に最大アクティブスロット数が厳格に `<= 2` であることの直接計測、および明示Report/二重Report/Dispose混在時のアンダーフロー・リークゼロ検証（`ActiveSlots == 0`）を追加。
+     - `RegressionTestSuite.Search.cs` セクション 14 に、Direct Search における ExactPhrase 本文ヒットの Parity 検証を追加。
+     - 全 8 ドメイン 8/8 ALL PASSED を堅持。

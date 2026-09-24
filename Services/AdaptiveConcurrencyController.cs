@@ -68,6 +68,7 @@ namespace FolderMorpher.Services
 
         public int CurrentConcurrency => Volatile.Read(ref _currentConcurrency);
         public int SessionMaxCeiling => Volatile.Read(ref _sessionMaxCeiling);
+        public int ActiveSlots => Volatile.Read(ref _activeSlots);
         public bool BaselineEstablished => _baselineEstablished;
         public double BaselineP95 => _baselineP95;
         public long TotalSamplesReported => Volatile.Read(ref _totalSamplesReported);
@@ -111,7 +112,11 @@ namespace FolderMorpher.Services
         /// </summary>
         internal void ReleaseSlot(double elapsedMs, bool isNetworkError)
         {
-            Interlocked.Decrement(ref _activeSlots);
+            int remaining = Interlocked.Decrement(ref _activeSlots);
+            if (remaining < 0)
+            {
+                Interlocked.Exchange(ref _activeSlots, 0);
+            }
             try
             {
                 _signal.Release();
@@ -307,50 +312,35 @@ namespace FolderMorpher.Services
             _lastConcurrencyChangeSample = _totalSamplesReported;
             _emergencyCount = 0; // Emergency Window をリセット
         }
-
-        /// <summary>
-        /// Win32エラー文字列または例外メッセージからSMBネットワーク障害・タイムアウトを検知します。
-        /// </summary>
-        public static bool IsNetworkOrFatalError(string? errorMessage)
-        {
-            if (string.IsNullOrWhiteSpace(errorMessage)) return false;
-            return errorMessage.Contains("58", StringComparison.Ordinal) || // ERROR_BAD_NET_RESP
-                   errorMessage.Contains("59", StringComparison.Ordinal) || // ERROR_UNEXP_NET_ERR
-                   errorMessage.Contains("64", StringComparison.Ordinal) || // ERROR_NETNAME_DELETED
-                   errorMessage.Contains("54", StringComparison.Ordinal) || // ERROR_NETWORK_BUSY
-                   errorMessage.Contains("56", StringComparison.Ordinal) || // ERROR_TOO_MANY_CMDS
-                   errorMessage.Contains("71", StringComparison.Ordinal) || // ERROR_REQ_NOT_ACCEP
-                   errorMessage.Contains("121", StringComparison.Ordinal) || // ERROR_SEM_TIMEOUT
-                   errorMessage.Contains("ネットワーク", StringComparison.OrdinalIgnoreCase) ||
-                   errorMessage.Contains("Network", StringComparison.OrdinalIgnoreCase) ||
-                   errorMessage.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
-                   errorMessage.Contains("タイムアウト", StringComparison.OrdinalIgnoreCase) ||
-                   errorMessage.Contains("RPC", StringComparison.OrdinalIgnoreCase);
-        }
     }
 
     /// <summary>
     /// Adaptive Concurrency スロットの実行リース。Dispose で自動的にスロット返却と計測を行います。
+    /// 参照意味論とスレッド安全な一回解放（ReleaseOnce）を保証する sealed class です。
     /// </summary>
-    public struct SlotLease : IDisposable
+    public sealed class SlotLease : IDisposable
     {
         private AdaptiveConcurrencyController? _controller;
         private readonly Stopwatch _sw;
-        private bool _isReported;
+        private int _released;
 
         internal SlotLease(AdaptiveConcurrencyController controller)
         {
             _controller = controller;
             _sw = Stopwatch.StartNew();
-            _isReported = false;
+        }
+
+        private void ReleaseOnce(double elapsedMs, bool isError)
+        {
+            if (Interlocked.Exchange(ref _released, 1) != 0) return;
+            var ctrl = _controller;
+            _controller = null;
+            ctrl?.ReleaseSlot(elapsedMs, isError);
         }
 
         public void Report(double elapsedMs, bool isError = false)
         {
-            if (_isReported || _controller == null) return;
-            _isReported = true;
-            _controller.ReleaseSlot(elapsedMs, isError);
-            _controller = null;
+            ReleaseOnce(elapsedMs, isError);
         }
 
         public void Report(double elapsedMs, EnumerationFailureKind failureKind)
@@ -360,13 +350,8 @@ namespace FolderMorpher.Services
 
         public void Dispose()
         {
-            if (!_isReported && _controller != null)
-            {
-                _isReported = true;
-                _sw.Stop();
-                _controller.ReleaseSlot(_sw.Elapsed.TotalMilliseconds, false);
-                _controller = null;
-            }
+            _sw.Stop();
+            ReleaseOnce(_sw.Elapsed.TotalMilliseconds, false);
         }
     }
 }

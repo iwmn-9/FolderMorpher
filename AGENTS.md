@@ -210,6 +210,12 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
     - **Win32 ネットワークエラー判定の構造化（文字列信号線の根絶）**: `NativeDirectoryEnumerator` に `EnumerationFailureKind` enum（`None`, `AccessDenied`, `NotFound`, `Network`, `Io`, `Unknown`）および `ClassifyWin32Error(int error)` を新設。エラーコード文字列の `Contains("58")` 等の脆弱な判定を全廃し、型安全な列挙型で `AdaptiveConcurrencyController` へ直結。
     - **超早期崖落ち（Emergency Window: 直近8件監視）**: 高速LAN（baseline 10ms）においてサーバー負荷増大で 45ms〜55ms が発生した際、30件の母集団蓄積を待たずに「直近8件中3件超過」で即座に並列度 2 へ崖落ち・天井クランプ。
     - **回帰テスト（Domain 8 セクション 14 & Domain 2 セクション 7更新）新設**: 引用符完全一致のFTS5/LIKE統合、構造化エラー分類、Emergency Window早期崖落ちを自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+26. **SlotLease 参照意味論 ＆ ReleaseOnce 二重解放根絶 ＆ ExactPhrase Direct/Indexed Parity（v2.2.9 / ADR 82）**:
+    - **SlotLease の mutable struct 防御コピー問題の根本根絶**: `SlotLease` を `public sealed class SlotLease : IDisposable` に改変し参照意味論を確立。`Interlocked.Exchange` による `ReleaseOnce` イディオムを導入し、`Report()`、`Dispose()`、二重呼び出し、例外等あらゆる経路でスロット解放が厳格に 1 回のみ実行されることを保証。
+    - **スロット上限・アンダーフロー防止ガード**: `AdaptiveConcurrencyController.ReleaseSlot` で `_activeSlots` が負数（アンダーフロー）にならないようガードを配備。`ActiveSlots` プロパティを公開。
+    - **ExactPhrase の Direct / Indexed 完全 Parity**: `SearchEngineService` の直接走査・インメモリ検索において、本文ON時は事前ファイル名チェックでドロップせず、本文検索の必須グループ（`requiredGroups`）へ統合。ファイル名にフレーズがなく本文にのみフレーズがある場合でも Direct / Indexed の両方で 100% 同一にヒット。
+    - **旧 `IsNetworkOrFatalError(string)` の完全削除**: 文字列ベースのWin32エラー判定メソッドを物理削除し、`EnumerationFailureKind` への正本一本化を完遂。
+    - **回帰テスト（Domain 2 セクション 7 & Domain 8 セクション 14更新）**: `CurrentConcurrency = 2` で 4 並列投入時の最大アクティブスロット数 `<= 2` 厳格遵守、高負荷混在解放でのアンダーフロー・リークゼロ、および ExactPhrase Direct Parity を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
 ---
 
 ---

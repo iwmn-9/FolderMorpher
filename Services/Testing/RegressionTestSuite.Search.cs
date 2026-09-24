@@ -1136,6 +1136,13 @@ namespace FolderMorpher.Services.Testing
                     var hitsExact2 = await s14Service.SearchIndexedAsync(qExact2, s14Root, CancellationToken.None);
                     if (hitsExact2.Count != 1 || !hitsExact2[0].FullPath.EndsWith("NDA_Document.txt"))
                         throw new Exception($"ADR 81 ExactPhrase Content Search Failed: Expected 1 hit (NDA_Document.txt), got {hitsExact2.Count}");
+
+                    // 検証 C: 【ADR 82】Direct / ライブ走査における ExactPhrase Parity 検証
+                    // Indexed だけでなく、SearchEngineService の直接走査でも本文のみに含まれる「"機密 保持"」が正しくヒットすること
+                    var engineService = new SearchEngineService();
+                    var hitsDirect = await engineService.SearchDirectFolderAsync(s14Root, qExact2, null, null, CancellationToken.None);
+                    if (hitsDirect.Count != 1 || !hitsDirect[0].FullPath.EndsWith("NDA_Document.txt"))
+                        throw new Exception($"ADR 82 ExactPhrase Direct Parity Failed: Expected 1 hit (NDA_Document.txt), got {hitsDirect.Count}");
                 }
                 finally
                 {

@@ -331,10 +331,13 @@ namespace FolderMorpher.Services
                 if (target.IndexOf(exc, StringComparison.OrdinalIgnoreCase) >= 0) return false;
             }
 
-            foreach (var phr in query.ExactPhrases)
+            if (!query.SearchContentMode)
             {
-                string target = (phr.IndexOf('\\') >= 0 || phr.IndexOf('/') >= 0) ? fullPath : name;
-                if (target.IndexOf(phr, StringComparison.OrdinalIgnoreCase) < 0) return false;
+                foreach (var phr in query.ExactPhrases)
+                {
+                    string target = (phr.IndexOf('\\') >= 0 || phr.IndexOf('/') >= 0) ? fullPath : name;
+                    if (target.IndexOf(phr, StringComparison.OrdinalIgnoreCase) < 0) return false;
+                }
             }
 
             if (query.CompiledRegex != null)
@@ -401,6 +404,12 @@ namespace FolderMorpher.Services
 
         private static bool MatchesKeywordGroups(string name, string fullPath, SearchQuery query)
         {
+            foreach (var phr in query.ExactPhrases)
+            {
+                string target = (phr.IndexOf('\\') >= 0 || phr.IndexOf('/') >= 0) ? fullPath : name;
+                if (target.IndexOf(phr, StringComparison.OrdinalIgnoreCase) < 0) return false;
+            }
+
             if (query.KeywordGroups.Count > 0)
             {
                 foreach (var group in query.KeywordGroups)
@@ -488,10 +497,13 @@ namespace FolderMorpher.Services
                 if (target.IndexOf(exc, StringComparison.OrdinalIgnoreCase) >= 0) return false;
             }
 
-            foreach (var phr in query.ExactPhrases)
+            if (!query.SearchContentMode)
             {
-                string target = (phr.IndexOf('\\') >= 0 || phr.IndexOf('/') >= 0) ? fullPath : name;
-                if (target.IndexOf(phr, StringComparison.OrdinalIgnoreCase) < 0) return false;
+                foreach (var phr in query.ExactPhrases)
+                {
+                    string target = (phr.IndexOf('\\') >= 0 || phr.IndexOf('/') >= 0) ? fullPath : name;
+                    if (target.IndexOf(phr, StringComparison.OrdinalIgnoreCase) < 0) return false;
+                }
             }
 
             if (query.CompiledRegex != null)
@@ -657,10 +669,18 @@ namespace FolderMorpher.Services
                         requiredGroups.Add(new List<string> { query.ContentKeyword });
                     }
 
-                    // 2. 通常キーワードグループの処理（本文も検索ONなら、名前で満たしていないグループを本文で要求）
+                    // 2. 通常キーワードグループ + ExactPhrases の処理（本文も検索ONなら、名前で満たしていないグループを本文で要求）
                     var groups = query.KeywordGroups.Count > 0
-                        ? query.KeywordGroups
+                        ? query.KeywordGroups.ToList()
                         : query.Keywords.Select(k => new List<string> { k }).ToList();
+
+                    foreach (var phr in query.ExactPhrases)
+                    {
+                        if (!string.IsNullOrWhiteSpace(phr))
+                        {
+                            groups.Add(new List<string> { phr });
+                        }
+                    }
 
                     if (query.SearchContentMode)
                     {
