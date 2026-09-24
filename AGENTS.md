@@ -204,6 +204,12 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
       - 一度過負荷を検知してバックオフしたセッション中はその上限に二度と挑戦しない（不可逆天井クランプによりチャタリング・脈打ちを完全抑止）。
     - **SafeFileEnumerator / DiskScanService / ContentSearch 全走査基盤へ統合**: ディレクトリ列挙、容量スキャン、本文抽出（Office/PDF/テキスト）のすべてで `AdaptiveConcurrencyController` のスロット調停を貫通。
     - **回帰テスト（Domain 2 セクション 7）新設**: 初期値・下限・上限の不変契約、ベースライン確立、昇格、即時崖落ち、天井クランプ、Win32エラー判定、並行スロットリースのデッドロックフリーを自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+25. **検索整合性の徹底硬化 ＆ ネットワークエラー判定の構造化 ＆ 緊急退避ウィンドウ（v2.2.8 / ADR 81）**:
+    - **Progressive Search のレースコンディション根絶**: 先行NameHits通知の非同期JIT権限検証が遅延完了した際、後続の最終結果（FTS5本文ヒット全件等）を古い部分件数で上書きしてしまう表示レースを `finalResultsCommitted` ガードにより完全根絶。
+    - **ExactPhrase（引用符完全一致 `"契約 更新"`）の Indexed Search 統合**: 引用符で囲まれた完全一致フレーズを属性検索単体分岐に落とさず、FTS5 / LIKE インデックス検索の `keywordGroups` に必須グループとして統合。スペースを含むフレーズも LIKE 句で 100% 確実に一致。
+    - **Win32 ネットワークエラー判定の構造化（文字列信号線の根絶）**: `NativeDirectoryEnumerator` に `EnumerationFailureKind` enum（`None`, `AccessDenied`, `NotFound`, `Network`, `Io`, `Unknown`）および `ClassifyWin32Error(int error)` を新設。エラーコード文字列の `Contains("58")` 等の脆弱な判定を全廃し、型安全な列挙型で `AdaptiveConcurrencyController` へ直結。
+    - **超早期崖落ち（Emergency Window: 直近8件監視）**: 高速LAN（baseline 10ms）においてサーバー負荷増大で 45ms〜55ms が発生した際、30件の母集団蓄積を待たずに「直近8件中3件超過」で即座に並列度 2 へ崖落ち・天井クランプ。
+    - **回帰テスト（Domain 8 セクション 14 & Domain 2 セクション 7更新）新設**: 引用符完全一致のFTS5/LIKE統合、構造化エラー分類、Emergency Window早期崖落ちを自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
 ---
 
 ---

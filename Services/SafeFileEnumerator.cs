@@ -277,11 +277,10 @@ namespace FolderMorpher.Services
                             }
 
                             var sw = Stopwatch.StartNew();
-                            bool ok = NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, localSubDirs, localFiles, out var error);
+                            bool ok = NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, localSubDirs, localFiles, out var error, out var failureKind);
                             sw.Stop();
 
-                            bool isNetErr = !ok && AdaptiveConcurrencyController.IsNetworkOrFatalError(error);
-                            lease.Report(sw.Elapsed.TotalMilliseconds, isNetErr);
+                            lease.Report(sw.Elapsed.TotalMilliseconds, failureKind);
 
                             if (!ok)
                             {

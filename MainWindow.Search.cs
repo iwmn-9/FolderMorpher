@@ -367,20 +367,25 @@ namespace AstraSize
                     // 📑 ルート1: SQLite FTS5 事前インデックス全文検索 (ミリ秒応答 ＆ 先行通知)
                     bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                     var sw = Stopwatch.StartNew();
+                    int finalResultsCommitted = 0;
 
                     async void OnNameHitsReady(IReadOnlyList<SearchResultItem> nameHits)
                     {
                         if (currentGen != Volatile.Read(ref _searchGeneration)) return;
+                        if (Volatile.Read(ref finalResultsCommitted) == 1) return;
 
                         try
                         {
                             // 🛡️ JIT 権限照合＆自動自浄: 先行表示であってもアクセス権のないファイルは絶対に画面に出さない
                             var verified = await VerifyAndFilterPermissionsAsync(nameHits.ToList(), ct);
                             if (currentGen != Volatile.Read(ref _searchGeneration)) return;
+                            if (Volatile.Read(ref finalResultsCommitted) == 1) return;
 
                             await Dispatcher.InvokeAsync(() =>
                             {
                                 if (currentGen != Volatile.Read(ref _searchGeneration)) return;
+                                if (Volatile.Read(ref finalResultsCommitted) == 1) return;
+
                                 _allSearchResults = verified;
                                 ApplyFilterAndSort();
                                 long totalBytes = _searchResults.Sum(h => h.SizeBytes);
@@ -409,6 +414,7 @@ namespace AstraSize
 
                     if (currentGen == Volatile.Read(ref _searchGeneration))
                     {
+                        Interlocked.Exchange(ref finalResultsCommitted, 1);
                         _allSearchResults = hits;
                         ApplyFilterAndSort();
                         long totalBytes = _searchResults.Sum(h => h.SizeBytes);

@@ -745,7 +745,8 @@ namespace FolderMorpher.Services
                 }
                 catch (Exception ex)
                 {
-                    isError = AdaptiveConcurrencyController.IsNetworkOrFatalError(ex.Message);
+                    isError = ex is System.Net.Sockets.SocketException ||
+                              (ex is IOException ioEx && (ioEx.HResult == unchecked((int)0x8007003B) || ioEx.HResult == unchecked((int)0x80070040) || ioEx.HResult == unchecked((int)0x80070036)));
                 }
                 finally
                 {

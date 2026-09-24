@@ -212,11 +212,10 @@ namespace AstraSize.Services
                                 var (node, currentPath, depth) = item;
 
                                 var dirSw = Stopwatch.StartNew();
-                                bool ok = NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, subDirs, files, out var error);
+                                bool ok = NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, subDirs, files, out var error, out var failureKind);
                                 dirSw.Stop();
 
-                                bool isNetErr = !ok && AdaptiveConcurrencyController.IsNetworkOrFatalError(error);
-                                lease.Report(dirSw.Elapsed.TotalMilliseconds, isNetErr);
+                                lease.Report(dirSw.Elapsed.TotalMilliseconds, failureKind);
 
                                 if (!ok)
                                 {

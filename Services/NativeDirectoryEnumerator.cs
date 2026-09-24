@@ -52,6 +52,19 @@ namespace FolderMorpher.Services
     }
 
     /// <summary>
+    /// ディレクトリ列挙の失敗種別（信号線として利用可能な構造化エラー型）
+    /// </summary>
+    public enum EnumerationFailureKind
+    {
+        None = 0,
+        AccessDenied,
+        NotFound,
+        Network,
+        Io,
+        Unknown
+    }
+
+    /// <summary>
     /// Win32 FindFirstFileExW / FindNextFileW による高効率・メモリリークゼロのディレクトリ走査エンジン。
     /// 【高速化・耐障害性アーキテクチャ】
     /// 1. FindExInfoBasic: 8.3短縮名の取得をスキップし、ファイルサーバー側の検索負荷とSMB通信量を削減。
@@ -115,16 +128,30 @@ namespace FolderMorpher.Services
         private const int ERROR_ACCESS_DENIED = 5;
         private const int ERROR_NO_MORE_FILES = 18;
 
+        public static EnumerationFailureKind ClassifyWin32Error(int error)
+        {
+            return error switch
+            {
+                0 or ERROR_NO_MORE_FILES or ERROR_HANDLE_EOF => EnumerationFailureKind.None,
+                ERROR_ACCESS_DENIED => EnumerationFailureKind.AccessDenied,
+                ERROR_FILE_NOT_FOUND or ERROR_PATH_NOT_FOUND => EnumerationFailureKind.NotFound,
+                51 or 53 or 54 or 56 or 58 or 59 or 64 or 67 or 71 or 121 => EnumerationFailureKind.Network,
+                _ => EnumerationFailureKind.Unknown
+            };
+        }
+
         /// <summary>
-        /// 指定フォルダー直下のエントリ（ファイルおよびサブディレクトリ）を安全に一括列挙する。
+        /// 指定フォルダー直下のエントリ（ファイルおよびサブディレクトリ）を安全に一括列挙する（構造化 FailureKind 対応）。
         /// 4段自動フォールバックにより、NAS (Samba) や特殊なUNCネットワーク環境でもネイティブ一括取得を最大活用する。
         /// </summary>
         public static bool TryEnumerateEntries(
             string folderPath,
             List<NativeFindEntry> subDirectories,
             List<NativeFindEntry> files,
-            out string? errorMessage)
+            out string? errorMessage,
+            out EnumerationFailureKind failureKind)
         {
+            failureKind = EnumerationFailureKind.None;
             errorMessage = null;
             subDirectories.Clear();
             files.Clear();
@@ -132,19 +159,21 @@ namespace FolderMorpher.Services
             if (string.IsNullOrEmpty(folderPath))
             {
                 errorMessage = "パスが空です";
+                failureKind = EnumerationFailureKind.NotFound;
                 return false;
             }
 
             string primaryPattern = BuildSearchPattern(folderPath);
 
             // 段数 1: 最速 (拡張パス \\?\ または \\?\UNC\ + FindExInfoBasic + FIND_FIRST_EX_LARGE_FETCH)
-            if (TryEnumerateWin32(primaryPattern, FINDEX_INFO_LEVELS.FindExInfoBasic, FIND_FIRST_EX_LARGE_FETCH, subDirectories, files, out errorMessage))
+            if (TryEnumerateWin32(primaryPattern, FINDEX_INFO_LEVELS.FindExInfoBasic, FIND_FIRST_EX_LARGE_FETCH, subDirectories, files, out errorMessage, out int err1))
             {
                 return true;
             }
+            failureKind = ClassifyWin32Error(err1);
 
             // アクセス拒否 (5) やパスが存在しない (3) の場合はフォールバックしても無駄なので即時返却
-            if (errorMessage != null && (errorMessage.Contains("(5)") || errorMessage.Contains("(3)")))
+            if (failureKind == EnumerationFailureKind.AccessDenied || failureKind == EnumerationFailureKind.NotFound)
             {
                 return false;
             }
@@ -152,10 +181,12 @@ namespace FolderMorpher.Services
             // 段数 2: 互換 (拡張パス + FindExInfoStandard, フラグ0)
             subDirectories.Clear();
             files.Clear();
-            if (TryEnumerateWin32(primaryPattern, FINDEX_INFO_LEVELS.FindExInfoStandard, 0, subDirectories, files, out errorMessage))
+            if (TryEnumerateWin32(primaryPattern, FINDEX_INFO_LEVELS.FindExInfoStandard, 0, subDirectories, files, out errorMessage, out int err2))
             {
+                failureKind = EnumerationFailureKind.None;
                 return true;
             }
+            failureKind = ClassifyWin32Error(err2);
 
             // 段数 3: UNC/NAS互換 (プレーンパス \\server\share\* または C:\path\* での Win32 再試行)
             // ※SambaやNASアプライアンスは \\?\UNC\ を解釈できない場合があるため、プレーンパスでWin32を再試行してネイティブ高速列挙を救出
@@ -164,16 +195,27 @@ namespace FolderMorpher.Services
             {
                 subDirectories.Clear();
                 files.Clear();
-                if (TryEnumerateWin32(plainPattern, FINDEX_INFO_LEVELS.FindExInfoStandard, 0, subDirectories, files, out errorMessage))
+                if (TryEnumerateWin32(plainPattern, FINDEX_INFO_LEVELS.FindExInfoStandard, 0, subDirectories, files, out errorMessage, out int err3))
                 {
+                    failureKind = EnumerationFailureKind.None;
                     return true;
                 }
+                failureKind = ClassifyWin32Error(err3);
             }
 
             // 段数 4: マネージド .NET DirectoryInfo フォールバック
             subDirectories.Clear();
             files.Clear();
-            return TryEnumerateManagedFallback(folderPath, subDirectories, files, out errorMessage);
+            return TryEnumerateManagedFallback(folderPath, subDirectories, files, out errorMessage, out failureKind);
+        }
+
+        public static bool TryEnumerateEntries(
+            string folderPath,
+            List<NativeFindEntry> subDirectories,
+            List<NativeFindEntry> files,
+            out string? errorMessage)
+        {
+            return TryEnumerateEntries(folderPath, subDirectories, files, out errorMessage, out _);
         }
 
         private const int ERROR_HANDLE_EOF = 38;
@@ -184,8 +226,10 @@ namespace FolderMorpher.Services
             int flags,
             List<NativeFindEntry> subDirectories,
             List<NativeFindEntry> files,
-            out string? errorMessage)
+            out string? errorMessage,
+            out int win32Error)
         {
+            win32Error = 0;
             errorMessage = null;
 
             using var handle = FindFirstFileExW(
@@ -198,14 +242,15 @@ namespace FolderMorpher.Services
 
             if (handle.IsInvalid)
             {
-                int error = Marshal.GetLastWin32Error();
-                if (error == ERROR_FILE_NOT_FOUND || error == ERROR_NO_MORE_FILES)
+                win32Error = Marshal.GetLastWin32Error();
+                if (win32Error == ERROR_FILE_NOT_FOUND || win32Error == ERROR_NO_MORE_FILES)
                 {
                     // 空フォルダー（正常）
+                    win32Error = 0;
                     return true;
                 }
 
-                errorMessage = FormatWin32Error(error);
+                errorMessage = FormatWin32Error(win32Error);
                 return false;
             }
 
@@ -241,6 +286,7 @@ namespace FolderMorpher.Services
                 finalError != ERROR_FILE_NOT_FOUND &&
                 finalError != ERROR_HANDLE_EOF)
             {
+                win32Error = finalError;
                 errorMessage = $"列挙途中エラー: {FormatWin32Error(finalError)}";
                 return false;
             }
@@ -252,9 +298,11 @@ namespace FolderMorpher.Services
             string folderPath,
             List<NativeFindEntry> subDirectories,
             List<NativeFindEntry> files,
-            out string? errorMessage)
+            out string? errorMessage,
+            out EnumerationFailureKind failureKind)
         {
             errorMessage = null;
+            failureKind = EnumerationFailureKind.None;
             try
             {
                 var dirInfo = new DirectoryInfo(folderPath);
@@ -289,16 +337,21 @@ namespace FolderMorpher.Services
             catch (UnauthorizedAccessException)
             {
                 errorMessage = "アクセス拒否 (5)";
+                failureKind = EnumerationFailureKind.AccessDenied;
                 return false;
             }
             catch (DirectoryNotFoundException)
             {
                 errorMessage = "パスが見つかりません (3)";
+                failureKind = EnumerationFailureKind.NotFound;
                 return false;
             }
             catch (Exception ex)
             {
                 errorMessage = $".NET列挙エラー: {ex.Message}";
+                failureKind = ex is IOException ioEx && (ioEx.HResult == unchecked((int)0x8007003B) || ioEx.HResult == unchecked((int)0x80070040))
+                    ? EnumerationFailureKind.Network
+                    : EnumerationFailureKind.Io;
                 return false;
             }
         }

@@ -1,4 +1,4 @@
-# FolderMorpher — 重要な設計判断の記録（Architecture Decisions / ADR）
+﻿# FolderMorpher — 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > **【AIメンテナ・自律継続規約】**  
 > 本ドキュメントは、FolderMorpher の全 59 項目に及ぶ過去の設計判断・障害対策（ADR 1〜59）を、**12大中核アーキテクチャ原則（Core Architecture Principles）** として体系化・統合した正本記録である。  
@@ -758,4 +758,36 @@
      - ディレクトリ列挙（`SafeFileEnumerator.cs`）、容量スキャン（`DiskScanService.cs`）、および本文抽出（`SearchEngineService.FilterByContentAsync`）の全並列ループを `AdaptiveConcurrencyController` の非同期スロット調停（`AcquireAsync` / `SlotLease`）に統合。
   7. **自動回帰テストによる恒久保護**:
      - `RegressionTestSuite.Storage.cs` に「セクション 7: Adaptive Concurrency (ADR 80)」を新設。初期値・下限・上限の不変契約、ベースライン確立、昇格、即時崖落ち、天井クランプ、Win32エラー判定、並行スロットリースのデッドロックフリーを自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+
+
+---
+
+### ADR 81: 検索整合性の徹底硬化 ＆ ネットワークエラー判定の構造化 ＆ 緊急退避ウィンドウ
+*(v2.2.8 本番施工 & ADR 81)*
+
+- **背景 & 動機**:
+  - **Progressive Search の非同期レース**: 先行NameHits通知の非同期JIT権限検証が遅延完了した際、後続の最終結果（FTS5本文ヒット全件等）を古い部分件数で画面上書きしてしまうバグが存在した。
+  - **ExactPhrase のインデックス孤立**: query.ExactPhrases（"契約 更新" 等）単体で指定された際、キーワードグループにマッピングされず属性検索専用の単独フォールバックに入り、FTS5 / LIKE インデックスで 0 件になる不整合があった。
+  - **エラー判定の文字列依存（AI実装整線規則 第3項違反）**: AdaptiveConcurrencyController でのネットワークエラー判定が IsNetworkOrFatalError(string) による "58", "59" などの文字列信号線になっていた。
+  - **高速LANでの遅延検知（手遅れリスク）**: baseline が 10ms のような高速環境で 45ms〜55ms のスパイクが発生した際、30件の母集団蓄積を待っていては退避が遅れるリスクがあった。
+- **施工内容**:
+  1. **Progressive Search のレースコンディション根絶**:
+     - MainWindow.Search.cs に finalResultsCommitted ガードを導入。
+     - 最終結果（Route 1 や Route 2）が確定・画面コミットされた後は、先行表示の遅延非同期JIT権限検証コールバックがUI表示を巻き戻すことを100%防止。
+  2. **ExactPhrase（引用符完全一致）の Indexed Search 完全統合**:
+     - ContentIndexService.cs において、query.ExactPhrases を keywordGroups に必須グループとして統合。
+     - 空クエリ判定および「キーワードなし」分岐に query.ExactPhrases.Count == 0 を追加。
+     - スペースを含む完全フレーズは grpAllFts = false（LIKE 句）で 100% 確実に一致。
+  3. **Win32 ネットワークエラー判定の構造化（列挙型への一本化）**:
+     - NativeDirectoryEnumerator.cs に EnumerationFailureKind enum（None, AccessDenied, NotFound, Network, Io, Unknown）を新設。
+     - ClassifyWin32Error(int error) により、Win32エラーコード（58, 59, 64, 54, 56, 71, 121 等）を型安全に分類。
+     - SafeFileEnumerator ➔ DiskScanService ➔ AdaptiveConcurrencyController のパイプラインを failureKind で貫通。文字列信号線を完全根絶。
+  4. **超早期崖落ち（Emergency Window: 直近8件監視）**:
+     - 直近8件の超短期ウィンドウ _emergencyWindow を新設。
+     - 直近8件中3件以上が > baselineP95 * 2.0 && > baselineP95 + 15ms を超過した場合、30件のサンプル蓄積を待たずに即座に並列度 2 へ崖落ち・天井クランプ。
+     - 単一スパイク閾値も Math.Max(60.0, _baselineP95 * 3.0) に引き締め。
+  5. **自動回帰テストによる恒久保護**:
+     - RegressionTestSuite.Search.cs に「セクション 14: ExactPhrase（引用符完全一致）の Indexed Search 統合 (ADR 81)」を新設。
+     - RegressionTestSuite.Storage.cs の「セクション 7」に構造化 EnumerationFailureKind 分類および Emergency Window 早期崖落ち検証を追加。
+     - 全 8 ドメイン 8/8 ALL PASSED を堅持。
 

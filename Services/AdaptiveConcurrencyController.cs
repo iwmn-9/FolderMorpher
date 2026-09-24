@@ -45,6 +45,11 @@ namespace FolderMorpher.Services
         private int _sampleCount = 0;
         private long _totalSamplesReported = 0;
 
+        // 🚨 超短期 Emergency Window (直近8サンプル): 高速LANでの急激な遅延悪化を数件で早期検知・即時崖落ち
+        private readonly double[] _emergencyWindow = new double[8];
+        private int _emergencyHead = 0;
+        private int _emergencyCount = 0;
+
         // ベースライン
         private bool _baselineEstablished = false;
         private double _baselineP50 = 0;
@@ -104,7 +109,7 @@ namespace FolderMorpher.Services
         /// <summary>
         /// スロットを解放し、レイテンシと成否を報告します。
         /// </summary>
-        internal void ReleaseSlot(double elapsedMs, bool isError)
+        internal void ReleaseSlot(double elapsedMs, bool isNetworkError)
         {
             Interlocked.Decrement(ref _activeSlots);
             try
@@ -116,31 +121,49 @@ namespace FolderMorpher.Services
                 // セマフォ上限ガード
             }
 
-            RecordSample(elapsedMs, isError);
+            RecordSample(elapsedMs, isNetworkError);
+        }
+
+        internal void ReleaseSlot(double elapsedMs, EnumerationFailureKind failureKind)
+        {
+            ReleaseSlot(elapsedMs, failureKind == EnumerationFailureKind.Network);
         }
 
         /// <summary>
         /// サンプル（所要時間・成否）を記録し、適応制御則を評価します。
         /// </summary>
-        public void RecordSample(double elapsedMs, bool isError)
+        public void RecordSample(double elapsedMs, EnumerationFailureKind failureKind)
+        {
+            RecordSample(elapsedMs, failureKind == EnumerationFailureKind.Network);
+        }
+
+        /// <summary>
+        /// サンプル（所要時間・成否）を記録し、適応制御則を評価します。
+        /// </summary>
+        public void RecordSample(double elapsedMs, bool isNetworkError)
         {
             lock (_stateLock)
             {
                 long nowTicks = _stopwatch.ElapsedTicks;
                 long sampleIndex = ++_totalSamplesReported;
 
-                // 1. エラー検知時（即時崖落ち ➔ 2、天井クランプ、クールダウン）
-                if (isError)
+                // 1. ネットワークエラー検知時（即時崖落ち ➔ 2、天井クランプ、クールダウン）
+                if (isNetworkError)
                 {
                     ApplyCliffDecrease("Network/IO Error detected");
                     return;
                 }
 
-                // サンプルをリングバッファに格納
+                // サンプルを長期リングバッファに格納
                 _samples[_sampleHead] = elapsedMs;
                 _sampleTimestamps[_sampleHead] = nowTicks;
                 _sampleHead = (_sampleHead + 1) % _samples.Length;
                 if (_sampleCount < _samples.Length) _sampleCount++;
+
+                // サンプルを短期 Emergency Window に格納
+                _emergencyWindow[_emergencyHead] = elapsedMs;
+                _emergencyHead = (_emergencyHead + 1) % _emergencyWindow.Length;
+                if (_emergencyCount < _emergencyWindow.Length) _emergencyCount++;
 
                 // 2. ベースライン未確定フェーズ
                 if (!_baselineEstablished)
@@ -152,14 +175,34 @@ namespace FolderMorpher.Services
                     return;
                 }
 
-                // 3. 異常スパイク検知 (単一サンプルが baseline_p95 * 3.5 超かつ > 150ms)
-                if (elapsedMs > Math.Max(150.0, _baselineP95 * 3.5))
+                // 3. 🚨 超短期 Emergency Window 判定 (直近8件中3件以上が 2x baseline かつ baseline + 15ms を超過)
+                // 高速LAN環境 (10ms) でサーバーが苦しくなり 45ms〜55ms が数回続いた場合、30件を待たずに数件で即座に逃げる
+                if (_emergencyCount >= 4)
                 {
-                    ApplyCliffDecrease($"Latency spike ({elapsedMs:F1}ms > 3.5x baseline)");
+                    int spikeCount = 0;
+                    double spikeThreshold = Math.Max(_baselineP95 + 15.0, _baselineP95 * 2.0);
+                    for (int i = 0; i < _emergencyCount; i++)
+                    {
+                        if (_emergencyWindow[i] > spikeThreshold)
+                        {
+                            spikeCount++;
+                        }
+                    }
+                    if (spikeCount >= 3)
+                    {
+                        ApplyCliffDecrease($"Emergency Window ({spikeCount}/8 spikes > 2x baseline)");
+                        return;
+                    }
+                }
+
+                // 4. 単一サンプル異常スパイク検知 (単一サンプルが baseline_p95 * 3.0 超かつ > 60ms)
+                if (elapsedMs > Math.Max(60.0, _baselineP95 * 3.0))
+                {
+                    ApplyCliffDecrease($"Latency spike ({elapsedMs:F1}ms > 3x baseline)");
                     return;
                 }
 
-                // 4. 定期評価（直近15サンプルごと）
+                // 5. 定期評価（直近15サンプルごと）
                 if (sampleIndex % 15 == 0)
                 {
                     EvaluateConcurrency(nowTicks, sampleIndex);
@@ -202,7 +245,7 @@ namespace FolderMorpher.Services
             double currentThroughput = elapsedSec > 0.05 ? _sampleCount / elapsedSec : 10.0;
 
             // A. 過負荷検知 (p95 > baseline * 1.8) ➔ 即座に崖落ち
-            if (currentP95 > Math.Max(80.0, _baselineP95 * 1.8))
+            if (currentP95 > Math.Max(60.0, _baselineP95 * 1.8))
             {
                 ApplyCliffDecrease($"p95 degraded ({currentP95:F1}ms vs baseline {_baselineP95:F1}ms)");
                 return;
@@ -262,6 +305,7 @@ namespace FolderMorpher.Services
             _cooldownUntilTicks = _stopwatch.ElapsedTicks + (long)(Stopwatch.Frequency * 30); // 30秒クールダウン
             _evaluatingMarginalGain = false;
             _lastConcurrencyChangeSample = _totalSamplesReported;
+            _emergencyCount = 0; // Emergency Window をリセット
         }
 
         /// <summary>
@@ -309,13 +353,18 @@ namespace FolderMorpher.Services
             _controller = null;
         }
 
+        public void Report(double elapsedMs, EnumerationFailureKind failureKind)
+        {
+            Report(elapsedMs, failureKind == EnumerationFailureKind.Network);
+        }
+
         public void Dispose()
         {
             if (!_isReported && _controller != null)
             {
                 _isReported = true;
                 _sw.Stop();
-                _controller.ReleaseSlot(_sw.Elapsed.TotalMilliseconds, isError: false);
+                _controller.ReleaseSlot(_sw.Elapsed.TotalMilliseconds, false);
                 _controller = null;
             }
         }

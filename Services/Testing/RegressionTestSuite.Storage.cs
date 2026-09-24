@@ -342,7 +342,7 @@ namespace FolderMorpher.Services.Testing
                     // 50サンプルの正常低レイテンシ (10ms)
                     for (int i = 0; i < 50; i++)
                     {
-                        ctrl.RecordSample(10.0, isError: false);
+                        ctrl.RecordSample(10.0, isNetworkError: false);
                     }
                     if (!ctrl.BaselineEstablished)
                         throw new InvalidOperationException("ADR 80 Baseline was not established after 50 samples.");
@@ -352,13 +352,13 @@ namespace FolderMorpher.Services.Testing
                     // さらに40回安定稼働 ➔ 3 へ昇格 (+1)
                     for (int i = 0; i < 45; i++)
                     {
-                        ctrl.RecordSample(10.0, isError: false);
+                        ctrl.RecordSample(10.0, isNetworkError: false);
                     }
                     if (ctrl.CurrentConcurrency != 3)
                         throw new InvalidOperationException($"ADR 80 Concurrency after stable period expected 3, got {ctrl.CurrentConcurrency}");
 
                     // C. ネットワークエラー検知による即時崖落ち (3 ➔ 2) & 天井クランプ (2)
-                    ctrl.RecordSample(10.0, isError: true);
+                    ctrl.RecordSample(10.0, isNetworkError: true);
                     if (ctrl.CurrentConcurrency != 2)
                         throw new InvalidOperationException($"ADR 80 Concurrency after error expected 2, got {ctrl.CurrentConcurrency}");
                     if (ctrl.SessionMaxCeiling != 2)
@@ -367,20 +367,55 @@ namespace FolderMorpher.Services.Testing
                     // エラー後はどれだけ正常サンプルが続いても天井クランプ (2) により昇格しないこと
                     for (int i = 0; i < 100; i++)
                     {
-                        ctrl.RecordSample(10.0, isError: false);
+                        ctrl.RecordSample(10.0, isNetworkError: false);
                     }
                     if (ctrl.CurrentConcurrency != 2)
                         throw new InvalidOperationException($"ADR 80 Concurrency must remain clamped at 2, got {ctrl.CurrentConcurrency}");
 
-                    // D. Win32 ネットワークエラー文字列判定の完全性検証
-                    if (!AdaptiveConcurrencyController.IsNetworkOrFatalError("Win32 Error 58: ERROR_BAD_NET_RESP"))
-                        throw new InvalidOperationException("ADR 80 Failed to detect ERROR_BAD_NET_RESP");
-                    if (!AdaptiveConcurrencyController.IsNetworkOrFatalError("The network path was not found (59)"))
-                        throw new InvalidOperationException("ADR 80 Failed to detect ERROR_UNEXP_NET_ERR");
-                    if (!AdaptiveConcurrencyController.IsNetworkOrFatalError("RPC タイムアウトが発生しました"))
-                        throw new InvalidOperationException("ADR 80 Failed to detect RPC timeout");
-                    if (AdaptiveConcurrencyController.IsNetworkOrFatalError("ファイルが見つかりません"))
-                        throw new InvalidOperationException("ADR 80 False positive on normal file error");
+                    // D. 構造化 EnumerationFailureKind 分類とネットワークエラー判定の完全性検証 (ADR 81)
+                    if (NativeDirectoryEnumerator.ClassifyWin32Error(58) != EnumerationFailureKind.Network)
+                        throw new InvalidOperationException("ADR 81 Failed to classify Win32 58 as Network");
+                    if (NativeDirectoryEnumerator.ClassifyWin32Error(59) != EnumerationFailureKind.Network)
+                        throw new InvalidOperationException("ADR 81 Failed to classify Win32 59 as Network");
+                    if (NativeDirectoryEnumerator.ClassifyWin32Error(64) != EnumerationFailureKind.Network)
+                        throw new InvalidOperationException("ADR 81 Failed to classify Win32 64 as Network");
+                    if (NativeDirectoryEnumerator.ClassifyWin32Error(121) != EnumerationFailureKind.Network)
+                        throw new InvalidOperationException("ADR 81 Failed to classify Win32 121 as Network");
+                    if (NativeDirectoryEnumerator.ClassifyWin32Error(5) != EnumerationFailureKind.AccessDenied)
+                        throw new InvalidOperationException("ADR 81 Failed to classify Win32 5 as AccessDenied");
+                    if (NativeDirectoryEnumerator.ClassifyWin32Error(2) != EnumerationFailureKind.NotFound)
+                        throw new InvalidOperationException("ADR 81 Failed to classify Win32 2 as NotFound");
+
+                    // 構造化エラーによる即時崖落ちの検証
+                    var enumErrCtrl = new AdaptiveConcurrencyController();
+                    for (int i = 0; i < 50; i++) enumErrCtrl.RecordSample(10.0, isNetworkError: false);
+                    for (int i = 0; i < 45; i++) enumErrCtrl.RecordSample(10.0, isNetworkError: false);
+                    if (enumErrCtrl.CurrentConcurrency != 3)
+                        throw new InvalidOperationException("ADR 81 Concurrency should be 3 before error");
+                    enumErrCtrl.RecordSample(10.0, EnumerationFailureKind.Network);
+                    if (enumErrCtrl.CurrentConcurrency != 2 || enumErrCtrl.SessionMaxCeiling != 2)
+                        throw new InvalidOperationException("ADR 81 Concurrency failed to drop on EnumerationFailureKind.Network");
+
+                    // E. 🚨 超短期 Emergency Window (直近8件中3件のスパイク) による超早期崖落ち検証 (ADR 81)
+                    // 高速LAN (10ms) でサーバーが急激に苦しくなり 45ms〜50ms が数件続いた場合、30件を待たずに数件で退避すること
+                    var emgCtrl = new AdaptiveConcurrencyController();
+                    // 1. ベースライン (10ms) 確立
+                    for (int i = 0; i < 50; i++) emgCtrl.RecordSample(10.0, isNetworkError: false);
+                    // 2. 40回安定で並列度 3 へ昇格
+                    for (int i = 0; i < 45; i++) emgCtrl.RecordSample(10.0, isNetworkError: false);
+                    if (emgCtrl.CurrentConcurrency != 3)
+                        throw new InvalidOperationException("ADR 81 Concurrency before emergency window should be 3");
+
+                    // 3. わずか3件のスパイク (45ms: baseline 10ms の4.5倍) を投入
+                    emgCtrl.RecordSample(45.0, isNetworkError: false);
+                    emgCtrl.RecordSample(48.0, isNetworkError: false);
+                    emgCtrl.RecordSample(50.0, isNetworkError: false);
+
+                    // ➔ Emergency Window により、わずか3件の兆候で即座に並列度 2 に崖落ち＆天井クランプされていること！
+                    if (emgCtrl.CurrentConcurrency != 2)
+                        throw new InvalidOperationException($"ADR 81 Emergency Window expected concurrency 2, got {emgCtrl.CurrentConcurrency}");
+                    if (emgCtrl.SessionMaxCeiling != 2)
+                        throw new InvalidOperationException($"ADR 81 Emergency Window expected ceiling 2, got {emgCtrl.SessionMaxCeiling}");
 
                     // E. スロット獲得・解放の並行性（デッドロックフリー）検証
                     var slotCtrl = new AdaptiveConcurrencyController();

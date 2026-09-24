@@ -1269,7 +1269,7 @@ namespace FolderMorpher.Services
                 bool hasContentKeyword = !string.IsNullOrEmpty(query.ContentKeyword);
 
                 // キーワードも属性条件もない場合は空
-                if (keywords.Count == 0 && !hasContentKeyword && query.Extensions.Count == 0 && !query.MinSizeBytes.HasValue && !query.MaxSizeBytes.HasValue && !query.DormantYears.HasValue && !query.DormantDays.HasValue && !query.MinPathLength.HasValue && query.PathContains.Count == 0)
+                if (keywords.Count == 0 && !hasContentKeyword && query.ExactPhrases.Count == 0 && query.Extensions.Count == 0 && !query.MinSizeBytes.HasValue && !query.MaxSizeBytes.HasValue && !query.DormantYears.HasValue && !query.DormantDays.HasValue && !query.MinPathLength.HasValue && query.PathContains.Count == 0)
                 {
                     return results;
                 }
@@ -1405,7 +1405,7 @@ namespace FolderMorpher.Services
                         };
                     }
 
-                    if (keywords.Count == 0 && !hasContentKeyword)
+                    if (keywords.Count == 0 && !hasContentKeyword && query.ExactPhrases.Count == 0)
                     {
                         // キーワードなし（属性検索のみ）: IndexedFiles 単体検索
                         string whereSql = commonWhereClauses.Count > 0 ? string.Join(" AND ", commonWhereClauses) : "1=1";
@@ -1434,11 +1434,21 @@ namespace FolderMorpher.Services
                         return results;
                     }
 
-                    // キーワードあり: 本文 (ContentFts) と ファイル名 (MetadataFts) のハイブリッド検索（ORグループ対応 ＆ INTERSECT 積集合）
-                    var keywordGroups = (query.KeywordGroups.Count > 0 ? query.KeywordGroups : keywords.Select(k => new List<string> { k }).ToList())
+                    // キーワードあり: 本文 (ContentFts) と ファイル名 (MetadataFts) のハイブリッド検索（ORグループ対応 ＆ INTERSECT 積集合 ＆ ExactPhrases統合）
+                    var baseGroups = query.KeywordGroups.Count > 0 ? query.KeywordGroups : keywords.Select(k => new List<string> { k }).ToList();
+                    var keywordGroups = baseGroups
                         .Where(g => g.Count > 0 && g.Any(w => !string.IsNullOrWhiteSpace(w)))
                         .Select(g => g.Where(w => !string.IsNullOrWhiteSpace(w)).Select(w => w.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList())
                         .ToList();
+
+                    // ExactPhrases（完全一致引用符フレーズ）を必須グループとして統合
+                    foreach (var phrase in query.ExactPhrases)
+                    {
+                        if (!string.IsNullOrWhiteSpace(phrase))
+                        {
+                            keywordGroups.Add(new List<string> { phrase.Trim() });
+                        }
+                    }
 
                     // 除外ワードの SQL パラメータと WHERE 句
                     for (int i = 0; i < query.ExcludedWords.Count; i++)
@@ -1459,7 +1469,8 @@ namespace FolderMorpher.Services
                         var grp = keywordGroups[gIdx];
                         if (grp.Count == 0) continue;
 
-                        bool grpAllFts = grp.All(w => w.Length >= 3);
+                        // スペースを含む完全フレーズは LIKE 句で 100% 確実に一致させる
+                        bool grpAllFts = grp.All(w => w.Length >= 3 && !w.Contains(' '));
 
                         // 1. ファイル名側の条件
                         string nameSql;

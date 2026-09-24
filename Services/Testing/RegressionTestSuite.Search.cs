@@ -1097,6 +1097,50 @@ namespace FolderMorpher.Services.Testing
                 {
                     try { Directory.Delete(s13Root, true); } catch { }
                 }
+
+                // =========================================================================================
+                // セクション 14: ExactPhrase 引用符完全フレーズ検索の Indexed Search 統合検証 (ADR 81)
+                // =========================================================================================
+                string s14Root = Path.Combine(Path.GetTempPath(), "AstraSearch_Section14_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(s14Root);
+                try
+                {
+                    // ファイル作成
+                    // File 1: 名前に「契約 更新」を含む
+                    string file1 = Path.Combine(s14Root, "2026_契約 更新_一覧.txt");
+                    File.WriteAllText(file1, "通常のドキュメントです。");
+
+                    // File 2: 順序が逆「更新 契約」
+                    string file2 = Path.Combine(s14Root, "2026_更新 契約_一覧.txt");
+                    File.WriteAllText(file2, "通常のドキュメントです。");
+
+                    // File 3: 本文に「機密 保持」を含む
+                    string file3 = Path.Combine(s14Root, "NDA_Document.txt");
+                    File.WriteAllText(file3, "この文書は 機密 保持 の誓約を含みます。");
+
+                    var s14Service = new ContentIndexService();
+                    await s14Service.IndexFolderAsync(s14Root, null, CancellationToken.None);
+
+                    // 検証 A: 引用符完全一致「"契約 更新"」で File 1 のみヒットし、File 2（順序逆）はヒットしないこと
+                    var qExact1 = SearchQueryParser.Parse("\"契約 更新\"");
+                    if (qExact1.ExactPhrases.Count != 1 || qExact1.ExactPhrases[0] != "契約 更新")
+                        throw new Exception("ADR 81 ExactPhrase Parser Failed: '契約 更新' not parsed as ExactPhrase.");
+
+                    var hitsExact1 = await s14Service.SearchIndexedAsync(qExact1, s14Root, CancellationToken.None);
+                    if (hitsExact1.Count != 1 || !hitsExact1[0].FullPath.EndsWith("2026_契約 更新_一覧.txt"))
+                        throw new Exception($"ADR 81 ExactPhrase Search Failed: Expected 1 hit (2026_契約 更新_一覧.txt), got {hitsExact1.Count}");
+
+                    // 検証 B: 本文も検索ONで本文内の引用符完全一致「"機密 保持"」が正しくヒットすること
+                    var qExact2 = SearchQueryParser.Parse("\"機密 保持\"");
+                    qExact2.SearchContentMode = true;
+                    var hitsExact2 = await s14Service.SearchIndexedAsync(qExact2, s14Root, CancellationToken.None);
+                    if (hitsExact2.Count != 1 || !hitsExact2[0].FullPath.EndsWith("NDA_Document.txt"))
+                        throw new Exception($"ADR 81 ExactPhrase Content Search Failed: Expected 1 hit (NDA_Document.txt), got {hitsExact2.Count}");
+                }
+                finally
+                {
+                    try { Directory.Delete(s14Root, true); } catch { }
+                }
             }
         }
     }
