@@ -1081,7 +1081,7 @@ namespace FolderMorpher.Services.Testing
                     var hitsCrossIndexed = await s13Service.SearchIndexedAsync(qCrossField, s13Root, CancellationToken.None);
                     if (hitsCrossIndexed.Count != 1 || !hitsCrossIndexed[0].FullPath.EndsWith("契約書_計画.txt"))
                         throw new Exception($"ADR 79 Cross-Field Indexed Search Failed: Expected 1 hit (契約書_計画.txt), got {hitsCrossIndexed.Count}");
-                    if (string.IsNullOrEmpty(hitsCrossIndexed[0].ContentSnippet) || !hitsCrossIndexed[0].ContentSnippet.Contains("2026"))
+                    if (string.IsNullOrEmpty(hitsCrossIndexed[0].ContentSnippet) || hitsCrossIndexed[0].ContentSnippet?.Contains("2026") != true)
                         throw new Exception("ADR 79 Cross-Field Indexed Search Failed: Snippet for 2026 was not generated.");
 
                     // 2. Direct Search

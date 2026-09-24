@@ -607,14 +607,11 @@ namespace FolderMorpher.Services
             int processed = 0;
             int total = validFiles.Count;
 
-            bool containsUnc = validFiles.Any(f => f.FullPath.StartsWith(@"\\", StringComparison.Ordinal) || f.FullPath.StartsWith("//", StringComparison.Ordinal));
-            int maxDegree = containsUnc
-                ? 2 // UNC/ネットワーク共有はサーバー保護のためデュアルワーカー（並列度2）固定
-                : Math.Clamp(Environment.ProcessorCount / 2, 2, 4); // ローカルドライブもI/O競合抑制のため安全上限4
+            var controller = new AdaptiveConcurrencyController();
 
             var po = new ParallelOptions
             {
-                MaxDegreeOfParallelism = maxDegree,
+                MaxDegreeOfParallelism = AdaptiveConcurrencyController.MaxConcurrency,
                 CancellationToken = ct
             };
 
@@ -642,6 +639,10 @@ namespace FolderMorpher.Services
             await Parallel.ForEachAsync(validFiles, po, async (item, token) =>
             {
                 token.ThrowIfCancellationRequested();
+
+                using var lease = await controller.AcquireAsync(token);
+                var fileSw = Stopwatch.StartNew();
+                bool isError = false;
 
                 try
                 {
@@ -742,8 +743,14 @@ namespace FolderMorpher.Services
                         }
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    isError = AdaptiveConcurrencyController.IsNetworkOrFatalError(ex.Message);
+                }
+                finally
+                {
+                    fileSw.Stop();
+                    lease.Report(fileSw.Elapsed.TotalMilliseconds, isError);
                 }
 
                 int c = Interlocked.Increment(ref processed);

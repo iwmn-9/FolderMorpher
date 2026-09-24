@@ -162,7 +162,8 @@ namespace AstraSize.Services
                     }
                 }
 
-                const int concurrency = 2; // 並列度2固定（業務保護・HDDスラッシング抑制）
+                var controller = new AdaptiveConcurrencyController();
+                int maxWorkers = AdaptiveConcurrencyController.MaxConcurrency;
 
                 DateTime rootLastModified = DateTime.MinValue;
                 try { rootLastModified = rootDir.LastWriteTime; } catch { }
@@ -183,9 +184,9 @@ namespace AstraSize.Services
                 folderQueue.Enqueue((rootNode, cleanTargetPath, 0));
                 Interlocked.Increment(ref pendingWorkCount);
 
-                var workerTasks = new Task[concurrency];
+                var workerTasks = new Task[maxWorkers];
 
-                for (int w = 0; w < concurrency; w++)
+                for (int w = 0; w < maxWorkers; w++)
                 {
                     workerTasks[w] = Task.Run(async () =>
                     {
@@ -205,11 +206,19 @@ namespace AstraSize.Services
                                 continue;
                             }
 
+                            using var lease = await controller.AcquireAsync(ct).ConfigureAwait(false);
                             try
                             {
                                 var (node, currentPath, depth) = item;
 
-                                if (!NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, subDirs, files, out var error))
+                                var dirSw = Stopwatch.StartNew();
+                                bool ok = NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, subDirs, files, out var error);
+                                dirSw.Stop();
+
+                                bool isNetErr = !ok && AdaptiveConcurrencyController.IsNetworkOrFatalError(error);
+                                lease.Report(dirSw.Elapsed.TotalMilliseconds, isNetErr);
+
+                                if (!ok)
                                 {
                                     node.ErrorMessage = error ?? "アクセス拒否";
                                     continue;

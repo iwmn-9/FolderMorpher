@@ -327,8 +327,82 @@ namespace FolderMorpher.Services.Testing
                 var uncDirs = new List<NativeFindEntry>();
                 var uncFiles = new List<NativeFindEntry>();
                 bool fallbackOk = NativeDirectoryEnumerator.TryEnumerateEntries(testDir, uncDirs, uncFiles, out var fallbackErr);
-                if (!fallbackOk || fallbackErr != null)
-                    throw new InvalidOperationException($"4-stage fallback enumeration failed: {fallbackErr}");
+                // 7. Adaptive Concurrency (ADR 80: 初期値2・下限2・上限4・即時崖落ち・天井クランプ) 検証
+                {
+                    // A. 初期状態と下限・上限の不変契約
+                    var ctrl = new AdaptiveConcurrencyController();
+                    if (ctrl.CurrentConcurrency != 2)
+                        throw new InvalidOperationException($"ADR 80 Initial concurrency expected 2, got {ctrl.CurrentConcurrency}");
+                    if (ctrl.SessionMaxCeiling != 4)
+                        throw new InvalidOperationException($"ADR 80 Initial ceiling expected 4, got {ctrl.SessionMaxCeiling}");
+                    if (AdaptiveConcurrencyController.MinConcurrency != 2)
+                        throw new InvalidOperationException($"ADR 80 MinConcurrency must be 2, got {AdaptiveConcurrencyController.MinConcurrency}");
+
+                    // B. ベースライン確立と昇格 (Additive Increase: +1)
+                    // 50サンプルの正常低レイテンシ (10ms)
+                    for (int i = 0; i < 50; i++)
+                    {
+                        ctrl.RecordSample(10.0, isError: false);
+                    }
+                    if (!ctrl.BaselineEstablished)
+                        throw new InvalidOperationException("ADR 80 Baseline was not established after 50 samples.");
+                    if (ctrl.CurrentConcurrency != 2)
+                        throw new InvalidOperationException($"ADR 80 Concurrency during baseline should remain 2, got {ctrl.CurrentConcurrency}");
+
+                    // さらに40回安定稼働 ➔ 3 へ昇格 (+1)
+                    for (int i = 0; i < 45; i++)
+                    {
+                        ctrl.RecordSample(10.0, isError: false);
+                    }
+                    if (ctrl.CurrentConcurrency != 3)
+                        throw new InvalidOperationException($"ADR 80 Concurrency after stable period expected 3, got {ctrl.CurrentConcurrency}");
+
+                    // C. ネットワークエラー検知による即時崖落ち (3 ➔ 2) & 天井クランプ (2)
+                    ctrl.RecordSample(10.0, isError: true);
+                    if (ctrl.CurrentConcurrency != 2)
+                        throw new InvalidOperationException($"ADR 80 Concurrency after error expected 2, got {ctrl.CurrentConcurrency}");
+                    if (ctrl.SessionMaxCeiling != 2)
+                        throw new InvalidOperationException($"ADR 80 Session ceiling after error expected 2, got {ctrl.SessionMaxCeiling}");
+
+                    // エラー後はどれだけ正常サンプルが続いても天井クランプ (2) により昇格しないこと
+                    for (int i = 0; i < 100; i++)
+                    {
+                        ctrl.RecordSample(10.0, isError: false);
+                    }
+                    if (ctrl.CurrentConcurrency != 2)
+                        throw new InvalidOperationException($"ADR 80 Concurrency must remain clamped at 2, got {ctrl.CurrentConcurrency}");
+
+                    // D. Win32 ネットワークエラー文字列判定の完全性検証
+                    if (!AdaptiveConcurrencyController.IsNetworkOrFatalError("Win32 Error 58: ERROR_BAD_NET_RESP"))
+                        throw new InvalidOperationException("ADR 80 Failed to detect ERROR_BAD_NET_RESP");
+                    if (!AdaptiveConcurrencyController.IsNetworkOrFatalError("The network path was not found (59)"))
+                        throw new InvalidOperationException("ADR 80 Failed to detect ERROR_UNEXP_NET_ERR");
+                    if (!AdaptiveConcurrencyController.IsNetworkOrFatalError("RPC タイムアウトが発生しました"))
+                        throw new InvalidOperationException("ADR 80 Failed to detect RPC timeout");
+                    if (AdaptiveConcurrencyController.IsNetworkOrFatalError("ファイルが見つかりません"))
+                        throw new InvalidOperationException("ADR 80 False positive on normal file error");
+
+                    // E. スロット獲得・解放の並行性（デッドロックフリー）検証
+                    var slotCtrl = new AdaptiveConcurrencyController();
+                    var tasks = new Task[4];
+                    int completions = 0;
+                    for (int t = 0; t < 4; t++)
+                    {
+                        tasks[t] = Task.Run(async () =>
+                        {
+                            for (int cycle = 0; cycle < 20; cycle++)
+                            {
+                                using var lease = await slotCtrl.AcquireAsync(CancellationToken.None);
+                                await Task.Delay(1);
+                                lease.Report(5.0, isError: false);
+                            }
+                            Interlocked.Increment(ref completions);
+                        });
+                    }
+                    Task.WaitAll(tasks);
+                    if (completions != 4)
+                        throw new InvalidOperationException($"ADR 80 Concurrent slot lease expected 4 completions, got {completions}");
+                }
             }
             finally
             {

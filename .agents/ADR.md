@@ -730,3 +730,32 @@
   5. **自動回帰テストによる恒久保護**:
      - `RegressionTestSuite.Search.cs` に「セクション 13: 安全契約（JIT権限）、content:修飾子の必須意味論、およびフィールド跨ぎAND積集合の検証」を新設。全 8 ドメイン 8/8 ALL PASSED を自動検証・堅持。
 
+---
+
+### ADR 80: ファイルサーバー保護型 適応並列度制御 (Adaptive Concurrency Controller)
+*(v2.2.7 本番施工 & ADR 80)*
+
+- **背景と課題**:
+  - **固定並列度（2固定）と速度向上のトレードオフ**: これまで FolderMorpher はファイルサーバー（SMB/CIFS）の負荷保護のため並列度2固定（デュアルワーカー）を採用してきた。極めて安全である一方、高速な10GbE / SSD環境や余力のあるWindows Server環境では、さらなるスキャン高速化の余地があった。
+  - **一般的なAdaptive Concurrencyの致命的欠点**: TCP BBRや一般的なHTTPクライアントの動的並列度は「パケットロスやレイテンシ悪化などの壁にぶち当たるまで帯域を攻める」アプローチをとる。しかしファイルサーバー（特にNASやSamba）に対してこれをやると、キュー堆積・ディスクシーク競合により「遅くなった」と観測した時点ですでにサーバーが大渋滞し、他部署の通常業務（Excelが開かない・基幹連携タイムアウト等）を巻き込んでしまう。
+  - **平均値の罠とチャタリング（脈打ち）**: 平均レイテンシは悪化の初動（最初のスパイク）を鈍く見せてしまう。また、負荷を検知して並列度を下げ、少し改善したからといってすぐに再昇格すると、ツール自身が脈打ってサーバーを揺さぶり続ける迷惑装置と化す。
+- **施工内容**:
+  1. **「手遅れになる前に崖から落ちるように逃げるロジック」が本体**:
+     - 上げるロジックではなく、降下制御（Cliff Decrease）を主軸に設計した `AdaptiveConcurrencyController` を新設。
+  2. **初期値2・下限2・上限4の不変安全契約**:
+     - 既存の安全正本（並列2固定）を絶対に下回らない（`MinConcurrency = 2`, `DefaultConcurrency = 2`）。
+     - 上限はまずは `MaxConcurrency = 4` で厳格にキャップ。本番サーバーを不用意に殴るリスクを根絶。
+  3. **p95 / ジッター監視 ＆ 慎重な加算昇格 (Additive Increase: +1)**:
+     - 直近100件のスライディングウィンドウ（RingBuffer）でレイテンシを追跡。
+     - 最初の約50サンプルでベースライン（p50/p95 latency, スループット）を確立。
+     - クールダウン中でなく、直近 p95 が `baseline * 1.3` 以下かつエラーゼロで一定期間（40サンプル以上）安定した場合のみ、慎重に 1 段階ずつ昇格（2 ➔ 3 ➔ 4）。
+  4. **限界効用 (Marginal Gain) 監視**:
+     - 並列度を増やした後の評価期間（直近30サンプル）で、スループット改善が +5% 未満またはレイテンシ悪化（p95 > baseline * 1.4）の場合、「並列化の恩恵なし、ボトルネックはサーバー側」と即座に判断。元の並列度に戻してその上限をクランプ。
+  5. **即時崖落ち降下 (Immediate Cliff Decrease) ＆ 不可逆天井クランプ (One-Way Ceiling Clamp)**:
+     - Win32 ネットワークエラー（`ERROR_BAD_NET_RESP` 58, `ERROR_UNEXP_NET_ERR` 59, `ERROR_NETNAME_DELETED` 64, `ERROR_NETWORK_BUSY` 54 等）やタイムアウト、異常遅延（`latency > baseline_p95 * 3.5`）を検知した場合、即座に並列度 2 へ崖落ち、30秒クールダウン。
+     - 一度過負荷を検知してバックオフしたセッション中はその上限に二度と挑戦しない（不可逆天井クランプによりチャタリング・脈打ちを完全抑止）。
+  6. **SafeFileEnumerator / DiskScanService / ContentSearch 全走査基盤へ統合**:
+     - ディレクトリ列挙（`SafeFileEnumerator.cs`）、容量スキャン（`DiskScanService.cs`）、および本文抽出（`SearchEngineService.FilterByContentAsync`）の全並列ループを `AdaptiveConcurrencyController` の非同期スロット調停（`AcquireAsync` / `SlotLease`）に統合。
+  7. **自動回帰テストによる恒久保護**:
+     - `RegressionTestSuite.Storage.cs` に「セクション 7: Adaptive Concurrency (ADR 80)」を新設。初期値・下限・上限の不変契約、ベースライン確立、昇格、即時崖落ち、天井クランプ、Win32エラー判定、並行スロットリースのデッドロックフリーを自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 
@@ -128,7 +129,7 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// 並列度2（デュアルワーカー）による高効率な並行ディレクトリスキャン（FileInfo 返却・互換用）。
+        /// 適応型並列制御（Adaptive Concurrency: 初期値2・下限2・上限4・即時崖落ち降下 - ADR 80）による高効率な並行ディレクトリスキャン（FileInfo 返却・互換用）。
         /// </summary>
         public static async Task<List<FileInfo>> EnumerateFilesSafeParallelAsync(
             string rootPath,
@@ -143,7 +144,7 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// 並列度2（デュアルワーカー）による高効率な並行ディレクトリスキャン（ScannedFileEntry 返却・高速用）。
+        /// 適応型並列制御（Adaptive Concurrency: 初期値2・下限2・上限4・即時崖落ち降下 - ADR 80）による高効率な並行ディレクトリスキャン（ScannedFileEntry 返却・高速用）。
         /// 一括取得したファイルサイズ・日時属性をそのまま保持し、後続の個別属性再問い合わせ（再stat）を完全根絶する。
         /// </summary>
         public static async Task<List<ScannedFileEntry>> EnumerateFileEntriesParallelAsync(
@@ -162,7 +163,8 @@ namespace FolderMorpher.Services
             var folderQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
             bool matchAll = searchPattern == "*.*" || searchPattern == "*";
             int scannedFilesCount = 0;
-            const int concurrency = 2; // 並列度2
+            var controller = new AdaptiveConcurrencyController();
+            int maxWorkers = AdaptiveConcurrencyController.MaxConcurrency; // 4ワーカーまで待機可能
 
             // ★ Sol指摘: Worker起動レースの解消
             // root フォルダーを先に一度同期列挙し、サブフォルダーをキューへ投入してからワーカーを起動する。
@@ -243,9 +245,9 @@ namespace FolderMorpher.Services
             }
 
             int activeWorkers = 0;
-            var tasks = new Task[concurrency];
+            var tasks = new Task[maxWorkers];
 
-            for (int w = 0; w < concurrency; w++)
+            for (int w = 0; w < maxWorkers; w++)
             {
                 tasks[w] = Task.Run(async () =>
                 {
@@ -266,6 +268,7 @@ namespace FolderMorpher.Services
                         }
 
                         Interlocked.Increment(ref activeWorkers);
+                        using var lease = await controller.AcquireAsync(ct);
                         try
                         {
                             if (coverage != null)
@@ -273,7 +276,14 @@ namespace FolderMorpher.Services
                                 lock (coverage) coverage.TotalFoldersScanned++;
                             }
 
-                            if (!NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, localSubDirs, localFiles, out var error))
+                            var sw = Stopwatch.StartNew();
+                            bool ok = NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, localSubDirs, localFiles, out var error);
+                            sw.Stop();
+
+                            bool isNetErr = !ok && AdaptiveConcurrencyController.IsNetworkOrFatalError(error);
+                            lease.Report(sw.Elapsed.TotalMilliseconds, isNetErr);
+
+                            if (!ok)
                             {
                                 if (coverage != null)
                                 {

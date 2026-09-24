@@ -194,6 +194,16 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
     - **Indexed Search の `(Name OR Content)` INTERSECT 積集合**: 各グループに対し `(Name matches G_i OR Content matches G_i)` の FileId 集合を構築し、全グループを SQLite の `INTERSECT` で積集合結合。フィールド跨ぎAND（例: 名前に「契約書」、本文に「2026」）を 100% 漏れなく検出し、Direct Search と Indexed Search の結果が数学的に完全一致。
     - **生体反応タイマー（Stopwatch）正本化**: ストリーミングバッチ更新時に `searchTotalSw.Elapsed` を渡し、タイマーが 0ms に巻き戻る表示バグを解消。
     - **回帰テスト（Domain 8 セクション 13）新設**: JIT権限、content:修飾子、フィールド跨ぎAND積集合を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+24. **ファイルサーバー保護型 適応並列度制御（Adaptive Concurrency Controller: 初期値2・下限2・上限4・即時崖落ち降下・天井クランプ）（v2.2.7 / ADR 80）**:
+    - **「手遅れになる前に崖から落ちるように逃げるロジック」が本体**: SMB/RPC は一度過負荷（キュー堆積・ディスクI/O飽和）になると、クライアントが検知した時には既に大渋滞を形成している。そのため、TCP slow start よりも遥かに臆病な制御則を確立。
+    - **初期値2・下限2・上限4の不変契約**: 既存の安全正本（並列2固定）を絶対に下回らない（Min=2, Default=2）。まずは4でキャップし、本番ファイルサーバーを殴るリスクを根絶。
+    - **p95 / ジッター監視 ＆ 加算昇格 (Additive Increase: +1)**: 平均値の罠を排除し、直近ウィンドウの p95 latency を監視。ベースライン計測後、安定・低ジッター（`p95 <= baseline * 1.3`）かつエラーゼロが一定期間継続した場合のみ慎重に `+1`。
+    - **限界効用 (Marginal Gain) 監視**: 昇格後、スループット改善が +5% 未満またはレイテンシ悪化の場合、即座に元の並列度に戻してセッション上限をクランプ。
+    - **即時崖落ち降下 (Immediate Cliff Decrease) ＆ 天井クランプ (One-Way Ceiling Clamp)**:
+      - Win32 ネットワークエラー（`ERROR_BAD_NET_RESP`, `ERROR_UNEXP_NET_ERR`, `ERROR_NETNAME_DELETED` 等）やタイムアウト、異常遅延（`latency > baseline_p95 * 3.5`）を検知した場合、即座に並列度 2 へ崖落ち、30秒クールダウン。
+      - 一度過負荷を検知してバックオフしたセッション中はその上限に二度と挑戦しない（不可逆天井クランプによりチャタリング・脈打ちを完全抑止）。
+    - **SafeFileEnumerator / DiskScanService / ContentSearch 全走査基盤へ統合**: ディレクトリ列挙、容量スキャン、本文抽出（Office/PDF/テキスト）のすべてで `AdaptiveConcurrencyController` のスロット調停を貫通。
+    - **回帰テスト（Domain 2 セクション 7）新設**: 初期値・下限・上限の不変契約、ベースライン確立、昇格、即時崖落ち、天井クランプ、Win32エラー判定、並行スロットリースのデッドロックフリーを自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
 ---
 
 ---
