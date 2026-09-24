@@ -32,6 +32,7 @@ namespace FolderMorpher.Models
     {
         public string RawQuery { get; set; } = string.Empty;
         public List<string> Keywords { get; set; } = new();
+        public List<List<string>> KeywordGroups { get; set; } = new();
         public List<string> ExactPhrases { get; set; } = new();
         public List<string> ExcludedWords { get; set; } = new();
         public HashSet<string> Extensions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -87,6 +88,7 @@ namespace FolderMorpher.Models
             return new SearchQuery
             {
                 Keywords = new List<string>(Keywords),
+                KeywordGroups = KeywordGroups.Select(g => new List<string>(g)).ToList(),
                 ExactPhrases = new List<string>(ExactPhrases),
                 ExcludedWords = new List<string>(ExcludedWords),
                 Extensions = new HashSet<string>(Extensions, StringComparer.OrdinalIgnoreCase),

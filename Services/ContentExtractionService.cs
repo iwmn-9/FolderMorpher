@@ -208,7 +208,16 @@ namespace FolderMorpher.Services
         /// </summary>
         public static async Task<string?> SearchTextContentAsync(string filePath, IReadOnlyList<string> keywords, CancellationToken ct)
         {
-            if (keywords.Count == 0) return null;
+            var groups = keywords.Select(k => new List<string> { k }).ToList();
+            return await SearchTextContentAsync(filePath, groups, ct);
+        }
+
+        /// <summary>
+        /// テキストファイルをストリーム走査し、ORグループ群（各グループ内のいずれかに一致、全グループを満たす）の包含判定とスニペット抽出を高速実行。
+        /// </summary>
+        public static async Task<string?> SearchTextContentAsync(string filePath, IReadOnlyList<List<string>> requiredGroups, CancellationToken ct)
+        {
+            if (requiredGroups.Count == 0) return null;
 
             try
             {
@@ -229,31 +238,34 @@ namespace FolderMorpher.Services
 
                 // 行単位ストリーム走査
                 using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true);
-                var foundKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var satisfiedGroups = new HashSet<int>();
                 string? firstSnippet = null;
 
                 string? line;
                 while ((line = await reader.ReadLineAsync(ct)) != null)
                 {
-                    foreach (var kw in keywords)
+                    for (int g = 0; g < requiredGroups.Count; g++)
                     {
-                        if (!foundKeywords.Contains(kw))
+                        if (satisfiedGroups.Contains(g)) continue;
+
+                        foreach (var kw in requiredGroups[g])
                         {
                             int idx = line.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
                             if (idx >= 0)
                             {
-                                foundKeywords.Add(kw);
+                                satisfiedGroups.Add(g);
                                 if (firstSnippet == null)
                                 {
                                     firstSnippet = ExtractSnippet(line, idx, kw.Length);
                                 }
+                                break;
                             }
                         }
                     }
 
-                    if (foundKeywords.Count == keywords.Count)
+                    if (satisfiedGroups.Count == requiredGroups.Count)
                     {
-                        return firstSnippet ?? keywords[0];
+                        return firstSnippet ?? (requiredGroups[0].Count > 0 ? requiredGroups[0][0] : string.Empty);
                     }
                 }
             }
@@ -266,8 +278,17 @@ namespace FolderMorpher.Services
         /// </summary>
         public static bool SearchOfficeContent(string filePath, IReadOnlyList<string> keywords, out string snippet)
         {
+            var groups = keywords.Select(k => new List<string> { k }).ToList();
+            return SearchOfficeContent(filePath, groups, out snippet);
+        }
+
+        /// <summary>
+        /// Officeファイル（Excel/Word/PowerPoint）をストリーム走査し、ORグループ群の包含判定を高速実行（Early Exit対応）。
+        /// </summary>
+        public static bool SearchOfficeContent(string filePath, IReadOnlyList<List<string>> requiredGroups, out string snippet)
+        {
             snippet = string.Empty;
-            if (keywords.Count == 0) return false;
+            if (requiredGroups.Count == 0) return false;
 
             try
             {
@@ -285,32 +306,36 @@ namespace FolderMorpher.Services
                         using var reader = new StreamReader(stream, Encoding.UTF8);
                         string text = reader.ReadToEnd();
 
-                        bool allFound = true;
+                        var sharedSatisfied = new HashSet<int>();
                         string firstSnippet = string.Empty;
-                        foreach (var kw in keywords)
+
+                        for (int g = 0; g < requiredGroups.Count; g++)
                         {
-                            int idx = text.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
-                            if (idx >= 0)
+                            foreach (var kw in requiredGroups[g])
                             {
-                                if (string.IsNullOrEmpty(firstSnippet)) firstSnippet = ExtractSnippet(text, idx, kw.Length);
-                            }
-                            else
-                            {
-                                allFound = false;
-                                break;
+                                int idx = text.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
+                                if (idx >= 0)
+                                {
+                                    sharedSatisfied.Add(g);
+                                    if (string.IsNullOrEmpty(firstSnippet))
+                                    {
+                                        firstSnippet = ExtractSnippet(text, idx, kw.Length);
+                                    }
+                                    break;
+                                }
                             }
                         }
 
-                        if (allFound)
+                        if (sharedSatisfied.Count == requiredGroups.Count)
                         {
                             snippet = firstSnippet;
-                            return true; // sharedStrings で全キーワードが揃ったので Early exit!
+                            return true; // sharedStrings で全グループが揃ったので Early exit!
                         }
                     }
                 }
 
                 // Word (.docx), PowerPoint (.pptx), または sharedStrings だけでは見つからなかった Excel の探索
-                var foundKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var foundGroups = new HashSet<int>();
                 string firstFoundSnippet = string.Empty;
 
                 foreach (var entry in zip.Entries)
@@ -332,23 +357,26 @@ namespace FolderMorpher.Services
                     string xml = reader.ReadToEnd();
                     string clean = Regex.Replace(xml, @"<[^>]+>", " ");
 
-                    foreach (var kw in keywords)
+                    for (int g = 0; g < requiredGroups.Count; g++)
                     {
-                        if (!foundKeywords.Contains(kw))
+                        if (foundGroups.Contains(g)) continue;
+
+                        foreach (var kw in requiredGroups[g])
                         {
                             int idx = clean.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
                             if (idx >= 0)
                             {
-                                foundKeywords.Add(kw);
+                                foundGroups.Add(g);
                                 if (string.IsNullOrEmpty(firstFoundSnippet))
                                 {
                                     firstFoundSnippet = ExtractSnippet(clean, idx, kw.Length);
                                 }
+                                break;
                             }
                         }
                     }
 
-                    if (foundKeywords.Count == keywords.Count)
+                    if (foundGroups.Count == requiredGroups.Count)
                     {
                         snippet = firstFoundSnippet;
                         return true;

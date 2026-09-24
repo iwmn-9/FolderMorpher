@@ -955,6 +955,66 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(s11Root, true); } catch { }
                 }
             }
+
+            // 12. 【ADR 78】カンマおよびパイプによるキーワードOR検索（AND of ORs）の検証
+            {
+                // A. パーサーの検証
+                var qOrComma = SearchQueryParser.Parse("見積,請求 2026");
+                if (qOrComma.KeywordGroups.Count != 2)
+                    throw new Exception($"ADR 78 Parser Failed: Expected 2 keyword groups, got {qOrComma.KeywordGroups.Count}");
+                if (qOrComma.KeywordGroups[0].Count != 2 || qOrComma.KeywordGroups[0][0] != "見積" || qOrComma.KeywordGroups[0][1] != "請求")
+                    throw new Exception("ADR 78 Parser Failed: Group 0 did not match [見積, 請求]");
+                if (qOrComma.KeywordGroups[1].Count != 1 || qOrComma.KeywordGroups[1][0] != "2026")
+                    throw new Exception("ADR 78 Parser Failed: Group 1 did not match [2026]");
+
+                var qOrPipe = SearchQueryParser.Parse("契約|約款");
+                if (qOrPipe.KeywordGroups.Count != 1 || qOrPipe.KeywordGroups[0].Count != 2)
+                    throw new Exception("ADR 78 Parser Failed: Pipe OR group count mismatch");
+
+                var qQuoted = SearchQueryParser.Parse("\"見積,請求.csv\"");
+                if (!qQuoted.ExactPhrases.Contains("見積,請求.csv"))
+                    throw new Exception("ADR 78 Parser Failed: Quoted comma keyword should be ExactPhrase");
+
+                // B. 実検索（SQLite FTS5 ＆ Direct Search）の検証
+                string s12Root = Path.Combine(Path.GetTempPath(), "FM_Reg_S12_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(s12Root);
+                string s12Db = Path.Combine(s12Root, "ContentIndex.db");
+
+                try
+                {
+                    string f1 = Path.Combine(s12Root, "見積書_2026.pdf");
+                    string f2 = Path.Combine(s12Root, "請求書_2026.pdf");
+                    string f3 = Path.Combine(s12Root, "納品書_2026.pdf");
+                    string f4 = Path.Combine(s12Root, "見積書_2025.pdf");
+
+                    File.WriteAllText(f1, "dummy", Encoding.UTF8);
+                    File.WriteAllText(f2, "dummy", Encoding.UTF8);
+                    File.WriteAllText(f3, "dummy", Encoding.UTF8);
+                    File.WriteAllText(f4, "dummy", Encoding.UTF8);
+
+                    var s12Service = new ContentIndexService(s12Db);
+                    await s12Service.IndexFolderAsync(s12Root, null, CancellationToken.None);
+
+                    // 1. FTS5 インデックス検索: "見積,請求 2026"
+                    var indexedHits = await s12Service.SearchIndexedAsync(qOrComma, s12Root, CancellationToken.None);
+                    if (indexedHits.Count != 2)
+                        throw new Exception($"ADR 78 Indexed Search Failed: Expected 2 hits, got {indexedHits.Count}");
+                    if (!indexedHits.Any(h => h.FullPath.EndsWith("見積書_2026.pdf")) || !indexedHits.Any(h => h.FullPath.EndsWith("請求書_2026.pdf")))
+                        throw new Exception("ADR 78 Indexed Search Failed: Did not match expected files (見積書_2026 and 請求書_2026)");
+
+                    // 2. DirectFolder 直接走査: "見積,請求 2026"
+                    var engine = new SearchEngineService();
+                    var directHits = await engine.SearchDirectFolderAsync(s12Root, qOrComma, null, null, CancellationToken.None);
+                    if (directHits.Count != 2)
+                        throw new Exception($"ADR 78 Direct Search Failed: Expected 2 hits, got {directHits.Count}");
+                    if (!directHits.Any(h => h.FullPath.EndsWith("見積書_2026.pdf")) || !directHits.Any(h => h.FullPath.EndsWith("請求書_2026.pdf")))
+                        throw new Exception("ADR 78 Direct Search Failed: Did not match expected files (見積書_2026 and 請求書_2026)");
+                }
+                finally
+                {
+                    try { Directory.Delete(s12Root, true); } catch { }
+                }
+            }
         }
     }
 }

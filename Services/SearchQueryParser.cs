@@ -145,11 +145,37 @@ namespace FolderMorpher.Services
                 return;
             }
 
-            // Regular keyword
-            string cleanKeyword = StripQuotes(token);
-            if (!string.IsNullOrEmpty(cleanKeyword))
+            // Regular keyword (supports OR via comma ',' or pipe '|')
+            string cleanToken = StripQuotes(token);
+            if (!string.IsNullOrEmpty(cleanToken))
             {
-                query.Keywords.Add(cleanKeyword);
+                if (cleanToken.Contains(',') || cleanToken.Contains('|'))
+                {
+                    var orWords = cleanToken.Split(new[] { ',', '|' }, StringSplitOptions.RemoveEmptyEntries)
+                                            .Select(w => StripQuotes(w.Trim()))
+                                            .Where(w => !string.IsNullOrEmpty(w))
+                                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                                            .ToList();
+                    if (orWords.Count > 0)
+                    {
+                        query.KeywordGroups.Add(orWords);
+                        foreach (var w in orWords)
+                        {
+                            if (!query.Keywords.Contains(w, StringComparer.OrdinalIgnoreCase))
+                            {
+                                query.Keywords.Add(w);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    query.KeywordGroups.Add(new List<string> { cleanToken });
+                    if (!query.Keywords.Contains(cleanToken, StringComparer.OrdinalIgnoreCase))
+                    {
+                        query.Keywords.Add(cleanToken);
+                    }
+                }
             }
         }
 

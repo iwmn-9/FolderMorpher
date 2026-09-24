@@ -1437,19 +1437,31 @@ namespace FolderMorpher.Services
                         return results;
                     }
 
-                    // キーワードあり: 本文 (ContentFts) と ファイル名 (MetadataFts) のハイブリッド検索
-                    var trigramWords = new List<string>();
-                    foreach (var kw in keywords)
+                    // キーワードあり: 本文 (ContentFts) と ファイル名 (MetadataFts) のハイブリッド検索（ORグループ対応）
+                    var keywordGroups = (query.KeywordGroups.Count > 0 ? query.KeywordGroups : keywords.Select(k => new List<string> { k }).ToList())
+                        .Where(g => g.Count > 0 && g.Any(w => !string.IsNullOrWhiteSpace(w)))
+                        .Select(g => g.Where(w => !string.IsNullOrWhiteSpace(w)).Select(w => w.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList())
+                        .ToList();
+
+                    // A. FTS5 MATCH 用（全単語が3文字以上のグループ）と SQL LIKE 用（1〜2文字を含むグループ）に分類
+                    var ftsGroups = new List<List<string>>();
+                    var likeGroups = new List<List<string>>();
+
+                    foreach (var grp in keywordGroups)
                     {
-                        if (string.IsNullOrWhiteSpace(kw)) continue;
-                        string trimmed = kw.Trim();
-                        if (trimmed.Length >= 3) trigramWords.Add(trimmed);
-                        else shortWords.Add(trimmed);
+                        if (grp.All(w => w.Length >= 3))
+                        {
+                            ftsGroups.Add(grp);
+                        }
+                        else
+                        {
+                            likeGroups.Add(grp);
+                        }
                     }
 
-                    hasTrigramMatch = trigramWords.Count > 0;
+                    hasTrigramMatch = ftsGroups.Count > 0;
 
-                    // A. ファイル名検索クエリ (MetadataFts MATCH または f.Name LIKE)
+                    // ファイル名検索クエリ (MetadataFts MATCH または f.Name LIKE)
                     var nameClauses = new List<string>();
                     nameClauses.Add("f.Status >= 0");
 
@@ -1457,28 +1469,35 @@ namespace FolderMorpher.Services
                     if (hasTrigramMatch)
                     {
                         nameFromSql = "MetadataFts m JOIN IndexedFiles f ON m.rowid = f.FileId";
-                        var matchTerms = trigramWords.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
-                        string metaMatch = string.Join(" AND ", matchTerms);
+                        var ftsGroupExprs = ftsGroups.Select(grp =>
+                        {
+                            var terms = grp.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
+                            return grp.Count > 1 ? "(" + string.Join(" OR ", terms) + ")" : terms.First();
+                        });
+                        string metaMatch = string.Join(" AND ", ftsGroupExprs);
                         nameClauses.Add("MetadataFts MATCH @metaQuery");
                         cmd.Parameters.AddWithValue("@metaQuery", metaMatch);
-
-                        for (int i = 0; i < shortWords.Count; i++)
-                        {
-                            string pName = $"@nameShort_{i}";
-                            nameClauses.Add($"f.Name LIKE {pName} ESCAPE '\\'");
-                            string escShort = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                            cmd.Parameters.AddWithValue(pName, escShort);
-                        }
                     }
                     else
                     {
                         nameFromSql = "IndexedFiles f";
-                        for (int i = 0; i < shortWords.Count; i++)
+                    }
+
+                    // likeGroups の処理（各グループ内は OR、グループ同士は AND）
+                    for (int gIdx = 0; gIdx < likeGroups.Count; gIdx++)
+                    {
+                        var grp = likeGroups[gIdx];
+                        var orClauses = new List<string>();
+                        for (int wIdx = 0; wIdx < grp.Count; wIdx++)
                         {
-                            string pName = $"@nameShort_{i}";
-                            nameClauses.Add($"f.Name LIKE {pName} ESCAPE '\\'");
-                            string escShort = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                            cmd.Parameters.AddWithValue(pName, escShort);
+                            string pName = $"@nameOr_{gIdx}_{wIdx}";
+                            orClauses.Add($"f.Name LIKE {pName} ESCAPE '\\'");
+                            string esc = "%" + grp[wIdx].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                            cmd.Parameters.AddWithValue(pName, esc);
+                        }
+                        if (orClauses.Count > 0)
+                        {
+                            nameClauses.Add("(" + string.Join(" OR ", orClauses) + ")");
                         }
                     }
 
@@ -1503,18 +1522,31 @@ namespace FolderMorpher.Services
 
                         if (hasTrigramMatch)
                         {
-                            var matchTerms = trigramWords.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
-                            string ftsMatch = string.Join(" AND ", matchTerms);
+                            var ftsGroupExprs = ftsGroups.Select(grp =>
+                            {
+                                var terms = grp.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
+                                return grp.Count > 1 ? "(" + string.Join(" OR ", terms) + ")" : terms.First();
+                            });
+                            string ftsMatch = string.Join(" AND ", ftsGroupExprs);
                             ftsClauses.Add("ContentFts MATCH @ftsQuery");
                             cmd.Parameters.AddWithValue("@ftsQuery", ftsMatch);
                         }
 
-                        for (int i = 0; i < shortWords.Count; i++)
+                        for (int gIdx = 0; gIdx < likeGroups.Count; gIdx++)
                         {
-                            string paramName = $"@shortWord_{i}";
-                            ftsClauses.Add($"(c.Body LIKE {paramName} ESCAPE '\\' OR f.Name LIKE {paramName} ESCAPE '\\')");
-                            string escVal = "%" + shortWords[i].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-                            cmd.Parameters.AddWithValue(paramName, escVal);
+                            var grp = likeGroups[gIdx];
+                            var orClauses = new List<string>();
+                            for (int wIdx = 0; wIdx < grp.Count; wIdx++)
+                            {
+                                string pName = $"@ftsOr_{gIdx}_{wIdx}";
+                                orClauses.Add($"(c.Body LIKE {pName} ESCAPE '\\' OR f.Name LIKE {pName} ESCAPE '\\')");
+                                string esc = "%" + grp[wIdx].Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                                cmd.Parameters.AddWithValue(pName, esc);
+                            }
+                            if (orClauses.Count > 0)
+                            {
+                                ftsClauses.Add("(" + string.Join(" OR ", orClauses) + ")");
+                            }
                         }
 
                         for (int i = 0; i < query.ExcludedWords.Count; i++)

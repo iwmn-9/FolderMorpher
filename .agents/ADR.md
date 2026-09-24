@@ -680,3 +680,27 @@
      - atchYield によるストリーミング合流時、150ms のデバウンス制御付きで ApplyFilterAndSort() を実行し、ファイル名先行表示から本文合流までチラつきなく滑らかにリスト更新。
   6. **自動回帰テストによる恒久保護**:
      - RegressionTestSuite.Search.cs に「セクション 11: 2段階プログレッシブ検索（ファイル名先行通知 & 本文合流）」を新設。全 8 ドメイン 8/8 ALL PASSED を自動検証・堅持。
+---
+
+### ADR 78: カンマ（,）およびパイプ（|）によるキーワードOR検索 ＆ AND-of-ORs 構造化検索
+*(v2.2.6 本番施工 & ADR 78)*
+
+- **背景と課題**:
+  - **キーワードOR検索の欠如**: 従来の検索エンジンでは複数キーワードがすべて AND 結合されていたため、「見積 または 請求」のような複数条件のいずれかに一致するファイルを検索する際、egex: を用いるしかなく直感的な操作が難しかった。
+  - **構文の直感性と入力効率**: 一般的な OR 演算子では英単語としての「or」との曖昧さが生じるため、拡張子指定（ext:pdf,xlsx）と同様に「カンマ（,）またはパイプ（|）でOR」という直感的かつタイピング効率の高い記法が求められた。
+- **施工内容**:
+  1. **クエリモデルの多層化（KeywordGroups）**:
+     - SearchModels.cs の SearchQuery に public List<List<string>> KeywordGroups { get; set; } = new(); を追加。AND-of-ORs（各グループ内はいずれか一致のOR、グループ同士はすべて満たすAND）を構造化表現。
+     - 既存の Keywords プロパティも併存させ、後方互換性を 100% 維持。
+  2. **パーサー（SearchQueryParser）のカンマ/パイプOR解析**:
+     - スペース区切りの各トークンにおいて、未クォート文字列に , または | が含まれる場合、OR グループとして分割・登録。
+     - ダブルクォートで囲まれた文字列（例: "data,backup.csv"）は従来通り ExactPhrases として保護され、カンマを文字通りに解釈。
+  3. **SQLite FTS5 インデックス検索のネイティブOR対応**:
+     - 全単語が3文字以上のグループは、FTS5 MATCH 構文の ("見積" OR "請求") へ直接マッピングし、B-Tree trigram インデックスによるミリ秒検索を実現。
+     - 1〜2文字を含むグループは SQL WHERE 節の (f.Name LIKE @p1 OR f.Name LIKE @p2) へ自動最適化。
+     - 本文検索（ContentFts）でも同様に OR 式を展開。
+  4. **インメモリツリー検索 ＆ 直接走査（Direct Search）への完全展開**:
+     - SearchEngineService.cs に MatchesKeywordGroups を新設し、インメモリおよび直接走査で各グループの包含判定（OR）を共通適用。
+     - FilterByContentAsync および ContentExtractionService.cs（Text, Office, PDF）において equiredGroups に対応し、名前で未充足のグループのみを本文から OR 探索。
+  5. **自動回帰テストによる恒久保護**:
+     - RegressionTestSuite.Search.cs に「セクション 12: カンマおよびパイプによるキーワードOR検索（AND of ORs）」を新設。パーサー、FTS5 インデックス、直接走査の全経路一致を自動検証（8/8 ALL PASSED）。

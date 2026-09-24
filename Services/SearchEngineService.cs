@@ -342,19 +342,10 @@ namespace FolderMorpher.Services
                 if (!query.CompiledRegex.IsMatch(name) && !query.CompiledRegex.IsMatch(fullPath)) return false;
             }
 
-            // ★ Sol指摘: 「本文も検索」の名前 OR 本文意味論（複数キーワード対応）
+            // ★ 「本文も検索」の名前 OR 本文意味論（複数キーワード・ORグループ対応）
             if (query.SearchContentMode && !node.IsDirectory && string.IsNullOrEmpty(query.ContentKeyword))
             {
-                bool allInName = true;
-                foreach (var kw in query.Keywords)
-                {
-                    string target = (kw.IndexOf('\\') >= 0 || kw.IndexOf('/') >= 0) ? fullPath : name;
-                    if (target.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0)
-                    {
-                        allInName = false;
-                        break;
-                    }
-                }
+                bool allInName = MatchesKeywordGroups(name, fullPath, query);
 
                 if (allInName)
                 {
@@ -380,11 +371,7 @@ namespace FolderMorpher.Services
             else
             {
                 // 通常検索、または明示的 content: 指定時
-                foreach (var kw in query.Keywords)
-                {
-                    string target = (kw.IndexOf('\\') >= 0 || kw.IndexOf('/') >= 0) ? fullPath : name;
-                    if (target.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0) return false;
-                }
+                if (!MatchesKeywordGroups(name, fullPath, query)) return false;
 
                 if (!node.IsDirectory && (
                     !string.IsNullOrEmpty(query.ContentKeyword) ||
@@ -413,6 +400,38 @@ namespace FolderMorpher.Services
                 {
                     needsDeepCheck = false;
                     if (string.IsNullOrEmpty(reason)) reason = "Match";
+                }
+                return true;
+            }
+        }
+
+        private static bool MatchesKeywordGroups(string name, string fullPath, SearchQuery query)
+        {
+            if (query.KeywordGroups.Count > 0)
+            {
+                foreach (var group in query.KeywordGroups)
+                {
+                    if (group.Count == 0) continue;
+                    bool groupMatch = false;
+                    foreach (var kw in group)
+                    {
+                        string target = (kw.IndexOf('\\') >= 0 || kw.IndexOf('/') >= 0) ? fullPath : name;
+                        if (target.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            groupMatch = true;
+                            break;
+                        }
+                    }
+                    if (!groupMatch) return false;
+                }
+                return true;
+            }
+            else
+            {
+                foreach (var kw in query.Keywords)
+                {
+                    string target = (kw.IndexOf('\\') >= 0 || kw.IndexOf('/') >= 0) ? fullPath : name;
+                    if (target.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0) return false;
                 }
                 return true;
             }
@@ -486,19 +505,10 @@ namespace FolderMorpher.Services
                 if (!query.CompiledRegex.IsMatch(name) && !query.CompiledRegex.IsMatch(fullPath)) return false;
             }
 
-            // ★ Sol指摘: 「本文も検索」の名前 OR 本文意味論（複数キーワード対応）
+            // ★ 「本文も検索」の名前 OR 本文意味論（複数キーワード・ORグループ対応）
             if (query.SearchContentMode && !isDir && string.IsNullOrEmpty(query.ContentKeyword))
             {
-                bool allInName = true;
-                foreach (var kw in query.Keywords)
-                {
-                    string target = (kw.IndexOf('\\') >= 0 || kw.IndexOf('/') >= 0) ? fullPath : name;
-                    if (target.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0)
-                    {
-                        allInName = false;
-                        break;
-                    }
-                }
+                bool allInName = MatchesKeywordGroups(name, fullPath, query);
 
                 if (allInName)
                 {
@@ -522,11 +532,7 @@ namespace FolderMorpher.Services
             }
             else
             {
-                foreach (var kw in query.Keywords)
-                {
-                    string target = (kw.IndexOf('\\') >= 0 || kw.IndexOf('/') >= 0) ? fullPath : name;
-                    if (target.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0) return false;
-                }
+                if (!MatchesKeywordGroups(name, fullPath, query)) return false;
 
                 if (!isDir && (
                     !string.IsNullOrEmpty(query.ContentKeyword) ||
@@ -651,69 +657,81 @@ namespace FolderMorpher.Services
                 {
                     string ext = Path.GetExtension(item.FullPath).ToLowerInvariant();
 
-                    // ファイル名/パスに含まれていない不足キーワードを特定
-                    List<string> requiredKeywords;
+                    // ファイル名/パスに含まれていない未充足グループを特定
+                    List<List<string>> requiredGroups = new();
                     if (!string.IsNullOrEmpty(query.ContentKeyword))
                     {
-                        requiredKeywords = new List<string> { query.ContentKeyword };
+                        requiredGroups.Add(new List<string> { query.ContentKeyword });
                     }
-                    else if (query.SearchContentMode && query.Keywords.Count > 0)
+                    else if (query.SearchContentMode)
                     {
-                        requiredKeywords = query.Keywords
-                            .Where(kw =>
+                        var groups = query.KeywordGroups.Count > 0
+                            ? query.KeywordGroups
+                            : query.Keywords.Select(k => new List<string> { k }).ToList();
+
+                        foreach (var grp in groups)
+                        {
+                            bool matchedInName = false;
+                            foreach (var kw in grp)
                             {
                                 bool hasSeparator = kw.Contains('\\') || kw.Contains('/');
                                 string targetString = hasSeparator ? item.FullPath : item.Name;
-                                return targetString.IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0;
-                            })
-                            .ToList();
-                    }
-                    else
-                    {
-                        requiredKeywords = new List<string>();
+                                if (targetString.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
+                                {
+                                    matchedInName = true;
+                                    break;
+                                }
+                            }
+                            if (!matchedInName && grp.Count > 0)
+                            {
+                                requiredGroups.Add(grp);
+                            }
+                        }
                     }
 
-                    // 不足キーワードが0件なら、名前/パスで既に完全一致しているので本文走査不要で即合格
-                    if (requiredKeywords.Count == 0 && !hasOfficeLinkReq)
+                    // 不足グループが0件なら、名前/パスで既に完全一致しているので本文走査不要で即合格
+                    if (requiredGroups.Count == 0 && !hasOfficeLinkReq)
                     {
                         item.MatchedReason = "Name";
                         EmitHit(item);
                     }
-                    else if (requiredKeywords.Count > 0)
+                    else if (requiredGroups.Count > 0)
                     {
+                        string reqDesc = string.Join(" AND ", requiredGroups.Select(g => g.Count > 1 ? "(" + string.Join(" OR ", g) + ")" : (g.Count > 0 ? g[0] : "")));
+
                         // 1. Office (OpenXML: .xlsx, .xlsm, .docx, .pptx)
                         if (OfficeExtensions.Contains(ext))
                         {
-                            if (ContentExtractionService.SearchOfficeContent(item.FullPath, requiredKeywords, out string snippet))
+                            if (ContentExtractionService.SearchOfficeContent(item.FullPath, requiredGroups, out string snippet))
                             {
                                 item.ContentSnippet = snippet;
-                                item.MatchedReason = (query.Keywords.Count > requiredKeywords.Count)
-                                    ? $"Name + Content: \"{string.Join(", ", requiredKeywords)}\""
-                                    : $"Content: \"{string.Join(", ", requiredKeywords)}\"";
+                                item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
+                                    ? $"Name + Content: \"{reqDesc}\""
+                                    : $"Content: \"{reqDesc}\"";
                                 EmitHit(item);
                             }
                         }
                         // 2. PDF (.pdf) with Windows IFilter and pure C# fallback
                         else if (PdfExtensions.Contains(ext))
                         {
-                            if (SearchPdfContentMultiple(item.FullPath, requiredKeywords, out string snippet))
+                            if (SearchPdfContentMultiple(item.FullPath, requiredGroups, out string snippet))
                             {
                                 item.ContentSnippet = snippet;
-                                item.MatchedReason = (query.Keywords.Count > requiredKeywords.Count)
-                                    ? $"Name + PDF Content: \"{string.Join(", ", requiredKeywords)}\""
-                                    : $"PDF Content: \"{string.Join(", ", requiredKeywords)}\"";
+                                item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
+                                    ? $"Name + PDF Content: \"{reqDesc}\""
+                                    : $"PDF Content: \"{reqDesc}\"";
                                 EmitHit(item);
                             }
                         }
                         // 3. Text files (.txt, .csv, .log, .json, code files, etc.)
                         else if (TextExtensions.Contains(ext) || ContentExtractionService.SupportedExtensions.Contains(ext))
                         {
-                            if (await ContentExtractionService.SearchTextContentAsync(item.FullPath, requiredKeywords, token) is { } snippet)
+                            if (await ContentExtractionService.SearchTextContentAsync(item.FullPath, requiredGroups, token) is { } snippet)
                             {
                                 item.ContentSnippet = snippet;
-                                item.MatchedReason = (query.Keywords.Count > requiredKeywords.Count)
-                                    ? $"Name + Content: \"{string.Join(", ", requiredKeywords)}\""
-                                    : $"Content: \"{string.Join(", ", requiredKeywords)}\"";
+                                item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
+                                    ? $"Name + Content: \"{reqDesc}\""
+                                    : $"Content: \"{reqDesc}\"";
                                 EmitHit(item);
                             }
                         }
@@ -763,17 +781,23 @@ namespace FolderMorpher.Services
             return matched.ToList();
         }
 
-        private static bool SearchPdfContentMultiple(string filePath, IReadOnlyList<string> keywords, out string snippet)
+        private static bool SearchPdfContentMultiple(string filePath, IReadOnlyList<List<string>> requiredGroups, out string snippet)
         {
             snippet = string.Empty;
             string firstSnippet = string.Empty;
-            foreach (var kw in keywords)
+            foreach (var grp in requiredGroups)
             {
-                if (!PdfSearchHelper.SearchPdfContent(filePath, kw, out string s))
+                bool grpMatch = false;
+                foreach (var kw in grp)
                 {
-                    return false;
+                    if (PdfSearchHelper.SearchPdfContent(filePath, kw, out string s))
+                    {
+                        grpMatch = true;
+                        if (string.IsNullOrEmpty(firstSnippet)) firstSnippet = s;
+                        break;
+                    }
                 }
-                if (string.IsNullOrEmpty(firstSnippet)) firstSnippet = s;
+                if (!grpMatch) return false;
             }
             snippet = firstSnippet;
             return true;
