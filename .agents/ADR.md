@@ -911,3 +911,35 @@
      - `RegressionTestSuite.Search.cs` に ADR 85 検証を新設。
      - Sol指摘の離れた `ABC...BCD`（偽陽性候補）と連続 `ABCD`（真の合致）を用意し、FTS MATCH で 2 件候補に挙がった後、Progressive Verify により真の 1 件のみに 100% 確定されること、およびスライディングウィンドウ 3文字 trigram AND 結合、`contentless_delete=1` の安全動作を自動検証。
      - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
+
+---
+
+### ADR 86: Agent Ransack 流超高速直接走査 ＆ 2文字日本語検索漏れ根絶 ＆ 500件上限撤去
+*(v2.2.13 本番施工 & ADR 86)*
+
+- **背景 & 動機**:
+  - **インデックス無しでも超高速な本文検索の追求**:
+    - インデックスのない状態でも高速に本文検索できる Agent Ransack（FileLocator Pro）の技法を FolderMorpher に全面導入。
+    - 従来の `SearchDirectFolderAsync` では、ファイル列挙（SafeFileEnumerator）が全件完了するまで本文検査が 1 件も開始されず、大容量フォルダや UNC 共有で数十秒間の待たされ感（フリーズ感）が発生していた。
+  - **2文字日本語キーワード検索の漏れと 500件上限の正体**:
+    - 2文字の日本語（例：「設計」「仕様」「報告」等）で本文検索をかけた際、SQLite trigram は 3文字以上を前提とするため、全候補を原本 Verify に回す設計にしていたが、SQL クエリ内部にハードコードされた `LIMIT 500` の存在により、500件枠から溢れたファイルが原本 Verify に送られず 100% 漏れていた（False Negative）。
+    - さらに、属性検索・名前先行表示・全体検索の各 SQL にも `LIMIT 500` が存在し、大規模ファイルサーバー運用における暗黙の制約となっていた。
+- **施工内容**:
+  1. **500件上限（`LIMIT 500`）の完全撤去**:
+     - `ContentIndexService.cs` における属性検索、ファイル名先行表示、全体検索の全 SQL から `LIMIT 500` を完全撤去。大規模環境でも上限なく全件がヒット・検証されるよう改善。
+  2. **2文字日本語キーワードの検索漏れ根絶**:
+     - `ContentIndexService.cs` の候補抽出条件を `Status IN (0, 1)` に拡大し、`LIMIT 500` 撤去と相まって、2文字以下のキーワードでも該当ファイルが確実に原本 Verify（Aho-Corasick）へ送られ、漏れゼロ（False Negative 0%）を保証。
+  3. **Agent Ransack 流 Producer-Consumer Channel パイプライン（列挙と本文走査の完全並行化）**:
+     - `SearchEngineService.SearchDirectFolderAsync` において `System.Threading.Channels.Channel<SearchResultItem>` を導入。
+     - ファイル列挙（Producer）で見つかった本文候補（`needsDeepCheck`）を即座に Channel へ投入。
+     - バックグラウンドで待機する Consumer ワーカー群（`AdaptiveConcurrencyController` 制御下、最大8並行）が即座にファイルを開いて本文検査を開始。
+     - 検索開始からわずか数百ミリ秒で 1 件目のヒットが画面（UI）にポップアップ表示される超高速ストリーミングを実現。
+     - 単一ファイルの本文検査ロジックを `InspectContentItemAsync` として一本化（正本の単一性を維持）。
+  4. **Agent Ransack 流 I/O & XML 解析最適化**:
+     - `FileOptions.SequentialScan` ＋ 64KB バッファ（`FileStream`, `StreamReader`）を `ContentExtractionService` のテキスト・Office 解析に全面適用し、OS の Read-Ahead キャッシュを最大活用。
+     - `StripXmlTagsFast`: Office OpenXML（`.docx`, `.xlsx`, `.pptx`）のタグ除去において正規表現（`Regex.Replace`）を全廃し、1パスの高速 char スキャン＆空白圧縮へ刷新。
+     - Office 本文走査において生XMLでの事前キーワード存在チェック（Pre-Filter）を導入し、ヒットしないファイルの不要なタグ除去をスキップして即脱落。
+  5. **自動回帰テストによる恒久保護**:
+     - `RegressionTestSuite.Search.cs` に ADR 86 検証を追加。
+     - `StripXmlTagsFast` の精度検証、550ファイル生成・520番目「設計」配置による 500件上限突破＆2文字日本語検索の完全性検証、および `SearchDirectFolderAsync` の Producer-Consumer パイプライン直接走査検証を実施。
+     - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。

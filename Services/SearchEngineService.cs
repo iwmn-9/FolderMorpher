@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using AstraSize.Models;
 using FolderMorpher.Models;
@@ -143,6 +144,8 @@ namespace FolderMorpher.Services
 
         /// <summary>
         /// Direct progressive streaming traversal for unscanned folders or shares
+        /// 【Agent Ransack流】Producer-Consumer Channel パイプラインにより、列挙と本文走査を完全並行化。
+        /// 走査開始から数百ミリ秒で1件目の本文ヒットをUIへ即座にストリーミング。
         /// </summary>
         public async Task<List<SearchResultItem>> SearchDirectFolderAsync(
             string targetFolder,
@@ -162,7 +165,83 @@ namespace FolderMorpher.Services
                 long totalHitBytes = 0;
                 long lastReportMs = 0;
 
-                var candidates = new ConcurrentBag<SearchResultItem>();
+                const long MaxSearchFileSize = 50L * 1024 * 1024;
+                var contentChannel = Channel.CreateUnbounded<SearchResultItem>(
+                    new UnboundedChannelOptions { SingleWriter = false, SingleReader = false });
+
+                bool hasOfficeLinkReq = query.HasOfficeLinkOnly;
+                string? officeLinkKeyword = query.OfficeLinkKeyword;
+
+                void EmitHit(SearchResultItem hit)
+                {
+                    lock (batchLock)
+                    {
+                        results.Add(hit);
+                        currentBatch.Add(hit);
+                        int threshold = results.Count <= 3 ? 1 : (results.Count <= 30 ? 5 : 25);
+                        if (currentBatch.Count >= threshold)
+                        {
+                            batchYield?.Report(currentBatch.ToList());
+                            currentBatch.Clear();
+                        }
+                    }
+                    Interlocked.Increment(ref hitCount);
+                    Interlocked.Add(ref totalHitBytes, hit.SizeBytes);
+                }
+
+                // Consumer ワーカー群の起動（Agent Ransack 流パイプライン）
+                int workerCount = Math.Max(2, Math.Min(Environment.ProcessorCount, 8));
+                var controller = new AdaptiveConcurrencyController();
+                int deepProcessed = 0;
+
+                var consumerTasks = Enumerable.Range(0, workerCount).Select(async _ =>
+                {
+                    while (await contentChannel.Reader.WaitToReadAsync(ct))
+                    {
+                        while (contentChannel.Reader.TryRead(out var item))
+                        {
+                            if (ct.IsCancellationRequested) return;
+
+                            using var lease = await controller.AcquireAsync(ct);
+                            var fileSw = Stopwatch.StartNew();
+                            bool isError = false;
+
+                            try
+                            {
+                                if (await InspectContentItemAsync(item, query, hasOfficeLinkReq, officeLinkKeyword, ct))
+                                {
+                                    EmitHit(item);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                isError = ex is System.Net.Sockets.SocketException ||
+                                          (ex is IOException ioEx && (ioEx.HResult == unchecked((int)0x8007003B) || ioEx.HResult == unchecked((int)0x80070040) || ioEx.HResult == unchecked((int)0x80070036)));
+                            }
+                            finally
+                            {
+                                fileSw.Stop();
+                                lease.Report(fileSw.Elapsed.TotalMilliseconds, isError);
+                            }
+
+                            int dp = Interlocked.Increment(ref deepProcessed);
+                            long elapsed = sw.ElapsedMilliseconds;
+                            if (elapsed - Volatile.Read(ref lastReportMs) > 100)
+                            {
+                                Volatile.Write(ref lastReportMs, elapsed);
+                                progress?.Report(new SearchProgressReport
+                                {
+                                    HitCount = Volatile.Read(ref hitCount),
+                                    ScannedCount = Volatile.Read(ref scannedCount),
+                                    TotalHitBytes = Volatile.Read(ref totalHitBytes),
+                                    CurrentPath = $"📄 Deep Search: {item.Name}",
+                                    Elapsed = sw.Elapsed,
+                                    IsCompleted = false
+                                });
+                            }
+                        }
+                    }
+                }).ToArray();
 
                 void HandleEntry(ScannedFileEntry entry)
                 {
@@ -187,23 +266,14 @@ namespace FolderMorpher.Services
 
                         if (needsDeepCheck)
                         {
-                            candidates.Add(item);
+                            if (!item.IsDirectory && item.SizeBytes <= MaxSearchFileSize)
+                            {
+                                contentChannel.Writer.TryWrite(item);
+                            }
                         }
                         else
                         {
-                            lock (batchLock)
-                            {
-                                results.Add(item);
-                                currentBatch.Add(item);
-                                int threshold = results.Count <= 5 ? 1 : (results.Count <= 30 ? 5 : 25);
-                                if (currentBatch.Count >= threshold)
-                                {
-                                    batchYield?.Report(currentBatch.ToList());
-                                    currentBatch.Clear();
-                                }
-                            }
-                            Interlocked.Increment(ref hitCount);
-                            Interlocked.Add(ref totalHitBytes, item.SizeBytes);
+                            EmitHit(item);
                         }
                     }
 
@@ -225,14 +295,24 @@ namespace FolderMorpher.Services
 
                 bool includeDirs = query.IncludeFolders || (query.IsDirectoryOnly == true);
 
-                var entries = await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
-                    targetFolder,
-                    "*.*",
-                    coverage: null,
-                    onProgress: null,
-                    ct: ct,
-                    includeDirectories: includeDirs,
-                    onEntryFound: HandleEntry);
+                try
+                {
+                    await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
+                        targetFolder,
+                        "*.*",
+                        coverage: null,
+                        onProgress: null,
+                        ct: ct,
+                        includeDirectories: includeDirs,
+                        onEntryFound: HandleEntry);
+                }
+                finally
+                {
+                    contentChannel.Writer.Complete();
+                }
+
+                // Consumer ワーカーの完了を待機
+                await Task.WhenAll(consumerTasks);
 
                 lock (batchLock)
                 {
@@ -241,21 +321,6 @@ namespace FolderMorpher.Services
                         batchYield?.Report(currentBatch.ToList());
                         currentBatch.Clear();
                     }
-                }
-
-                if (candidates.Count > 0)
-                {
-                    var contentResults = await FilterByContentAsync(
-                        candidates.ToList(),
-                        query,
-                        progress,
-                        ct,
-                        batchYield,
-                        sw,
-                        initialHitCount: Volatile.Read(ref hitCount),
-                        initialTotalBytes: Volatile.Read(ref totalHitBytes),
-                        scannedCount: scannedCount);
-                    results.AddRange(contentResults);
                 }
 
                 sw.Stop();
@@ -672,109 +737,9 @@ namespace FolderMorpher.Services
 
                 try
                 {
-                    string ext = Path.GetExtension(item.FullPath).ToLowerInvariant();
-
-                    // ファイル名/パスに含まれていない未充足グループを特定
-                    List<List<string>> requiredGroups = new();
-
-                    // 1. content: キーワードは本文検査に絶対必須
-                    if (!string.IsNullOrEmpty(query.ContentKeyword))
+                    if (await InspectContentItemAsync(item, query, hasOfficeLinkReq, officeLinkKeyword, token))
                     {
-                        requiredGroups.Add(new List<string> { query.ContentKeyword });
-                    }
-
-                    // 2. 通常キーワードグループ + ExactPhrases の処理（本文も検索ONなら、名前で満たしていないグループを本文で要求）
-                    var groups = query.KeywordGroups.Count > 0
-                        ? query.KeywordGroups.ToList()
-                        : query.Keywords.Select(k => new List<string> { k }).ToList();
-
-                    foreach (var phr in query.ExactPhrases)
-                    {
-                        if (!string.IsNullOrWhiteSpace(phr))
-                        {
-                            groups.Add(new List<string> { phr });
-                        }
-                    }
-
-                    if (query.SearchContentMode)
-                    {
-                        foreach (var grp in groups)
-                        {
-                            bool matchedInName = false;
-                            foreach (var kw in grp)
-                            {
-                                bool hasSeparator = kw.Contains('\\') || kw.Contains('/');
-                                string targetString = hasSeparator ? item.FullPath : item.Name;
-                                if (targetString.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
-                                {
-                                    matchedInName = true;
-                                    break;
-                                }
-                            }
-                            if (!matchedInName && grp.Count > 0)
-                            {
-                                requiredGroups.Add(grp);
-                            }
-                        }
-                    }
-
-                    // 不足グループが0件なら、名前/パスで既に完全一致しているので本文走査不要で即合格
-                    if (requiredGroups.Count == 0 && !hasOfficeLinkReq)
-                    {
-                        item.MatchedReason = "Name";
                         EmitHit(item);
-                    }
-                    else if (requiredGroups.Count > 0)
-                    {
-                        string reqDesc = string.Join(" AND ", requiredGroups.Select(g => g.Count > 1 ? "(" + string.Join(" OR ", g) + ")" : (g.Count > 0 ? g[0] : "")));
-
-                        // 1. Office (OpenXML: .xlsx, .xlsm, .docx, .pptx)
-                        if (OfficeExtensions.Contains(ext))
-                        {
-                            if (ContentExtractionService.SearchOfficeContent(item.FullPath, requiredGroups, out string snippet))
-                            {
-                                item.ContentSnippet = snippet;
-                                item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
-                                    ? $"Name + Content: \"{reqDesc}\""
-                                    : $"Content: \"{reqDesc}\"";
-                                EmitHit(item);
-                            }
-                        }
-                        // 2. PDF (.pdf) with Windows IFilter and pure C# fallback
-                        else if (PdfExtensions.Contains(ext))
-                        {
-                            if (SearchPdfContentMultiple(item.FullPath, requiredGroups, out string snippet))
-                            {
-                                item.ContentSnippet = snippet;
-                                item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
-                                    ? $"Name + PDF Content: \"{reqDesc}\""
-                                    : $"PDF Content: \"{reqDesc}\"";
-                                EmitHit(item);
-                            }
-                        }
-                        // 3. Text files (.txt, .csv, .log, .json, code files, etc.)
-                        else if (TextExtensions.Contains(ext) || ContentExtractionService.SupportedExtensions.Contains(ext))
-                        {
-                            if (await ContentExtractionService.SearchTextContentAsync(item.FullPath, requiredGroups, token) is { } snippet)
-                            {
-                                item.ContentSnippet = snippet;
-                                item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
-                                    ? $"Name + Content: \"{reqDesc}\""
-                                    : $"Content: \"{reqDesc}\"";
-                                EmitHit(item);
-                            }
-                        }
-                    }
-                    else if (hasOfficeLinkReq && OfficeExtensions.Contains(ext))
-                    {
-                        if (SearchOfficeFileLinks(item.FullPath, officeLinkKeyword, out string snippet))
-                        {
-                            item.ContentSnippet = snippet;
-                            item.MatchedReason = string.IsNullOrEmpty(officeLinkKeyword)
-                                ? "Office External Link"
-                                : $"OfficeLink: \"{officeLinkKeyword}\"";
-                            EmitHit(item);
-                        }
                     }
                 }
                 catch (Exception ex)
@@ -815,6 +780,124 @@ namespace FolderMorpher.Services
             }
 
             return matched.ToList();
+        }
+
+        /// <summary>
+        /// 【Agent Ransack流】単一ファイルの本文/リンク検査を行い、条件に合致するか判定（Early Exit・高速スニペット付き）
+        /// </summary>
+        private static async Task<bool> InspectContentItemAsync(
+            SearchResultItem item,
+            SearchQuery query,
+            bool hasOfficeLinkReq,
+            string? officeLinkKeyword,
+            CancellationToken token)
+        {
+            string ext = Path.GetExtension(item.FullPath).ToLowerInvariant();
+
+            // ファイル名/パスに含まれていない未充足グループを特定
+            List<List<string>> requiredGroups = new();
+
+            // 1. content: キーワードは本文検査に絶対必須
+            if (!string.IsNullOrEmpty(query.ContentKeyword))
+            {
+                requiredGroups.Add(new List<string> { query.ContentKeyword });
+            }
+
+            // 2. 通常キーワードグループ + ExactPhrases の処理（本文も検索ONなら、名前で満たしていないグループを本文で要求）
+            var groups = query.KeywordGroups.Count > 0
+                ? query.KeywordGroups.ToList()
+                : query.Keywords.Select(k => new List<string> { k }).ToList();
+
+            foreach (var phr in query.ExactPhrases)
+            {
+                if (!string.IsNullOrWhiteSpace(phr))
+                {
+                    groups.Add(new List<string> { phr });
+                }
+            }
+
+            if (query.SearchContentMode)
+            {
+                foreach (var grp in groups)
+                {
+                    bool matchedInName = false;
+                    foreach (var kw in grp)
+                    {
+                        bool hasSeparator = kw.Contains('\\') || kw.Contains('/');
+                        string targetString = hasSeparator ? item.FullPath : item.Name;
+                        if (targetString.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            matchedInName = true;
+                            break;
+                        }
+                    }
+                    if (!matchedInName && grp.Count > 0)
+                    {
+                        requiredGroups.Add(grp);
+                    }
+                }
+            }
+
+            // 不足グループが0件なら、名前/パスで既に完全一致しているので本文走査不要で即合格
+            if (requiredGroups.Count == 0 && !hasOfficeLinkReq)
+            {
+                item.MatchedReason = "Name";
+                return true;
+            }
+            else if (requiredGroups.Count > 0)
+            {
+                string reqDesc = string.Join(" AND ", requiredGroups.Select(g => g.Count > 1 ? "(" + string.Join(" OR ", g) + ")" : (g.Count > 0 ? g[0] : "")));
+
+                // 1. Office (OpenXML: .xlsx, .xlsm, .docx, .pptx)
+                if (OfficeExtensions.Contains(ext))
+                {
+                    if (ContentExtractionService.SearchOfficeContent(item.FullPath, requiredGroups, out string snippet))
+                    {
+                        item.ContentSnippet = snippet;
+                        item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
+                            ? $"Name + Content: \"{reqDesc}\""
+                            : $"Content: \"{reqDesc}\"";
+                        return true;
+                    }
+                }
+                // 2. PDF (.pdf) with Windows IFilter and pure C# fallback
+                else if (PdfExtensions.Contains(ext))
+                {
+                    if (SearchPdfContentMultiple(item.FullPath, requiredGroups, out string snippet))
+                    {
+                        item.ContentSnippet = snippet;
+                        item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
+                            ? $"Name + PDF Content: \"{reqDesc}\""
+                            : $"PDF Content: \"{reqDesc}\"";
+                        return true;
+                    }
+                }
+                // 3. Text files (.txt, .csv, .log, .json, code files, etc.)
+                else if (TextExtensions.Contains(ext) || ContentExtractionService.SupportedExtensions.Contains(ext))
+                {
+                    if (await ContentExtractionService.SearchTextContentAsync(item.FullPath, requiredGroups, token) is { } snippet)
+                    {
+                        item.ContentSnippet = snippet;
+                        item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
+                            ? $"Name + Content: \"{reqDesc}\""
+                            : $"Content: \"{reqDesc}\"";
+                        return true;
+                    }
+                }
+            }
+            else if (hasOfficeLinkReq && OfficeExtensions.Contains(ext))
+            {
+                if (SearchOfficeFileLinks(item.FullPath, officeLinkKeyword, out string snippet))
+                {
+                    item.ContentSnippet = snippet;
+                    item.MatchedReason = string.IsNullOrEmpty(officeLinkKeyword)
+                        ? "Office External Link"
+                        : $"OfficeLink: \"{officeLinkKeyword}\"";
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool SearchPdfContentMultiple(string filePath, IReadOnlyList<List<string>> requiredGroups, out string snippet)

@@ -1471,6 +1471,55 @@ namespace FolderMorpher.Services.Testing
                     var postDeleteHits = await service.SearchIndexedAsync(qAbcd, adr85Dir, CancellationToken.None);
                     if (postDeleteHits.Count != 1 || !postDeleteHits[0].FullPath.EndsWith("TrueMatch.txt"))
                         throw new Exception("ADR 85 failed: Contentless delete caused unexpected search corruption.");
+
+                    // 6. 【ADR 86: Agent Ransack 流高速化 ＆ 2文字日本語検索漏れ根絶 ＆ 500件上限撤去】
+                    string adr86Dir = Path.Combine(testRoot, "ADR86_Verification");
+                    Directory.CreateDirectory(adr86Dir);
+
+                    // A. StripXmlTagsFast（正規表現全廃・高速XMLタグ除去）の検証
+                    string testXml = "<w:document><w:body><w:p><w:r><w:t>機密プロジェクトの仕様書</w:t></w:r></w:p></w:body></w:document>";
+                    string strippedText = ContentExtractionService.StripXmlTagsFast(testXml);
+                    if (strippedText != "機密プロジェクトの仕様書")
+                        throw new Exception($"ADR 86 failed: StripXmlTagsFast failed, got '{strippedText}'");
+
+                    // B. 500件上限撤去 ＆ 2文字日本語検索漏れの検証:
+                    // 550ファイルのテキストを生成し、520番目のファイルにのみ2文字キーワード「設計」を含める
+                    for (int i = 1; i <= 550; i++)
+                    {
+                        string fPath = Path.Combine(adr86Dir, $"doc_{i:D4}.txt");
+                        if (i == 520)
+                        {
+                            File.WriteAllText(fPath, "これは第520文書であり、アーキテクチャの設計方針が詳細に記載されています。", Encoding.UTF8);
+                        }
+                        else
+                        {
+                            File.WriteAllText(fPath, $"これは第{i}文書の本文です。一般的な業務連絡の内容です。", Encoding.UTF8);
+                        }
+                    }
+
+                    // インデックス化
+                    await service.IndexFolderAsync(adr86Dir, null, CancellationToken.None);
+
+                    // 2文字の日本語「設計」（3文字未満の trigram なので全件走査フォールバックへ）で検索
+                    // LIMIT 500 が残っていると 520番目のファイルが漏れて 0 件になるが、上限撤去により 1 件確実にヒットする
+                    var q2Char = SearchQueryParser.Parse("content:設計");
+                    var hits2Char = await service.SearchIndexedAsync(q2Char, adr86Dir, CancellationToken.None);
+
+                    if (hits2Char.Count != 1 || !hits2Char[0].FullPath.EndsWith("doc_0520.txt"))
+                        throw new Exception($"ADR 86 failed: 2-character Japanese search over 500 files failed. Expected 1 hit (doc_0520.txt), got {hits2Char.Count} hits.");
+                    if (string.IsNullOrEmpty(hits2Char[0].ContentSnippet) || !hits2Char[0].ContentSnippet!.Contains("設計"))
+                        throw new Exception("ADR 86 failed: Content snippet for 2-character hit did not contain '設計'.");
+
+                    // C. Agent Ransack 流 Producer-Consumer Channel パイプライン（SearchDirectFolderAsync）の直接走査検証
+                    var engineService = new SearchEngineService();
+                    var directQuery = SearchQueryParser.Parse("content:設計");
+                    directQuery.SearchContentMode = true;
+                    var directHits = await engineService.SearchDirectFolderAsync(adr86Dir, directQuery, null, null, CancellationToken.None);
+
+                    if (directHits.Count != 1 || !directHits[0].FullPath.EndsWith("doc_0520.txt"))
+                        throw new Exception($"ADR 86 failed: Direct Producer-Consumer search failed. Expected 1 hit (doc_0520.txt), got {directHits.Count} hits.");
+                    if (string.IsNullOrEmpty(directHits[0].ContentSnippet) || !directHits[0].ContentSnippet!.Contains("設計"))
+                        throw new Exception("ADR 86 failed: Direct Producer-Consumer snippet did not contain '設計'.");
                 }
                 finally
                 {

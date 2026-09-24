@@ -33,26 +33,54 @@ namespace FolderMorpher.Services.Testing
                 string ver = Convert.ToString(verCmd.ExecuteScalar()) ?? "unknown";
                 Console.WriteLine($"[0/4] Bundled SQLite Version: {ver}");
 
-                // contentless_delete=1 のサポート確認
+                // contentless_delete=1 & 2-char token behavior check
                 try
                 {
                     using var createCmd = testConn.CreateCommand();
-                    createCmd.CommandText = "CREATE VIRTUAL TABLE TestContentless USING fts5(Body, tokenize = 'trigram', content = '', contentless_delete = 1);";
+                    createCmd.CommandText = "CREATE VIRTUAL TABLE TestContentless USING fts5(Body, tokenize = 'trigram', content = '', contentless_delete = 1, detail = 'none');";
                     createCmd.ExecuteNonQuery();
 
                     using var insCmd = testConn.CreateCommand();
-                    insCmd.CommandText = "INSERT INTO TestContentless (rowid, Body) VALUES (1, 'テスト文章です。');";
+                    insCmd.CommandText = "INSERT INTO TestContentless (rowid, Body) VALUES (1, '契約書の文章です。');";
                     insCmd.ExecuteNonQuery();
+
+                    // 2文字 MATCH テスト
+                    try
+                    {
+                        using var match2Cmd = testConn.CreateCommand();
+                        match2Cmd.CommandText = "SELECT rowid FROM TestContentless WHERE TestContentless MATCH '\"契約\"';";
+                        using var reader = match2Cmd.ExecuteReader();
+                        bool hasHit = reader.Read();
+                        Console.WriteLine($"  --> MATCH 2-char ('契約'): {(hasHit ? "HIT!" : "No hit")}");
+                    }
+                    catch (Exception exMatch2)
+                    {
+                        Console.WriteLine($"  --> MATCH 2-char ('契約') ERROR: {exMatch2.Message}");
+                    }
+
+                    // 1文字 MATCH テスト
+                    try
+                    {
+                        using var match1Cmd = testConn.CreateCommand();
+                        match1Cmd.CommandText = "SELECT rowid FROM TestContentless WHERE TestContentless MATCH '\"契\"';";
+                        using var reader = match1Cmd.ExecuteReader();
+                        bool hasHit = reader.Read();
+                        Console.WriteLine($"  --> MATCH 1-char ('契'): {(hasHit ? "HIT!" : "No hit")}");
+                    }
+                    catch (Exception exMatch1)
+                    {
+                        Console.WriteLine($"  --> MATCH 1-char ('契') ERROR: {exMatch1.Message}");
+                    }
 
                     using var delCmd = testConn.CreateCommand();
                     delCmd.CommandText = "DELETE FROM TestContentless WHERE rowid = 1;";
                     delCmd.ExecuteNonQuery();
 
-                    Console.WriteLine("  --> contentless_delete=1: SUPPORTED & FUNCTIONAL! (Safe incremental update verified)");
+                    Console.WriteLine("  --> contentless_delete=1: SUPPORTED & FUNCTIONAL!");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"  --> contentless_delete=1: NOT SUPPORTED ({ex.Message})");
+                    Console.WriteLine($"  --> Benchmark init error: {ex.Message}");
                 }
             }
 

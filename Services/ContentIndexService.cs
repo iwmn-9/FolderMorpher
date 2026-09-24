@@ -1791,8 +1791,7 @@ namespace FolderMorpher.Services
                         cmd.CommandText = $@"
                             SELECT f.FullPath, f.DirectoryPath, f.SizeBytes, f.LastWriteTimeUtcTicks, '' AS Snippet, f.CreationTimeUtcTicks, f.IsDirectory
                             FROM IndexedFiles f
-                            WHERE {whereSql}
-                            LIMIT 500";
+                            WHERE {whereSql}";
 
                         using (var reader = cmd.ExecuteReader())
                         {
@@ -1902,9 +1901,9 @@ namespace FolderMorpher.Services
                             else
                             {
                                 // 3文字以上の語がない（1〜2文字語のみ）場合:
-                                // ファイル名一致 (nameSql) に加え、本文検索ONならインデックス済みファイル (Status = 1) を候補としてUNIONし、
+                                // ファイル名一致 (nameSql) に加え、本文検索ONなら本文対象ファイル (Status IN (0, 1)) を候補としてUNIONし、
                                 // 後段の Progressive Verify (Aho-Corasick) で原本を直接照合する（False Negative 100% ゼロ保証）
-                                string bodySql = "SELECT FileId FROM IndexedFiles WHERE Status = 1 AND IsDirectory = 0";
+                                string bodySql = "SELECT FileId FROM IndexedFiles WHERE Status IN (0, 1) AND IsDirectory = 0";
                                 groupSubqueries.Add($"SELECT FileId FROM (\n  {nameSql}\n  UNION\n  {bodySql}\n)");
                             }
                         }
@@ -1928,8 +1927,8 @@ namespace FolderMorpher.Services
                         }
                         else
                         {
-                            // 3文字未満の語の場合、インデックス済みファイルを候補として通し、後段 Verify で確定
-                            string contentSql = "SELECT FileId FROM IndexedFiles WHERE Status = 1 AND IsDirectory = 0";
+                            // 3文字未満の語の場合、本文対象ファイルを候補として通し、後段 Verify で確定
+                            string contentSql = "SELECT FileId FROM IndexedFiles WHERE Status IN (0, 1) AND IsDirectory = 0";
                             groupSubqueries.Add(contentSql);
                         }
                     }
@@ -1954,8 +1953,7 @@ namespace FolderMorpher.Services
                             WHERE f.FileId IN (
                                 {nameIntersectSql}
                             )
-                            {commonWhereSql}
-                            LIMIT 500";
+                            {commonWhereSql}";
 
                         cmd.CommandText = nameSql;
                         using (var reader = cmd.ExecuteReader())
@@ -1988,8 +1986,7 @@ namespace FolderMorpher.Services
                             WHERE f.FileId IN (
                                 {intersectSql}
                             )
-                            {commonWhereSql}
-                            LIMIT 500";
+                            {commonWhereSql}";
 
                         cmd.CommandText = fullSearchSql;
 

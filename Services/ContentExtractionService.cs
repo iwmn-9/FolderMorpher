@@ -77,12 +77,13 @@ namespace FolderMorpher.Services
 
         /// <summary>
         /// OpenXML形式のOfficeドキュメント（Excel, Word, PowerPoint）から本文テキストを抽出します。
+        /// 【Agent Ransack流高速化】64KBバッファ、SequentialScan、および正規表現フリーのゼロアロケーションタグ除去
         /// </summary>
         public static string? ExtractOfficeText(string filePath)
         {
             try
             {
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan);
                 using var zip = new ZipArchive(fs, ZipArchiveMode.Read, false);
                 var sb = new StringBuilder();
 
@@ -101,11 +102,13 @@ namespace FolderMorpher.Services
                     }
 
                     using var stream = entry.Open();
-                    using var reader = new StreamReader(stream, Encoding.UTF8);
+                    using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 65536);
                     string xml = reader.ReadToEnd();
-                    string clean = Regex.Replace(xml, @"<[^>]+>", " ");
-                    clean = Regex.Replace(clean, @"\s+", " ");
-                    sb.Append(clean).Append(' ');
+                    string clean = StripXmlTagsFast(xml);
+                    if (!string.IsNullOrWhiteSpace(clean))
+                    {
+                        sb.Append(clean).Append(' ');
+                    }
 
                     if (sb.Length >= MaxCharsPerDocument)
                     {
@@ -120,6 +123,52 @@ namespace FolderMorpher.Services
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 【Agent Ransack流】XML文字列からタグ（<... >）を除去し、テキストノードの内容のみを高速抽出（正規表現ゼロ・1パス処理）
+        /// </summary>
+        public static string StripXmlTagsFast(string xml)
+        {
+            if (string.IsNullOrEmpty(xml)) return string.Empty;
+            var sb = new StringBuilder(Math.Min(xml.Length, 16384));
+            bool insideTag = false;
+            bool lastWasSpace = false;
+
+            for (int i = 0; i < xml.Length; i++)
+            {
+                char c = xml[i];
+                if (c == '<')
+                {
+                    insideTag = true;
+                    if (!lastWasSpace)
+                    {
+                        sb.Append(' ');
+                        lastWasSpace = true;
+                    }
+                }
+                else if (c == '>')
+                {
+                    insideTag = false;
+                }
+                else if (!insideTag)
+                {
+                    if (char.IsWhiteSpace(c))
+                    {
+                        if (!lastWasSpace)
+                        {
+                            sb.Append(' ');
+                            lastWasSpace = true;
+                        }
+                    }
+                    else
+                    {
+                        sb.Append(c);
+                        lastWasSpace = false;
+                    }
+                }
+            }
+            return sb.ToString().Trim();
         }
 
         /// <summary>
@@ -180,7 +229,7 @@ namespace FolderMorpher.Services
         {
             try
             {
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan | FileOptions.Asynchronous);
                 if (fs.Length == 0) return null;
 
                 Encoding encoding = DetectTextEncoding(fs);
@@ -194,7 +243,7 @@ namespace FolderMorpher.Services
 
         private static async Task<string?> ReadStreamWithEncodingAsync(FileStream fs, Encoding encoding, CancellationToken ct)
         {
-            using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 4096, leaveOpen: true);
+            using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 65536, leaveOpen: true);
             char[] buffer = new char[Math.Min(MaxCharsPerDocument, (int)Math.Min(fs.Length, MaxCharsPerDocument))];
             int charsRead = await reader.ReadBlockAsync(buffer.AsMemory(0, buffer.Length), ct);
             return charsRead > 0 ? new string(buffer, 0, charsRead) : null;
@@ -221,7 +270,7 @@ namespace FolderMorpher.Services
 
             try
             {
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, true);
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan | FileOptions.Asynchronous);
                 if (fs.Length == 0) return null;
 
                 // 先頭バイトでバイナリ早期脱落判定
@@ -254,7 +303,7 @@ namespace FolderMorpher.Services
                 var ac = new AhoCorasickSearcher(patterns, ignoreCase: true);
 
                 // 行単位ストリーム走査（Aho-Corasick ワンパス判定 ＆ Early Exit）
-                using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true);
+                using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 65536);
                 var satisfiedGroups = new HashSet<int>();
                 string? firstSnippet = null;
 
@@ -307,7 +356,7 @@ namespace FolderMorpher.Services
             try
             {
                 string ext = Path.GetExtension(filePath).ToLowerInvariant();
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan);
                 using var zip = new ZipArchive(fs, ZipArchiveMode.Read, false);
 
                 // Excel (.xlsx / .xlsm) の場合は sharedStrings.xml を最優先・ピンポイント探索
@@ -317,7 +366,7 @@ namespace FolderMorpher.Services
                     if (sharedEntry != null)
                     {
                         using var stream = sharedEntry.Open();
-                        using var reader = new StreamReader(stream, Encoding.UTF8);
+                        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 65536);
                         string text = reader.ReadToEnd();
 
                         var sharedSatisfied = new HashSet<int>();
@@ -367,9 +416,28 @@ namespace FolderMorpher.Services
                     }
 
                     using var stream = entry.Open();
-                    using var reader = new StreamReader(stream, Encoding.UTF8);
+                    using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 65536);
                     string xml = reader.ReadToEnd();
-                    string clean = Regex.Replace(xml, @"<[^>]+>", " ");
+
+                    // 【Agent Ransack流 JIT Pre-Filter】
+                    // 生XMLに未充足グループのキーワードが1つも含まれていなければタグ除去すらスキップ（超高速脱落）
+                    bool hasAnyCandidate = false;
+                    for (int g = 0; g < requiredGroups.Count; g++)
+                    {
+                        if (foundGroups.Contains(g)) continue;
+                        foreach (var kw in requiredGroups[g])
+                        {
+                            if (xml.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                hasAnyCandidate = true;
+                                break;
+                            }
+                        }
+                        if (hasAnyCandidate) break;
+                    }
+                    if (!hasAnyCandidate) continue;
+
+                    string clean = StripXmlTagsFast(xml);
 
                     for (int g = 0; g < requiredGroups.Count; g++)
                     {

@@ -61,7 +61,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 | :--- | :--- | :--- | :--- | :--- |
 | **全体共通 / 左サイドバー** | `SidebarBorder`, `SidebarToggleButton` (L22-75) | `MainWindow.xaml.cs`<br>`MainWindow.Localization.cs` | `Converters/ValueConverters.cs` | 収縮対応ナビゲーション（幅220px ⇄ 58px）、グローバルステータスバー、通知トースト、言語切替（日英）、環境設定モーダル |
 | **Tab 1: 容量分析**<br>(Storage Explorer) | `StorageTabPanel` (L82-410)<br>`HistoryWindow.xaml` | `MainWindow.Storage.cs`<br>`HistoryWindow.xaml.cs` | `DiskScanService.cs`<br>`StorageHistoryService.cs`<br>`StorageForecastingService.cs`<br>`ScanTabModel.cs`<br>`FileItemNode.cs` | 複数タブスキャン、ドライブ空き容量メーター、全体占有率メーター、容量上位Top10（Explorer起動連動）、直下シェア内訳、推移グラフ直下の3連KPIハイライトカード（上限到達予測・日次ペース・R²信頼度） |
-| **Tab 2: ファイル検索**<br>(Search Studio) | `SearchTabPanel`<br>(`MainWindow.xaml`) | `MainWindow.Search.cs` | `SearchEngineService.cs`<br>`ContentIndexService.cs`<br>`ContentExtractionService.cs`<br>`SearchQueryParser.cs`<br>`PdfSearchHelper.cs`<br>`SearchModels.cs` | **全自動スマートルーティング（FTS5ミリ秒 ➔ 0秒インメモリ ➔ ライブ走査）**、**バックグラウンド自動インデックス同期**、**次世代 Mode C（contentless + detail=none trigram FTS5 ＆ 3文字分解AND ＆ Progressive Verify によりDBサイズ約1/8・False Negative/Positive ゼロ保証）**、**Storage スキャンツリー直結同期（二重I/Oゼロ）**、**Aho-Corasick 多パターン同時照合 ＆ 高速スニペット**、**Lazy Background Builder（Small-File First）＆ 便乗キャッシュ**、**Windows IFilter & 非圧縮対応純C#フォールバックによるPDF全文検索**、**Quiet Fluent 1行スリムメトリクスバー**、**フル幅モダンカードリスト ＆ Tabler File-Type バッジ**、Everything互換クエリ構文、右クリックから全スタジオへ連携およびExcel/CSV出力 |
+| **Tab 2: ファイル検索**<br>(Search Studio) | `SearchTabPanel`<br>(`MainWindow.xaml`) | `MainWindow.Search.cs` | `SearchEngineService.cs`<br>`ContentIndexService.cs`<br>`ContentExtractionService.cs`<br>`SearchQueryParser.cs`<br>`PdfSearchHelper.cs`<br>`SearchModels.cs` | **全自動スマートルーティング（FTS5ミリ秒 ➔ 0秒インメモリ ➔ ライブ走査）**、**バックグラウンド自動インデックス同期**、**次世代 Mode C（contentless + detail=none trigram FTS5 ＆ 3文字分解AND ＆ Progressive Verify によりDBサイズ約1/8・False Negative/Positive ゼロ保証）**、**Agent Ransack 流 Producer-Consumer パイプライン（列挙と本文検査の完全並行化）**、**64KB SequentialScan & 高速1パスXMLタグ除去**、**2文字日本語検索漏れ根絶 ＆ 500件上限完全撤去**、**Storage スキャンツリー直結同期（二重I/Oゼロ）**、**Aho-Corasick 多パターン同時照合 ＆ 高速スニペット**、**Lazy Background Builder（Small-File First）＆ 便乗キャッシュ**、**Windows IFilter & 非圧縮対応純C#フォールバックによるPDF全文検索**、**Quiet Fluent 1行スリムメトリクスバー**、**フル幅モダンカードリスト ＆ Tabler File-Type バッジ**、Everything互換クエリ構文、右クリックから全スタジオへ連携およびExcel/CSV出力 |
 | **Tab 3: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `Views/LiveAclStudio.xaml`<br>(`LiveAclFolderView`, `LiveAclReverseView`, `LiveAclDiffModalOverlay`, `NewFolderModalOverlay`) | `Views/LiveAclStudio.xaml.cs` | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACL可視化・編集、**Dry-Run差分チェックモーダル（AclChangePlan貫通・継承変更警告・セマンティックVerify・SDDLロールバック）**、AD逆引き権限監査、均一幅ADアカウントカード、ADパレットUI統一、ADバックグラウンド自動同期、ツリーインライン新規フォルダー作成 |
 | **Tab 4: 移行スタジオ**<br>(Simulation Studio) | `SimulationTabPanel` (L608-995) | `MainWindow.Simulation.cs` | `SimulationProjectService.cs`<br>`MigrationPackageService.cs`<br>`MigrationPackageModels.cs`<br>`SimModels.cs` | 現行ファイルサーバーから新環境への仮想ツリー設計（N:1マッピング）、ACL引き継ぎ設計、ADパレット統一、全画面・全出力完全日英両対応、ヘッダーレイアウト整線、ガワ先行作成の実機DACLセマンティックVerify、エンタープライズ移行パッケージ出力（TargetRoot必須検証・Wave分割・Runbook Excel・安全停止手順・多重コピー防止/XD・%~dp0相対ログ・exit /b 1・遅延展開排除・Dry-Run bat同梱） |
 | **Tab 5: リンク修復**<br>(LinkFixer) | `LinkFixTabPanel` (L998-1094) | `MainWindow.LinkFix.cs` | `LinkFixService.cs`<br>`OfficeLinkFixService.cs` | サーバー移行後の切断ショートカット（.lnk）およびOffice内部リンク（.xlsx/.xlsm）検出・修復、**VBAマクロ非破壊保護＆通常XML混在時の部分修復（PartiallyFixed）**、全社配布用GPOログオンスクリプト（.ps1）生成 |
@@ -237,6 +237,21 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
       - FTS MATCH で絞り込んだ候補（Candidates）を Small-File First でストリーム検証し、真の確定 Hit のみ UI へ順次合流。**False Negative 100% ゼロ ＆ False Positive 100% ゼロ** を完全保証。
     - **回帰テスト（Domain 8 セクション 19）新設**:
       - 離れた `ABC...BCD`（偽陽性）と連続 `ABCD`（真の合致）の分別検証、3文字 trigram AND 結合、および `contentless_delete=1` の安全動作を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+30. **Agent Ransack 流超高速直接走査 ＆ 2文字日本語検索漏れ根絶 ＆ 500件上限撤去（v2.2.13 / ADR 86）**:
+    - **500件上限（`LIMIT 500`）の完全撤去**:
+      - `ContentIndexService.cs` における属性検索、ファイル名先行表示、全体検索の各 SQL からハードコードされた `LIMIT 500` を完全撤去。大規模環境でも上限なく全件がヒット・検証されるよう改善。
+    - **2文字日本語キーワード検索の漏れ根絶（False Negative 0% 保証）**:
+      - SQLite trigram で直接 MATCH できない 2文字語（「設計」「仕様」等）において、`LIMIT 500` 撤去および候補抽出条件の `Status IN (0, 1)` 拡大により、全候補が漏れなく原本 Verify（Aho-Corasick）へ送られ、1件の漏れもなく確実にヒット。
+    - **Agent Ransack 流 Producer-Consumer Channel パイプライン（列挙と本文走査の完全並行化）**:
+      - `SearchEngineService.SearchDirectFolderAsync` において `System.Threading.Channels.Channel<SearchResultItem>` を導入。
+      - ファイル列挙（Producer）で見つかった本文候補を即座に Channel へ投入し、バックグラウンドの Consumer ワーカー群（`AdaptiveConcurrencyController` 制御下、最大8並行）が即座にファイルを開いて本文検査を開始。
+      - 走査開始からわずか数百ミリ秒で 1 件目のヒットが画面（UI）にポップアップ表示される超高速ストリーミングを実現。
+    - **Agent Ransack 流 I/O & XML 解析最適化**:
+      - `FileOptions.SequentialScan` ＋ 64KB バッファ（`FileStream`, `StreamReader`）をテキスト・Office 解析に全面適用。
+      - `StripXmlTagsFast`: 正規表現（`Regex.Replace`）を全廃し、1パスの高速 char スキャン＆空白圧縮へ刷新。
+      - Office 本文走査において生XMLでの事前キーワード存在チェック（Pre-Filter）を導入し、不要なタグ除去をスキップして即脱落。
+    - **回帰テスト（Domain 8 セクション 20）新設**:
+      - `StripXmlTagsFast` の精度、550ファイル生成・520番目「設計」配置による 500件上限突破＆2文字日本語検索の完全性、および `SearchDirectFolderAsync` の Producer-Consumer パイプライン直接走査を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
 ---
 
 ---
