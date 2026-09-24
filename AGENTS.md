@@ -216,6 +216,10 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
     - **ExactPhrase の Direct / Indexed 完全 Parity**: `SearchEngineService` の直接走査・インメモリ検索において、本文ON時は事前ファイル名チェックでドロップせず、本文検索の必須グループ（`requiredGroups`）へ統合。ファイル名にフレーズがなく本文にのみフレーズがある場合でも Direct / Indexed の両方で 100% 同一にヒット。
     - **旧 `IsNetworkOrFatalError(string)` の完全削除**: 文字列ベースのWin32エラー判定メソッドを物理削除し、`EnumerationFailureKind` への正本一本化を完遂。
     - **回帰テスト（Domain 2 セクション 7 & Domain 8 セクション 14更新）**: `CurrentConcurrency = 2` で 4 並列投入時の最大アクティブスロット数 `<= 2` 厳格遵守、高負荷混在解放でのアンダーフロー・リークゼロ、および ExactPhrase Direct Parity を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+27. **「本文も検索ON＋フォルダも含めるON」Direct/InMemory Parity完全回復 ＆ Emergency Head整線（v2.2.10 / ADR 83）**:
+    - **フォルダー名一致の救済（Direct / In-Memory 回帰根絶）**: `SearchEngineService` の `MatchFile` および `MatchDirectEntry` において、`SearchContentMode` が有効であっても、`content:` 必須指定がなくフォルダー名がキーワードを満たしていれば即座に `Name` 合格（`return true`）とするよう修正。Indexed / In-Memory / Direct の全 3 経路でフォルダー検索結果が 100% 完全一致。
+    - **Emergency Window リセットの整線**: `AdaptiveConcurrencyController.ApplyCliffDecrease` において、`_emergencyCount = 0` に加えて `_emergencyHead = 0` も明示リセットし、リングバッファ状態を整線。
+    - **回帰テスト（Domain 8 セクション 15）新設**: `SearchContentMode = true`, `IncludeFolders = true` で、フォルダー名一致が Indexed / In-Memory / Direct の 3 経路すべてで同一に返ることを自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
 ---
 
 ---
@@ -270,3 +274,4 @@ Copy-Item ./publish/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\Folde
 # Tab 6: メディア最適化
 & "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab6_media.png" --tab 6
 ```
+

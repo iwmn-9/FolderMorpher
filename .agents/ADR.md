@@ -819,3 +819,21 @@
      - `RegressionTestSuite.Storage.cs` セクション 7 に、`CurrentConcurrency = 2` で 4 並列投入時に最大アクティブスロット数が厳格に `<= 2` であることの直接計測、および明示Report/二重Report/Dispose混在時のアンダーフロー・リークゼロ検証（`ActiveSlots == 0`）を追加。
      - `RegressionTestSuite.Search.cs` セクション 14 に、Direct Search における ExactPhrase 本文ヒットの Parity 検証を追加。
      - 全 8 ドメイン 8/8 ALL PASSED を堅持。
+
+---
+
+### ADR 83: 「本文も検索ON＋フォルダも含めるON」Direct/InMemory Parity完全回復 ＆ Emergency Head整線
+*(v2.2.10 本番施工 & ADR 83)*
+
+- **背景 & 動機**:
+  - **Direct / In-Memory 側でのフォルダー名一致ドロップ回帰**: `SearchEngineService` の `MatchFile` および `MatchDirectEntry` において、`if (query.SearchContentMode)` の直下で `if (node.IsDirectory) return false;` と一律にドロップしていたため、「本文も検索ON ＋ フォルダも含めるON」のクエリ（例: `契約`）で、フォルダー名に「契約」が含まれるフォルダー（例: `📁 契約関連フォルダー`）が、Indexed Search ではヒットするのに Direct / In-Memory Search では 0 件になる不整合（ADR 76 意味論の回帰）が発生していた。
+  - **Emergency Window リングバッファの Head 未リセット**: `ApplyCliffDecrease` 時に `_emergencyCount = 0` のみで `_emergencyHead = 0` をリセットしていなかったため、リングバッファ状態を整線。
+- **施工内容**:
+  1. **フォルダー名一致の救済（3経路完全Parity回復）**:
+     - `MatchFile`（メモリ内検索）および `MatchDirectEntry`（ライブ直接走査）において、`query.SearchContentMode` 有効時でも、フォルダー判定時に `hasMandatoryContent`（`content:` 必須指定）が無ければ `MatchesKeywordGroups(name, fullPath, query)` を評価。
+     - フォルダー名/パスがキーワード条件を満たしていれば `needsDeepCheck = false; reason = "Name"; return true;` で即座に合格とし、Indexed / In-Memory / Direct の全 3 経路でフォルダー検索結果が 100% 同一になるよう回復。
+  2. **Emergency Window の完全リセット整線**:
+     - `AdaptiveConcurrencyController.ApplyCliffDecrease` において、`_emergencyCount = 0` と同時に `_emergencyHead = 0` も明示リセット。
+  3. **自動回帰テストによる恒久保護**:
+     - `RegressionTestSuite.Search.cs` に「セクション 15: 『本文も検索ON ＋ フォルダも含めるON』における Indexed / In-Memory / Direct 3経路完全Parity検証」を新設。
+     - フォルダー名一致が 3 経路すべてで同一に返ることを自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。

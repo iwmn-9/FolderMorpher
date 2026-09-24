@@ -1149,6 +1149,75 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(s14Root, true); } catch { }
                 }
             }
+
+            // 15. 【ADR 83】「本文も検索ON ＋ フォルダも含めるON」における Indexed / In-Memory / Direct 3経路完全Parity検証
+            {
+                string s15Root = Path.Combine(Path.GetTempPath(), "FM_Reg_S15_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(s15Root);
+                string s15Db = Path.Combine(s15Root, "ContentIndex.db");
+
+                try
+                {
+                    // 1. テスト環境構築
+                    // 📁 契約関連フォルダー (フォルダー名に「契約」を含む)
+                    string folderPath = Path.Combine(s15Root, "契約関連フォルダー");
+                    Directory.CreateDirectory(folderPath);
+
+                    // 📁 契約関連フォルダー\通常メモ.txt (本文に「契約」を含まない)
+                    string memoFile = Path.Combine(folderPath, "通常メモ.txt");
+                    File.WriteAllText(memoFile, "これはプロジェクトの議事録メモです。");
+
+                    // 請求書_2026.txt (本文に「契約」を含む)
+                    string invoiceFile = Path.Combine(s15Root, "請求書_2026.txt");
+                    File.WriteAllText(invoiceFile, "本請求書は契約合意に基づくものです。");
+
+                    // 2. インデックス構築
+                    var s15IndexService = new ContentIndexService(s15Db);
+                    await s15IndexService.IndexFolderAsync(s15Root, null, CancellationToken.None);
+
+                    // 3. インメモリツリー構築
+                    var rootNode = new FileItemNode { Name = Path.GetFileName(s15Root), FullPath = s15Root, IsDirectory = true };
+                    var folderNode = new FileItemNode { Name = "契約関連フォルダー", FullPath = folderPath, IsDirectory = true };
+                    var memoNode = new FileItemNode { Name = "通常メモ.txt", FullPath = memoFile, IsDirectory = false, Size = 50 };
+                    var invoiceNode = new FileItemNode { Name = "請求書_2026.txt", FullPath = invoiceFile, IsDirectory = false, Size = 60 };
+                    folderNode.Children.Add(memoNode);
+                    rootNode.Children.Add(folderNode);
+                    rootNode.Children.Add(invoiceNode);
+                    var memRoots = new List<FileItemNode> { rootNode };
+
+                    // 4. クエリ: 「契約」, 本文も検索 ON, フォルダも含める ON
+                    var qFolder = SearchQueryParser.Parse("契約");
+                    qFolder.SearchContentMode = true;
+                    qFolder.IncludeFolders = true;
+
+                    // A. Route 1: Indexed Search
+                    var hitsIndexed = await s15IndexService.SearchIndexedAsync(qFolder, s15Root, CancellationToken.None);
+                    var indexedFolderHit = hitsIndexed.FirstOrDefault(h => h.IsDirectory);
+                    if (indexedFolderHit == null || !indexedFolderHit.FullPath.EndsWith("契約関連フォルダー"))
+                        throw new Exception($"ADR 83 Indexed Search failed to return folder match (Total: {hitsIndexed.Count})");
+
+                    // B. Route 2: In-Memory Search
+                    var engineService = new SearchEngineService();
+                    var hitsMemory = await engineService.SearchInMemoryAsync(memRoots, qFolder, null, CancellationToken.None);
+                    var memoryFolderHit = hitsMemory.FirstOrDefault(h => h.IsDirectory);
+                    if (memoryFolderHit == null || !memoryFolderHit.FullPath.EndsWith("契約関連フォルダー"))
+                        throw new Exception($"ADR 83 In-Memory Search failed to return folder match (Total: {hitsMemory.Count})");
+
+                    // C. Route 3: Direct Search
+                    var hitsDirect = await engineService.SearchDirectFolderAsync(s15Root, qFolder, null, null, CancellationToken.None);
+                    var directFolderHit = hitsDirect.FirstOrDefault(h => h.IsDirectory);
+                    if (directFolderHit == null || !directFolderHit.FullPath.EndsWith("契約関連フォルダー"))
+                        throw new Exception($"ADR 83 Direct Search failed to return folder match (Total: {hitsDirect.Count})");
+
+                    // D. 3経路の整合性確認（フォルダーHITがすべて一致すること）
+                    if (indexedFolderHit.FullPath != memoryFolderHit.FullPath || indexedFolderHit.FullPath != directFolderHit.FullPath)
+                        throw new Exception("ADR 83 Parity mismatch: Folder hit paths differ across Indexed, Memory, and Direct routes.");
+                }
+                finally
+                {
+                    try { Directory.Delete(s15Root, true); } catch { }
+                }
+            }
         }
     }
 }

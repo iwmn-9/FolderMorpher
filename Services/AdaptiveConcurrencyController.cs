@@ -311,6 +311,7 @@ namespace FolderMorpher.Services
             _evaluatingMarginalGain = false;
             _lastConcurrencyChangeSample = _totalSamplesReported;
             _emergencyCount = 0; // Emergency Window をリセット
+            _emergencyHead = 0;
         }
     }
 

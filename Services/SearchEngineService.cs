@@ -350,7 +350,14 @@ namespace FolderMorpher.Services
 
             if (query.SearchContentMode)
             {
-                if (node.IsDirectory) return false;
+                if (node.IsDirectory)
+                {
+                    if (hasMandatoryContent) return false;
+                    if (!MatchesKeywordGroups(name, fullPath, query)) return false;
+                    needsDeepCheck = false;
+                    reason = "Name";
+                    return true;
+                }
 
                 bool allInName = MatchesKeywordGroups(name, fullPath, query);
                 if (allInName && !hasMandatoryContent)
@@ -516,7 +523,14 @@ namespace FolderMorpher.Services
 
             if (query.SearchContentMode)
             {
-                if (isDir) return false;
+                if (isDir)
+                {
+                    if (hasMandatoryContent) return false;
+                    if (!MatchesKeywordGroups(name, fullPath, query)) return false;
+                    needsDeepCheck = false;
+                    reason = "Name";
+                    return true;
+                }
 
                 bool allInName = MatchesKeywordGroups(name, fullPath, query);
                 if (allInName && !hasMandatoryContent)
