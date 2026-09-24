@@ -1218,6 +1218,219 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(s15Root, true); } catch { }
                 }
             }
+
+            // 16. ADR 81: Storage スキャンツリー直結同期（二重I/Oゼロ＆メタデータ即時完了）検証
+            {
+                string s16Root = Path.Combine(Path.GetTempPath(), "AstraSearch_Section16_" + Guid.NewGuid().ToString("N"));
+                string s16Db = Path.Combine(s16Root, "Astra_Section16.db");
+                Directory.CreateDirectory(s16Root);
+
+                try
+                {
+                    // 1. テストファイル群を生成
+                    string subDir = Path.Combine(s16Root, "財務諸表");
+                    Directory.CreateDirectory(subDir);
+                    string file1 = Path.Combine(subDir, "2026年度_予算計画書.xlsx");
+                    string file2 = Path.Combine(subDir, "監査ログ_Q1.log");
+                    string file3 = Path.Combine(s16Root, "全体方針.txt");
+                    File.WriteAllText(file1, "dummy binary excel");
+                    File.WriteAllText(file2, "log text");
+                    File.WriteAllText(file3, "policy text");
+
+                    // 2. DiskScanService でツリーをスキャン（Storage Scan シミュレーション）
+                    var scanner = new AstraSize.Services.DiskScanService();
+                    var (rootNode, _) = await scanner.ScanPathAsync(s16Root, null, CancellationToken.None);
+
+                    if (rootNode == null)
+                        throw new Exception("ADR 81 failed: DiskScanService returned null rootNode.");
+
+                    // 3. SyncFromStorageScanTreeAsync を実行（ディスク再走査ゼロ・インメモリ同期）
+                    var indexService = new ContentIndexService(s16Db);
+                    var report = await indexService.SyncFromStorageScanTreeAsync(rootNode, indexContent: false);
+
+                    if (!report.IsCompleted)
+                        throw new Exception("ADR 81 failed: SyncFromStorageScanTreeAsync did not complete successfully.");
+
+                    // 4. HasCompleteIndexForPath が true を返すこと（即時検索可能）
+                    if (!indexService.HasCompleteIndexForPath(s16Root))
+                        throw new Exception("ADR 81 failed: HasCompleteIndexForPath returned false after storage sync.");
+
+                    // 5. ファイル名検索（日本語・部分一致）で即時ヒットすること
+                    var qBudget = SearchQueryParser.Parse("予算計画書");
+                    var hitsBudget = await indexService.SearchIndexedAsync(qBudget, s16Root, CancellationToken.None);
+                    if (hitsBudget.Count == 0 || !hitsBudget.Any(h => h.Name.Contains("2026年度_予算計画書")))
+                        throw new Exception($"ADR 81 failed: Budget plan not hit in indexed search (Hits: {hitsBudget.Count}).");
+
+                    // 6. フォルダも含めた検索でサブフォルダがヒットすること
+                    var qFolder = SearchQueryParser.Parse("財務諸表");
+                    qFolder.IncludeFolders = true;
+                    var hitsFolder = await indexService.SearchIndexedAsync(qFolder, s16Root, CancellationToken.None);
+                    if (!hitsFolder.Any(h => h.IsDirectory && h.Name == "財務諸表"))
+                        throw new Exception("ADR 81 failed: Subfolder '財務諸表' not hit in indexed search.");
+
+                    // 7. 2回目呼び出し（差分なし）でスキップされること（ゼロI/O・冪等性）
+                    var diffReport = await indexService.SyncFromStorageScanTreeAsync(rootNode, indexContent: false);
+                    if (diffReport.NewlyIndexedCount != 0 || diffReport.AlreadyIndexed == 0)
+                        throw new Exception($"ADR 81 failed: Idempotent resync expected NewlyIndexed=0, got {diffReport.NewlyIndexedCount} (AlreadyIndexed={diffReport.AlreadyIndexed})");
+                }
+                finally
+                {
+                    try { Directory.Delete(s16Root, true); } catch { }
+                }
+            }
+
+            // 17. ADR 82: Aho-Corasick 多パターン同時照合＆Early Exit検証
+            {
+                var patterns = new[] { "契約書", "2026年度", "予算", "SecretCode_X" };
+                var ac = new AhoCorasickSearcher(patterns, ignoreCase: true);
+
+                if (ac.PatternCount != 4)
+                    throw new Exception($"ADR 82 failed: PatternCount expected 4, got {ac.PatternCount}");
+
+                // テスト本文（大文字小文字混在、日本語混在）
+                string docText = "これは2026年度の事業計画です。秘密の識別子はsecretcode_xであり、予算に関する詳細が記載されています。";
+
+                var matched = ac.FindMatchedIndices(docText);
+                // "2026年度"(1), "SecretCode_X"(3), "予算"(2) がマッチするはず（"契約書"(0)はマッチしない）
+                if (!matched.Contains(1) || !matched.Contains(2) || !matched.Contains(3))
+                    throw new Exception("ADR 82 failed: Expected matched patterns 1, 2, 3 not found.");
+                if (matched.Contains(0))
+                    throw new Exception("ADR 82 failed: False positive on unmatched pattern '契約書'.");
+
+                // ContainsAny の即時判定
+                if (!ac.ContainsAny("単なる予算のメモ"))
+                    throw new Exception("ADR 82 failed: ContainsAny returned false for matching text.");
+                if (ac.ContainsAny("全く関係のない文章です"))
+                    throw new Exception("ADR 82 failed: ContainsAny returned true for non-matching text.");
+
+                // 全パターン一致時の早期終了
+                string fullDoc = "2026年度の契約書と予算およびSecretCode_Xの全てが含まれています。";
+                var fullMatched = ac.FindMatchedIndices(fullDoc);
+                if (fullMatched.Count != 4)
+                    throw new Exception($"ADR 82 failed: Full doc expected 4 matches, got {fullMatched.Count}");
+            }
+
+            // 18. ADR 83: Aho-Corasick スニペット抽出 ＆ Lazy Background Indexer（Small-File First）検証
+            {
+                // A. Aho-Corasick スニペット抽出テスト
+                var ac = new AhoCorasickSearcher(new[] { "秘密計画", "2026" });
+                string longText = "前文前文前文前文前文前文\r\nここに2026の秘密計画が記載されています。\n後文後文後文後文後文";
+                string snippet = ac.ExtractSnippet(longText, snippetLength: 40);
+
+                if (!snippet.Contains("【") || !snippet.Contains("】"))
+                    throw new Exception("ADR 83 failed: Snippet does not contain highlight delimiters.");
+                if (snippet.Contains("\r") || snippet.Contains("\n"))
+                    throw new Exception("ADR 83 failed: Snippet contains unnormalized newline characters.");
+
+                // B. Lazy Background Indexer & Opportunistic Cache テスト
+                string testRoot = Path.Combine(Path.GetTempPath(), "FolderMorpher_LazyIndexTest_" + Guid.NewGuid().ToString("N"));
+                string dbPath = Path.Combine(testRoot, "TestLazy.db");
+                Directory.CreateDirectory(testRoot);
+
+                try
+                {
+                    // テスト用ファイル作成（大・小・非本文）
+                    string smallFile = Path.Combine(testRoot, "small.txt");
+                    string largeFile = Path.Combine(testRoot, "large.txt");
+                    string binFile = Path.Combine(testRoot, "binary.dat");
+
+                    File.WriteAllText(smallFile, "これはSmallファイルの中身です。キーワードAlphaが含まれています。");
+                    File.WriteAllText(largeFile, new string('A', 5000) + " キーワードBetaが含まれています。");
+                    File.WriteAllBytes(binFile, new byte[] { 0x00, 0x01, 0x02 });
+
+                    var service = new ContentIndexService(dbPath);
+
+                    // 1. スキャンツリー（メタデータのみ）直結同期
+                    var rootNode = new AstraSize.Models.FileItemNode
+                    {
+                        FullPath = testRoot,
+                        Name = Path.GetFileName(testRoot),
+                        IsDirectory = true
+                    };
+                    rootNode.Children.Add(new AstraSize.Models.FileItemNode
+                    {
+                        FullPath = smallFile,
+                        Name = "small.txt",
+                        Size = 100,
+                        LastModified = DateTime.UtcNow,
+                        Parent = rootNode
+                    });
+                    rootNode.Children.Add(new AstraSize.Models.FileItemNode
+                    {
+                        FullPath = largeFile,
+                        Name = "large.txt",
+                        Size = 6000,
+                        LastModified = DateTime.UtcNow,
+                        Parent = rootNode
+                    });
+                    rootNode.Children.Add(new AstraSize.Models.FileItemNode
+                    {
+                        FullPath = binFile,
+                        Name = "binary.dat",
+                        Size = 3,
+                        LastModified = DateTime.UtcNow,
+                        Parent = rootNode
+                    });
+
+                    await service.SyncFromStorageScanTreeAsync(rootNode, indexContent: false);
+
+                    // 同期直後: メタデータのみ（Status = 0）なので本文検索ではまだヒットしない
+                    var qPre = SearchQueryParser.Parse("content:Alpha");
+                    var preHits = await service.SearchIndexedAsync(qPre, testRoot);
+                    if (preHits.Count != 0)
+                        throw new Exception("ADR 83 failed: Expected 0 content hits before lazy processing.");
+
+                    // 2. ProcessPendingContentIndexAsync（Small-File First）で1件だけ処理
+                    int processed1 = await service.ProcessPendingContentIndexAsync(testRoot, maxCount: 1);
+                    if (processed1 != 1)
+                        throw new Exception($"ADR 83 failed: Expected 1 processed file, got {processed1}");
+
+                    // SmallFile（small.txt）が先にインデックス化され、Alphaがヒットするはず！
+                    var postHits1 = await service.SearchIndexedAsync(qPre, testRoot);
+                    if (postHits1.Count != 1 || !postHits1[0].FullPath.EndsWith("small.txt", StringComparison.OrdinalIgnoreCase))
+                        throw new Exception("ADR 83 failed: small.txt was not indexed first by Small-File First ordering.");
+
+                    // largeFile（Beta）はまだ処理されていないので0件のはず
+                    var qBeta = SearchQueryParser.Parse("content:Beta");
+                    var betaHitsPre = await service.SearchIndexedAsync(qBeta, testRoot);
+                    if (betaHitsPre.Count != 0)
+                        throw new Exception("ADR 83 failed: large.txt should not be indexed yet.");
+
+                    // 3. 残りの未インデックスを処理
+                    int processed2 = await service.ProcessPendingContentIndexAsync(testRoot, maxCount: 10);
+                    if (processed2 < 1)
+                        throw new Exception($"ADR 83 failed: Expected remaining file to be processed, got {processed2}");
+
+                    // 今度は largeFile（Beta）もヒットする
+                    var betaHitsPost = await service.SearchIndexedAsync(qBeta, testRoot);
+                    if (betaHitsPost.Count != 1)
+                        throw new Exception("ADR 83 failed: large.txt was not indexed in second pass.");
+
+                    // 4. UpsertFileContentDirectlyAsync（便乗キャッシュ）のテスト
+                    string cachedFile = Path.Combine(testRoot, "cached.txt");
+                    File.WriteAllText(cachedFile, "ダミー");
+                    // メタデータを手動追加して便乗投入をテスト
+                    rootNode.Children.Add(new AstraSize.Models.FileItemNode
+                    {
+                        FullPath = cachedFile,
+                        Name = "cached.txt",
+                        Size = 20,
+                        LastModified = DateTime.UtcNow,
+                        Parent = rootNode
+                    });
+                    await service.SyncFromStorageScanTreeAsync(rootNode, indexContent: false);
+
+                    await service.UpsertFileContentDirectlyAsync(cachedFile, "ライブ検索で読んだ本文: SecretGamma_999");
+                    var qGamma = SearchQueryParser.Parse("content:SecretGamma_999");
+                    var gammaHits = await service.SearchIndexedAsync(qGamma, testRoot);
+                    if (gammaHits.Count != 1 || string.IsNullOrEmpty(gammaHits[0].ContentSnippet))
+                        throw new Exception("ADR 83 failed: Opportunistic cache did not index content with snippet.");
+                }
+                finally
+                {
+                    try { Directory.Delete(testRoot, recursive: true); } catch { }
+                }
+            }
         }
     }
 }

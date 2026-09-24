@@ -315,6 +315,23 @@ namespace AstraSize
                 _ = _historyService.SaveSnapshotAsync(root);
                 SaveStorageTabSession();
 
+                // 🚀 ADR 81/83: Storage スキャンツリーを Search Metadata Index へ直結（二重I/Oゼロ）
+                // メタデータ登録完了後、3秒のアイドルを置いて低優先度で未インデックスファイルの本文を Small-File First で順次構築
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _contentIndex.SyncFromStorageScanTreeAsync(root, indexContent: false);
+
+                        await Task.Delay(3000);
+                        await _contentIndex.ProcessPendingContentIndexAsync(root.FullPath, maxCount: 200);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[Storage->Search Sync Error] {ex.Message}");
+                    }
+                });
+
                 string diffInfo = hadDiff && !string.IsNullOrEmpty(root.DiffFormatted) ? $" [差分: {root.DiffFormatted}]" : "";
                 StatusTextBlock.Text = summary.IsMftBoosted
                     ? $"⚡ MFT高速スキャン完了 ({summary.ElapsedSeconds}秒): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)}){diffInfo}"

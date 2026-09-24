@@ -819,24 +819,7 @@ namespace FolderMorpher.Services
 
         private static bool SearchPdfContentMultiple(string filePath, IReadOnlyList<List<string>> requiredGroups, out string snippet)
         {
-            snippet = string.Empty;
-            string firstSnippet = string.Empty;
-            foreach (var grp in requiredGroups)
-            {
-                bool grpMatch = false;
-                foreach (var kw in grp)
-                {
-                    if (PdfSearchHelper.SearchPdfContent(filePath, kw, out string s))
-                    {
-                        grpMatch = true;
-                        if (string.IsNullOrEmpty(firstSnippet)) firstSnippet = s;
-                        break;
-                    }
-                }
-                if (!grpMatch) return false;
-            }
-            snippet = firstSnippet;
-            return true;
+            return PdfSearchHelper.SearchPdfContentMultiple(filePath, requiredGroups, out snippet);
         }
 
 

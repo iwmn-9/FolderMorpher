@@ -260,18 +260,27 @@ namespace FolderMorpher.Services
                     if (sqlObj != null)
                     {
                         string sqlStr = sqlObj.ToString() ?? string.Empty;
-                        if (sqlStr.Contains("FileId", StringComparison.OrdinalIgnoreCase))
+                        bool hasFileIdCol = sqlStr.Contains("FileId", StringComparison.OrdinalIgnoreCase);
+                        bool hasDetailNone = sqlStr.Contains("detail", StringComparison.OrdinalIgnoreCase) &&
+                                             sqlStr.Contains("none", StringComparison.OrdinalIgnoreCase);
+
+                        if (hasFileIdCol || hasDetailNone)
                         {
-                            // 旧スキーマ: FileId UNINDEXED 列が存在する ➔ 一時テーブル経由で rowid 形式へ移行
+                            // 旧スキーマ（FileId列がある、または detail=none でフレーズ照合不可）
+                            // ➔ 一時テーブル経由で rowid 形式へ安全マイグレーション
                             using var migCmd = conn.CreateCommand();
-                            migCmd.CommandText = @"
+                            string selectCols = hasFileIdCol
+                                ? "SELECT CAST(FileId AS INTEGER), Body FROM ContentFts_Old WHERE FileId IS NOT NULL;"
+                                : "SELECT rowid, Body FROM ContentFts_Old WHERE rowid IS NOT NULL;";
+
+                            migCmd.CommandText = $@"
                                 ALTER TABLE ContentFts RENAME TO ContentFts_Old;
                                 CREATE VIRTUAL TABLE ContentFts USING fts5(
                                     Body,
                                     tokenize = 'trigram'
                                 );
                                 INSERT INTO ContentFts (rowid, Body)
-                                SELECT CAST(FileId AS INTEGER), Body FROM ContentFts_Old WHERE FileId IS NOT NULL;
+                                {selectCols}
                                 DROP TABLE ContentFts_Old;
                             ";
                             migCmd.ExecuteNonQuery();
@@ -603,6 +612,273 @@ namespace FolderMorpher.Services
 
 
         /// <summary>
+        /// 【ADR 81: Storage列挙結果のSearch Metadata Index直結（二重I/Oゼロ）】
+        /// DiskScanService で取得済みの FileItemNode ツリーから、ディスク・UNCの再走査なしで
+        /// インメモリに ScannedFileEntry を抽出し、IndexedFiles および MetadataFts へ一括高速登録する。
+        /// </summary>
+        public async Task<IndexProgressReport> SyncFromStorageScanTreeAsync(
+            AstraSize.Models.FileItemNode rootNode,
+            bool indexContent = false,
+            IProgress<IndexProgressReport>? progress = null,
+            CancellationToken ct = default)
+        {
+            if (rootNode == null || string.IsNullOrWhiteSpace(rootNode.FullPath))
+            {
+                return new IndexProgressReport { StatusMessage = "対象ツリーが無効です。", IsCompleted = true };
+            }
+
+            return await Task.Run(async () =>
+            {
+                var sw = Stopwatch.StartNew();
+                string normTarget = Path.GetFullPath(rootNode.FullPath).TrimEnd('\\', '/');
+
+                int currentGen = 1;
+                lock (_lock)
+                {
+                    using var conn = new SqliteConnection(_connectionString);
+                    conn.Open();
+                    using var cmdGet = conn.CreateCommand();
+                    cmdGet.CommandText = "SELECT CurrentGeneration FROM IndexedRoots WHERE RootPath = @root;";
+                    cmdGet.Parameters.AddWithValue("@root", normTarget);
+                    var genObj = cmdGet.ExecuteScalar();
+                    if (genObj != null && genObj != DBNull.Value)
+                    {
+                        currentGen = Convert.ToInt32(genObj) + 1;
+                    }
+
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandText = @"
+                        INSERT OR REPLACE INTO IndexedRoots (RootPath, Status, CoverageComplete, LastCompletedUtcTicks, TotalFiles, ExtractorVersion, CurrentGeneration)
+                        VALUES (@root, 'InProgress', 0, @ticks, 0, @extVer, @gen);";
+                    cmd.Parameters.AddWithValue("@root", normTarget);
+                    cmd.Parameters.AddWithValue("@ticks", DateTime.UtcNow.Ticks);
+                    cmd.Parameters.AddWithValue("@extVer", CurrentExtractorVersion);
+                    cmd.Parameters.AddWithValue("@gen", currentGen);
+                    cmd.ExecuteNonQuery();
+                }
+
+                _activeScanRoots[normTarget] = currentGen;
+
+                progress?.Report(new IndexProgressReport
+                {
+                    StatusMessage = "Storageスキャンツリーからインデックス同期中...",
+                    CurrentFile = normTarget,
+                    Elapsed = sw.Elapsed
+                });
+
+                var scannedEntries = ExtractScannedEntriesFromTree(rootNode, ct);
+                var coverage = new ScanCoverage();
+
+                return await ProcessScannedEntriesCoreAsync(
+                    normTarget,
+                    currentGen,
+                    scannedEntries,
+                    indexContent,
+                    coverage,
+                    sw,
+                    progress,
+                    ct);
+            }, ct);
+        }
+
+        /// <summary>
+        /// 【ADR 83: Lazy Background Builder】
+        /// Storage Scan 完了後やアイドル時に、メタデータのみ登録済み（Status = 0）の本文対応ファイルを
+        /// Small-File First（容量昇順）で低優先度・バッチ抽出して ContentFts へ投入する。
+        /// 他の操作やスキャン開始時は CancellationToken により即座に中断できる。
+        /// </summary>
+        public async Task<int> ProcessPendingContentIndexAsync(
+            string folderPath,
+            int maxCount = 100,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(folderPath)) return 0;
+            string normTarget = Path.GetFullPath(folderPath).TrimEnd('\\', '/');
+
+            return await Task.Run(async () =>
+            {
+                var supportedExts = ContentExtractionService.SupportedExtensions;
+                const long MaxIndexFileSize = 50L * 1024 * 1024; // 50MB上限
+
+                var pendingFiles = new List<(long FileId, string FullPath, long SizeBytes)>();
+                lock (_lock)
+                {
+                    using var conn = new SqliteConnection(_connectionString);
+                    conn.Open();
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandText = @"
+                        SELECT FileId, FullPath, SizeBytes
+                        FROM IndexedFiles
+                        WHERE (FullPath = @exact OR FullPath LIKE @prefix ESCAPE '\')
+                          AND Status = 0
+                          AND IsDirectory = 0
+                        ORDER BY SizeBytes ASC
+                        LIMIT @limit;";
+
+                    string dirPrefix = normTarget + "\\";
+                    string escPrefix = dirPrefix.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+                    cmd.Parameters.AddWithValue("@exact", normTarget);
+                    cmd.Parameters.AddWithValue("@prefix", escPrefix);
+                    cmd.Parameters.AddWithValue("@limit", maxCount * 2);
+
+                    using var reader = cmd.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        long fId = reader.GetInt64(0);
+                        string path = reader.GetString(1);
+                        long size = reader.GetInt64(2);
+                        if (size <= MaxIndexFileSize && supportedExts.Contains(Path.GetExtension(path)))
+                        {
+                            pendingFiles.Add((fId, path, size));
+                            if (pendingFiles.Count >= maxCount) break;
+                        }
+                    }
+                }
+
+                if (pendingFiles.Count == 0) return 0;
+
+                int processedCount = 0;
+                var extractedItems = new List<(long FileId, string Body, bool Success)>();
+
+                foreach (var (fId, path, size) in pendingFiles)
+                {
+                    if (ct.IsCancellationRequested) break;
+
+                    try
+                    {
+                        if (File.Exists(path))
+                        {
+                            string? text = await ContentExtractionService.ExtractTextAsync(path, ct);
+                            extractedItems.Add((fId, text ?? string.Empty, text != null));
+                        }
+                        else
+                        {
+                            extractedItems.Add((fId, string.Empty, false));
+                        }
+                    }
+                    catch
+                    {
+                        extractedItems.Add((fId, string.Empty, false));
+                    }
+
+                    processedCount++;
+                }
+
+                if (extractedItems.Count > 0)
+                {
+                    lock (_lock)
+                    {
+                        using var conn = new SqliteConnection(_connectionString);
+                        conn.Open();
+                        using var trans = conn.BeginTransaction();
+                        long nowTicks = DateTime.UtcNow.Ticks;
+
+                        foreach (var (fId, body, success) in extractedItems)
+                        {
+                            int status = success ? 1 : 2; // 1: Success, 2: Failed
+
+                            using var cmdUpd = conn.CreateCommand();
+                            cmdUpd.Transaction = trans;
+                            cmdUpd.CommandText = "UPDATE IndexedFiles SET Status = @st, IndexedAtUtcTicks = @now WHERE FileId = @fileId;";
+                            cmdUpd.Parameters.AddWithValue("@st", status);
+                            cmdUpd.Parameters.AddWithValue("@now", nowTicks);
+                            cmdUpd.Parameters.AddWithValue("@fileId", fId);
+                            cmdUpd.ExecuteNonQuery();
+
+                            if (success && !string.IsNullOrWhiteSpace(body))
+                            {
+                                using var cmdDel = conn.CreateCommand();
+                                cmdDel.Transaction = trans;
+                                cmdDel.CommandText = "DELETE FROM ContentFts WHERE rowid = @fileId;";
+                                cmdDel.Parameters.AddWithValue("@fileId", fId);
+                                cmdDel.ExecuteNonQuery();
+
+                                using var cmdIns = conn.CreateCommand();
+                                cmdIns.Transaction = trans;
+                                cmdIns.CommandText = "INSERT INTO ContentFts (rowid, Body) VALUES (@fileId, @body);";
+                                cmdIns.Parameters.AddWithValue("@fileId", fId);
+                                cmdIns.Parameters.AddWithValue("@body", body);
+                                cmdIns.ExecuteNonQuery();
+                            }
+                        }
+
+                        trans.Commit();
+                    }
+                }
+
+                return processedCount;
+            }, ct);
+        }
+
+        /// <summary>
+        /// 【ADR 83: Opportunistic Indexing（検索時便乗キャッシュ）】
+        /// ライブ検索などで本文を読み取ったファイルの内容をその場でインデックスへ投入する。
+        /// 次回以降の同一検索がミリ秒インデックス検索へ自動昇格する。
+        /// </summary>
+        public async Task UpsertFileContentDirectlyAsync(
+            string fullPath,
+            string contentText,
+            CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(fullPath) || string.IsNullOrWhiteSpace(contentText)) return;
+
+            await Task.Run(() =>
+            {
+                lock (_lock)
+                {
+                    try
+                    {
+                        using var conn = new SqliteConnection(_connectionString);
+                        conn.Open();
+
+                        long fileId = 0;
+                        using (var cmdFind = conn.CreateCommand())
+                        {
+                            cmdFind.CommandText = "SELECT FileId FROM IndexedFiles WHERE FullPath = @path;";
+                            cmdFind.Parameters.AddWithValue("@path", fullPath);
+                            var obj = cmdFind.ExecuteScalar();
+                            if (obj != null && obj != DBNull.Value)
+                            {
+                                fileId = Convert.ToInt64(obj);
+                            }
+                        }
+
+                        if (fileId <= 0) return; // メタデータが存在しない場合はスキップ
+
+                        using var trans = conn.BeginTransaction();
+                        long nowTicks = DateTime.UtcNow.Ticks;
+
+                        using var cmdUpd = conn.CreateCommand();
+                        cmdUpd.Transaction = trans;
+                        cmdUpd.CommandText = "UPDATE IndexedFiles SET Status = 1, IndexedAtUtcTicks = @now WHERE FileId = @fileId;";
+                        cmdUpd.Parameters.AddWithValue("@now", nowTicks);
+                        cmdUpd.Parameters.AddWithValue("@fileId", fileId);
+                        cmdUpd.ExecuteNonQuery();
+
+                        using var cmdDel = conn.CreateCommand();
+                        cmdDel.Transaction = trans;
+                        cmdDel.CommandText = "DELETE FROM ContentFts WHERE rowid = @fileId;";
+                        cmdDel.Parameters.AddWithValue("@fileId", fileId);
+                        cmdDel.ExecuteNonQuery();
+
+                        using var cmdIns = conn.CreateCommand();
+                        cmdIns.Transaction = trans;
+                        cmdIns.CommandText = "INSERT INTO ContentFts (rowid, Body) VALUES (@fileId, @body);";
+                        cmdIns.Parameters.AddWithValue("@fileId", fileId);
+                        cmdIns.Parameters.AddWithValue("@body", contentText);
+                        cmdIns.ExecuteNonQuery();
+
+                        trans.Commit();
+                    }
+                    catch
+                    {
+                        // 便乗キャッシュ失敗は安全に無視
+                    }
+                }
+            }, ct);
+        }
+
+        /// <summary>
         /// 指定したフォルダーのファイルを走査し、差分更新およびレジューム（前回の続き）でインデックスを作成する。
         /// </summary>
         public async Task<IndexProgressReport> IndexFolderAsync(
@@ -653,30 +929,17 @@ namespace FolderMorpher.Services
 
                 var coverage = new ScanCoverage();
 
-                try
+                // 1. ファイル一覧を一括列挙 (MFT Fast Track または 並列2 SafeFileEnumerator)
+                List<ScannedFileEntry> scannedEntries;
+                if (AstraSize.Services.Mft.MftScanService.CanUseMft(normTarget))
                 {
-                    // 1. ファイル一覧を一括列挙 (MFT Fast Track または 並列2 SafeFileEnumerator)
-                    List<ScannedFileEntry> scannedEntries;
-                    if (AstraSize.Services.Mft.MftScanService.CanUseMft(normTarget))
+                    try
                     {
-                        try
-                        {
-                            scannedEntries = await EnumerateEntriesViaMftAsync(normTarget, ct);
-                        }
-                        catch
-                        {
-                            // MFT 直接走査に失敗した場合は安全に通常走査へフォールバック
-                            scannedEntries = await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
-                                normTarget,
-                                "*.*",
-                                coverage: coverage,
-                                onProgress: null,
-                                ct: ct,
-                                includeDirectories: true);
-                        }
+                        scannedEntries = await EnumerateEntriesViaMftAsync(normTarget, ct);
                     }
-                    else
+                    catch
                     {
+                        // MFT 直接走査に失敗した場合は安全に通常走査へフォールバック
                         scannedEntries = await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
                             normTarget,
                             "*.*",
@@ -685,29 +948,76 @@ namespace FolderMorpher.Services
                             ct: ct,
                             includeDirectories: true);
                     }
+                }
+                else
+                {
+                    scannedEntries = await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
+                        normTarget,
+                        "*.*",
+                        coverage: coverage,
+                        onProgress: null,
+                        ct: ct,
+                        includeDirectories: true);
+                }
 
-                    // 2. 自前DBファイル（TestIndex.db, -wal, -shm 等）を完全除外（customDbPath時の自己食い防止）
-                    var validEntries = scannedEntries
-                        .Where(e => !IsDatabaseFile(e.FullPath))
-                        .ToList();
+                return await ProcessScannedEntriesCoreAsync(
+                    normTarget,
+                    currentGen,
+                    scannedEntries,
+                    indexContent: true,
+                    coverage,
+                    sw,
+                    progress,
+                    ct);
+            }, ct);
+        }
 
-                    var directories = validEntries
-                        .Where(e => e.Attributes.HasFlag(FileAttributes.Directory))
-                        .ToList();
+        private async Task<IndexProgressReport> ProcessScannedEntriesCoreAsync(
+            string normTarget,
+            int currentGen,
+            List<ScannedFileEntry> scannedEntries,
+            bool indexContent,
+            ScanCoverage coverage,
+            Stopwatch sw,
+            IProgress<IndexProgressReport>? progress,
+            CancellationToken ct)
+        {
+            try
+            {
+                // 2. 自前DBファイル（TestIndex.db, -wal, -shm 等）を完全除外（customDbPath時の自己食い防止）
+                var validEntries = scannedEntries
+                    .Where(e => !IsDatabaseFile(e.FullPath))
+                    .ToList();
 
-                    var allFiles = validEntries
-                        .Where(e => !e.Attributes.HasFlag(FileAttributes.Directory))
-                        .ToList();
+                var directories = validEntries
+                    .Where(e => e.Attributes.HasFlag(FileAttributes.Directory))
+                    .ToList();
 
-                    var supportedExts = ContentExtractionService.SupportedExtensions;
-                    const long MaxIndexFileSize = 50L * 1024 * 1024; // 50MB上限
+                var allFiles = validEntries
+                    .Where(e => !e.Attributes.HasFlag(FileAttributes.Directory))
+                    .ToList();
 
-                    var contentTargets = allFiles
+                var supportedExts = ContentExtractionService.SupportedExtensions;
+                const long MaxIndexFileSize = 50L * 1024 * 1024; // 50MB上限
+
+                List<ScannedFileEntry> contentTargets;
+                List<ScannedFileEntry> metadataOnlyFiles;
+
+                if (indexContent)
+                {
+                    contentTargets = allFiles
                         .Where(e => e.Length <= MaxIndexFileSize && supportedExts.Contains(Path.GetExtension(e.Name)))
                         .ToList();
-                    var metadataOnlyFiles = allFiles
+                    metadataOnlyFiles = allFiles
                         .Where(e => e.Length > MaxIndexFileSize || !supportedExts.Contains(Path.GetExtension(e.Name)))
                         .ToList();
+                }
+                else
+                {
+                    // メタデータ専用モード（Storage同期時等）: 全ファイルをメタデータ登録へ回す（本文抽出は後回し）
+                    contentTargets = new List<ScannedFileEntry>();
+                    metadataOnlyFiles = allFiles;
+                }
 
                     // 3. 既存DBのメタデータ状態をロード（パス境界を厳格化して近接類似フォルダーの巻き込みを防止）
                     var existingMap = new Dictionary<string, (long FileId, long SizeBytes, long LastWriteTicks, int Status, int ExtractorVer, int IsDir)>(StringComparer.OrdinalIgnoreCase);
@@ -1248,7 +1558,6 @@ namespace FolderMorpher.Services
                     _activeScanRoots.TryRemove(normTarget, out _);
                     try { ScanCompleted?.Invoke(normTarget); } catch { }
                 }
-            }, ct);
         }
 
         /// <summary>
@@ -1658,33 +1967,52 @@ namespace FolderMorpher.Services
                                 }
                             }
 
-                            if (ftsWords.Count > 0)
+                            // ADR 82/83: Aho-Corasick によるワンパス高速ハイライトスニペット生成（FTS5 snippet()依存完全排除 ＆ 1〜2文字語対応）
+                            var allSearchWords = new List<string>();
+                            foreach (var grp in query.KeywordGroups)
+                            {
+                                foreach (var w in grp)
+                                {
+                                    if (!string.IsNullOrWhiteSpace(w) && !allSearchWords.Contains(w, StringComparer.OrdinalIgnoreCase))
+                                    {
+                                        allSearchWords.Add(w);
+                                    }
+                                }
+                            }
+                            if (!string.IsNullOrWhiteSpace(query.ContentKeyword) && !allSearchWords.Contains(query.ContentKeyword, StringComparer.OrdinalIgnoreCase))
+                            {
+                                allSearchWords.Add(query.ContentKeyword);
+                            }
+
+                            if (allSearchWords.Count > 0)
                             {
                                 try
                                 {
-                                    using var snippetCmd = conn.CreateCommand();
-                                    var ftsTerms = ftsWords.Select(w => $"\"{w.Replace("\"", "\"\"")}\"");
-                                    string snippetMatch = string.Join(" OR ", ftsTerms);
                                     string idList = string.Join(",", hitFileIds.Where(id => id > 0));
                                     if (!string.IsNullOrEmpty(idList))
                                     {
+                                        using var snippetCmd = conn.CreateCommand();
                                         snippetCmd.CommandText = $@"
-                                            SELECT c.rowid, snippet(ContentFts, 0, '【', '】', '...', 15)
+                                            SELECT c.rowid, c.Body
                                             FROM ContentFts c
-                                            WHERE c.rowid IN ({idList})
-                                              AND ContentFts MATCH @snipQuery";
-                                        snippetCmd.Parameters.AddWithValue("@snipQuery", snippetMatch);
+                                            WHERE c.rowid IN ({idList})";
 
+                                        var ahoCorasick = new AhoCorasickSearcher(allSearchWords);
                                         var snippetMap = new Dictionary<long, string>();
+
                                         using (var reader = snippetCmd.ExecuteReader())
                                         {
                                             while (reader.Read())
                                             {
                                                 long fId = reader.GetInt64(0);
-                                                string snip = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
-                                                if (!string.IsNullOrEmpty(snip))
+                                                string body = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+                                                if (!string.IsNullOrEmpty(body))
                                                 {
-                                                    snippetMap[fId] = snip;
+                                                    string snip = ahoCorasick.ExtractSnippet(body);
+                                                    if (!string.IsNullOrEmpty(snip))
+                                                    {
+                                                        snippetMap[fId] = snip;
+                                                    }
                                                 }
                                             }
                                         }
@@ -1787,16 +2115,36 @@ namespace FolderMorpher.Services
             }
         }
 
-        private async Task<List<ScannedFileEntry>> EnumerateEntriesViaMftAsync(string rootPath, CancellationToken ct)
+        /// <summary>
+        /// 【ADR 81: Storageツリーからのエントリ抽出（再走査ゼロ）】
+        /// メモリ上の FileItemNode ツリーを木構造走査し、再stat・ネットワークI/Oゼロで ScannedFileEntry の一覧へ展開する。
+        /// </summary>
+        public static List<ScannedFileEntry> ExtractScannedEntriesFromTree(AstraSize.Models.FileItemNode rootNode, CancellationToken ct = default)
         {
-            var mftService = new AstraSize.Services.Mft.MftScanService();
-            var (rootNode, _) = await mftService.ScanPathAsync(rootPath, progress: null, ct);
-
             var result = new List<ScannedFileEntry>();
+            if (rootNode == null) return result;
+
             var stack = new Stack<AstraSize.Models.FileItemNode>();
             stack.Push(rootNode);
 
-            string normRoot = Path.GetFullPath(rootPath).TrimEnd('\\', '/');
+            string normRoot = Path.GetFullPath(rootNode.FullPath).TrimEnd('\\', '/');
+
+            // ルート自身もディレクトリとして登録（ドライブ直下等の場合）
+            DateTime rootLastWrite = rootNode.LastModified ?? DateTime.UtcNow;
+            DateTime rootCreation = rootNode.CreationTime ?? rootLastWrite;
+            string? rootParentDir = Path.GetDirectoryName(rootNode.FullPath);
+            if (!string.IsNullOrEmpty(rootParentDir))
+            {
+                result.Add(new ScannedFileEntry(
+                    rootNode.FullPath,
+                    rootNode.Name,
+                    rootParentDir,
+                    0,
+                    rootCreation,
+                    rootLastWrite,
+                    rootLastWrite,
+                    FileAttributes.Directory));
+            }
 
             while (stack.Count > 0)
             {
@@ -1841,6 +2189,13 @@ namespace FolderMorpher.Services
             }
 
             return result;
+        }
+
+        private async Task<List<ScannedFileEntry>> EnumerateEntriesViaMftAsync(string rootPath, CancellationToken ct)
+        {
+            var mftService = new AstraSize.Services.Mft.MftScanService();
+            var (rootNode, _) = await mftService.ScanPathAsync(rootPath, progress: null, ct);
+            return ExtractScannedEntriesFromTree(rootNode, ct);
         }
 
         /// <summary>

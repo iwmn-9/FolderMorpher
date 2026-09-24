@@ -236,7 +236,24 @@ namespace FolderMorpher.Services
 
                 Encoding encoding = DetectTextEncoding(fs);
 
-                // 行単位ストリーム走査
+                var patterns = new List<string>();
+                var patternToGroup = new List<int>();
+                for (int g = 0; g < requiredGroups.Count; g++)
+                {
+                    foreach (var kw in requiredGroups[g])
+                    {
+                        if (!string.IsNullOrWhiteSpace(kw))
+                        {
+                            patterns.Add(kw);
+                            patternToGroup.Add(g);
+                        }
+                    }
+                }
+                if (patterns.Count == 0) return null;
+
+                var ac = new AhoCorasickSearcher(patterns, ignoreCase: true);
+
+                // 行単位ストリーム走査（Aho-Corasick ワンパス判定 ＆ Early Exit）
                 using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true);
                 var satisfiedGroups = new HashSet<int>();
                 string? firstSnippet = null;
@@ -244,21 +261,18 @@ namespace FolderMorpher.Services
                 string? line;
                 while ((line = await reader.ReadLineAsync(ct)) != null)
                 {
-                    for (int g = 0; g < requiredGroups.Count; g++)
+                    var matches = ac.FindMatchedIndices(line);
+                    foreach (var pIdx in matches)
                     {
-                        if (satisfiedGroups.Contains(g)) continue;
-
-                        foreach (var kw in requiredGroups[g])
+                        int gIdx = patternToGroup[pIdx];
+                        satisfiedGroups.Add(gIdx);
+                        if (firstSnippet == null)
                         {
-                            int idx = line.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
-                            if (idx >= 0)
+                            string p = ac.Patterns[pIdx];
+                            int matchIdx = line.IndexOf(p, StringComparison.OrdinalIgnoreCase);
+                            if (matchIdx >= 0)
                             {
-                                satisfiedGroups.Add(g);
-                                if (firstSnippet == null)
-                                {
-                                    firstSnippet = ExtractSnippet(line, idx, kw.Length);
-                                }
-                                break;
+                                firstSnippet = ExtractSnippet(line, matchIdx, p.Length);
                             }
                         }
                     }

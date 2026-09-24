@@ -1,4 +1,4 @@
-﻿# FolderMorpher — 重要な設計判断の記録（Architecture Decisions / ADR）
+# FolderMorpher — 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > **【AIメンテナ・自律継続規約】**  
 > 本ドキュメントは、FolderMorpher の全 59 項目に及ぶ過去の設計判断・障害対策（ADR 1〜59）を、**12大中核アーキテクチャ原則（Core Architecture Principles）** として体系化・統合した正本記録である。  
@@ -837,3 +837,36 @@
   3. **自動回帰テストによる恒久保護**:
      - `RegressionTestSuite.Search.cs` に「セクション 15: 『本文も検索ON ＋ フォルダも含めるON』における Indexed / In-Memory / Direct 3経路完全Parity検証」を新設。
      - フォルダー名一致が 3 経路すべてで同一に返ることを自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+
+---
+
+### ADR 84: UNC特化新検索アーキテクチャ（二重I/Oゼロ直結・Lazy Background Builder・Aho-Corasick Live Verify ＆ スニペット生成）
+*(v2.2.11 本番施工 & ADR 84)*
+
+- **背景 & 動機**:
+  - **DB肥大化の実態調査と限界**:
+    - ユーザー実環境でローカル DB（`ContentIndex.db`）が数GB〜10数GBまで膨張した事象について実測サンプリング調査を実施（総ファイル数 1,268,643 件、本文インデックス済み 218,804 件）。
+    - 内訳: `ContentFts_data` 3.23GB (51%), `IndexedFiles` + B-Tree 1.80GB (29%), `ContentFts_content` 1.10GB (18%)。
+    - 実験により、FTS5 の `optimize` + `VACUUM` を実行しても 6.28GB ➔ 6.04GB（わずか 3.8% 減）に留まることが判明。
+    - また、FTS5 で `detail=none` を指定すると、SQLite 内部で trigram の任意文字列 MATCH がフレーズクエリとして処理されるため、`fts5: phrase queries are not supported (detail!=full)` となり検索が完全に失敗する SQLite 固有の制約を確認。
+  - **UNCファイルサーバーにおける真のボトルネック**:
+    - ローカルと異なり、UNC では「1ファイルを開くこと自体のネットワーク往復」が極めて高い。
+    - 初回インデックス作成で UNC 全体を二重走査（容量測定で走査した直後に検索用にもう一度走査）するのは無駄であり、サーバーに負荷をかける。
+    - 本文抽出も、初回から巨大ファイルを網羅しようとすると長時間の高負荷とDB肥大化を招く。
+- **施工内容**:
+  1. **Storage 列挙結果の Metadata Index 直結（二重I/Oゼロ）**:
+     - `ContentIndexService.SyncFromStorageScanTreeAsync` を新設。
+     - Storage Scan（容量測定）で列挙済みの `FileItemNode` メモリ木構造から、ディスク・UNCの再走査なしで `ScannedFileEntry` 一覧を生成し、`IndexedFiles` および `MetadataFts` へミリ秒一括登録。
+     - 登録完了後、`IndexedRoots` を `Complete` に設定。ファイル名・属性・フォルダー検索が UNC 再アクセスゼロで即座に機能。
+  2. **Aho-Corasick 多パターン同時照合エンジン ＆ ワンパスハイライトスニペット生成**:
+     - `Services/AhoCorasickSearcher.cs` を新設。決定性オートマトン（Trie + Failure Link）によるワンパス照合。
+     - PDF（`PdfSearchHelper`）、テキスト（`ContentExtractionService`）の直接走査時、同一ファイルをキーワードごとに複数回開き直す無駄を完全根絶し、全条件合致時の Early Exit を実現。
+     - `AhoCorasickSearcher.ExtractSnippet` を実装し、FTS5 の重い `snippet()` 組み込み関数依存を撤去。DB から取得した Body に対し、C# メモリ上で瞬時に前後コンテキストを切り抜いたハイライトスニペットを生成。1文字・2文字のキーワードにも完全対応。
+  3. **Lazy Background Builder（Small-File First）＆ Opportunistic Cache**:
+     - `ContentIndexService.ProcessPendingContentIndexAsync` を新設。
+     - Storage Scan 完了後、3秒のアイドルを置いて低優先度バックグラウンドで未インデックス（`Status = 0`）のファイルを **Small-File First（容量昇順）** で順次抽出・登録。
+     - ユーザーの操作や新しいスキャン時は `CancellationToken` で即座に中断。
+     - `UpsertFileContentDirectlyAsync` により、ライブ検索で本文を読んだファイルをその場でインデックスへ便乗投入する学習型キャッシュを配備。
+  4. **自動回帰テストによる恒久保護**:
+     - `RegressionTestSuite.Search.cs` に セクション 16（Storage スキャンツリー直結同期 ＆ 冪等性）、セクション 17（Aho-Corasick 多パターン同時照合 ＆ Early Exit）、セクション 18（Aho-Corasick スニペット抽出 ＆ Lazy Background Builder Small-File First ＆ Opportunistic Cache）を新設。
+     - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。

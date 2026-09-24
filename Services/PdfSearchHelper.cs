@@ -112,7 +112,55 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// Extract all readable text from a PDF file using IFilter or stream fallback (capped by maxChars).
+        /// 【ADR 82: Aho-Corasick 多パターンワンパス PDF 照合】
+        /// 複数の AND/OR キーワードグループを Aho-Corasick で単一オートマトンへ統合し、
+        /// PDF を 1 回だけストリーム走査して全条件を同時判定・Early Exit する。
+        /// </summary>
+        public static bool SearchPdfContentMultiple(string filePath, IReadOnlyList<List<string>> requiredGroups, out string snippet)
+        {
+            snippet = string.Empty;
+            if (requiredGroups == null || requiredGroups.Count == 0 || !File.Exists(filePath)) return false;
+
+            var patterns = new List<string>();
+            var patternToGroup = new List<int>();
+            for (int g = 0; g < requiredGroups.Count; g++)
+            {
+                foreach (var kw in requiredGroups[g])
+                {
+                    if (!string.IsNullOrWhiteSpace(kw))
+                    {
+                        patterns.Add(kw);
+                        patternToGroup.Add(g);
+                    }
+                }
+            }
+
+            if (patterns.Count == 0) return false;
+
+            var ac = new AhoCorasickSearcher(patterns, ignoreCase: true);
+
+            // 1. Windows Native IFilter でワンパス走査
+            try
+            {
+                if (SearchMultipleWithIFilter(filePath, ac, patternToGroup, requiredGroups.Count, out snippet))
+                {
+                    return true;
+                }
+            }
+            catch { }
+
+            // 2. Pure C# Fallback でワンパス走査
+            try
+            {
+                if (SearchMultipleWithStreamFallback(filePath, ac, patternToGroup, requiredGroups.Count, out snippet))
+                {
+                    return true;
+                }
+            }
+            catch { }
+
+            return false;
+        }
         /// </summary>
         public static string ExtractAllText(string filePath, int maxChars = 200000)
         {
@@ -343,6 +391,182 @@ namespace FolderMorpher.Services
                 }
             }
 
+            return false;
+        }
+
+        private static bool SearchMultipleWithIFilter(
+            string filePath,
+            AhoCorasickSearcher ac,
+            List<int> patternToGroup,
+            int totalGroups,
+            out string snippet)
+        {
+            snippet = string.Empty;
+            Guid riid = IFilterGuid;
+            int hr = LoadIFilter(filePath, null, ref riid, out object? obj);
+            if (hr != 0 || obj is not IFilter filter) return false;
+
+            try
+            {
+                hr = filter.Init(IFILTER_INIT_ALL, 0, 0, out _);
+                if (hr != 0) return false;
+
+                char[] buffer = new char[4096];
+                var sb = new StringBuilder();
+                var satisfiedGroups = new HashSet<int>();
+
+                while (filter.GetChunk(out var stat) == 0)
+                {
+                    if ((stat.flags & CHUNK_TEXT) != 0)
+                    {
+                        while (true)
+                        {
+                            uint size = (uint)buffer.Length;
+                            int textHr = filter.GetText(ref size, buffer);
+                            if (textHr == 0 || size > 0)
+                            {
+                                sb.Append(buffer, 0, (int)size);
+                                string currentText = sb.ToString();
+
+                                var matchedIndices = ac.FindMatchedIndices(currentText);
+                                foreach (var pIdx in matchedIndices)
+                                {
+                                    int gIdx = patternToGroup[pIdx];
+                                    satisfiedGroups.Add(gIdx);
+                                    if (string.IsNullOrEmpty(snippet))
+                                    {
+                                        string p = ac.Patterns[pIdx];
+                                        int matchIdx = currentText.IndexOf(p, StringComparison.OrdinalIgnoreCase);
+                                        if (matchIdx >= 0)
+                                        {
+                                            snippet = ExtractSnippet(currentText, matchIdx, p.Length);
+                                        }
+                                    }
+                                }
+
+                                if (satisfiedGroups.Count == totalGroups)
+                                {
+                                    return true; // 全グループ充足で即座に Early Exit!
+                                }
+
+                                if (sb.Length > 8192)
+                                {
+                                    sb.Remove(0, sb.Length - 1024);
+                                }
+                            }
+
+                            if (textHr == FILTER_E_NO_MORE_TEXT || size == 0)
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                Marshal.ReleaseComObject(filter);
+            }
+
+            return false;
+        }
+
+        private static bool SearchMultipleWithStreamFallback(
+            string filePath,
+            AhoCorasickSearcher ac,
+            List<int> patternToGroup,
+            int totalGroups,
+            out string snippet)
+        {
+            snippet = string.Empty;
+            byte[] bytes = File.ReadAllBytes(filePath);
+            if (bytes.Length < 10) return false;
+
+            var satisfiedGroups = new HashSet<int>();
+            string localSnippet = string.Empty;
+
+            void CheckText(string text)
+            {
+                var matches = ac.FindMatchedIndices(text);
+                foreach (var pIdx in matches)
+                {
+                    int gIdx = patternToGroup[pIdx];
+                    satisfiedGroups.Add(gIdx);
+                    if (string.IsNullOrEmpty(localSnippet))
+                    {
+                        string p = ac.Patterns[pIdx];
+                        int matchIdx = text.IndexOf(p, StringComparison.OrdinalIgnoreCase);
+                        if (matchIdx >= 0)
+                        {
+                            localSnippet = ExtractSnippet(text, matchIdx, p.Length);
+                        }
+                    }
+                }
+            }
+
+            // 1. メタデータ確認
+            string rawAscii = Encoding.ASCII.GetString(bytes);
+            CheckText(rawAscii);
+            if (satisfiedGroups.Count == totalGroups)
+            {
+                snippet = localSnippet;
+                return true;
+            }
+
+            string rawUtf8 = Encoding.UTF8.GetString(bytes);
+            CheckText(rawUtf8);
+            if (satisfiedGroups.Count == totalGroups)
+            {
+                snippet = localSnippet;
+                return true;
+            }
+
+            // 2. Stream scan (FlateDecode)
+            var streamMatches = Regex.Matches(rawAscii, @"stream[\r\n]+(?<data>[\s\S]*?)endstream");
+            foreach (Match match in streamMatches)
+            {
+                int start = match.Index + (rawAscii[match.Index + 6] == '\n' ? 7 : (rawAscii[match.Index + 7] == '\n' ? 8 : 6));
+                int length = match.Length - (start - match.Index) - 9;
+                if (start + length > bytes.Length || length <= 2) continue;
+
+                if (bytes[start] == 0x78 && (bytes[start + 1] == 0x9C || bytes[start + 1] == 0x01 || bytes[start + 1] == 0xDA))
+                {
+                    try
+                    {
+                        using var ms = new MemoryStream(bytes, start + 2, length - 2);
+                        using var ds = new DeflateStream(ms, CompressionMode.Decompress);
+                        using var reader = new StreamReader(ds, Encoding.UTF8);
+                        string decompressed = reader.ReadToEnd();
+
+                        CheckText(decompressed);
+                        if (satisfiedGroups.Count == totalGroups)
+                        {
+                            snippet = localSnippet;
+                            return true;
+                        }
+
+                        var textMatches = Regex.Matches(decompressed, @"\((?<text>[^)]*)\)\s*Tj|\[(?<text>[^\]]*)\]\s*TJ");
+                        var sb = new StringBuilder();
+                        foreach (Match tm in textMatches)
+                        {
+                            sb.Append(tm.Groups["text"].Value);
+                        }
+                        CheckText(sb.ToString());
+                        if (satisfiedGroups.Count == totalGroups)
+                        {
+                            snippet = localSnippet;
+                            return true;
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            if (satisfiedGroups.Count == totalGroups)
+            {
+                snippet = localSnippet;
+                return true;
+            }
             return false;
         }
 

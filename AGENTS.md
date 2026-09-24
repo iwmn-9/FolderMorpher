@@ -1,4 +1,4 @@
-﻿# FolderMorpher — AI Agent & Developer Architecture Guide
+# FolderMorpher — AI Agent & Developer Architecture Guide
 
 > **【AIメンテナ・自律継続規約】**  
 > 本プロジェクトは「自律完遂（自ら調査・修正・検証まで行い、完成状態で返す）」を基本方針とする。  
@@ -220,6 +220,11 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
     - **フォルダー名一致の救済（Direct / In-Memory 回帰根絶）**: `SearchEngineService` の `MatchFile` および `MatchDirectEntry` において、`SearchContentMode` が有効であっても、`content:` 必須指定がなくフォルダー名がキーワードを満たしていれば即座に `Name` 合格（`return true`）とするよう修正。Indexed / In-Memory / Direct の全 3 経路でフォルダー検索結果が 100% 完全一致。
     - **Emergency Window リセットの整線**: `AdaptiveConcurrencyController.ApplyCliffDecrease` において、`_emergencyCount = 0` に加えて `_emergencyHead = 0` も明示リセットし、リングバッファ状態を整線。
     - **回帰テスト（Domain 8 セクション 15）新設**: `SearchContentMode = true`, `IncludeFolders = true` で、フォルダー名一致が Indexed / In-Memory / Direct の 3 経路すべてで同一に返ることを自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+28. **UNC特化新検索アーキテクチャ（二重I/Oゼロ直結・Lazy Background Builder・Aho-Corasick Live Verify ＆ スニペット生成）（v2.2.11 / ADR 84）**:
+    - **Storage 列挙結果の Metadata Index 直結（二重I/Oゼロ）**: Storage Scan（容量測定）で列挙した `FileItemNode` メモリ木構造からディスク再走査ゼロで `IndexedFiles` と `MetadataFts` へミリ秒一括登録。ファイル名・属性・フォルダー検索が UNC 再アクセスゼロで即座に機能。
+    - **Aho-Corasick 多パターン同時照合 ＆ 高速ハイライトスニペット生成**: `AhoCorasickSearcher`（Trie + Failure Link）により、PDF・テキストの直接走査時に同一ファイルを複数回開き直す無駄を完全根絶し Early Exit を実現。また FTS5 の重い `snippet()` 依存を撤去し、DBから取得した Body に対して C# 上で瞬時に前後コンテキストを切り抜いたハイライトスニペットを生成（1〜2文字語にも完全対応）。
+    - **Lazy Background Builder（Small-File First）＆ Opportunistic Cache**: Storage Scan 完了後、アイドル時に未インデックスファイルを容量昇順（Small-File First）で低優先度バックグラウンド抽出し `ContentFts` へ順次投入。ライブ検索で読んだ本文もその場でキャッシュ投入。
+    - **回帰テスト（Domain 8 セクション 16, 17, 18）新設**: Storage ツリー直結同期、Aho-Corasick 多パターン Early Exit、Small-File First 遅延インデックス、便乗キャッシュを自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
 ---
 
 ---
