@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -58,7 +58,7 @@ namespace FolderMorpher.Services.Testing
                     DuplicateGroupId = "GRP-1",
                     IsOriginalCandidate = true
                 };
-                if (auditItem.IssueTypeDisplay != "重複ファイル")
+                if (auditItem.IssueTypeDisplay != "完全重複")
                     throw new InvalidOperationException($"JA IssueTypeDisplay mismatch: got '{auditItem.IssueTypeDisplay}'");
                 if (auditItem.DuplicateGroupBadge != "GRP-1 (原本候補)")
                     throw new InvalidOperationException($"JA DuplicateGroupBadge mismatch: got '{auditItem.DuplicateGroupBadge}'");

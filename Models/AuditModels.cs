@@ -6,10 +6,13 @@ namespace FolderMorpher.Models
 {
     public enum AuditIssueType
     {
-        Duplicate,     // 重複ファイル（SHA256完全一致）
-        Dormant,       // 休眠ファイル（X年以上未更新）
-        PathTooLong,   // パス長危険域 (240文字以上)
-        InvalidChar    // 移行禁則文字
+        Duplicate,        // 重複ファイル（SHA256完全一致）
+        Dormant,          // 休眠ファイル（X年以上未更新）
+        PathTooLong,      // パス長危険域 (240文字以上)
+        InvalidChar,      // 移行禁則文字
+        VersionFamily,    // 世代・旧版ファイル (最新版が同階層に存在)
+        ExtractedArchive, // 展開済みZIP残骸 (同名フォルダーが存在)
+        GraveyardTree     // 墓場フォルダー (配下全ファイルが休眠・化石化)
     }
 
     public enum AuditBandwidthLimit
@@ -58,8 +61,11 @@ namespace FolderMorpher.Models
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                 return IssueType switch
                 {
-                    AuditIssueType.Duplicate => isJa ? "重複ファイル" : "Duplicate File",
-                    AuditIssueType.Dormant => isJa ? "休眠ファイル" : "Dormant File",
+                    AuditIssueType.Duplicate => isJa ? "完全重複" : "Duplicate File",
+                    AuditIssueType.Dormant => isJa ? "長期休眠" : "Dormant File",
+                    AuditIssueType.VersionFamily => isJa ? "世代・旧版" : "Older Version",
+                    AuditIssueType.ExtractedArchive => isJa ? "展開済ZIP残骸" : "Extracted Archive",
+                    AuditIssueType.GraveyardTree => isJa ? "墓場フォルダー" : "Graveyard Folder",
                     AuditIssueType.PathTooLong => isJa ? "パス長危険域 (240字超)" : "Long Path (>240 chars)",
                     AuditIssueType.InvalidChar => isJa ? "地雷文字" : "Invalid Characters",
                     _ => isJa ? "その他" : "Other"
@@ -73,6 +79,42 @@ namespace FolderMorpher.Models
         public int DuplicateGroupColorIndex { get; set; }
         public bool IsOriginalCandidate { get; set; }
 
+        // 整理候補スコア & 親しみやすい目安
+        public int WasteScore { get; set; } = 50;
+        public string? RelatedActivePath { get; set; }
+
+        public string ConfidenceDisplay
+        {
+            get
+            {
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                if (WasteScore >= 80) return isJa ? "すぐ整理できそう" : "Ready to Clean";
+                if (WasteScore >= 50) return isJa ? "確認推奨" : "Review Advised";
+                return isJa ? "参考" : "Reference";
+            }
+        }
+
+        public string ConfidenceBadgeBgHex => WasteScore switch
+        {
+            >= 80 => "#FEE2E2", // 薄赤
+            >= 50 => "#FEF3C7", // 薄黄
+            _ => "#F1F5F9"      // 薄灰
+        };
+
+        public string ConfidenceBadgeBorderHex => WasteScore switch
+        {
+            >= 80 => "#FCA5A5",
+            >= 50 => "#FDE68A",
+            _ => "#CBD5E1"
+        };
+
+        public string ConfidenceBadgeFgHex => WasteScore switch
+        {
+            >= 80 => "#991B1B",
+            >= 50 => "#92400E",
+            _ => "#475569"
+        };
+
         public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged(string prop) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(prop));
 
@@ -80,12 +122,30 @@ namespace FolderMorpher.Models
         {
             get
             {
-                if (IssueType != AuditIssueType.Duplicate || string.IsNullOrEmpty(DuplicateGroupId))
-                    return "-";
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                return IsOriginalCandidate 
-                    ? $"{DuplicateGroupId} {(isJa ? "(原本候補)" : "(Original)")}" 
-                    : $"{DuplicateGroupId} {(isJa ? "(重複)" : "(Duplicate)")}";
+                if (IssueType == AuditIssueType.Duplicate && !string.IsNullOrEmpty(DuplicateGroupId))
+                {
+                    return IsOriginalCandidate 
+                        ? $"{DuplicateGroupId} {(isJa ? "(原本候補)" : "(Original)")}" 
+                        : $"{DuplicateGroupId} {(isJa ? "(重複)" : "(Duplicate)")}";
+                }
+                if (IssueType == AuditIssueType.VersionFamily)
+                {
+                    return isJa ? "👥 最新版あり" : "👥 Has Newer Version";
+                }
+                if (IssueType == AuditIssueType.ExtractedArchive)
+                {
+                    return isJa ? "📦 展開済フォルダあり" : "📦 Extracted Folder Exists";
+                }
+                if (IssueType == AuditIssueType.GraveyardTree)
+                {
+                    return isJa ? "🪦 化石化" : "🪦 Abandoned";
+                }
+                if (IssueType == AuditIssueType.Dormant)
+                {
+                    return isJa ? "⏳ 休眠" : "⏳ Dormant";
+                }
+                return "-";
             }
         }
 
@@ -98,18 +158,44 @@ namespace FolderMorpher.Models
             ? GroupBgPalette[DuplicateGroupColorIndex % GroupBgPalette.Length]
             : "Transparent";
 
-        public string BadgeBackgroundHex => IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0
-            ? GroupBgPalette[DuplicateGroupColorIndex % GroupBgPalette.Length]
-            : "Transparent";
+        public string BadgeBackgroundHex
+        {
+            get
+            {
+                if (IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0)
+                    return GroupBgPalette[DuplicateGroupColorIndex % GroupBgPalette.Length];
+                if (IssueType == AuditIssueType.VersionFamily) return "#EFF6FF"; // 薄青
+                if (IssueType == AuditIssueType.ExtractedArchive) return "#FDF4FF"; // 薄紫
+                if (IssueType == AuditIssueType.GraveyardTree) return "#FEF2F2"; // 薄赤
+                return "Transparent";
+            }
+        }
 
-        public string BadgeBorderHex => IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0
-            ? GroupBorderPalette[DuplicateGroupColorIndex % GroupBorderPalette.Length]
-            : "#E2E8F0";
+        public string BadgeBorderHex
+        {
+            get
+            {
+                if (IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0)
+                    return GroupBorderPalette[DuplicateGroupColorIndex % GroupBorderPalette.Length];
+                if (IssueType == AuditIssueType.VersionFamily) return "#BFDBFE";
+                if (IssueType == AuditIssueType.ExtractedArchive) return "#F0ABFC";
+                if (IssueType == AuditIssueType.GraveyardTree) return "#FECACA";
+                return "#E2E8F0";
+            }
+        }
 
-        public string BadgeForegroundHex => IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0
-            ? GroupTextPalette[DuplicateGroupColorIndex % GroupTextPalette.Length]
-            : "#64748B";
-
+        public string BadgeForegroundHex
+        {
+            get
+            {
+                if (IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0)
+                    return GroupTextPalette[DuplicateGroupColorIndex % GroupTextPalette.Length];
+                if (IssueType == AuditIssueType.VersionFamily) return "#1D4ED8";
+                if (IssueType == AuditIssueType.ExtractedArchive) return "#A21CAF";
+                if (IssueType == AuditIssueType.GraveyardTree) return "#DC2626";
+                return "#64748B";
+            }
+        }
     }
 
     public class AuditSummary
@@ -121,11 +207,24 @@ namespace FolderMorpher.Models
         public long DuplicateWastedBytes { get; set; }
         public int DormantCount { get; set; }
         public long DormantBytes { get; set; }
+        public int VersionFamilyCount { get; set; }
+        public long VersionFamilyBytes { get; set; }
+        public int ExtractedArchiveCount { get; set; }
+        public long ExtractedArchiveBytes { get; set; }
+        public int GraveyardTreeCount { get; set; }
+        public long GraveyardTreeBytes { get; set; }
         public int PathTooLongCount { get; set; }
         public int InvalidCharCount { get; set; }
 
+        // すぐ整理できそうな容量（重複 + 世代旧版 + 展開済ZIP + 墓場）
+        public long ReadyToCleanBytes => DuplicateWastedBytes + VersionFamilyBytes + ExtractedArchiveBytes + GraveyardTreeBytes;
+        public string ReadyToCleanSizeFormatted => FormatHelper.FormatBytes(ReadyToCleanBytes, 2);
+
         public string DuplicateWastedSizeFormatted => FormatHelper.FormatBytes(DuplicateWastedBytes, 2);
         public string DormantSizeFormatted => FormatHelper.FormatBytes(DormantBytes, 2);
+        public string VersionFamilySizeFormatted => FormatHelper.FormatBytes(VersionFamilyBytes, 2);
+        public string ExtractedArchiveSizeFormatted => FormatHelper.FormatBytes(ExtractedArchiveBytes, 2);
+        public string GraveyardTreeSizeFormatted => FormatHelper.FormatBytes(GraveyardTreeBytes, 2);
     }
 
     public class AuditOptions
@@ -133,6 +232,9 @@ namespace FolderMorpher.Models
         public string TargetDirectory { get; set; } = string.Empty;
         public bool CheckDuplicates { get; set; } = true;
         public bool CheckDormant { get; set; } = true;
+        public bool CheckVersionFamilies { get; set; } = true;
+        public bool CheckExtractedArchives { get; set; } = true;
+        public bool CheckGraveyardTrees { get; set; } = true;
         public double DormantYearsThreshold { get; set; } = 3.0;
         public bool CheckPathLimits { get; set; } = true;
         public long MinFileSizeBytes { get; set; } = 100 * 1024; // デフォルト100KB以上を重複チェック対象

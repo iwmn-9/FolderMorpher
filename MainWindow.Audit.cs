@@ -62,9 +62,12 @@ namespace AstraSize
             var options = new AuditOptions
             {
                 TargetDirectory = target,
-                CheckDuplicates = AuditCheckDuplicatesCheckBox.IsChecked == true,
-                CheckDormant = AuditCheckDormantCheckBox.IsChecked == true,
-                CheckPathLimits = AuditCheckPathLimitsCheckBox.IsChecked == true,
+                CheckVersionFamilies = AuditCheckVersionFamiliesCheckBox?.IsChecked == true,
+                CheckExtractedArchives = AuditCheckExtractedArchivesCheckBox?.IsChecked == true,
+                CheckDuplicates = AuditCheckDuplicatesCheckBox?.IsChecked == true,
+                CheckDormant = AuditCheckDormantCheckBox?.IsChecked == true,
+                CheckGraveyardTrees = AuditCheckDormantCheckBox?.IsChecked == true,
+                CheckPathLimits = AuditCheckPathLimitsCheckBox?.IsChecked == true,
                 BandwidthLimit = limit
             };
 
@@ -80,7 +83,7 @@ namespace AstraSize
 
             var progress = new Progress<AuditProgress>(p =>
             {
-                AuditStatusText.Text = $"{p.CurrentStatus} ({p.ScannedFilesCount:N0}件走査 / 課題: {p.IssueCount}件)";
+                AuditStatusText.Text = $"{p.CurrentStatus} ({p.ScannedFilesCount:N0}件走査 / 候補: {p.IssueCount}件)";
                 StatusTextBlock.Text = AuditStatusText.Text;
             });
 
@@ -98,17 +101,21 @@ namespace AstraSize
                 ApplyAuditFilters();
                 UpdateLiveSelectedReduction();
 
-                // Update KPI Cards
-                AuditKpiTotalFiles.Text = summary.InaccessibleDirectoriesCount > 0
-                    ? $"{summary.TotalFilesScanned:N0} 件 (⚠️未走査 {summary.InaccessibleDirectoriesCount})"
-                    : $"{summary.TotalFilesScanned:N0} 件";
-                AuditKpiDupWasted.Text = summary.DuplicateWastedSizeFormatted;
-                AuditKpiDormantSize.Text = summary.DormantSizeFormatted;
-                AuditKpiPathLimits.Text = $"{summary.PathTooLongCount + summary.InvalidCharCount} 件";
+                // Update KPI Bar
+                if (AuditKpiTotalFiles != null)
+                {
+                    AuditKpiTotalFiles.Text = summary.InaccessibleDirectoriesCount > 0
+                        ? $"{summary.TotalFilesScanned:N0} 件 (⚠️未走査 {summary.InaccessibleDirectoriesCount})"
+                        : $"{summary.TotalFilesScanned:N0} 件";
+                }
+                if (AuditKpiReadyToClean != null) AuditKpiReadyToClean.Text = summary.ReadyToCleanSizeFormatted;
+                if (AuditKpiVersionFamily != null) AuditKpiVersionFamily.Text = summary.VersionFamilySizeFormatted;
+                if (AuditKpiDupWasted != null) AuditKpiDupWasted.Text = summary.DuplicateWastedSizeFormatted;
+                if (AuditKpiDormantSize != null) AuditKpiDormantSize.Text = summary.DormantSizeFormatted;
 
                 string statusMsg = summary.InaccessibleDirectoriesCount > 0
-                    ? $"完了: 課題 {items.Count} 件検出 (⚠️アクセス拒否: {summary.InaccessibleDirectoriesCount} 箇所)"
-                    : $"完了: 課題 {items.Count} 件検出";
+                    ? $"完了: 整理候補 {items.Count:N0} 件検出 (⚠️アクセス拒否: {summary.InaccessibleDirectoriesCount} 箇所)"
+                    : $"完了: 整理候補 {items.Count:N0} 件検出 (すぐ整理可能: {summary.ReadyToCleanSizeFormatted})";
                 AuditStatusText.Text = statusMsg;
                 ShowToast(statusMsg);
             }
@@ -226,7 +233,23 @@ namespace AstraSize
 
             var filtered = _lastAuditItems.AsEnumerable();
 
-            if (selectedTag == "Duplicate")
+            if (selectedTag == "ReadyToClean")
+            {
+                filtered = filtered.Where(x => x.WasteScore >= 80 && !x.IsOriginalCandidate);
+            }
+            else if (selectedTag == "VersionFamily")
+            {
+                filtered = filtered.Where(x => x.IssueType == AuditIssueType.VersionFamily);
+            }
+            else if (selectedTag == "ExtractedArchive")
+            {
+                filtered = filtered.Where(x => x.IssueType == AuditIssueType.ExtractedArchive);
+            }
+            else if (selectedTag == "GraveyardTree")
+            {
+                filtered = filtered.Where(x => x.IssueType == AuditIssueType.GraveyardTree);
+            }
+            else if (selectedTag == "Duplicate")
             {
                 filtered = filtered.Where(x => x.IssueType == AuditIssueType.Duplicate);
             }
@@ -256,7 +279,7 @@ namespace AstraSize
             AuditItemsDataGrid.ItemsSource = resultList;
 
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-            string baseTitle = isJa ? "検出された課題・断捨離候補一覧" : "Detected Issues & Cleanup Candidates";
+            string baseTitle = isJa ? "検出された整理候補一覧" : "Detected Cleanup Candidates";
             if (_lastAuditItems.Count > 0)
             {
                 AuditTableTitleText.Text = $"{baseTitle} ({resultList.Count:N0} / {_lastAuditItems.Count:N0} 件)";
@@ -328,6 +351,33 @@ namespace AstraSize
             {
                 switch (tag)
                 {
+                    case "ReadyToClean":
+                        // 「すぐ整理できそう」な候補（スコア80以上・原本以外）を一括選択
+                        foreach (var ai in _lastAuditItems)
+                        {
+                            ai.IsChecked = ai.WasteScore >= 80 && !ai.IsOriginalCandidate;
+                        }
+                        ShowToast("「すぐ整理できそう」な候補（重複・旧版・ZIP残骸等）を一括選択しました");
+                        break;
+
+                    case "VersionFamilyOnly":
+                        // 世代・旧版の過去版を選択
+                        foreach (var ai in _lastAuditItems)
+                        {
+                            ai.IsChecked = (ai.IssueType == AuditIssueType.VersionFamily);
+                        }
+                        ShowToast("世代・旧版の過去版を一括選択しました");
+                        break;
+
+                    case "ExtractedArchiveOnly":
+                        // 展開済ZIP残骸を選択
+                        foreach (var ai in _lastAuditItems)
+                        {
+                            ai.IsChecked = (ai.IssueType == AuditIssueType.ExtractedArchive);
+                        }
+                        ShowToast("展開済ZIP残骸を一括選択しました");
+                        break;
+
                     case "DupCopyOnly":
                         // 重複ファイルの原本候補以外を選択（原本は保護）
                         foreach (var ai in _lastAuditItems)
@@ -559,22 +609,35 @@ namespace AstraSize
             int dupCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.Duplicate);
 
             long dormantSize = _lastAuditItems
-                .Where(x => x.IssueType == AuditIssueType.Dormant)
+                .Where(x => x.IssueType == AuditIssueType.Dormant || x.IssueType == AuditIssueType.GraveyardTree)
                 .Sum(x => x.Size);
-            int dormantCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.Dormant);
+            int dormantCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.Dormant || x.IssueType == AuditIssueType.GraveyardTree);
 
-            int pathLimits = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.PathTooLong || x.IssueType == AuditIssueType.InvalidChar);
+            long versionFamilySize = _lastAuditItems
+                .Where(x => x.IssueType == AuditIssueType.VersionFamily)
+                .Sum(x => x.Size);
+            int versionFamilyCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.VersionFamily);
+
+            long extractedArchiveSize = _lastAuditItems
+                .Where(x => x.IssueType == AuditIssueType.ExtractedArchive)
+                .Sum(x => x.Size);
+            int extractedArchiveCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.ExtractedArchive);
 
             _lastAuditSummary.DuplicateWastedBytes = dupWasted;
             _lastAuditSummary.DuplicateCount = dupCount;
             _lastAuditSummary.DormantBytes = dormantSize;
             _lastAuditSummary.DormantCount = dormantCount;
+            _lastAuditSummary.VersionFamilyBytes = versionFamilySize;
+            _lastAuditSummary.VersionFamilyCount = versionFamilyCount;
+            _lastAuditSummary.ExtractedArchiveBytes = extractedArchiveSize;
+            _lastAuditSummary.ExtractedArchiveCount = extractedArchiveCount;
             _lastAuditSummary.PathTooLongCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.PathTooLong);
             _lastAuditSummary.InvalidCharCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.InvalidChar);
 
-            AuditKpiDupWasted.Text = _lastAuditSummary.DuplicateWastedSizeFormatted;
-            AuditKpiDormantSize.Text = _lastAuditSummary.DormantSizeFormatted;
-            AuditKpiPathLimits.Text = $"{pathLimits:N0} 件";
+            if (AuditKpiReadyToClean != null) AuditKpiReadyToClean.Text = _lastAuditSummary.ReadyToCleanSizeFormatted;
+            if (AuditKpiVersionFamily != null) AuditKpiVersionFamily.Text = _lastAuditSummary.VersionFamilySizeFormatted;
+            if (AuditKpiDupWasted != null) AuditKpiDupWasted.Text = _lastAuditSummary.DuplicateWastedSizeFormatted;
+            if (AuditKpiDormantSize != null) AuditKpiDormantSize.Text = _lastAuditSummary.DormantSizeFormatted;
         }
         #endregion
     }

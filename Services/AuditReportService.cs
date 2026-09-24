@@ -76,7 +76,8 @@ namespace FolderMorpher.Services
                         LastWriteTime = fi.LastWriteTime,
                         LastAccessTime = fi.LastAccessTime,
                         IssueType = AuditIssueType.PathTooLong,
-                        Detail = $"文字数: {fi.FullPath.Length} 文字 (移行危険域: 240文字以上)"
+                        Detail = $"文字数: {fi.FullPath.Length} 文字 (移行危険域: 240文字以上)",
+                        WasteScore = 40
                     });
                 }
 
@@ -108,7 +109,8 @@ namespace FolderMorpher.Services
                             LastWriteTime = fi.LastWriteTime,
                             LastAccessTime = fi.LastAccessTime,
                             IssueType = AuditIssueType.InvalidChar,
-                            Detail = string.Join(" / ", reasons)
+                            Detail = string.Join(" / ", reasons),
+                            WasteScore = 40
                         });
                     }
                 }
@@ -139,7 +141,8 @@ namespace FolderMorpher.Services
                         LastWriteTime = fi.LastWriteTime,
                         LastAccessTime = fi.LastAccessTime,
                         IssueType = AuditIssueType.Dormant,
-                        Detail = detailText
+                        Detail = detailText,
+                        WasteScore = 70
                     });
                 }
 
@@ -321,7 +324,8 @@ namespace FolderMorpher.Services
                                 DuplicateGroupId = groupId,
                                 DuplicateGroupIndex = groupNum,
                                 DuplicateGroupColorIndex = (groupNum - 1) % AuditItem.GroupBgPalette.Length,
-                                IsOriginalCandidate = isOriginal
+                                IsOriginalCandidate = isOriginal,
+                                WasteScore = isOriginal ? 0 : 95
                             });
                         }
                     }
@@ -335,6 +339,51 @@ namespace FolderMorpher.Services
                             ScannedFilesCount = summary.TotalFilesScanned,
                             IssueCount = items.Count
                         });
+                    }
+                }
+            }
+
+            // 4. インテリジェント整理候補発見 (世代・旧版、展開済ZIP、墓場フォルダー)
+            if (options.CheckVersionFamilies || options.CheckExtractedArchives || options.CheckGraveyardTrees)
+            {
+                progress?.Report(new AuditProgress
+                {
+                    CurrentStatus = "世代・旧版、展開済ZIP、墓場フォルダーを分析中...",
+                    ScannedFilesCount = summary.TotalFilesScanned,
+                    IssueCount = items.Count
+                });
+
+                var smartCandidates = HygieneCandidateEngine.DiscoverCandidates(
+                    scannedFiles,
+                    now,
+                    options.DormantYearsThreshold,
+                    options.CheckVersionFamilies,
+                    options.CheckExtractedArchives,
+                    options.CheckGraveyardTrees);
+
+                var existingPaths = new HashSet<string>(items.Select(x => x.FullPath), StringComparer.OrdinalIgnoreCase);
+                foreach (var cand in smartCandidates)
+                {
+                    if (!existingPaths.Contains(cand.FullPath))
+                    {
+                        existingPaths.Add(cand.FullPath);
+                        items.Add(cand);
+
+                        if (cand.IssueType == AuditIssueType.VersionFamily)
+                        {
+                            summary.VersionFamilyCount++;
+                            summary.VersionFamilyBytes += cand.Size;
+                        }
+                        else if (cand.IssueType == AuditIssueType.ExtractedArchive)
+                        {
+                            summary.ExtractedArchiveCount++;
+                            summary.ExtractedArchiveBytes += cand.Size;
+                        }
+                        else if (cand.IssueType == AuditIssueType.GraveyardTree)
+                        {
+                            summary.GraveyardTreeCount++;
+                            summary.GraveyardTreeBytes += cand.Size;
+                        }
                     }
                 }
             }

@@ -65,7 +65,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 | **Tab 3: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `Views/LiveAclStudio.xaml`<br>(`LiveAclFolderView`, `LiveAclReverseView`, `LiveAclDiffModalOverlay`, `NewFolderModalOverlay`) | `Views/LiveAclStudio.xaml.cs` | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACL可視化・編集、**Dry-Run差分チェックモーダル（AclChangePlan貫通・継承変更警告・セマンティックVerify・SDDLロールバック）**、AD逆引き権限監査、均一幅ADアカウントカード、ADパレットUI統一、ADバックグラウンド自動同期、ツリーインライン新規フォルダー作成 |
 | **Tab 4: 移行スタジオ**<br>(Simulation Studio) | `SimulationTabPanel` (L608-995) | `MainWindow.Simulation.cs` | `SimulationProjectService.cs`<br>`MigrationPackageService.cs`<br>`MigrationPackageModels.cs`<br>`SimModels.cs` | 現行ファイルサーバーから新環境への仮想ツリー設計（N:1マッピング）、ACL引き継ぎ設計、ADパレット統一、全画面・全出力完全日英両対応、ヘッダーレイアウト整線、ガワ先行作成の実機DACLセマンティックVerify、エンタープライズ移行パッケージ出力（TargetRoot必須検証・Wave分割・Runbook Excel・安全停止手順・多重コピー防止/XD・%~dp0相対ログ・exit /b 1・遅延展開排除・Dry-Run bat同梱） |
 | **Tab 5: リンク修復**<br>(LinkFixer) | `LinkFixTabPanel` (L998-1094) | `MainWindow.LinkFix.cs` | `LinkFixService.cs`<br>`OfficeLinkFixService.cs` | サーバー移行後の切断ショートカット（.lnk）およびOffice内部リンク（.xlsx/.xlsm）検出・修復、**VBAマクロ非破壊保護＆通常XML混在時の部分修復（PartiallyFixed）**、全社配布用GPOログオンスクリプト（.ps1）生成 |
-| **Tab 6: ファイル監査**<br>(Audit & Hygiene) | `AuditTabPanel` (L1097-1240) | `MainWindow.Audit.cs` | `AuditReportService.cs`<br>`ExcelReportService.cs`<br>`AuditModels.cs` | 重複ファイル（SHA256）、休眠ファイル（3年超・1年閲覧保護）、パス長危険域（240字超）・禁則文字検出、フォルダー名部分一致除外（カンマ区切り）。ハイパーリンク付きExcel/CSVレポート出力、**原本保護＆削除直前SHA-256再照合付き完全削除** |
+| **Tab 6: 整理候補発見 ＆ 健全化**<br>(Smart Hygiene & Candidates) | `AuditTabPanel` (L1097-1240) | `MainWindow.Audit.cs` | `AuditReportService.cs`<br>`HygieneCandidateEngine.cs`<br>`ExcelReportService.cs`<br>`AuditModels.cs` | **インテリジェント整理候補発見スタジオへのすり替え**、**「このファイルは捨てられる可能性が高い。理由はこれ。」説明責任ヒューリスティクス**、**親しみやすい指標（すぐ整理できそう/確認推奨/参考）**、**3大重点候補（①世代・旧版、②展開済ZIP残骸、③墓場フォルダー化石化判定）**、完全重複（SHA256）、休眠ファイル（3年超・1年閲覧保護）、パス長危険域（240字超）・禁則文字検出、フォルダー名部分一致除外。5連スリムメトリクスバー、一括選択プリセット、ハイパーリンク付きExcel/CSVレポート出力、**原本保護＆削除直前SHA-256再照合付き安全完全削除** |
 | **Tab 7: メディア最適化**<br>(Media Optimizer) | `MediaTabPanel` (L1243-1380) | `MainWindow.Media.cs` | `MediaOptimizerService.cs`<br>`ExcelReportService.cs`<br>`MediaOptimizerModels.cs` | 保護対象（_Master/RAW等）付き写真・画像軽量化（長辺2560px超縮小/85%品質/日時・Exif保持/直接上書き）、大容量動画Topランキング抽出、夜間GPU圧縮（H.265）バッチ生成 |
 | **詳細権限モーダル** | `SecModalOverlay` | `MainWindow.Simulation.cs` | `AclModels.cs` | Windows標準セキュリティ詳細設定（14項目のNTFS詳細パーミッションビット）の完全再現・編集 |
 | **変化点差分モーダル** | `DiffModalOverlay` | `MainWindow.Simulation.cs` | `SimModels.cs` | 移行前後（Before/After）の変化点（新規・移動・統合・ACL差分）の一覧レビューとExcel出力 |
@@ -264,6 +264,19 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
       - スキャンツリーの JSON キャッシュ（`TreeCaches/*.json`）にハッシュ値を保持・ポータブル共有可能に。
     - **回帰テスト（Domain 2）新設**:
       - `TestPathCanonicalizerAndSha256CacheAsync` により、パス正規化（UNC・拡張UNC・末尾スラッシュ・大文字小文字同一視・ネットワーク判定）および TreeCache での Sha256 の JSON シリアライズ往復保持を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
+32. **整理候補発見スタジオへのすり替え ＆ 説明責任ヒューリスティクス ＆ 「すぐ整理できそう」指標（v2.2.15 / ADR 88）**:
+    - **「不要ファイル判定」から「理由付き整理候補発見エンジン」への刷新**:
+      - 単なる重複・休眠抽出から、AIが勝手に消去を断定せず「このファイルは捨てられる可能性が高い。理由はこれ。」と明確な根拠（Why）を添えて提示する新スタジオへすり替え。
+      - 「高確度」などの硬いシステム用語を排除し、「すぐ整理できそう」「確認推奨」「参考」の親しみやすい目安を採用。
+    - **3大重点整理候補エンジンの新設（`HygieneCandidateEngine`）**:
+      - **① 世代・旧版ファイル（Version Family）**: 同一フォルダー内でステミング解析（正規表現による日付・バージョン・コピーサフィックスのループ剥ぎ取り）を実施し、最新版（Active）以外の旧版ファイル（例: `見積書_最終_本当.xlsx` に対する `見積書_修正版.xlsx`）を抽出（WasteScore 85点 / 「すぐ整理できそう」）。理由列に最新版パスと更新日を明示。
+      - **② 展開済みアーカイブ残骸（Extracted Archive Shadow）**: 同一階層内に同名フォルダーが存在する ZIP / 7z 等の残骸を O(1) 判定で抽出（WasteScore 90点 / 「すぐ整理できそう」）。
+      - **③ 墓場フォルダー判定（Graveyard / Ghost Tree）**: 配下全ファイルが3年以上未更新かつ直近1年間アクセスゼロの化石化フォルダーを検出（3ファイル以上 & 1MB以上）。フォルダー代表エントリとして抽出（WasteScore 85〜95点 / 「すぐ整理できそう」）。
+    - **UI刷新 ＆ 既存安全原則の100%堅持**:
+      - 5連スリムメトリクスバー（総走査 / すぐ整理できそう / 世代・旧版 / 完全重複 / 休眠・墓場）、絞り込みフィルター、一括選択プリセット（「すぐ整理できそう」を選択 等）を配備。
+      - 原本候補の絶対保護（`IsOriginalCandidate`）および削除直前 SHA-256 再照合による誤削除ゼロ保証は完全に維持。
+    - **回帰テスト（Domain 4）新設**:
+      - `TestHygieneCandidateDiscoveryAsync` により、世代旧版抽出、展開済ZIP残骸検出、墓場フォルダー判定、スコアリング・目安表示、サマリー集計を自動検証。全 8 ドメイン 8/8 ALL PASSED を堅持。
 ---
 
 ---

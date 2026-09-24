@@ -490,9 +490,10 @@ namespace AstraSize
                                 mw.AuditItemsDataGrid.ItemsSource = auditItems;
                                 mw.AuditPathTextBox.Text = @"D:\SharedData";
                                 mw.AuditKpiTotalFiles.Text = "12,450 件";
+                                if (mw.AuditKpiReadyToClean != null) mw.AuditKpiReadyToClean.Text = "22.9 MB";
+                                if (mw.AuditKpiVersionFamily != null) mw.AuditKpiVersionFamily.Text = "8.2 MB";
                                 mw.AuditKpiDupWasted.Text = "4.5 MB";
                                 mw.AuditKpiDormantSize.Text = "18.4 MB";
-                                mw.AuditKpiPathLimits.Text = "1 件";
                             }
                             else if (selectTab == 98)
                             {

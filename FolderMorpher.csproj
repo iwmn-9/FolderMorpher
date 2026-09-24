@@ -9,8 +9,9 @@
     <AssemblyName>FolderMorpher</AssemblyName>
     <RootNamespace>FolderMorpher</RootNamespace>
     <ApplicationTitle>FolderMorpher - Storage &amp; Migration Studio</ApplicationTitle>
-    <Version>2.2.11</Version>
+    <Version>2.2.15</Version>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <CodePage>65001</CodePage>
   </PropertyGroup>
 
   <ItemGroup>

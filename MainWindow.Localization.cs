@@ -270,47 +270,48 @@ namespace AstraSize
             {
                 AuditKpiTotalFiles.Text = isJa ? "0 件" : "0 Items";
             }
-            if (AuditKpiPathLimits.Text == "0 件" || AuditKpiPathLimits.Text == "0 Items")
-            {
-                AuditKpiPathLimits.Text = isJa ? "0 件" : "0 Items";
-            }
-            AuditHeaderTitle.Text = Strings.AuditHeaderTitle;
-            AuditHeaderDesc.Text = Strings.AuditHeaderDesc;
+            AuditHeaderTitle.Text = isJa ? "🧹 ファイルサーバー健全化 ＆ 整理候補発見スタジオ" : "🧹 Storage Hygiene & Candidate Discovery Studio";
+            AuditHeaderDesc.Text = isJa ? "世代・旧版、展開済ZIP残骸、墓場フォルダー、完全重複、休眠ファイルを分析し、理由付きで整理候補を提示します。" : "Discovers older versions, extracted archive shadows, graveyard folders, duplicates, and dormant files with explainable reasons.";
             AuditTargetFolderLabel.Text = isJa ? "監査対象ディレクトリ (UNC / ローカル)" : "Target Audit Directory (UNC / Local)";
             if (AuditExcludeFoldersLabel != null) AuditExcludeFoldersLabel.Text = Strings.AuditExcludeFoldersLabel;
             if (AuditExcludeFoldersTextBox != null) AuditExcludeFoldersTextBox.ToolTip = Strings.AuditExcludeFoldersToolTip;
-            AuditKpiTotalFilesTitle.Text = isJa ? "総走査ファイル数" : "Total Files Scanned";
-            AuditKpiDupWastedTitle.Text = isJa ? "重複ファイルによる無駄" : "Wasted by Duplicates";
-            AuditKpiDormantSizeTitle.Text = isJa ? "休眠ファイル容量 (3年超)" : "Dormant Capacity (3+ Yrs)";
-            if (AuditKpiPathLimitsTitle != null) AuditKpiPathLimitsTitle.Text = isJa ? "パス長超過 / 禁則文字" : "Path Limit / Invalid Chars";
-            string auditBaseTitle = isJa ? "検出された課題・整理候補一覧" : "Detected Issues & Cleanup Candidates";
+            AuditKpiTotalFilesTitle.Text = isJa ? "総走査ファイル数:" : "Total Files Scanned:";
+            if (AuditKpiReadyToCleanTitle != null) AuditKpiReadyToCleanTitle.Text = isJa ? "すぐ整理できそう:" : "Ready to Clean:";
+            if (AuditKpiVersionFamilyTitle != null) AuditKpiVersionFamilyTitle.Text = isJa ? "世代・旧版:" : "Older Versions:";
+            AuditKpiDupWastedTitle.Text = isJa ? "完全重複:" : "Duplicates:";
+            AuditKpiDormantSizeTitle.Text = isJa ? "休眠・墓場:" : "Dormant / Abandoned:";
+
+            string auditBaseTitle = isJa ? "検出された整理候補一覧" : "Detected Cleanup Candidates";
             AuditTableTitleText.Text = _lastAuditItems.Count > 0
-                ? $"{auditBaseTitle} ({_auditVisibleItems.Count:N0} / {_lastAuditItems.Count:N0} 件)"
+                ? $"{auditBaseTitle} ({AuditItemsDataGrid?.Items.Count ?? _lastAuditItems.Count:N0} / {_lastAuditItems.Count:N0} 件)"
                 : auditBaseTitle;
             if (AuditLiveReductionLabel != null) AuditLiveReductionLabel.Text = isJa ? "選択中の削減見込み: " : "Est. Space Reclaimed: ";
             if (AuditSmartSelectLabel != null) AuditSmartSelectLabel.Text = isJa ? "☑️ 一括選択:" : "☑️ Smart Select:";
             if (AuditSmartItemPreset != null) AuditSmartItemPreset.Content = isJa ? "選択プリセット..." : "Select Preset...";
             if (AuditSmartItemDupCopy != null) AuditSmartItemDupCopy.Content = isJa ? "重複の原本以外を選択" : "Select Duplicate Copies";
             if (AuditSmartItemDormant3Y != null) AuditSmartItemDormant3Y.Content = isJa ? "3年以上前の休眠を選択" : "Select Dormant (>3 Years)";
-            if (AuditSmartItemDormant5Y != null) AuditSmartItemDormant5Y.Content = isJa ? "5年以上前の休眠を選択" : "Select Dormant (>5 Years)";
             if (AuditSmartItemVisible != null) AuditSmartItemVisible.Content = isJa ? "表示中のみすべて選択" : "Select All Visible";
             if (AuditSmartItemClear != null) AuditSmartItemClear.Content = isJa ? "選択をすべて解除" : "Clear All Selections";
             if (AuditFilterLabel != null) AuditFilterLabel.Text = isJa ? "絞り込み:" : "Filter:";
-            if (AuditCategoryFilterComboBox?.Items.Count >= 4)
+            if (AuditCategoryFilterComboBox?.Items.Count >= 8)
             {
                 ((ComboBoxItem)AuditCategoryFilterComboBox.Items[0]).Content = isJa ? "すべて表示" : "Show All";
-                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[1]).Content = isJa ? "重複ファイルのみ" : "Duplicates Only";
-                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[2]).Content = isJa ? "休眠ファイルのみ" : "Dormant Only";
-                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[3]).Content = isJa ? "パス長・禁則のみ" : "Path / Invalid Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[1]).Content = isJa ? "すぐ整理できそう のみ" : "Ready to Clean Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[2]).Content = isJa ? "世代・旧版 のみ" : "Older Versions Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[3]).Content = isJa ? "展開済ZIP のみ" : "Extracted ZIP Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[4]).Content = isJa ? "墓場フォルダー のみ" : "Graveyard Folders Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[5]).Content = isJa ? "完全重複 のみ" : "Duplicates Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[6]).Content = isJa ? "長期休眠 のみ" : "Dormant Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[7]).Content = isJa ? "パス長・禁則 のみ" : "Path / Invalid Only";
             }
             if (AuditSearchPlaceholder != null)
             {
                 AuditSearchPlaceholder.Text = isJa ? "🔍 ファイル名/パス検索..." : "🔍 Search file/path...";
             }
 
-            AuditStartButton.Content = isJa ? "🔍 監査スキャン開始" : "🔍 Start Audit Scan";
-            AuditExportExcelButton.Content = isJa ? "📊 Excelレポート出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
-            AuditExportExcelButton.ToolTip = isJa ? "上司・各部署提出用の美麗Excelレポートを生成" : "Generate executive Excel audit report (.xlsx)";
+            AuditStartButton.Content = isJa ? "🔍 整理候補を発見" : "🔍 Discover Candidates";
+            AuditExportExcelButton.Content = isJa ? "📊 Excel台帳出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
+            AuditExportExcelButton.ToolTip = isJa ? "整理理由・スコア・最新版パス付きの美麗Excel台帳を出力" : "Generate executive Excel audit report (.xlsx)";
             AuditExportCsvButton.Content = isJa ? "📄 CSV台帳出力" : "📄 Export CSV";
             if (AuditDeleteSelectedButton != null)
             {
@@ -318,19 +319,22 @@ namespace AstraSize
                 AuditDeleteSelectedButton.ToolTip = isJa ? "チェックを入れたファイルを直接完全削除します（※復元不可）" : "Permanently deletes checked files (Cannot be undone)";
             }
             if (AuditHeaderCheckBox != null) AuditHeaderCheckBox.ToolTip = isJa ? "すべて選択 / すべて解除" : "Select All / Deselect All";
-            AuditCheckDuplicatesCheckBox.Content = isJa ? "重複ファイル (SHA256)" : "Duplicates (SHA256)";
-            AuditCheckDormantCheckBox.Content = isJa ? "休眠ファイル (3年以上)" : "Dormant (3+ Years)";
-            AuditCheckPathLimitsCheckBox.Content = isJa ? "パス長危険域(240字超)/禁則文字" : "Long Paths (>240 chars) / Invalid Chars";
-            if (AuditBandwidthLabel != null) AuditBandwidthLabel.Text = Strings.AuditBandwidthLimitLabel;
+            if (AuditCheckVersionFamiliesCheckBox != null) AuditCheckVersionFamiliesCheckBox.Content = isJa ? "世代・旧版" : "Older Versions";
+            if (AuditCheckExtractedArchivesCheckBox != null) AuditCheckExtractedArchivesCheckBox.Content = isJa ? "展開済ZIP" : "Extracted ZIPs";
+            AuditCheckDuplicatesCheckBox.Content = isJa ? "完全重複" : "Duplicates";
+            AuditCheckDormantCheckBox.Content = isJa ? "休眠・墓場 (3年超)" : "Dormant (3+ Yrs)";
+            AuditCheckPathLimitsCheckBox.Content = isJa ? "パス長/禁則" : "Path / Invalid";
+            if (AuditBandwidthLabel != null) AuditBandwidthLabel.Text = isJa ? "帯域:" : "Bandwidth:";
             if (AuditBandwidthStandardItem != null) AuditBandwidthStandardItem.Content = Strings.AuditBandwidthStandard;
             if (AuditBandwidthUnlimitedItem != null) AuditBandwidthUnlimitedItem.Content = Strings.AuditBandwidthUnlimited;
 
+            if (ColAuditConfidence != null) ColAuditConfidence.Header = isJa ? "整理の目安" : "Clean Readiness";
             ColAuditIssueType.Header = isJa ? "問題種別" : "Issue Type";
-            ColAuditDupGroup.Header = isJa ? "重複グループ" : "Duplicate Group";
+            ColAuditDupGroup.Header = isJa ? "整理グループ / 状況" : "Group / Status";
             ColAuditFileName.Header = isJa ? "ファイル名" : "File Name";
             ColAuditSize.Header = isJa ? "容量" : "Size";
             ColAuditModified.Header = isJa ? "最終更新日時" : "Last Modified";
-            ColAuditDetail.Header = isJa ? "詳細" : "Details";
+            ColAuditDetail.Header = isJa ? "判定理由 / 内訳" : "Reason / Breakdown";
             ColAuditFullPath.Header = isJa ? "完全パス" : "Full Path";
 
             // ==========================================

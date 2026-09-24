@@ -35,6 +35,7 @@ namespace FolderMorpher.Services.Testing
             await TestHeadTailHashAndBandwidthLimiterAsync();
             await TestDormantExclusionWithRecentAccessAsync();
             await TestFolderExclusionInAuditAsync();
+            await TestHygieneCandidateDiscoveryAsync();
         }
 
         /// <summary>
@@ -816,6 +817,142 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException("Excluded folder files were erroneously included in audit results.");
                 }
+            }
+            finally
+            {
+                try { Directory.Delete(testDir, true); } catch { }
+            }
+        }
+
+        public static async Task TestHygieneCandidateDiscoveryAsync()
+        {
+            string testDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_Hygiene_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(testDir);
+
+            try
+            {
+                var now = DateTime.Now;
+
+                // 1. 世代・旧版 (VersionFamily) のテストデータ
+                // 同一フォルダ内に最新版と過去版
+                string vDir = Path.Combine(testDir, "Versions");
+                Directory.CreateDirectory(vDir);
+
+                string activeFile = Path.Combine(vDir, "見積書_最終_本当.xlsx");
+                string oldFile = Path.Combine(vDir, "見積書_修正版.xlsx");
+                await File.WriteAllBytesAsync(activeFile, new byte[2048]);
+                await File.WriteAllBytesAsync(oldFile, new byte[2048]);
+                File.SetLastWriteTime(activeFile, now.AddDays(-2));
+                File.SetLastWriteTime(oldFile, now.AddDays(-30));
+
+                // 2. 展開済みアーカイブ残骸 (ExtractedArchive) のテストデータ
+                // 同一フォルダ内に 同名.zip と 同名/ フォルダ
+                string arcDir = Path.Combine(testDir, "Archives");
+                Directory.CreateDirectory(arcDir);
+
+                string zipFile = Path.Combine(arcDir, "ProjectLogs_2025.zip");
+                string extractedDir = Path.Combine(arcDir, "ProjectLogs_2025");
+                Directory.CreateDirectory(extractedDir);
+                await File.WriteAllBytesAsync(zipFile, new byte[5000]);
+                await File.WriteAllBytesAsync(Path.Combine(extractedDir, "log1.txt"), new byte[100]);
+
+                // 3. 墓場フォルダー (GraveyardTree) のテストデータ
+                // サブフォルダー配下の全ファイルが3年以上未更新かつ直近1年未アクセス (3件以上 & 1MB以上)
+                string graveDir = Path.Combine(testDir, "GraveFolder");
+                Directory.CreateDirectory(graveDir);
+                string graveFile1 = Path.Combine(graveDir, "old_doc1.pdf");
+                string graveFile2 = Path.Combine(graveDir, "old_doc2.pdf");
+                string graveFile3 = Path.Combine(graveDir, "old_doc3.pdf");
+                await File.WriteAllBytesAsync(graveFile1, new byte[500 * 1024]);
+                await File.WriteAllBytesAsync(graveFile2, new byte[500 * 1024]);
+                await File.WriteAllBytesAsync(graveFile3, new byte[200 * 1024]);
+                File.SetLastWriteTime(graveFile1, now.AddYears(-4));
+                File.SetLastAccessTime(graveFile1, now.AddYears(-4));
+                File.SetLastWriteTime(graveFile2, now.AddYears(-5));
+                File.SetLastAccessTime(graveFile2, now.AddYears(-5));
+                File.SetLastWriteTime(graveFile3, now.AddYears(-4));
+                File.SetLastAccessTime(graveFile3, now.AddYears(-4));
+
+                // 4. 監査エンジンの実行
+                var auditService = new AuditReportService();
+                var options = new AuditOptions
+                {
+                    TargetDirectory = testDir,
+                    CheckVersionFamilies = true,
+                    CheckExtractedArchives = true,
+                    CheckGraveyardTrees = true,
+                    CheckDuplicates = false,
+                    CheckDormant = false,
+                    CheckPathLimits = false,
+                    DormantYearsThreshold = 3.0
+                };
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                var (summary, items) = await auditService.RunAuditAsync(options, null, cts.Token);
+
+                // 検証 1: 世代・旧版
+                var vItems = items.Where(i => i.IssueType == AuditIssueType.VersionFamily).ToList();
+                if (vItems.Count != 1)
+                {
+                    throw new InvalidOperationException($"Expected 1 VersionFamily item, got {vItems.Count}");
+                }
+                if (vItems[0].FileName != "見積書_修正版.xlsx")
+                {
+                    throw new InvalidOperationException($"Expected 見積書_修正版.xlsx as older version, got {vItems[0].FileName}");
+                }
+                if (vItems[0].WasteScore < 80 || vItems[0].ConfidenceDisplay != "すぐ整理できそう")
+                {
+                    throw new InvalidOperationException($"VersionFamily confidence should be 'すぐ整理できそう', got '{vItems[0].ConfidenceDisplay}' (score: {vItems[0].WasteScore})");
+                }
+                if (string.IsNullOrEmpty(vItems[0].RelatedActivePath) || !(vItems[0].RelatedActivePath?.Contains("見積書_最終_本当.xlsx") ?? false))
+                {
+                    throw new InvalidOperationException($"VersionFamily RelatedActivePath should point to active version, got '{vItems[0].RelatedActivePath}'");
+                }
+
+                // 検証 2: 展開済みアーカイブ残骸
+                var arcItems = items.Where(i => i.IssueType == AuditIssueType.ExtractedArchive).ToList();
+                if (arcItems.Count != 1)
+                {
+                    throw new InvalidOperationException($"Expected 1 ExtractedArchive item, got {arcItems.Count}");
+                }
+                if (arcItems[0].FileName != "ProjectLogs_2025.zip")
+                {
+                    throw new InvalidOperationException($"Expected ProjectLogs_2025.zip as extracted archive, got {arcItems[0].FileName}");
+                }
+                if (arcItems[0].WasteScore < 80 || arcItems[0].ConfidenceDisplay != "すぐ整理できそう")
+                {
+                    throw new InvalidOperationException($"ExtractedArchive confidence should be 'すぐ整理できそう', got '{arcItems[0].ConfidenceDisplay}' (score: {arcItems[0].WasteScore})");
+                }
+
+                // 検証 3: 墓場フォルダー
+                var graveItems = items.Where(i => i.IssueType == AuditIssueType.GraveyardTree).ToList();
+                if (graveItems.Count != 1)
+                {
+                    throw new InvalidOperationException($"Expected 1 GraveyardTree item, got {graveItems.Count}");
+                }
+                if (!graveItems[0].FileName.Contains("GraveFolder"))
+                {
+                    throw new InvalidOperationException($"Expected GraveFolder as graveyard item, got {graveItems[0].FileName}");
+                }
+                if (graveItems[0].WasteScore < 80 || graveItems[0].ConfidenceDisplay != "すぐ整理できそう")
+                {
+                    throw new InvalidOperationException($"GraveyardTree confidence should be 'すぐ整理できそう', got '{graveItems[0].ConfidenceDisplay}' (score: {graveItems[0].WasteScore})");
+                }
+                long expectedGraveSize = (500 + 500 + 200) * 1024;
+                if (graveItems[0].Size != expectedGraveSize)
+                {
+                    throw new InvalidOperationException($"Expected GraveyardTree size to be sum of files ({expectedGraveSize}), got {graveItems[0].Size}");
+                }
+
+                // 検証 4: サマリー集計
+                if (summary.VersionFamilyCount != 1)
+                    throw new InvalidOperationException($"Expected VersionFamilyCount 1, got {summary.VersionFamilyCount}");
+                if (summary.ExtractedArchiveCount != 1)
+                    throw new InvalidOperationException($"Expected ExtractedArchiveCount 1, got {summary.ExtractedArchiveCount}");
+                if (summary.GraveyardTreeCount != 1)
+                    throw new InvalidOperationException($"Expected GraveyardTreeCount 1, got {summary.GraveyardTreeCount}");
+                if (summary.ReadyToCleanBytes <= 0)
+                    throw new InvalidOperationException($"ReadyToCleanBytes should be > 0, got {summary.ReadyToCleanBytes}");
             }
             finally
             {
