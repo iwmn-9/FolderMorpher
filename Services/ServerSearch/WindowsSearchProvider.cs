@@ -23,12 +23,30 @@ namespace FolderMorpher.Services.ServerSearch
 
         public string Name => "Windows Search (WSP / OLE DB)";
 
+        /// <summary>
+        /// 実行環境（ローカルOS）に Search.CollatorDSO OLE DB プロバイダーが登録されているかを安全に確認。
+        /// GitHub Actions ランナーや Server Core 等のプロバイダ未導入環境でのネイティブ COM クラッシュを防止。
+        /// </summary>
+        public static bool IsProviderInstalled()
+        {
+            try
+            {
+                if (!OperatingSystem.IsWindows()) return false;
+                var comType = Type.GetTypeFromProgID("Search.CollatorDSO");
+                return comType != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public Task<bool> CanHandleAsync(string targetPath, CancellationToken ct)
         {
             if (string.IsNullOrWhiteSpace(targetPath)) return Task.FromResult(false);
 
-            // Windows OS 上で動作しているか
-            if (!OperatingSystem.IsWindows()) return Task.FromResult(false);
+            // Windows OS 上で動作しており、かつ Search.CollatorDSO プロバイダーが登録されているか
+            if (!OperatingSystem.IsWindows() || !IsProviderInstalled()) return Task.FromResult(false);
 
             string norm = PathCanonicalizer.Normalize(targetPath);
             // ローカルドライブ (C:\等) または UNC パス (\\server\share等)
@@ -38,7 +56,7 @@ namespace FolderMorpher.Services.ServerSearch
         public async Task<IReadOnlyList<string>?> QueryCandidatesAsync(string targetPath, SearchQuery query, CancellationToken ct)
         {
             if (string.IsNullOrWhiteSpace(targetPath) || query == null) return null;
-            if (!OperatingSystem.IsWindows()) return null;
+            if (!OperatingSystem.IsWindows() || !IsProviderInstalled()) return null;
 
             string normalizedPath = PathCanonicalizer.Normalize(targetPath);
             string? sql = BuildSearchSql(normalizedPath, query);

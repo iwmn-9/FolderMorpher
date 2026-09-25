@@ -1749,12 +1749,22 @@ namespace FolderMorpher.Services.Testing
                 if (string.IsNullOrEmpty(localSql) || !localSql.Contains("FROM SystemIndex") || localSql.Contains("\"C:\".SystemIndex"))
                     throw new Exception("ADR 94 failed: WindowsSearchProvider local SQL generated incorrect FROM clause.");
 
-                // B. CanHandleAsync の検証
+                // B. CanHandleAsync の検証（CI環境/ローカル環境の双方で安全判定）
                 var provider = new FolderMorpher.Services.ServerSearch.WindowsSearchProvider();
-                if (!await provider.CanHandleAsync(@"\\server\share\dir", CancellationToken.None))
-                    throw new Exception("ADR 94 failed: CanHandleAsync should return true for UNC path.");
-                if (!await provider.CanHandleAsync(@"C:\Folder", CancellationToken.None))
-                    throw new Exception("ADR 94 failed: CanHandleAsync should return true for local drive path.");
+                bool isInstalled = FolderMorpher.Services.ServerSearch.WindowsSearchProvider.IsProviderInstalled();
+                if (isInstalled)
+                {
+                    if (!await provider.CanHandleAsync(@"\\server\share\dir", CancellationToken.None))
+                        throw new Exception("ADR 94 failed: CanHandleAsync should return true for UNC path when provider is installed.");
+                    if (!await provider.CanHandleAsync(@"C:\Folder", CancellationToken.None))
+                        throw new Exception("ADR 94 failed: CanHandleAsync should return true for local drive path when provider is installed.");
+                }
+                else
+                {
+                    if (await provider.CanHandleAsync(@"\\server\share\dir", CancellationToken.None))
+                        throw new Exception("ADR 94 failed: CanHandleAsync should return false when Search.CollatorDSO is not installed.");
+                }
+
                 if (await provider.CanHandleAsync("", CancellationToken.None))
                     throw new Exception("ADR 94 failed: CanHandleAsync should return false for empty path.");
 
