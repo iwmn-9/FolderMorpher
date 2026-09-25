@@ -23,9 +23,80 @@ namespace FolderMorpher.Services.ServerSearch
 
         public string Name => "Windows Search (WSP / OLE DB)";
 
+        private const uint SC_MANAGER_CONNECT = 0x0001;
+        private const uint SERVICE_QUERY_STATUS = 0x0004;
+        private const int SERVICE_RUNNING = 0x00000004;
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct SERVICE_STATUS
+        {
+            public uint dwServiceType;
+            public uint dwCurrentState;
+            public uint dwControlsAccepted;
+            public uint dwWin32ExitCode;
+            public uint dwServiceSpecificExitCode;
+            public uint dwCheckPoint;
+            public uint dwWaitHint;
+        }
+
+        [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern IntPtr OpenSCManager(string? lpMachineName, string? lpDatabaseName, uint dwDesiredAccess);
+
+        [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern IntPtr OpenService(IntPtr hSCManager, string lpServiceName, uint dwDesiredAccess);
+
+        [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool QueryServiceStatus(IntPtr hService, out SERVICE_STATUS lpServiceStatus);
+
+        [System.Runtime.InteropServices.DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool CloseServiceHandle(IntPtr hSCObject);
+
         /// <summary>
-        /// 実行環境（ローカルOS）に Search.CollatorDSO OLE DB プロバイダーが登録されているかを安全に確認。
-        /// GitHub Actions ランナーや Server Core 等のプロバイダ未導入環境でのネイティブ COM クラッシュを防止。
+        /// ローカルマシン上で Windows Search サービス（WSearch）が稼働中（Running）かを確認。
+        /// サービス停止中・無効化環境での OleDbConnection ネイティブ COM クラッシュを完全に防止。
+        /// </summary>
+        public static bool IsSearchServiceRunning()
+        {
+            try
+            {
+                if (!OperatingSystem.IsWindows()) return false;
+
+                IntPtr scm = OpenSCManager(null, null, SC_MANAGER_CONNECT);
+                if (scm == IntPtr.Zero) return false;
+
+                try
+                {
+                    IntPtr service = OpenService(scm, "WSearch", SERVICE_QUERY_STATUS);
+                    if (service == IntPtr.Zero) return false;
+
+                    try
+                    {
+                        if (QueryServiceStatus(service, out var status))
+                        {
+                            return status.dwCurrentState == SERVICE_RUNNING;
+                        }
+                        return false;
+                    }
+                    finally
+                    {
+                        CloseServiceHandle(service);
+                    }
+                }
+                finally
+                {
+                    CloseServiceHandle(scm);
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 実行環境（ローカルOS）に Search.CollatorDSO OLE DB プロバイダーが登録されており、
+        /// かつ Windows Search サービスが稼働中（Running）かを安全に確認。
+        /// GitHub Actions ランナーや Server Core 等のプロバイダ未導入/サービス停止環境でのネイティブ COM クラッシュを防止。
         /// </summary>
         public static bool IsProviderInstalled()
         {
@@ -33,7 +104,10 @@ namespace FolderMorpher.Services.ServerSearch
             {
                 if (!OperatingSystem.IsWindows()) return false;
                 var comType = Type.GetTypeFromProgID("Search.CollatorDSO");
-                return comType != null;
+                if (comType == null) return false;
+
+                // プロバイダーProgIDが存在しても、WSearch サービスが停止・無効化されている場合は COM が壊れるため利用不可
+                return IsSearchServiceRunning();
             }
             catch
             {
