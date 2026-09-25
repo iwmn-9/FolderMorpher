@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FolderMorpher.Core", "Folde
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FolderMorpher", "FolderMorpher.csproj", "{4EC65989-54B7-4102-8567-D97E5D41C0A0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FolderMorpher.Host", "FolderMorpher.Host\FolderMorpher.Host.csproj", "{13B2F2F8-3713-4FBD-9851-74C6A691E8C3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,5 +26,9 @@ Global
 		{4EC65989-54B7-4102-8567-D97E5D41C0A0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4EC65989-54B7-4102-8567-D97E5D41C0A0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4EC65989-54B7-4102-8567-D97E5D41C0A0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{13B2F2F8-3713-4FBD-9851-74C6A691E8C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{13B2F2F8-3713-4FBD-9851-74C6A691E8C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{13B2F2F8-3713-4FBD-9851-74C6A691E8C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{13B2F2F8-3713-4FBD-9851-74C6A691E8C3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
