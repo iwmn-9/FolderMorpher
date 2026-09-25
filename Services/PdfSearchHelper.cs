@@ -19,9 +19,9 @@ namespace FolderMorpher.Services
         [DllImport("query.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern int LoadIFilter(
             string pwcsPath,
-            [MarshalAs(UnmanagedType.IUnknown)] object? pUnkOuter,
+            IntPtr pUnkOuter,
             ref Guid riid,
-            [MarshalAs(UnmanagedType.IUnknown)] out object? ppIUnk);
+            out IntPtr ppIUnk);
 
         [ComImport, Guid("89BCB740-6119-101A-BCB7-00DD010655AF"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
         private interface IFilter
@@ -210,13 +210,15 @@ namespace FolderMorpher.Services
             if (!File.Exists(filePath)) return string.Empty;
 
             // 1. Try Windows IFilter
+            IntPtr pUnk = IntPtr.Zero;
             try
             {
                 Guid riid = IFilterGuid;
-                int hr = LoadIFilter(filePath, null, ref riid, out object? obj);
-                if (hr == 0 && obj is IFilter filter)
+                int hr = LoadIFilter(filePath, IntPtr.Zero, ref riid, out pUnk);
+                if (hr == 0 && pUnk != IntPtr.Zero)
                 {
-                    try
+                    object comObj = Marshal.GetObjectForIUnknown(pUnk);
+                    if (comObj is IFilter filter)
                     {
                         hr = filter.Init(IFILTER_INIT_ALL, 0, 0, out _);
                         if (hr == 0)
@@ -245,13 +247,16 @@ namespace FolderMorpher.Services
                             if (sb.Length > 0) return sb.ToString();
                         }
                     }
-                    finally
-                    {
-                        Marshal.ReleaseComObject(filter);
-                    }
                 }
             }
             catch { }
+            finally
+            {
+                if (pUnk != IntPtr.Zero)
+                {
+                    try { Marshal.Release(pUnk); } catch { }
+                }
+            }
 
             // 2. Pure C# Fallback
             try
@@ -310,12 +315,16 @@ namespace FolderMorpher.Services
         private static PdfFilterStatus SearchWithIFilter(string filePath, string keyword, out string snippet)
         {
             snippet = string.Empty;
-            Guid riid = IFilterGuid;
-            int hr = LoadIFilter(filePath, null, ref riid, out object? obj);
-            if (hr != 0 || obj is not IFilter filter) return PdfFilterStatus.FailedOrUnsupported;
-
+            IntPtr pUnk = IntPtr.Zero;
             try
             {
+                Guid riid = IFilterGuid;
+                int hr = LoadIFilter(filePath, IntPtr.Zero, ref riid, out pUnk);
+                if (hr != 0 || pUnk == IntPtr.Zero) return PdfFilterStatus.FailedOrUnsupported;
+
+                object comObj = Marshal.GetObjectForIUnknown(pUnk);
+                if (comObj is not IFilter filter) return PdfFilterStatus.FailedOrUnsupported;
+
                 hr = filter.Init(IFILTER_INIT_ALL, 0, 0, out _);
                 if (hr != 0) return PdfFilterStatus.FailedOrUnsupported;
 
@@ -371,7 +380,10 @@ namespace FolderMorpher.Services
             }
             finally
             {
-                Marshal.ReleaseComObject(filter);
+                if (pUnk != IntPtr.Zero)
+                {
+                    try { Marshal.Release(pUnk); } catch { }
+                }
             }
         }
 
@@ -457,12 +469,16 @@ namespace FolderMorpher.Services
             out string snippet)
         {
             snippet = string.Empty;
-            Guid riid = IFilterGuid;
-            int hr = LoadIFilter(filePath, null, ref riid, out object? obj);
-            if (hr != 0 || obj is not IFilter filter) return PdfFilterStatus.FailedOrUnsupported;
-
+            IntPtr pUnk = IntPtr.Zero;
             try
             {
+                Guid riid = IFilterGuid;
+                int hr = LoadIFilter(filePath, IntPtr.Zero, ref riid, out pUnk);
+                if (hr != 0 || pUnk == IntPtr.Zero) return PdfFilterStatus.FailedOrUnsupported;
+
+                object comObj = Marshal.GetObjectForIUnknown(pUnk);
+                if (comObj is not IFilter filter) return PdfFilterStatus.FailedOrUnsupported;
+
                 hr = filter.Init(IFILTER_INIT_ALL, 0, 0, out _);
                 if (hr != 0) return PdfFilterStatus.FailedOrUnsupported;
 
@@ -534,7 +550,10 @@ namespace FolderMorpher.Services
             }
             finally
             {
-                Marshal.ReleaseComObject(filter);
+                if (pUnk != IntPtr.Zero)
+                {
+                    try { Marshal.Release(pUnk); } catch { }
+                }
             }
         }
 

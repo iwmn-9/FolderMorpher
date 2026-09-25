@@ -1257,8 +1257,36 @@
   - **5. TreeCachePruningIndex の安全是正 (`Services/TreeCachePruningIndex.cs`)**:
     - `EnableFolderTimestampPruning` プロパティ（既定値: `false`）を導入。通常時は検索漏れゼロの安全 Live 走査を保証し、オプトイン時のみ差分枝刈りを実行。
 - **検証と恒久保護**:
-  - `Services/Testing/RegressionTestSuite.Search.cs`:
-    - セクション 22: 書式分割 Word XML の「秘密保持契約書」連続抽出、64KB チャンク境界またぎキーワードのバッファ走査検出、TreeCachePruningIndex の安全モード（false 返却）、OpenBufferedReadStream のメモリ展開を自動検証。
-  - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
+---
+
+### ADR 96: Windows Native IFilter COM Interop ポインタ安全化 ＆ RCWクラッシュ根絶
+*(v2.2.20 本番施工 & ADR 96)*
+
+- **背景 & 動機**:
+  - **GitHub Actions CI および Windows Server ヘッドレス環境での AccessViolationException 即死**:
+    - CI ランナー（Azure VM / Windows Server 2022）環境で回帰テストを実行すると、Domain 8（Search Studio）の PDF 検査において `Fatal error. System.AccessViolationException` が発生し、プロセスがクラッシュ（exit code 1）していた。
+    - スタックトレース:
+      ```
+      System.AccessViolationException: Attempted to read or write protected memory.
+         at System.Runtime.InteropServices.Marshal.Release(IntPtr)
+         at System.Runtime.InteropServices.Marshalling.ComObject.Finalize()
+      ```
+  - **根本原因の解明**:
+    - `PdfSearchHelper.cs` において、`query.dll` の `LoadIFilter` が `[MarshalAs(UnmanagedType.IUnknown)] out object? ppIUnk` と定義されていた。
+    - Windows Server や CI 環境等で PDF に対する IFilter が存在しないか無効な場合、`LoadIFilter` はエラーコード（例: `FILTER_E_NOT_FOUND` / `E_FAIL`）を返すが、C++ 側が `*ppIUnk` をクリアせず未定義ポインタのまま復帰することがある。
+    - CLR の P/Invoke マーシャラーは、HRESULT がエラーであっても `out object` の引数を無条件で IUnknown として解釈し、ゴミポインタに対して RCW（Runtime Callable Wrapper）を生成してしまう。
+    - その後、GC のファイナライザースレッドが `ComObject.Finalize()` -> `Marshal.Release(IntPtr)` を呼び出した瞬間に、不正な保護メモリへアクセスしてプロセスが即死していた。さらに、`Marshal.ReleaseComObject(filter)` の明示的呼び出しと GC ファイナライザーとの競合も発生していた。
+- **施工内容**:
+  - **1. LoadIFilter P/Invoke の IntPtr 安全化 (`Services/PdfSearchHelper.cs`)**:
+    - `ppIUnk` 引数を `[MarshalAs(UnmanagedType.IUnknown)] out object?` から `out IntPtr ppIUnk` へ変更。
+    - CLR による自動 RCW 生成を完全に遮断。
+  - **2. HRESULT ＆ 非Zero ポインタ厳格ガード**:
+    - `if (hr == 0 && pUnk != IntPtr.Zero)` の場合のみ `Marshal.GetObjectForIUnknown(pUnk)` を呼び出すよう防壁を構築。エラー時は一切 COM オブジェクトをインスタンス化しない。
+  - **3. COM ライフサイクルの整線 ＆ ReleaseComObject 競合排除**:
+    - `try ... finally` ブロックでネイティブポインタ `pUnk` を `Marshal.Release(pUnk)` することで COM 規約に準拠した解放を保証。RCW のアンチパターンな二重解放（`Marshal.ReleaseComObject`）を全廃。
+- **検証と恒久保護**:
+  - `Services/Testing/RegressionTestSuite.Search.cs`: 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
+  - Windows Server / CI ヘッドレス環境でのネイティブ COM クラッシュを根絶。
+
 
 
