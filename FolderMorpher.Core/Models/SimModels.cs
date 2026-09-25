@@ -606,7 +606,7 @@ namespace AstraSize.Models
         public SimFolderNode? Parent { get; set; }
 
         [JsonIgnore]
-        public System.Windows.Thickness IndentMargin => new System.Windows.Thickness(Math.Min(12, Level) * 18, 0, 0, 0);
+        public string IndentMargin => $"{Math.Min(12, Level) * 18},0,0,0";
 
         [JsonIgnore]
         public string LevelPillText

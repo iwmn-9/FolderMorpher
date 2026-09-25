@@ -81,15 +81,24 @@ namespace AstraSize
                 options.ExcludeFolderPatterns.AddRange(patterns);
             }
 
-            var progress = new Progress<AuditProgress>(p =>
+            var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(_auditCts.Token);
+            var hostProgress = new Progress<string>(s =>
             {
-                AuditStatusText.Text = $"{p.CurrentStatus} ({p.ScannedFilesCount:N0}件走査 / 候補: {p.IssueCount}件)";
-                StatusTextBlock.Text = AuditStatusText.Text;
+                AuditStatusText.Text = s;
+                StatusTextBlock.Text = s;
             });
 
             try
             {
-                var (summary, items) = await _auditService.RunAuditAsync(options, progress, _auditCts.Token);
+                var auditReq = new FolderMorpher.Contracts.AuditScanRequestDto
+                {
+                    TargetPath = options.TargetDirectory,
+                    BandwidthLimit = options.BandwidthLimit,
+                    IgnoredPaths = options.ExcludeFolderPatterns
+                };
+                var report = await host.RunAuditScanAsync(auditReq, hostProgress, _auditCts.Token);
+                var summary = report.Summary;
+                var items = report.Items;
                 _lastAuditSummary = summary;
                 _lastAuditItems = items;
                 _auditSortProperty = "Default";
@@ -633,7 +642,8 @@ namespace AstraSize
             GlobalProgressBar.Visibility = Visibility.Visible;
             AuditStatusText.Text = "ファイル削除中...";
 
-            var result = await Task.Run(() => AuditCleanupService.ExecutePlan(plans));
+            var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+            var result = await host.ExecuteAuditCleanupAsync(plans, CancellationToken.None);
 
             // 5. データ・UIの最新化（削除されたFullPathを持つ全関連AuditItemを一括除去）
             _lastAuditItems.RemoveAll(x => result.DeletedPaths.Contains(x.FullPath));

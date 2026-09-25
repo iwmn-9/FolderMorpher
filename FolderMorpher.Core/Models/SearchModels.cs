@@ -10,22 +10,6 @@ using FolderMorpher.Services;
 namespace FolderMorpher.Models
 {
     /// <summary>
-    /// 検索対象のスコープ
-    /// </summary>
-    public enum SearchScope
-    {
-        /// <summary>
-        /// Storage Explorer (Tab 1) でスキャン済みの全ツリーから0秒インメモリ検索
-        /// </summary>
-        ScannedTrees = 0,
-
-        /// <summary>
-        /// 指定したローカルまたはUNCフォルダーを直接ストリーミング走査
-        /// </summary>
-        DirectFolder = 1
-    }
-
-    /// <summary>
     /// 解析済みの構造化検索クエリ
     /// </summary>
     public class SearchQuery

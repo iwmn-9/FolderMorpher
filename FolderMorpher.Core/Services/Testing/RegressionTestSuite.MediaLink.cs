@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -7,8 +7,6 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using AstraSize.Models;
 using AstraSize.Services;
 using AstraSize.Services.Mft;
@@ -66,12 +64,12 @@ namespace FolderMorpher.Services.Testing
                     }
                 }
 
-                var source = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgra32, null, rawPixels, stride);
-                var initialEncoder = new PngBitmapEncoder { Interlace = PngInterlaceOption.Off };
-                initialEncoder.Frames.Add(BitmapFrame.Create(source));
-                using (var fs = File.Create(pngPath))
+                using (var bmp = new System.Drawing.Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
                 {
-                    initialEncoder.Save(fs);
+                    var data = bmp.LockBits(new System.Drawing.Rectangle(0, 0, width, height), System.Drawing.Imaging.ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                    System.Runtime.InteropServices.Marshal.Copy(rawPixels, 0, data.Scan0, rawPixels.Length);
+                    bmp.UnlockBits(data);
+                    bmp.Save(pngPath, System.Drawing.Imaging.ImageFormat.Png);
                 }
 
                 long initialSizeBytes = new FileInfo(pngPath).Length;
@@ -124,33 +122,33 @@ namespace FolderMorpher.Services.Testing
 
                 // 2. 透過（アルファチャンネル）の維持チェック
                 using var readMs = new MemoryStream(optBytes);
-                var decoder = BitmapDecoder.Create(readMs, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-                if (decoder.Frames.Count == 0)
+                using var verifyBmp = new System.Drawing.Bitmap(readMs);
+                if (verifyBmp.Width == 0 || verifyBmp.Height == 0)
                 {
                     throw new InvalidOperationException("最適化後 PNG のデコードに失敗しました。");
                 }
 
-                var frame = decoder.Frames[0];
-                int optW = frame.PixelWidth;
-                int optH = frame.PixelHeight;
-
                 // フォーマットがアルファ情報を持つことを確認
-                if (frame.Format.BitsPerPixel < 32)
+                if (System.Drawing.Image.GetPixelFormatSize(verifyBmp.PixelFormat) < 32)
                 {
                     throw new InvalidOperationException(
-                        $"透過喪失バグ検出: ピクセルフォーマットにアルファチャンネルが含まれていません。Format: {frame.Format}");
+                        $"透過喪失バグ検出: ピクセルフォーマットにアルファチャンネルが含まれていません。Format: {verifyBmp.PixelFormat}");
                 }
 
-                int optStride = optW * 4;
+                int optW = verifyBmp.Width;
+                int optH = verifyBmp.Height;
+                var verifyData = verifyBmp.LockBits(new System.Drawing.Rectangle(0, 0, optW, optH), System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                int optStride = Math.Abs(verifyData.Stride);
                 byte[] decodedPixels = new byte[optStride * optH];
-                frame.CopyPixels(decodedPixels, optStride, 0);
+                System.Runtime.InteropServices.Marshal.Copy(verifyData.Scan0, decodedPixels, 0, decodedPixels.Length);
+                verifyBmp.UnlockBits(verifyData);
 
                 bool foundZeroAlpha = false;
                 bool foundSemiAlpha = false;
 
-                for (int i = 0; i < decodedPixels.Length; i += 4)
+                for (int j = 0; j < decodedPixels.Length; j += 4)
                 {
-                    byte alpha = decodedPixels[i + 3];
+                    byte alpha = decodedPixels[j + 3];
                     if (alpha == 0) foundZeroAlpha = true;
                     else if (alpha < 200) foundSemiAlpha = true;
 
@@ -160,7 +158,7 @@ namespace FolderMorpher.Services.Testing
                 if (!foundZeroAlpha && !foundSemiAlpha)
                 {
                     throw new InvalidOperationException(
-                        "透過破壊バグ検出: 最適化後の PNG から透明/半透明ピクセルが失われ、全ピクセルが不透明になりました。");
+                        "透過破壊バグ検出: 最適化後の PNG から透過/半透過ピクセルが失われ、全ピクセルが不透過になりました。");
                 }
             }
             finally

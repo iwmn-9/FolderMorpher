@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -47,13 +47,14 @@ namespace AstraSize
 
             try
             {
-                var items = await _linkFixService.ScanShortcutsAsync(scope, oldPattern, newPattern, progress, _linkFixCts.Token);
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(_linkFixCts.Token);
+                var scanRes = await host.ScanBrokenLinksAsync(scope, oldPattern, newPattern, progress, _linkFixCts.Token);
+                var items = scanRes.BrokenLinks;
 
                 // M3対策: Officeファイル内部リンクも含める場合
                 if (LinkIncludeOfficeCheckBox.IsChecked == true)
                 {
-                    progress.Report("Officeファイル内部リンクを走査中...");
-                    var officeItems = await _officeLinkService.ScanOfficeLinksAsync(scope, oldPattern, newPattern, progress, _linkFixCts.Token);
+                    var officeItems = scanRes.OfficeLinks;
                     foreach (var off in officeItems)
                     {
                         items.Add(new LinkFixItem
@@ -134,7 +135,14 @@ namespace AstraSize
             try
             {
                 using var cts = new CancellationTokenSource();
-                var successCount = await _linkFixService.ExecuteFixAsync(_lastLinkFixTargets, progress, cts.Token);
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(cts.Token);
+                var hostProgress = new Progress<string>(s => StatusTextBlock.Text = s);
+                var applyReq = new FolderMorpher.Contracts.LinkFixApplyRequestDto
+                {
+                    TargetShortcuts = _lastLinkFixTargets
+                };
+                var applyRes = await host.RepairBrokenLinksAsync(applyReq, hostProgress, cts.Token);
+                var successCount = applyRes.RepairedCount;
                 LinkItemsDataGrid.Items.Refresh();
                 LinkFixDiffModalOverlay.Visibility = Visibility.Collapsed;
 

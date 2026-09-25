@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
-using System.Windows;
 using FolderMorpher.Services;
 
 namespace AstraSize.Models
@@ -97,11 +96,11 @@ namespace AstraSize.Models
         public string BadgeBorderBrush => BadgeInfo.BorderBrush;
         public string BadgeForeground => BadgeInfo.Foreground;
 
-        public FontWeight FontWeight => IsDirectory ? FontWeights.Bold : FontWeights.Normal;
+        public string FontWeight => IsDirectory ? "Bold" : "Normal";
 
-        public Thickness IndentMargin
+        public string IndentMargin
         {
-            get => new Thickness(Level * 16, 0, 0, 0);
+            get => $"{Level * 16},0,0,0";
             set { }
         }
 
@@ -126,8 +125,6 @@ namespace AstraSize.Models
 
         public bool IsRoot => Parent == null;
         public string PercentageDisplay => IsRoot ? "―" : $"{Percentage:F1}%";
-        public Visibility ProgressBarVisibility => IsRoot ? Visibility.Collapsed : Visibility.Visible;
-        public Visibility DashVisibility => IsRoot ? Visibility.Visible : Visibility.Collapsed;
 
         public double PercentageOfParent
         {

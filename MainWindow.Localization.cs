@@ -524,12 +524,10 @@ namespace AstraSize
             if (SearchIncludeFoldersCheckBox != null) SearchIncludeFoldersCheckBox.Content = Strings.SearchIncludeFoldersCheck;
             if (SearchContentCheckBox != null) SearchContentCheckBox.Content = Strings.SearchContentCheck;
             if (SearchDirectBrowseButton != null) SearchDirectBrowseButton.Content = Strings.BrowseWithFolder;
-            if (SearchSyncIndexButton != null)
+            if (SearchRefreshButton != null)
             {
-                SearchSyncIndexButton.Content = "↻";
-                SearchSyncIndexButton.ToolTip = isJa
-                    ? "インデックスを手動更新 (差分最新化)"
-                    : "Refresh Index (Differential update)";
+                SearchRefreshButton.Content = "↻";
+                SearchRefreshButton.ToolTip = isJa ? "検索結果を更新" : "Refresh search results";
             }
             if (SearchKpiHitCountTitle != null) SearchKpiHitCountTitle.Text = Strings.SearchKpiHitCount;
             if (SearchKpiTotalSizeTitle != null) SearchKpiTotalSizeTitle.Text = Strings.SearchKpiTotalSize;

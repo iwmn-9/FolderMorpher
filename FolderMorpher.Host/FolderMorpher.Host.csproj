@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>false</UseWPF>
+    <AssemblyName>FolderMorpher.Host</AssemblyName>
+    <RootNamespace>FolderMorpher.Host</RootNamespace>
+    <Version>2.2.20</Version>
+    <CodePage>65001</CodePage>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="StreamJsonRpc" Version="2.25.29" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FolderMorpher.Core\FolderMorpher.Core.csproj" />
+  </ItemGroup>
+
+</Project>

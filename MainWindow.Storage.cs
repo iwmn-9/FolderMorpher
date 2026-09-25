@@ -278,17 +278,34 @@ namespace AstraSize
                 // キャッシュロード失敗は通常走査にフォールバック
             }
 
-            var progress = new Progress<ScanProgress>(p =>
+            var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(ct);
+
+            var progress = new Progress<FolderMorpher.Contracts.StorageScanProgressDto>(p =>
             {
-                ScannedSizeTextBlock.Text = FileItemNode.FormatBytes(p.BytesScanned);
-                TotalFilesTextBlock.Text = $"{p.FilesScanned:N0} 項目走査済み";
-                StatusTextBlock.Text = $"スキャン中: {p.CurrentPath}";
+                ScannedSizeTextBlock.Text = FileItemNode.FormatBytes(p.ScannedBytes);
+                TotalFilesTextBlock.Text = $"{p.ScannedFilesCount:N0} 項目走査済み";
+                StatusTextBlock.Text = $"スキャン中: {p.CurrentDirectory}";
             });
 
             try
             {
-                // --- バックグラウンド最新スキャン実行 ---
-                var (root, summary) = await _scanService.ScanPathAsync(path, progress, ct);
+                // --- バックグラウンド最新スキャン実行 (Host IPC経由) ---
+                var scanResult = await host.ScanStorageAsync(new FolderMorpher.Contracts.StorageScanRequestDto { TargetPath = path }, progress, ct);
+                var root = scanResult.RootNode;
+                if (root == null)
+                {
+                    throw new InvalidOperationException(scanResult.ErrorMessage ?? "スキャン結果を取得できませんでした。");
+                }
+
+                var summary = new ScanSummary
+                {
+                    TargetPath = scanResult.TargetPath,
+                    TotalBytes = scanResult.TotalBytes,
+                    TotalFiles = scanResult.TotalFiles,
+                    TotalFolders = scanResult.TotalFolders,
+                    LargestFiles = scanResult.Top10Files,
+                    ElapsedSeconds = scanResult.Elapsed.TotalSeconds
+                };
                 root.CachedTopFiles = summary.LargestFiles;
                 root.CachedExtensionStats = summary.ExtensionStats;
 

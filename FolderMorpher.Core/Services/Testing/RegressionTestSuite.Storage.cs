@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -7,8 +7,6 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using AstraSize.Models;
 using AstraSize.Services;
 using AstraSize.Services.Mft;
@@ -123,7 +121,7 @@ namespace FolderMorpher.Services.Testing
             parent.IsExpanded = true;
             if (parent.ExpandIcon != "▼") throw new InvalidOperationException($"UI Binding Error: parent.ExpandIcon was '{parent.ExpandIcon}', expected '▼'");
             if (parent.IconGlyph != "📁") throw new InvalidOperationException($"UI Binding Error: parent.IconGlyph was '{parent.IconGlyph}', expected '📁'");
-            if (parent.FontWeight != FontWeights.Bold) throw new InvalidOperationException("UI Binding Error: parent.FontWeight should be Bold");
+            if (parent.FontWeight != "Bold") throw new InvalidOperationException("UI Binding Error: parent.FontWeight should be Bold");
 
             // SharePercentage, IsDriveRoot, ShareFormatted
             child.Percentage = 40.0;

@@ -41,21 +41,34 @@
 
 ---
 
-## 1. プロジェクト概要 & 技術スタック
+## 1. プロジェクト概要 & アーキテクチャ構成
 
 - **アプリケーション名**: `FolderMorpher` (旧 AstraSize)
 - **種別**: Windows デスクトップ向け 大容量ファイルサーバー監視 & NTFSアクセス権移行・シミュレーションスタジオ
-- **フレームワーク**: .NET 8.0 (Windows WPF), C# 12
-- **依存パッケージ**: `System.DirectoryServices` (8.0.0, AD通信用), `Microsoft.Data.Sqlite` (10.0.12, FTS5全文検索用)
+- **フレームワーク**: .NET 8.0, C# 12
+- **3層アーキテクチャ境界 (ADR 101: 依存方向 `GUI -> Host -> Core`)**:
+  1. **`FolderMorpher.Core`**:
+     - `net8.0-windows`, `UseWPF=false`
+     - Window/Control/Dispatcher/WPF依存ゼロの純粋ヘッドレス・クラスライブラリ。
+     - 検索、ファイル走査、MFT、ACL/Effective Access、監査、移行、リンク修復、画像最適化（GDI+）、共通モデル・契約（Contracts）を保持。
+  2. **`FolderMorpher.Host.exe`**:
+     - `net8.0-windows`, `OutputType=WinExe`, `UseWPF=false`
+     - ユーザーログオン常駐プロセス（Mutex単一インスタンス保証、トレイ/UIなし）。
+     - SQLite DB (`tree_cache.db`)、インデックス、キャッシュの排他的所有者。
+     - Named Pipe (`FolderMorpher_IPC_{UserName}`) と `StreamJsonRpc` (v2.25.29) による高スループット非同期 RPC サーバー (`IFolderMorpherHostService`)。
+  3. **`FolderMorpher.exe` (WPF GUI)**:
+     - `net8.0-windows`, `UseWPF=true`
+     - 業務ロジック・直接走査・ファイルI/O・ACL変更・DB直接アクセスを持たず、View・操作・表示のみを担当。
+     - `FolderMorpherHostClient`: Host 未起動時の自動自己起動（フォールバック）および自動再接続自己治癒を備えた IPC クライアント。
 - **ビルド形態**: `Release win-x64` の **自己完結型（Self-Contained）単一実行可能ファイル (`FolderMorpher.exe`)**
-  - ネイティブWPFエンジンDLL（D3DCompiler, wpfgfx等）および SQLite ネイティブDLLはすべてEXE内部にバンドルされる。ルートに個別DLLを展開・配置してはならない。
-  - `-p:EnableCompressionInSingleFile=true` による Deflate 圧縮を標準採用し、ファイルサイズは約74.5MB（配布・共有に最適化）。
+  - ネイティブWPFエンジンDLLおよび SQLite ネイティブDLLはEXE内部にバンドルされる。
+  - `-p:EnableCompressionInSingleFile=true` による Deflate 圧縮を標準採用。
 
 ---
 
 ## 2. システム鳥瞰マップ（機能とソースコードの対応表）
 
-UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class 分割）および独立コンポーネント `Views/LiveAclStudio.xaml` / `LiveAclStudio.xaml.cs` で構成され、内部ロジックは `Services` と `Models` に完全に分離されている。
+UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class 分割）および独立コンポーネント `Views/LiveAclStudio.xaml` / `LiveAclStudio.xaml.cs` で構成され、全機能の実行処理は `HostClient/FolderMorpherHostClient.cs` を介して `FolderMorpher.Host`（RPC 経由）に委譲される。内部ロジックは `FolderMorpher.Core` に完全に分離されている。
 
 | 機能領域 / タブ | XAML (MainWindow / View) | C# コードビハインド | 関連 Service / Model | 責務と概要 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -71,18 +84,24 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 | **変化点差分モーダル** | `DiffModalOverlay` | `MainWindow.Simulation.cs` | `SimModels.cs` | 移行前後（Before/After）の変化点（新規・移動・統合・ACL差分）の一覧レビューとExcel出力 |
 | **移行パッケージ生成モーダル** | `MigrationPackageOverlay` | `MainWindow.Simulation.cs` | `MigrationPackageService.cs`<br>`MigrationPackageModels.cs`<br>`ExcelReportService.cs` | ベンダー標準移行工程（事前フル同期、中間差分、本番切替）の一括静的生成、波次（Wave）自動分割・容量バジェット算定、動的転送レート・差分率による所要時間算出、容量二重加算防止、実測ファイル数引き継ぎ、安全停止手順書ガイド、週末枠オーバー警告、Migration_Runbook.xlsx（WBS/進捗台帳・マッピング・除外一覧） |
 
+**検索の現行入口**: `MainWindow.Search.cs` → `SearchEngineService`。直接走査は `SafeFileEnumerator.EnumerateFileEntriesParallelAsync(..., collectResults: false)` のコールバックで逐次処理する。ファイル名・パス・本文条件の共通判定は `SearchEngineService.MatchesSearchTerms` が正本。`TreeCachePruningIndex` はフォルダー時刻だけでは検索の完全性を保証できないため、通常画面の直接走査では構築しない。
+
+**旧方式**: 検索専用 FTS5 と Watcher は ADR 87 で通常画面から退役し、ADR 100 で旧サービスと専用テストも撤去した。`Microsoft.Data.Sqlite` は現行の `SqliteTreeCacheService` で引き続き使用する。
+
+`USER_REQUIREMENTS.md` はユーザーの意図で Git 管理から除外されている。無断で追跡・公開しない。ローカルにある場合は要求の正本として参照する。後続 ADR と記述が異なる箇所は時系列とユーザーの最新指示を確認する。GitHub 上で見えないことを理由に要求が存在しないと推定しない。
+
 ---
 
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの全 98 項目に及ぶ詳細な設計判断記録（ADR 1〜98）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの設計判断記録（ADR 1〜100）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 
 #### 主要な中核原則サマリー（詳細は `.agents/ADR.md` 参照）
 
-過去の全98項目に及ぶ設計判断（ADR 1〜98）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
+設計判断（ADR 1〜100）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
 
 1. **全体占有率メーター & 2連カード（Storage / ADR 61）**:
    - 親フォルダーに対する直下シェア（右ペイン「選択フォルダーの内訳」）と、スキャン対象ルート総容量に対する全体占有率を二重加算防止のため厳格分離。ルート行は `―`（ハイフン）表示。メトリクスカードは「スキャン対象 容量」「前回差分推移」の2連カード化。
@@ -100,10 +119,11 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
    - フォルダー単位RPCの完全根絶（ゼロI/O化）: 列挙タイムスタンプを子ノード生成時に直結。
    - `SharedIoGovernor`: ディレクトリ列挙専用コントローラー（安全な2並列固定・上限2）と本文読み込み専用コントローラー（AIMD: 4 ➔ 最大12並列）を完全分離。
    - 純粋I/O時間計測（CPU展開・パース時間を除外した真のネットワーク遅延）と、再昇格可能な AIMD（不可逆崖落ち永久固定の撤廃）により、サーバーを保護しつつ SMB スループットを最大化。重複 RPC（事前の `File.Exists`、既知サイズの `FileInfo.Length`）を全廃。
-6. **検索スタジオのアーキテクチャ（Search Studio / ADR 87, 90, 93, 94, 95, 96, 97）**:
+6. **検索スタジオのアーキテクチャ（Search Studio / ADR 87, 90, 93, 94, 95, 96, 97, 99）**:
    - **検索専用ローカルDBの完全撤去（肥大化・ロック競合ゼロ）**: 「スキャンツリー／キャッシュによる 0秒インメモリ検索」＋「未スキャンUNCに対するストリーミング型 Live 直接走査（Producer-Consumer Channel パイプライン）」へ一本化。
    - **サーバー側インデックス拝借（ServerSearchAccelerator）**: Windows Server WSP / Synology 等の既存インデックスから候補を秒速取得しつつ、網羅走査を併用して False Negative を完全防止。
    - **ストリーミング走査の最適化**: ripgrep流 64KBスライディングバッファ直接走査、Office書式境界分割保護（`<w:t>` 連続結合・HTMLデコード・セル境界空白保護）、PDF正常非一致の早期脱落、親子局所性（Locality-First LIFO走査）、パス正規化エンジン（`PathCanonicalizer`: Z:\ ⇄ UNC 自動解決＆同一視）。
+   - **列挙結果の保持を選択**: 共通列挙器は既定で一覧を返す。検索の逐次コールバック利用時は `collectResults: false` とし、全件を別途メモリへ蓄積しない。名前・パス・本文条件の共通判定は `MatchesSearchTerms` に集約。
    - **UI・デザイン言語**: フル幅モダンカードリスト、Tabler File-Type バッジ（Option 1 折れ曲がり角付き書類ベクターアイコン ＆ 統一フォルダー）。
 7. **SQLite ローカル専有ツリーキャッシュ ＆ ポータブル JSON 相互運用（ADR 98）**:
    - **完全ローカル専有**: `%LocalAppData%\FolderMorpher\TreeCache\tree_cache.db`（WALモード）にのみ DB を配置。共有フォルダー（UNC）には一切 DB を置かず、ロック競合・遅延破損をゼロ化。
@@ -136,7 +156,7 @@ Copy-Item ./publish/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\Folde
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 8/8 ALL PASSED（8大ドメイン包括検証）であることを確認すること。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 8/8 ALL PASSED（8ドメイン通過）であることを確認すること。8/8 は網羅率を意味しない。検索テストは `RegressionTestSuite.Search.cs`（構文・現行経路）、`.Search.CurrentRoutes.cs`（名前・本文の意味論）、`.Search.Infrastructure.cs`（照合・列挙）、`.Search.ServerContent.cs`（WSP・抽出）に分ける。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

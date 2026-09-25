@@ -4,9 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using FolderMorpher.Models;
 
 namespace FolderMorpher.Services
@@ -186,74 +186,63 @@ namespace FolderMorpher.Services
         {
             byte[] fileBytes = File.ReadAllBytes(filePath);
             using var ms = new MemoryStream(fileBytes);
+            using var origImage = Image.FromStream(ms);
 
-            // デコーダー作成
-            var decoder = BitmapDecoder.Create(ms, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-            if (decoder.Frames.Count == 0) throw new InvalidOperationException("画像フレームを読み込めませんでした。");
+            int origW = origImage.Width;
+            int origH = origImage.Height;
 
-            var frame = decoder.Frames[0];
-            int origW = frame.PixelWidth;
-            int origH = frame.PixelHeight;
+            int targetW = origW;
+            int targetH = origH;
+            bool needsResize = false;
 
-            // アスペクト比計算
-            BitmapSource source = frame;
             if (origW > maxDimension || origH > maxDimension)
             {
                 double scale = (double)maxDimension / Math.Max(origW, origH);
-                int targetW = (int)Math.Round(origW * scale);
-                int targetH = (int)Math.Round(origH * scale);
-
-                var transformed = new TransformedBitmap();
-                transformed.BeginInit();
-                transformed.Source = frame;
-                transformed.Transform = new ScaleTransform(scale, scale);
-                transformed.EndInit();
-                transformed.Freeze();
-                source = transformed;
+                targetW = Math.Max(1, (int)Math.Round(origW * scale));
+                targetH = Math.Max(1, (int)Math.Round(origH * scale));
+                needsResize = true;
             }
 
             string ext = Path.GetExtension(filePath).ToLowerInvariant();
-            BitmapEncoder encoder;
-            if (ext == ".png")
+            bool isPng = ext == ".png";
+
+            using var outMs = new MemoryStream();
+
+            if (needsResize)
             {
-                // PNG: 透過（アルファチャンネル）を100%保持した最適化
-                encoder = new PngBitmapEncoder
+                // 透過ピクセルを100%維持するため Format32bppArgb を使用
+                using var resizedBmp = new Bitmap(targetW, targetH, PixelFormat.Format32bppArgb);
+                resizedBmp.SetResolution(origImage.HorizontalResolution, origImage.VerticalResolution);
+
+                using (var g = Graphics.FromImage(resizedBmp))
                 {
-                    Interlace = PngInterlaceOption.Off
-                };
+                    g.CompositingMode = CompositingMode.SourceCopy;
+                    g.CompositingQuality = CompositingQuality.HighQuality;
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.SmoothingMode = SmoothingMode.HighQuality;
+                    g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+                    g.DrawImage(origImage, 0, 0, targetW, targetH);
+                }
+
+                // Exifメタデータの引き継ぎ
+                foreach (var prop in origImage.PropertyItems)
+                {
+                    try { resizedBmp.SetPropertyItem(prop); } catch { }
+                }
+
+                SaveImageWithQuality(resizedBmp, outMs, isPng, quality);
             }
             else
             {
-                // JPEG: 視覚的ロスレス（Visually Lossless）圧縮
-                encoder = new JpegBitmapEncoder
+                // リサイズ不要な場合、PNGはロスレスのためスキップ、JPEGは再圧縮
+                if (isPng)
                 {
-                    QualityLevel = Math.Clamp(quality, 10, 100)
-                };
-            }
-
-            // Exifメタデータの引き継ぎ
-            BitmapMetadata? metadata = null;
-            if (frame.Metadata is BitmapMetadata origMeta)
-            {
-                try
-                {
-                    metadata = origMeta.Clone() as BitmapMetadata;
+                    return fileBytes.Length;
                 }
-                catch { }
+                SaveImageWithQuality(origImage, outMs, isPng, quality);
             }
 
-            try
-            {
-                encoder.Frames.Add(BitmapFrame.Create(source, null, metadata, null));
-            }
-            catch
-            {
-                // メタデータの互換性エラー時は安全にメタデータなしでフレーム追加
-                encoder.Frames.Add(BitmapFrame.Create(source));
-            }
-
-            using var outMs = new MemoryStream();
-            encoder.Save(outMs);
             byte[] optimizedBytes = outMs.ToArray();
 
             // もし最適化後の方が大きくなってしまった場合は上書きしない
@@ -264,9 +253,9 @@ namespace FolderMorpher.Services
 
             // H3対策: 書き出し前に最適化データが正常な画像か再デコード検証 (破損データの上書き防止)
             using (var verifyMs = new MemoryStream(optimizedBytes))
+            using (var verifyImg = Image.FromStream(verifyMs))
             {
-                var verifyDecoder = BitmapDecoder.Create(verifyMs, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
-                if (verifyDecoder.Frames.Count == 0 || verifyDecoder.Frames[0].PixelWidth == 0 || verifyDecoder.Frames[0].PixelHeight == 0)
+                if (verifyImg.Width == 0 || verifyImg.Height == 0)
                 {
                     throw new InvalidOperationException("最適化後データの画像検証に失敗しました。ファイル破損防止のため上書きを中断しました。");
                 }
@@ -287,6 +276,39 @@ namespace FolderMorpher.Services
                     try { File.Delete(tempPath); } catch { }
                 }
             }
+        }
+
+        private static void SaveImageWithQuality(Image image, Stream stream, bool isPng, int quality)
+        {
+            if (isPng)
+            {
+                image.Save(stream, ImageFormat.Png);
+            }
+            else
+            {
+                var encoder = GetEncoder(ImageFormat.Jpeg);
+                if (encoder != null)
+                {
+                    using var encoderParams = new EncoderParameters(1);
+                    encoderParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, (long)Math.Clamp(quality, 10, 100));
+                    image.Save(stream, encoder, encoderParams);
+                }
+                else
+                {
+                    image.Save(stream, ImageFormat.Jpeg);
+                }
+            }
+        }
+
+        private static ImageCodecInfo? GetEncoder(ImageFormat format)
+        {
+            var codecs = ImageCodecInfo.GetImageEncoders();
+            foreach (var codec in codecs)
+            {
+                if (codec.FormatID == format.Guid)
+                    return codec;
+            }
+            return null;
         }
 
         /// <summary>
