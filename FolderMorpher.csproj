@@ -21,4 +21,17 @@
     <PackageReference Include="System.DirectoryServices" Version="8.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="FolderMorpher.Core\**" />
+    <Compile Remove="FolderMorpher.Host\**" />
+    <EmbeddedResource Remove="FolderMorpher.Core\**" />
+    <EmbeddedResource Remove="FolderMorpher.Host\**" />
+    <None Remove="FolderMorpher.Core\**" />
+    <None Remove="FolderMorpher.Host\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="FolderMorpher.Core\FolderMorpher.Core.csproj" />
+  </ItemGroup>
+
 </Project>

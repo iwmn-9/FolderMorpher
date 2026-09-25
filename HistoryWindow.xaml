@@ -1,7 +1,7 @@
 <Window x:Class="AstraSize.HistoryWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:models="clr-namespace:AstraSize.Models"
+        xmlns:models="clr-namespace:AstraSize.Models;assembly=FolderMorpher.Core"
         Title="容量推移グラフ &amp; 数理予測"
         Height="720" Width="920"
         MinHeight="600" MinWidth="800"

@@ -1,0 +1,252 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using FolderMorpher.Models;
+
+namespace FolderMorpher.Services
+{
+    /// <summary>
+    /// 物理ファイル単位の削除実行計画
+    /// </summary>
+    public class AuditCleanupPlan
+    {
+        public string FullPath { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public long Size { get; set; }
+        public DateTime? ExpectedLastWriteTimeUtc { get; set; }
+        public bool IsOriginalCandidate { get; set; }
+        public List<AuditItem> AssociatedItems { get; set; } = new();
+
+        // H2完全防御: 重複グループにおける原本ファイルの生存・整合性検証用
+        public string? OriginalCandidatePath { get; set; }
+        public long? OriginalExpectedSize { get; set; }
+        public DateTime? OriginalExpectedLastWriteTimeUtc { get; set; }
+    }
+
+    /// <summary>
+    /// 物理削除の実行結果
+    /// </summary>
+    public class AuditCleanupResult
+    {
+        public int SuccessCount { get; set; }
+        public long FreedBytes { get; set; }
+        public HashSet<string> DeletedPaths { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public List<string> Errors { get; set; } = new();
+    }
+
+    /// <summary>
+    /// 断捨離・健全化の完全削除サービス（整線パッチパネル）
+    /// 監査行（AuditItem）ではなく物理ファイル（FullPath）を正本として削除計画・実行・属性復元を行う
+    /// </summary>
+    public static class AuditCleanupService
+    {
+        /// <summary>
+        /// 全監査アイテムと現在の選択状態から、FullPath 単位で一意化された削除実行計画を作成する
+        /// </summary>
+        /// <param name="allItems">全監査アイテムの正本（_lastAuditItems）</param>
+        /// <returns>物理ファイル単位の実行計画リスト</returns>
+        public static List<AuditCleanupPlan> BuildPlan(IEnumerable<AuditItem> allItems)
+        {
+            var itemList = allItems as IList<AuditItem> ?? allItems.ToList();
+
+            // 1. 全アイテムから原本候補の FullPath を聖域として抽出
+            // （休眠行から選択されても原本保護を確実に発動させるための正本リスト）
+            var originalPaths = new HashSet<string>(
+                itemList.Where(i => i.IsOriginalCandidate)
+                        .Select(i => i.FullPath),
+                StringComparer.OrdinalIgnoreCase);
+
+            // 重複グループごとの原本アイテム逆引きマップを作成
+            var origByGroup = itemList
+                .Where(i => !string.IsNullOrEmpty(i.DuplicateGroupId) && i.IsOriginalCandidate)
+                .GroupBy(i => i.DuplicateGroupId)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            // ★ ADR 97: 全アイテムから FullPath -> DuplicateGroupId の集約マップを作成
+            // ユーザーが「休眠行」や「旧版行」側のみを選択した場合でも、その物理ファイルが重複グループに
+            // 属していれば、原本の生存確認および SHA-256 再照合が 100% 確実に発動するよう安全情報を集約する。
+            var dupGroupByFullPath = itemList
+                .Where(i => !string.IsNullOrEmpty(i.DuplicateGroupId))
+                .GroupBy(i => i.FullPath, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().DuplicateGroupId, StringComparer.OrdinalIgnoreCase);
+
+            // 2. チェックされているアイテムのみを抽出し、FullPath でグループ化
+            // （Sol指摘対応: 墓場フォルダーなどフォルダー項目の事故削除を防止するため IsCleanable で二重ガード）
+            var checkedItems = itemList.Where(i => i.IsChecked && i.IsCleanable).ToList();
+            var plans = checkedItems
+                .GroupBy(i => i.FullPath, StringComparer.OrdinalIgnoreCase)
+                .Select(g =>
+                {
+                    var first = g.First();
+                    AuditItem? origItem = null;
+
+                    // 選択された行、または同一 FullPath の他行から DuplicateGroupId を探索
+                    string? dupGroupId = g.Select(i => i.DuplicateGroupId).FirstOrDefault(id => !string.IsNullOrEmpty(id));
+                    if (string.IsNullOrEmpty(dupGroupId))
+                    {
+                        dupGroupByFullPath.TryGetValue(g.Key, out dupGroupId);
+                    }
+
+                    if (!string.IsNullOrEmpty(dupGroupId) && origByGroup.TryGetValue(dupGroupId, out var oi))
+                    {
+                        // 自身が原本候補でない場合のみ原本参照を設定
+                        if (!string.Equals(oi.FullPath, g.Key, StringComparison.OrdinalIgnoreCase))
+                        {
+                            origItem = oi;
+                        }
+                    }
+
+                    return new AuditCleanupPlan
+                    {
+                        FullPath = g.Key,
+                        FileName = first.FileName,
+                        Size = first.Size,
+                        ExpectedLastWriteTimeUtc = first.LastWriteTime != default ? first.LastWriteTime.ToUniversalTime() : null,
+                        IsOriginalCandidate = originalPaths.Contains(g.Key),
+                        AssociatedItems = g.ToList(),
+                        OriginalCandidatePath = origItem?.FullPath,
+                        OriginalExpectedSize = origItem?.Size,
+                        OriginalExpectedLastWriteTimeUtc = origItem != null && origItem.LastWriteTime != default ? origItem.LastWriteTime.ToUniversalTime() : null
+                    };
+                })
+                .ToList();
+
+            return plans;
+        }
+
+        private static string ComputeFileSha256(string filePath)
+        {
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var hash = sha.ComputeHash(stream);
+            return Convert.ToHexString(hash);
+        }
+
+        /// <summary>
+        /// 実行計画に基づき、物理ファイルを1回だけ削除する
+        /// （読み取り専用属性は一時解除し、失敗時は元の属性を復元する安全機構付き）
+        /// </summary>
+        public static AuditCleanupResult ExecutePlan(IEnumerable<AuditCleanupPlan> plans)
+        {
+            var result = new AuditCleanupResult();
+
+            foreach (var plan in plans)
+            {
+                FileAttributes? originalAttrs = null;
+                try
+                {
+                    // Sol指摘: 原本候補ファイルの削除は無条件で絶対拒否（聖域保護の最終貫通）
+                    if (plan.IsOriginalCandidate)
+                    {
+                        result.Errors.Add($"{plan.FileName}: 原本候補ファイルは聖域として保護されているため、削除は絶対に許可されません。");
+                        continue;
+                    }
+
+                    if (Directory.Exists(plan.FullPath))
+                    {
+                        result.Errors.Add($"{plan.FileName}: フォルダーの直接削除は安全保護規則により許可されていません（ファイル単位の削除のみ対応）。");
+                        continue;
+                    }
+
+                    if (!File.Exists(plan.FullPath))
+                    {
+                        // M4対策: ファイルが存在しない場合は成功カウントせず、警告として記録
+                        result.Errors.Add($"{plan.FileName}: ファイルが存在しません（既に移動または削除されています）");
+                        continue;
+                    }
+
+                    // H2完全防御: 重複ファイル削除時は、原本が現在も正常に存在しているか必ず検証
+                    if (!string.IsNullOrEmpty(plan.OriginalCandidatePath))
+                    {
+                        if (!File.Exists(plan.OriginalCandidatePath))
+                        {
+                            result.Errors.Add($"{plan.FileName}: 重複原本（{Path.GetFileName(plan.OriginalCandidatePath)}）が存在しません。原本全滅防止のため削除を中止しました。");
+                            continue;
+                        }
+
+                        var origFi = new FileInfo(plan.OriginalCandidatePath);
+                        if (plan.OriginalExpectedSize.HasValue && origFi.Length != plan.OriginalExpectedSize.Value)
+                        {
+                            result.Errors.Add($"{plan.FileName}: 重複原本（{Path.GetFileName(plan.OriginalCandidatePath)}）のサイズがスキャン後変更されています。安全のため削除をスキップしました。");
+                            continue;
+                        }
+
+                        if (plan.OriginalExpectedLastWriteTimeUtc.HasValue)
+                        {
+                            var diff = Math.Abs((origFi.LastWriteTimeUtc - plan.OriginalExpectedLastWriteTimeUtc.Value).TotalSeconds);
+                            if (diff > 2)
+                            {
+                                result.Errors.Add($"{plan.FileName}: 重複原本（{Path.GetFileName(plan.OriginalCandidatePath)}）の更新日時がスキャン後変更されています。安全のため削除をスキップしました。");
+                                continue;
+                            }
+                        }
+
+                        // Sol指摘: 重複削除直前に、原本と削除対象のSHA-256ハッシュを再計算・照合（誤削除ゼロ保証）
+                        try
+                        {
+                            string origHash = ComputeFileSha256(plan.OriginalCandidatePath);
+                            string targetHash = ComputeFileSha256(plan.FullPath);
+                            if (!string.Equals(origHash, targetHash, StringComparison.OrdinalIgnoreCase))
+                            {
+                                result.Errors.Add($"{plan.FileName}: 原本（{Path.GetFileName(plan.OriginalCandidatePath)}）とのハッシュ再照合に失敗しました（内容不一致）。安全のため削除を中止しました。");
+                                continue;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            result.Errors.Add($"{plan.FileName}: 削除直前の整合性ハッシュ計算に失敗しました（{ex.Message}）。安全のため削除をスキップしました。");
+                            continue;
+                        }
+                    }
+
+                    var fi = new FileInfo(plan.FullPath);
+
+                    // H4対策: スキャン後のファイル更新を検知（楽観的ロック / ETag検証）
+                    if (plan.ExpectedLastWriteTimeUtc.HasValue)
+                    {
+                        var diffSeconds = Math.Abs((fi.LastWriteTimeUtc - plan.ExpectedLastWriteTimeUtc.Value).TotalSeconds);
+                        if (diffSeconds > 2 || fi.Length != plan.Size)
+                        {
+                            result.Errors.Add($"{plan.FileName}: スキャン後にファイルが変更されています（安全のため削除をスキップしました）");
+                            continue;
+                        }
+                    }
+
+                    originalAttrs = fi.Attributes;
+
+                    // 読み取り専用属性の解除
+                    if (fi.IsReadOnly)
+                    {
+                        fi.IsReadOnly = false;
+                    }
+
+                    fi.Delete();
+
+                    result.SuccessCount++;
+                    result.FreedBytes += plan.Size;
+                    result.DeletedPaths.Add(plan.FullPath);
+                }
+                catch (Exception ex)
+                {
+                    // 削除失敗時：元のファイル属性を安全に復元（Medium指摘対応）
+                    if (originalAttrs.HasValue && File.Exists(plan.FullPath))
+                    {
+                        try
+                        {
+                            File.SetAttributes(plan.FullPath, originalAttrs.Value);
+                        }
+                        catch
+                        {
+                            // 属性復元時の例外は握りつぶし、主原因のエラーを報告する
+                        }
+                    }
+
+                    result.Errors.Add($"{plan.FileName}: {ex.Message}");
+                }
+            }
+
+            return result;
+        }
+    }
+}

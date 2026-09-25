@@ -5,8 +5,8 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AstraSize"
         xmlns:views="clr-namespace:AstraSize.Views"
-        xmlns:models="clr-namespace:AstraSize.Models"
-        xmlns:eff="clr-namespace:FolderMorpher.Models"
+        xmlns:models="clr-namespace:AstraSize.Models;assembly=FolderMorpher.Core"
+        xmlns:eff="clr-namespace:FolderMorpher.Models;assembly=FolderMorpher.Core"
         mc:Ignorable="d"
         Title="FolderMorpher - Storage Monitor &amp; Migration Studio"
         Height="920" Width="1480"
@@ -1690,8 +1690,8 @@
                                 <TextBox x:Name="SearchDirectTargetTextBox" Height="28" FontSize="11" Padding="6,0" VerticalContentAlignment="Center" BorderBrush="#CBD5E1"/>
                                 <Button x:Name="SearchDirectBrowseButton" Grid.Column="1" Content="📁 参照..." Height="28" Margin="4,0,0,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="SearchDirectBrowseButton_Click" ToolTip="走査対象フォルダーを選択"/>
-                                <Button x:Name="SearchSyncIndexButton" Grid.Column="2" Content="↻" Width="28" Height="28" Margin="4,0,0,0" Padding="0" FontSize="13" FontWeight="Bold"
-                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchSyncIndexButton_Click" ToolTip="インデックスを手動更新 (差分最新化)"/>
+                                <Button x:Name="SearchRefreshButton" Grid.Column="2" Content="↻" Width="28" Height="28" Margin="4,0,0,0" Padding="0" FontSize="13" FontWeight="Bold"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchRefreshButton_Click" ToolTip="検索結果を更新"/>
                             </Grid>
                         </Grid>
 
