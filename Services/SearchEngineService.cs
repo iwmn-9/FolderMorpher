@@ -396,7 +396,8 @@ namespace FolderMorpher.Services
                             }
                             HandleEntry(entry);
                         },
-                        pruningIndex: pruningIndex);
+                        pruningIndex: pruningIndex,
+                        collectResults: false);
                 }
                 finally
                 {
@@ -500,101 +501,7 @@ namespace FolderMorpher.Services
                 return false;
             }
 
-            if (query.MinPathLength.HasValue && fullPath.Length < query.MinPathLength.Value) return false;
-
-            if (query.OnlyIllegalChars)
-            {
-                if (!HasIllegalChars(name)) return false;
-                reason = "Illegal Chars";
-            }
-
-            foreach (var pc in query.PathContains)
-            {
-                if (fullPath.IndexOf(pc, StringComparison.OrdinalIgnoreCase) < 0) return false;
-            }
-
-            foreach (var exc in query.ExcludedWords)
-            {
-                string target = (exc.IndexOf('\\') >= 0 || exc.IndexOf('/') >= 0) ? fullPath : name;
-                if (target.IndexOf(exc, StringComparison.OrdinalIgnoreCase) >= 0) return false;
-            }
-
-            if (!query.SearchContentMode)
-            {
-                foreach (var phr in query.ExactPhrases)
-                {
-                    string target = (phr.IndexOf('\\') >= 0 || phr.IndexOf('/') >= 0) ? fullPath : name;
-                    if (target.IndexOf(phr, StringComparison.OrdinalIgnoreCase) < 0) return false;
-                }
-            }
-
-            if (query.CompiledRegex != null)
-            {
-                if (!query.CompiledRegex.IsMatch(name) && !query.CompiledRegex.IsMatch(fullPath)) return false;
-            }
-
-            // ★ 本文検査が必要なケースの判定（SearchContentMode または content: 指定時）
-            bool hasMandatoryContent = !string.IsNullOrEmpty(query.ContentKeyword);
-
-            if (query.SearchContentMode)
-            {
-                if (node.IsDirectory)
-                {
-                    if (hasMandatoryContent) return false;
-                    if (!MatchesKeywordGroups(name, fullPath, query)) return false;
-                    needsDeepCheck = false;
-                    reason = "Name";
-                    return true;
-                }
-
-                bool allInName = MatchesKeywordGroups(name, fullPath, query);
-                if (allInName && !hasMandatoryContent)
-                {
-                    // ファイル名で通常キーワードを満たしており、必須content条件もなければ即時合格（本文走査ゼロ）
-                    needsDeepCheck = false;
-                    reason = "Name";
-                    return true;
-                }
-                else
-                {
-                    // 不足キーワードがある、またはcontent:必須条件がある場合は本文抽出対応拡張子のみ候補へ
-                    if (!ContentExtractionService.SupportedExtensions.Contains(ext)) return false;
-
-                    needsDeepCheck = true;
-                    reason = "Candidate for Content";
-                    return true;
-                }
-            }
-            else if (hasMandatoryContent || query.HasOfficeLinkOnly || !string.IsNullOrEmpty(query.OfficeLinkKeyword))
-            {
-                // 通常検索（名前一致が必須）＋ 本文条件（content: または office-link）
-                if (!MatchesKeywordGroups(name, fullPath, query)) return false;
-                if (node.IsDirectory) return false;
-
-                bool isDeepTarget = false;
-                if (query.HasOfficeLinkOnly || !string.IsNullOrEmpty(query.OfficeLinkKeyword))
-                {
-                    isDeepTarget = OfficeExtensions.Contains(ext);
-                }
-                else if (hasMandatoryContent)
-                {
-                    isDeepTarget = ContentExtractionService.SupportedExtensions.Contains(ext);
-                }
-
-                if (!isDeepTarget) return false;
-
-                needsDeepCheck = true;
-                reason = "Candidate for Deep I/O";
-                return true;
-            }
-            else
-            {
-                // 純粋な名前・属性検索
-                if (!MatchesKeywordGroups(name, fullPath, query)) return false;
-                needsDeepCheck = false;
-                if (string.IsNullOrEmpty(reason)) reason = "Match";
-                return true;
-            }
+            return MatchesSearchTerms(name, fullPath, ext, node.IsDirectory, query, out reason, out needsDeepCheck);
         }
 
         private static bool MatchesKeywordGroups(string name, string fullPath, SearchQuery query)
@@ -673,6 +580,15 @@ namespace FolderMorpher.Services
             if (query.MinModifiedUtc.HasValue && utc < query.MinModifiedUtc.Value) return false;
             if (query.MaxModifiedUtc.HasValue && utc > query.MaxModifiedUtc.Value) return false;
 
+            return MatchesSearchTerms(name, fullPath, ext, isDir, query, out reason, out needsDeepCheck);
+        }
+
+        private static bool MatchesSearchTerms(
+            string name, string fullPath, string ext, bool isDir, SearchQuery query,
+            out string reason, out bool needsDeepCheck)
+        {
+            reason = string.Empty;
+            needsDeepCheck = false;
             if (query.MinPathLength.HasValue && fullPath.Length < query.MinPathLength.Value) return false;
 
             if (query.OnlyIllegalChars)

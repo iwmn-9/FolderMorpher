@@ -146,6 +146,8 @@ namespace FolderMorpher.Services
         /// <summary>
         /// 適応型並列制御（Adaptive Concurrency: 初期値2・下限2・上限4・即時崖落ち降下 - ADR 80）による高効率な並行ディレクトリスキャン（ScannedFileEntry 返却・高速用）。
         /// 一括取得したファイルサイズ・日時属性をそのまま保持し、後続の個別属性再問い合わせ（再stat）を完全根絶する。
+        /// onEntryFound で逐次処理する呼び出し元は collectResults: false を指定できる。
+        /// その場合、結果一覧を保持せず空のリストを返す。コールバックは複数ワーカーから呼ばれる。
         /// </summary>
         public static async Task<List<ScannedFileEntry>> EnumerateFileEntriesParallelAsync(
             string rootPath,
@@ -156,9 +158,10 @@ namespace FolderMorpher.Services
             IReadOnlyList<string>? excludeFolderPatterns = null,
             bool includeDirectories = false,
             Action<ScannedFileEntry>? onEntryFound = null,
-            TreeCachePruningIndex? pruningIndex = null)
+            TreeCachePruningIndex? pruningIndex = null,
+            bool collectResults = true)
         {
-            var resultFiles = new System.Collections.Concurrent.ConcurrentBag<ScannedFileEntry>();
+            var resultFiles = collectResults ? new System.Collections.Concurrent.ConcurrentBag<ScannedFileEntry>() : null;
             if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath)) return new List<ScannedFileEntry>();
 
             var folderQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
@@ -207,7 +210,7 @@ namespace FolderMorpher.Services
                         f.LastWriteTimeUtc.ToLocalTime(),
                         f.LastAccessTimeUtc.ToLocalTime(),
                         f.Attributes);
-                    resultFiles.Add(entry);
+                    resultFiles?.Add(entry);
                     onEntryFound?.Invoke(entry);
 
                     int count = Interlocked.Increment(ref scannedFilesCount);
@@ -237,7 +240,7 @@ namespace FolderMorpher.Services
                                     {
                                         continue;
                                     }
-                                    resultFiles.Add(pEntry);
+                                    resultFiles?.Add(pEntry);
                                     onEntryFound?.Invoke(pEntry);
                                     int count = Interlocked.Increment(ref scannedFilesCount);
                                     if (coverage != null)
@@ -265,7 +268,7 @@ namespace FolderMorpher.Services
                                 sd.LastWriteTimeUtc.ToLocalTime(),
                                 sd.LastAccessTimeUtc.ToLocalTime(),
                                 sd.Attributes | FileAttributes.Directory);
-                            resultFiles.Add(dirEntry);
+                            resultFiles?.Add(dirEntry);
                             onEntryFound?.Invoke(dirEntry);
                         }
                     }
@@ -277,14 +280,14 @@ namespace FolderMorpher.Services
                 {
                     lock (coverage) coverage.AccessDeniedFolders++;
                 }
-                return resultFiles.ToList();
+                return resultFiles?.ToList() ?? new List<ScannedFileEntry>();
             }
 
             // サブフォルダーが存在しない場合は即時返却
             if (folderQueue.IsEmpty)
             {
-                onProgress?.Invoke(resultFiles.Count);
-                return resultFiles.ToList();
+                onProgress?.Invoke(resultFiles?.Count ?? scannedFilesCount);
+                return resultFiles?.ToList() ?? new List<ScannedFileEntry>();
             }
 
             int activeWorkers = 0;
@@ -366,7 +369,7 @@ namespace FolderMorpher.Services
                                             {
                                                 continue;
                                             }
-                                            resultFiles.Add(pEntry);
+                                            resultFiles?.Add(pEntry);
                                             onEntryFound?.Invoke(pEntry);
                                             int count = Interlocked.Increment(ref scannedFilesCount);
                                             if (coverage != null)
@@ -403,7 +406,7 @@ namespace FolderMorpher.Services
                                         sd.LastWriteTimeUtc.ToLocalTime(),
                                         sd.LastAccessTimeUtc.ToLocalTime(),
                                         sd.Attributes | FileAttributes.Directory);
-                                    resultFiles.Add(dirEntry);
+                                    resultFiles?.Add(dirEntry);
                                     onEntryFound?.Invoke(dirEntry);
                                 }
                             }
@@ -425,7 +428,7 @@ namespace FolderMorpher.Services
                                     f.LastWriteTimeUtc.ToLocalTime(),
                                     f.LastAccessTimeUtc.ToLocalTime(),
                                     f.Attributes);
-                                resultFiles.Add(entry);
+                                resultFiles?.Add(entry);
                                 onEntryFound?.Invoke(entry);
 
                                 int count = Interlocked.Increment(ref scannedFilesCount);
@@ -449,8 +452,8 @@ namespace FolderMorpher.Services
             }
 
             await Task.WhenAll(tasks);
-            onProgress?.Invoke(resultFiles.Count);
-            return resultFiles.ToList();
+            onProgress?.Invoke(resultFiles?.Count ?? scannedFilesCount);
+            return resultFiles?.ToList() ?? new List<ScannedFileEntry>();
         }
     }
 }
