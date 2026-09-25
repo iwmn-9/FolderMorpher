@@ -1129,5 +1129,40 @@
 - **検証と恒久保護**:
   - `Services/Testing/RegressionTestSuite.Search.cs`: `SharedVolumeGovernor` のスロット共有・コントローラー分離検証、`GlobalSlotGate` の初期値4検証。
   - `Services/Testing/RegressionTestSuite.Audit.cs`: TargetRoot 境界ガード（親やルート自身の墓場誤爆防止）の検証。
+  - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
+
+---
+
+### ADR 92: BoundedChannel × GlobalSlotGate 循環デッドロック根絶（スロット保持スコープ即時解放）＆ Audit 墓場フォルダー多層防御（削除対象外化）＆ TreeCache 知識再利用（Audit SHA-256書き戻し）＆ UIバージョン動的同期
+*(v2.2.17 本番施工 & ADR 92)*
+
+- **背景 & 動機**:
+  - **1. Producer-Consumer 循環待ちデッドロック（Solレビュー指摘）**:
+    - `SafeFileEnumerator` の列挙ワーカーが `GlobalSlotGate` を保持したまま `onEntryFound` を呼び出し、`SearchEngineService` の `BoundedChannel(2048)` が満杯になると `WriteAsync` で待機していた。一方 Consumer は本文読込のため `GlobalSlotGate` を待機するため、「Producer: Channel空き待ち ⇄ Consumer: GlobalSlot空き待ち」の循環待ちデッドロックが発生する危険があった。
+  - **2. Audit 墓場フォルダーの削除事故・不整合**:
+    - 墓場候補は `WasteScore >= 80` のため「整理推奨」一括選択の対象となっていたが、実態はフォルダーであるため `File.Exists` を前提とする削除処理で失敗するか、意図しないフォルダー削除を招く危険があった。
+  - **3. TreeCache の SHA-256 器活用（知識の再利用）**:
+    - TreeCache のノードに `Sha256` プロパティが新設されていたが、Audit で計算したハッシュを書き戻す経路がなく、次回以降の重複検出や監査で再計算が必要だった。
+  - **4. サイドバーのバージョンハードコード乖離**:
+    - `.csproj` が `2.2.17` なのに対し、サイドバーが `v2.2.15` のまま固定されていた。
+- **施工内容**:
+  - **1. スロット保持スコープの I/O 即時限定 (`Services/SafeFileEnumerator.cs`)**:
+    - `NativeDirectoryEnumerator.TryEnumerateEntries` の実際の Win32 API 呼び出しの瞬間のみスロットとリースを保持し、I/O 完了と同時に即時解放。
+    - メモリ上の子フォルダー処理や Channel 書き込み待機中はスロットを保持しないことで、Producer-Consumer 間の循環待ちデッドロックを物理的に根絶。
+  - **2. 墓場フォルダーの多層防御 (`Models/AuditModels.cs`, `MainWindow.xaml`, `MainWindow.Audit.cs`, `Services/AuditCleanupService.cs`)**:
+    - `AuditItem.IsCleanable`: `IssueType != GraveyardTree && !IsOriginalCandidate`。
+    - `AuditItem.IsChecked` setter: `if (value && !IsCleanable) return;` でチェックを無効化。
+    - UI DataGrid: CheckBox に `IsEnabled="{Binding IsCleanable}"` を設定しグレーアウト。
+    - `AuditCleanupService.BuildPlan`: `Where(i => i.IsChecked && i.IsCleanable)` で計画から完全排除。
+    - `AuditCleanupService.ExecutePlan`: `if (Directory.Exists(plan.FullPath))` でフォルダー直接削除を安全拒否。
+  - **3. TreeCache への Audit SHA-256 書き戻し (`Services/StorageHistoryService.cs`, `MainWindow.Audit.cs`)**:
+    - `UpdateTreeCacheSha256Async` を新設し、Audit 完了時に計算済みハッシュを TreeCache ノードへ自動反映・保存（ファイルサーバー知識の蓄積と再利用）。
+  - **4. サイドバーバージョンの動的同期 (`MainWindow.xaml`, `MainWindow.xaml.cs`)**:
+    - XAML の静的表記を `v2.2.17` に修正し、起動時に `Assembly.GetExecutingAssembly().GetName().Version` から動的設定。
+- **検証と恒久保護**:
+  - `Services/Testing/RegressionTestSuite.Audit.cs`:
+    - 検証 8: 墓場フォルダーの `IsCleanable == false`、`IsChecked` 拒否、`BuildPlan` 除外の多層防御を自動検証。
+    - 検証 9: `UpdateTreeCacheSha256Async` による TreeCache へのハッシュ永続化を自動検証。
   - 8大ドメイン全回帰テスト 8/8 ALL REGRESSION TESTS PASSED を堅持。
+
 

@@ -101,6 +101,9 @@ namespace AstraSize
                 ApplyAuditFilters();
                 UpdateLiveSelectedReduction();
 
+                // Sol提唱 (ADR 92): 一度計算したSHA-256ハッシュをTreeCacheへ書き戻し永続化（知識の再利用）
+                _ = _historyService.UpdateTreeCacheSha256Async(options.TargetDirectory, items);
+
                 // Update KPI Bar
                 if (AuditKpiTotalFiles != null)
                 {

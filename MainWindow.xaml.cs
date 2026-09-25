@@ -131,6 +131,13 @@ namespace AstraSize
             AuditItem.GlobalCheckedChanged += (item) => UpdateLiveSelectedReduction();
             UpdateIgnoredCountBadge();
             InitializeSearchStudio();
+
+            var asmVer = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            if (asmVer != null && SidebarVersionText != null)
+            {
+                SidebarVersionText.Text = $"FolderMorpher v{asmVer.Major}.{asmVer.Minor}.{asmVer.Build}";
+            }
+
             PreviewKeyDown += MainWindow_PreviewKeyDown;
             Loaded += MainWindow_Loaded;
         }

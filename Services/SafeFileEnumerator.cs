@@ -177,7 +177,18 @@ namespace FolderMorpher.Services
                 lock (coverage) coverage.TotalFoldersScanned++;
             }
 
-            if (NativeDirectoryEnumerator.TryEnumerateEntries(rootPath, rootSubDirs, rootFiles, out var rootError))
+            bool rootOk;
+            EnumerationFailureKind rootFailureKind = EnumerationFailureKind.None;
+            using (var rootSlot = await governor.AcquireSlotAsync(ct))
+            using (var rootLease = await controller.AcquireAsync(ct))
+            {
+                var rootSw = Stopwatch.StartNew();
+                rootOk = NativeDirectoryEnumerator.TryEnumerateEntries(rootPath, rootSubDirs, rootFiles, out var rootError, out rootFailureKind);
+                rootSw.Stop();
+                rootLease.Report(rootSw.Elapsed.TotalMilliseconds, rootFailureKind);
+            }
+
+            if (rootOk)
             {
                 for (int i = 0; i < rootFiles.Count; i++)
                 {
@@ -269,8 +280,6 @@ namespace FolderMorpher.Services
                         }
 
                         Interlocked.Increment(ref activeWorkers);
-                        using var slot = await governor.AcquireSlotAsync(ct);
-                        using var lease = await controller.AcquireAsync(ct);
                         try
                         {
                             if (coverage != null)
@@ -278,11 +287,16 @@ namespace FolderMorpher.Services
                                 lock (coverage) coverage.TotalFoldersScanned++;
                             }
 
-                            var sw = Stopwatch.StartNew();
-                            bool ok = NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, localSubDirs, localFiles, out var error, out var failureKind);
-                            sw.Stop();
-
-                            lease.Report(sw.Elapsed.TotalMilliseconds, failureKind);
+                            bool ok;
+                            EnumerationFailureKind failureKind = EnumerationFailureKind.None;
+                            using (var slot = await governor.AcquireSlotAsync(ct))
+                            using (var lease = await controller.AcquireAsync(ct))
+                            {
+                                var sw = Stopwatch.StartNew();
+                                ok = NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, localSubDirs, localFiles, out var error, out failureKind);
+                                sw.Stop();
+                                lease.Report(sw.Elapsed.TotalMilliseconds, failureKind);
+                            }
 
                             if (!ok)
                             {

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using AstraSize.Models;
+using FolderMorpher.Models;
 using FolderMorpher.Services;
 
 namespace AstraSize.Services
@@ -520,6 +521,62 @@ namespace AstraSize.Services
                 catch
                 {
                     return null;
+                }
+            });
+        }
+
+        /// <summary>
+        /// Audit等で計算された SHA-256 ハッシュを既存の TreeCache へ書き戻して永続化する（Sol提唱 ADR 92）。
+        /// 次回スキャンや検索・Auditでの再計算コストを劇的に削減し、ファイルサーバー知識の再利用を実現する。
+        /// </summary>
+        public async Task UpdateTreeCacheSha256Async(string targetPath, IEnumerable<AuditItem> auditItems)
+        {
+            if (string.IsNullOrWhiteSpace(targetPath) || auditItems == null) return;
+
+            var hashMap = auditItems
+                .Where(x => !string.IsNullOrEmpty(x.Sha256Hash) && !string.IsNullOrEmpty(x.FullPath))
+                .GroupBy(x => x.FullPath, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Sha256Hash!, StringComparer.OrdinalIgnoreCase);
+
+            if (hashMap.Count == 0) return;
+
+            await Task.Run(async () =>
+            {
+                try
+                {
+                    var rootNode = await LoadTreeCacheAsync(targetPath);
+                    if (rootNode == null) return;
+
+                    int updatedCount = 0;
+                    void TraverseAndApply(FileItemNode node)
+                    {
+                        if (hashMap.TryGetValue(node.FullPath, out var hash))
+                        {
+                            if (node.Sha256 != hash)
+                            {
+                                node.Sha256 = hash;
+                                updatedCount++;
+                            }
+                        }
+                        if (node.Children != null)
+                        {
+                            for (int i = 0; i < node.Children.Count; i++)
+                            {
+                                TraverseAndApply(node.Children[i]);
+                            }
+                        }
+                    }
+
+                    TraverseAndApply(rootNode);
+
+                    if (updatedCount > 0)
+                    {
+                        await SaveTreeCacheAsync(rootNode);
+                    }
+                }
+                catch
+                {
+                    // バックグラウンドキャッシュ更新はUIを阻害しないよう安全に無視
                 }
             });
         }

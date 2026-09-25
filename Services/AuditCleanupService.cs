@@ -64,7 +64,8 @@ namespace FolderMorpher.Services
                 .ToDictionary(g => g.Key, g => g.First());
 
             // 2. チェックされているアイテムのみを抽出し、FullPath でグループ化
-            var checkedItems = itemList.Where(i => i.IsChecked).ToList();
+            // （Sol指摘対応: 墓場フォルダーなどフォルダー項目の事故削除を防止するため IsCleanable で二重ガード）
+            var checkedItems = itemList.Where(i => i.IsChecked && i.IsCleanable).ToList();
             var plans = checkedItems
                 .GroupBy(i => i.FullPath, StringComparer.OrdinalIgnoreCase)
                 .Select(g =>
@@ -123,6 +124,12 @@ namespace FolderMorpher.Services
                     if (plan.IsOriginalCandidate)
                     {
                         result.Errors.Add($"{plan.FileName}: 原本候補ファイルは聖域として保護されているため、削除は絶対に許可されません。");
+                        continue;
+                    }
+
+                    if (Directory.Exists(plan.FullPath))
+                    {
+                        result.Errors.Add($"{plan.FileName}: フォルダーの直接削除は安全保護規則により許可されていません（ファイル単位の削除のみ対応）。");
                         continue;
                     }
 

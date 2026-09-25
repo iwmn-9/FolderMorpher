@@ -1002,6 +1002,40 @@ namespace FolderMorpher.Services.Testing
                     }
                 }
 
+                // 検証 8: ADR 92 墓場フォルダーの削除事故防止
+                // 墓場フォルダーは IsCleanable が false であり、IsChecked に true を代入しても false のまま維持されること
+                if (graveItems.Count > 0)
+                {
+                    var g = graveItems[0];
+                    if (g.IsCleanable)
+                        throw new InvalidOperationException("GraveyardTree item must have IsCleanable == false.");
+                    g.IsChecked = true;
+                    if (g.IsChecked)
+                        throw new InvalidOperationException("Setting IsChecked to true on GraveyardTree item must be rejected.");
+
+                    // BuildPlan にも含まれないこと
+                    var planList = AuditCleanupService.BuildPlan(new[] { g });
+                    if (planList.Count > 0)
+                        throw new InvalidOperationException("BuildPlan must not include GraveyardTree items.");
+                }
+
+                // 検証 9: ADR 92 UpdateTreeCacheSha256Async によるハッシュ書き戻し検証
+                var rootNode = new AstraSize.Models.FileItemNode { FullPath = testDir, Name = Path.GetFileName(testDir), IsDirectory = true };
+                var childFile = new AstraSize.Models.FileItemNode { FullPath = testFilePath, Name = Path.GetFileName(testFilePath), IsDirectory = false };
+                rootNode.Children.Add(childFile);
+                var historyService = AstraSize.Services.StorageHistoryService.Instance;
+                await historyService.SaveTreeCacheAsync(rootNode);
+
+                var dummyAuditItem = new AuditItem { FullPath = testFilePath, FileName = Path.GetFileName(testFilePath), Sha256Hash = "ABCDEF1234567890" };
+                await historyService.UpdateTreeCacheSha256Async(testDir, new[] { dummyAuditItem });
+
+                var reloadedNode = await historyService.LoadTreeCacheAsync(testDir);
+                if (reloadedNode == null)
+                    throw new InvalidOperationException("TreeCache reloaded node is null.");
+                var reloadedChild = reloadedNode.Children.FirstOrDefault(c => string.Equals(c.FullPath, testFilePath, StringComparison.OrdinalIgnoreCase));
+                if (reloadedChild == null || reloadedChild.Sha256 != "ABCDEF1234567890")
+                    throw new InvalidOperationException($"TreeCache Sha256 was not updated: expected ABCDEF1234567890, got {reloadedChild?.Sha256}");
+
                 if (summary.ReadyToCleanBytes <= 0)
                     throw new InvalidOperationException($"ReadyToCleanBytes should be > 0, got {summary.ReadyToCleanBytes}");
             }

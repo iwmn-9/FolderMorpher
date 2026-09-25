@@ -25,12 +25,19 @@ namespace FolderMorpher.Models
     {
         public static Action<AuditItem>? GlobalCheckedChanged;
 
+        /// <summary>
+        /// 整理（削除）可能かどうか。
+        /// 墓場フォルダー（フォルダー全体の事故削除防止）および原本候補ファイルは安全のため削除対象外。
+        /// </summary>
+        public bool IsCleanable => IssueType != AuditIssueType.GraveyardTree && !IsOriginalCandidate;
+
         private bool _isChecked;
         public bool IsChecked
         {
             get => _isChecked;
             set
             {
+                if (value && !IsCleanable) return;
                 if (_isChecked != value)
                 {
                     _isChecked = value;
