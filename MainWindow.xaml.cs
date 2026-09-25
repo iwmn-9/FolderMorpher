@@ -129,6 +129,7 @@ namespace AstraSize
 
             AuditItemsDataGrid.ItemsSource = _auditVisibleItems;
             AuditItem.GlobalCheckedChanged += (item) => UpdateLiveSelectedReduction();
+            UpdateIgnoredCountBadge();
             InitializeSearchStudio();
             PreviewKeyDown += MainWindow_PreviewKeyDown;
             Loaded += MainWindow_Loaded;

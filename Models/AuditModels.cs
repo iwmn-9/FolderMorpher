@@ -82,15 +82,38 @@ namespace FolderMorpher.Models
         // 整理候補スコア & 親しみやすい目安
         public int WasteScore { get; set; } = 50;
         public string? RelatedActivePath { get; set; }
+        public List<ScoreFactorItem> ScoreBreakdown { get; set; } = new();
+
+        public string ScoreBreakdownSummary
+        {
+            get
+            {
+                if (ScoreBreakdown == null || ScoreBreakdown.Count == 0)
+                {
+                    return LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                        ? $"スコア: {WasteScore} 点"
+                        : $"Score: {WasteScore} pts";
+                }
+                var parts = ScoreBreakdown.Select(f => f.DisplayText);
+                return string.Join(" / ", parts) + $" ➔ 合計: {WasteScore}点";
+            }
+        }
+
+        public const string ConfidenceRecommendedJa = "整理推奨";
+        public const string ConfidenceRecommendedEn = "Recommended";
+        public const string ConfidenceReviewNeededJa = "要確認";
+        public const string ConfidenceReviewNeededEn = "Review Needed";
+        public const string ConfidenceReferenceJa = "参考";
+        public const string ConfidenceReferenceEn = "Reference";
 
         public string ConfidenceDisplay
         {
             get
             {
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                if (WasteScore >= 80) return isJa ? "すぐ整理できそう" : "Ready to Clean";
-                if (WasteScore >= 50) return isJa ? "確認推奨" : "Review Advised";
-                return isJa ? "参考" : "Reference";
+                if (WasteScore >= 80) return isJa ? ConfidenceRecommendedJa : ConfidenceRecommendedEn;
+                if (WasteScore >= 50) return isJa ? ConfidenceReviewNeededJa : ConfidenceReviewNeededEn;
+                return isJa ? ConfidenceReferenceJa : ConfidenceReferenceEn;
             }
         }
 
@@ -247,5 +270,29 @@ namespace FolderMorpher.Models
         public string CurrentStatus { get; set; } = string.Empty;
         public long ScannedFilesCount { get; set; }
         public int IssueCount { get; set; }
+    }
+
+    /// <summary>
+    /// スコア算出根拠の要素アイテム
+    /// </summary>
+    public class ScoreFactorItem
+    {
+        public string NameJa { get; set; } = string.Empty;
+        public string NameEn { get; set; } = string.Empty;
+        public int Points { get; set; }
+
+        public string Name => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? NameJa : NameEn;
+        public string DisplayText => $"{Name} ({(Points >= 0 ? "+" : "")}{Points} pt)";
+    }
+
+    /// <summary>
+    /// 整理除外（保持マーク）されたファイルのエントリ
+    /// </summary>
+    public class AuditIgnoreItem
+    {
+        public string FullPath { get; set; } = string.Empty;
+        public long FileSizeBytes { get; set; }
+        public long LastWriteTimeUtcTicks { get; set; }
+        public DateTime IgnoredAt { get; set; } = DateTime.Now;
     }
 }

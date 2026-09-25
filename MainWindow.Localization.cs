@@ -276,7 +276,7 @@ namespace AstraSize
             if (AuditExcludeFoldersLabel != null) AuditExcludeFoldersLabel.Text = Strings.AuditExcludeFoldersLabel;
             if (AuditExcludeFoldersTextBox != null) AuditExcludeFoldersTextBox.ToolTip = Strings.AuditExcludeFoldersToolTip;
             AuditKpiTotalFilesTitle.Text = isJa ? "総走査ファイル数:" : "Total Files Scanned:";
-            if (AuditKpiReadyToCleanTitle != null) AuditKpiReadyToCleanTitle.Text = isJa ? "すぐ整理できそう:" : "Ready to Clean:";
+            if (AuditKpiReadyToCleanTitle != null) AuditKpiReadyToCleanTitle.Text = isJa ? "整理推奨:" : "Recommended:";
             if (AuditKpiVersionFamilyTitle != null) AuditKpiVersionFamilyTitle.Text = isJa ? "世代・旧版:" : "Older Versions:";
             AuditKpiDupWastedTitle.Text = isJa ? "完全重複:" : "Duplicates:";
             AuditKpiDormantSizeTitle.Text = isJa ? "休眠・墓場:" : "Dormant / Abandoned:";
@@ -286,23 +286,38 @@ namespace AstraSize
                 ? $"{auditBaseTitle} ({AuditItemsDataGrid?.Items.Count ?? _lastAuditItems.Count:N0} / {_lastAuditItems.Count:N0} 件)"
                 : auditBaseTitle;
             if (AuditLiveReductionLabel != null) AuditLiveReductionLabel.Text = isJa ? "選択中の削減見込み: " : "Est. Space Reclaimed: ";
+            if (AuditMaxDisplayLabel != null) AuditMaxDisplayLabel.Text = isJa ? "表示件数:" : "Display Limit:";
+            if (AuditMaxDisplayComboBox?.Items.Count >= 4)
+            {
+                ((ComboBoxItem)AuditMaxDisplayComboBox.Items[0]).Content = isJa ? "上位100件 (推奨)" : "Top 100 (Recommended)";
+                ((ComboBoxItem)AuditMaxDisplayComboBox.Items[1]).Content = isJa ? "上位300件" : "Top 300";
+                ((ComboBoxItem)AuditMaxDisplayComboBox.Items[2]).Content = isJa ? "上位500件" : "Top 500";
+                ((ComboBoxItem)AuditMaxDisplayComboBox.Items[3]).Content = isJa ? "全件表示" : "Show All";
+            }
             if (AuditSmartSelectLabel != null) AuditSmartSelectLabel.Text = isJa ? "☑️ 一括選択:" : "☑️ Smart Select:";
-            if (AuditSmartItemPreset != null) AuditSmartItemPreset.Content = isJa ? "選択プリセット..." : "Select Preset...";
-            if (AuditSmartItemDupCopy != null) AuditSmartItemDupCopy.Content = isJa ? "重複の原本以外を選択" : "Select Duplicate Copies";
-            if (AuditSmartItemDormant3Y != null) AuditSmartItemDormant3Y.Content = isJa ? "3年以上前の休眠を選択" : "Select Dormant (>3 Years)";
-            if (AuditSmartItemVisible != null) AuditSmartItemVisible.Content = isJa ? "表示中のみすべて選択" : "Select All Visible";
-            if (AuditSmartItemClear != null) AuditSmartItemClear.Content = isJa ? "選択をすべて解除" : "Clear All Selections";
+            if (AuditSmartSelectComboBox?.Items.Count >= 8)
+            {
+                if (AuditSmartItemPreset != null) AuditSmartItemPreset.Content = isJa ? "選択プリセット..." : "Select Preset...";
+                ((ComboBoxItem)AuditSmartSelectComboBox.Items[1]).Content = isJa ? "「整理推奨」を一括選択" : "Select Recommended";
+                ((ComboBoxItem)AuditSmartSelectComboBox.Items[2]).Content = isJa ? "世代・旧版の過去版を選択" : "Select Older Versions";
+                ((ComboBoxItem)AuditSmartSelectComboBox.Items[3]).Content = isJa ? "展開済ZIP残骸を選択" : "Select Extracted ZIPs";
+                if (AuditSmartItemDupCopy != null) AuditSmartItemDupCopy.Content = isJa ? "重複の原本以外を選択" : "Select Duplicate Copies";
+                if (AuditSmartItemDormant3Y != null) AuditSmartItemDormant3Y.Content = isJa ? "3年以上前の休眠を選択" : "Select Dormant (>3 Years)";
+                if (AuditSmartItemVisible != null) AuditSmartItemVisible.Content = isJa ? "表示中のみすべて選択" : "Select All Visible";
+                if (AuditSmartItemClear != null) AuditSmartItemClear.Content = isJa ? "選択をすべて解除" : "Clear All Selections";
+            }
             if (AuditFilterLabel != null) AuditFilterLabel.Text = isJa ? "絞り込み:" : "Filter:";
-            if (AuditCategoryFilterComboBox?.Items.Count >= 8)
+            if (AuditCategoryFilterComboBox?.Items.Count >= 9)
             {
                 ((ComboBoxItem)AuditCategoryFilterComboBox.Items[0]).Content = isJa ? "すべて表示" : "Show All";
-                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[1]).Content = isJa ? "すぐ整理できそう のみ" : "Ready to Clean Only";
-                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[2]).Content = isJa ? "世代・旧版 のみ" : "Older Versions Only";
-                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[3]).Content = isJa ? "展開済ZIP のみ" : "Extracted ZIP Only";
-                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[4]).Content = isJa ? "墓場フォルダー のみ" : "Graveyard Folders Only";
-                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[5]).Content = isJa ? "完全重複 のみ" : "Duplicates Only";
-                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[6]).Content = isJa ? "長期休眠 のみ" : "Dormant Only";
-                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[7]).Content = isJa ? "パス長・禁則 のみ" : "Path / Invalid Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[1]).Content = isJa ? "整理推奨 のみ" : "Recommended Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[2]).Content = isJa ? "要確認 のみ" : "Review Needed Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[3]).Content = isJa ? "世代・旧版 のみ" : "Older Versions Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[4]).Content = isJa ? "展開済ZIP のみ" : "Extracted ZIP Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[5]).Content = isJa ? "墓場フォルダー のみ" : "Graveyard Folders Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[6]).Content = isJa ? "完全重複 のみ" : "Duplicates Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[7]).Content = isJa ? "長期休眠 のみ" : "Dormant Only";
+                ((ComboBoxItem)AuditCategoryFilterComboBox.Items[8]).Content = isJa ? "パス長・禁則 のみ" : "Path / Invalid Only";
             }
             if (AuditSearchPlaceholder != null)
             {
@@ -336,6 +351,12 @@ namespace AstraSize
             ColAuditModified.Header = isJa ? "最終更新日時" : "Last Modified";
             ColAuditDetail.Header = isJa ? "判定理由 / 内訳" : "Reason / Breakdown";
             ColAuditFullPath.Header = isJa ? "完全パス" : "Full Path";
+
+            if (AuditMenuIgnoreFile != null) AuditMenuIgnoreFile.Header = isJa ? "🛡️ このファイルを整理候補から除外 (次回から非表示)" : "🛡️ Ignore this file from candidate list";
+            if (AuditMenuOpenExplorer != null) AuditMenuOpenExplorer.Header = isJa ? "📂 エクスプローラーで表示" : "📂 Show in Explorer";
+            if (AuditMenuCopyPath != null) AuditMenuCopyPath.Header = isJa ? "📋 完全パスをコピー" : "📋 Copy Full Path";
+
+            UpdateIgnoredCountBadge();
 
             // ==========================================
             // Tab 5 (Media Optimizer)

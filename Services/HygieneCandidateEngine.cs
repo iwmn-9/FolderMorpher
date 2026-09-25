@@ -132,8 +132,21 @@ namespace FolderMorpher.Services
                             continue;
 
                         int score = 75; // 基礎点
-                        if (!string.IsNullOrEmpty(suffix)) score += 10;
-                        if ((now - cand.LastWriteTime).TotalDays > 365) score += 10; // 1年以上前
+                        var breakdown = new List<ScoreFactorItem>
+                        {
+                            new ScoreFactorItem { NameJa = "過去バージョン判定 (基礎点)", NameEn = "Older Version Baseline", Points = 75 }
+                        };
+
+                        if (!string.IsNullOrEmpty(suffix))
+                        {
+                            score += 10;
+                            breakdown.Add(new ScoreFactorItem { NameJa = $"世代サフィックス検出 ({suffix})", NameEn = $"Version suffix detected ({suffix})", Points = 10 });
+                        }
+                        if ((now - cand.LastWriteTime).TotalDays > 365)
+                        {
+                            score += 10;
+                            breakdown.Add(new ScoreFactorItem { NameJa = "1年以上未更新", NameEn = "Unmodified for >1 year", Points = 10 });
+                        }
                         if (score > 95) score = 95;
 
                         bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
@@ -153,6 +166,7 @@ namespace FolderMorpher.Services
                             IssueType = AuditIssueType.VersionFamily,
                             Detail = detail,
                             WasteScore = score,
+                            ScoreBreakdown = breakdown,
                             RelatedActivePath = active.FullPath
                         });
                     }
@@ -260,6 +274,11 @@ namespace FolderMorpher.Services
                             ? $"同一階層に展開済みフォルダー「{archBaseName}/」が存在 ({FormatHelper.FormatBytes(dirBytes, 1)} / {dirCount:N0}件)"
                             : $"Extracted folder \"{archBaseName}/\" exists in same folder ({FormatHelper.FormatBytes(dirBytes, 1)} / {dirCount:N0} files)";
 
+                        var breakdown = new List<ScoreFactorItem>
+                        {
+                            new ScoreFactorItem { NameJa = "同一フォルダに展開済フォルダ存在", NameEn = "Extracted folder exists in same directory", Points = 90 }
+                        };
+
                         results.Add(new AuditItem
                         {
                             FullPath = arch.FullPath,
@@ -271,6 +290,7 @@ namespace FolderMorpher.Services
                             IssueType = AuditIssueType.ExtractedArchive,
                             Detail = detail,
                             WasteScore = 90, // 展開済みならZIPは高確率で残骸
+                            ScoreBreakdown = breakdown,
                             RelatedActivePath = expectedSubDir
                         });
                     }
@@ -321,9 +341,22 @@ namespace FolderMorpher.Services
 
                 // スコア計算
                 int score = 80;
-                if (hasGraveyardKeyword) score += 10;
+                var breakdown = new List<ScoreFactorItem>
+                {
+                    new ScoreFactorItem { NameJa = "配下全ファイル3年以上未更新・閲覧ゼロ", NameEn = "All files unedited/unread >3 years", Points = 80 }
+                };
+
+                if (hasGraveyardKeyword)
+                {
+                    score += 10;
+                    breakdown.Add(new ScoreFactorItem { NameJa = $"墓場キーワード含有 ({dirName})", NameEn = $"Graveyard keyword in folder name ({dirName})", Points = 10 });
+                }
                 double yearsOld = (now - maxModified).TotalDays / 365.25;
-                if (yearsOld > 5.0) score += 5;
+                if (yearsOld > 5.0)
+                {
+                    score += 5;
+                    breakdown.Add(new ScoreFactorItem { NameJa = $"5年以上完全未更新 ({yearsOld:F1}年)", NameEn = $"Unmodified for >5 years ({yearsOld:F1} yrs)", Points = 5 });
+                }
                 if (score > 95) score = 95;
 
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
@@ -343,6 +376,7 @@ namespace FolderMorpher.Services
                     IssueType = AuditIssueType.GraveyardTree,
                     Detail = detail,
                     WasteScore = score,
+                    ScoreBreakdown = breakdown,
                     RelatedActivePath = dir
                 });
             }

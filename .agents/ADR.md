@@ -1019,3 +1019,42 @@
      - RegressionTestSuite.Audit.cs に TestHygieneCandidateDiscoveryAsync を追加（Domain 4）。
      - 世代旧版の抽出、展開済ZIP残骸の検出、墓場フォルダーの判定、スコアリング・目安表示、サマリー集計を自動検証。
      - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
+
+---
+
+### ADR 89: スコア内訳の可視化 ＆ 上位表示件数制御 ＆ 整理除外記憶（保持マーク） ＆ 用語の単語化整線
+*(v2.2.16 本番施工 & ADR 89)*
+
+- **背景 & 動機**:
+  - **スコア根拠の透明化**:
+    - なぜそのスコアや目安になったのか、詳細な内訳（基礎点、サフィックス有無、経過年数等）をクリックまたはホバーで確認したいというニーズ。
+  - **大量候補に対する意思決定疲労の防止（表示件数制御）**:
+    - 大規模ファイルサーバーでは整理候補が数千〜数万件に及ぶことがあり、全件表示は管理者の判断を麻痺させる。全件解析しつつも、まずは影響の大きい上位100件などに絞って着手できる仕組みが求められた。
+  - **「消さない」と判断したファイルの次回以降のスキップ（除外記憶）**:
+    - ユーザーが業務上必要と判断したファイルを、次回スキャン時に再度候補として出さないようにしたい。ただしファイルが更新された場合は再評価されるべき。
+  - **用語の整線（口語の排除 ➔ 単語の組み合わせ）**:
+    - 「すぐ整理できそう」といった長文口語表現を排し、業務ツールとして直感的かつ簡潔な単語組み合わせ（「整理推奨」「要確認」「参考」）へ刷新する。
+- **施工内容**:
+  1. **スコア内訳（ScoreBreakdown）の構造化 & 可視化**:
+     - `Models/AuditModels.cs`: `ScoreFactorItem`（`NameJa`, `NameEn`, `Points`, `DisplayText`）を新設。`AuditItem.ScoreBreakdown` および `ScoreBreakdownSummary` を追加。
+     - `Services/HygieneCandidateEngine.cs` & `Services/AuditReportService.cs`: 世代旧版、展開済ZIP、墓場、完全重複、休眠の各判定で加点要素を記録。
+     - `MainWindow.xaml` / `MainWindow.Audit.cs`: 「整理の目安」ピルバッジをホバー時に ToolTip で内訳サマリーを表示し、クリック時に詳細ダイアログを表示（`AuditScoreBreakdown_MouseDown`）。
+  2. **表示件数の制御（AuditMaxDisplayComboBox）**:
+     - 「上位100件 (推奨)」「上位300件」「上位500件」「全件表示」のコンボボックスを配置。
+     - `ApplyAuditFilters` にて WasteScore 降順 ➔ Size 降順でソートの上、指定件数で `Take(maxCount)` 抽出。ヘッダーに「全 X 件中 上位 Y 件を表示」と明示。
+  3. **整理除外（保持マーク）リスト / スキップ記憶機能（Services/AuditIgnoreService.cs）**:
+     - `%LOCALAPPDATA%\FolderMorpher\audit_ignore_list.json` に永続化。
+     - 右クリック `ContextMenu`（`🛡️ このファイルを整理候補から除外 (次回から非表示)`）から即座に登録・行除外。
+     - **自己治癒性（Self-Invalidation）**: `FileSizeBytes` と `LastWriteTimeUtcTicks` を保持し、ファイルが変更（サイズ変更または更新）された瞬間に自動で除外解除（再評価）される。
+     - `AuditIgnoredListButton`（`🛡️ 除外リスト (N件)`）により、除外ファイル一覧の確認および一括クリアを提供。
+  4. **用語の整線（口語の排除 ➔ 直感的な単語組み合わせ）**:
+     - 目安表示を刷新：
+       - スコア >= 80: **「整理推奨」**（英語: `Recommended`）
+       - スコア >= 50: **「要確認」**（英語: `Review Needed`）
+       - スコア < 50: **「参考」**（英語: `Reference`）
+     - メトリクスバー（`整理推奨:`）、一括選択（`「整理推奨」を一括選択`）、絞り込み（`整理推奨 のみ` / `要確認 のみ`）、日英ローカライズを完全同期。
+     - `AuditItem` に定数（`ConfidenceRecommendedJa`, `ConfidenceRecommendedEn` 等）を新設し、テスト・UIロジックで正本として参照。
+  5. **自動回帰テストによる恒久保護**:
+     - `RegressionTestSuite.Audit.cs`: `ScoreBreakdown` 整合性、および `AuditIgnoreService` の登録・変更時自動復帰・解除動作を自動検証。
+     - `RegressionTestSuite.Localization.cs`: 日英両言語での `ConfidenceDisplay` 判定を自動検証。
+     - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。

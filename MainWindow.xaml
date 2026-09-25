@@ -1210,6 +1210,8 @@
                                 <TextBlock x:Name="AuditStatusText" Text="待機中" FontSize="11" Foreground="#64748B" VerticalAlignment="Center"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button x:Name="AuditIgnoredListButton" Content="🛡️ 除外リスト (0件)" Height="32" Margin="0,0,8,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="AuditIgnoredListButton_Click" ToolTip="消さない判断をして除外登録したファイルの一覧・解除"/>
                                 <Button x:Name="AuditExportExcelButton" Content="📊 Excel台帳出力 (.xlsx)" Height="32" Margin="0,0,8,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="AuditExportExcelButton_Click" ToolTip="整理理由・スコア・最新版パス付きの美麗Excel台帳を出力"/>
                                 <Button x:Name="AuditExportCsvButton" Content="📄 CSV台帳出力" Height="32" Margin="0,0,8,0"
@@ -1231,7 +1233,7 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/> <!-- 総走査ファイル数 -->
                             <ColumnDefinition Width="Auto"/> <!-- Separator -->
-                            <ColumnDefinition Width="Auto"/> <!-- すぐ整理できそう -->
+                            <ColumnDefinition Width="Auto"/> <!-- 整理推奨 -->
                             <ColumnDefinition Width="Auto"/> <!-- Separator -->
                             <ColumnDefinition Width="Auto"/> <!-- 世代・旧版 -->
                             <ColumnDefinition Width="Auto"/> <!-- Separator -->
@@ -1249,9 +1251,9 @@
                         <!-- Separator 1 -->
                         <Border Grid.Column="1" Width="1" Background="#E2E8F0" Margin="12,2"/>
 
-                        <!-- Ready To Clean (合計) -->
+                        <!-- Ready To Clean (合計 / 整理推奨) -->
                         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock x:Name="AuditKpiReadyToCleanTitle" Text="すぐ整理できそう:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="AuditKpiReadyToCleanTitle" Text="整理推奨:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
                             <TextBlock x:Name="AuditKpiReadyToClean" Text="0 B" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#DC2626" VerticalAlignment="Center"/>
                         </StackPanel>
 
@@ -1306,10 +1308,18 @@
                                 </StackPanel>
                             </Border>
                             <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock x:Name="AuditMaxDisplayLabel" Text="表示件数:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <ComboBox x:Name="AuditMaxDisplayComboBox" Width="135" Height="28" FontSize="11.5" Margin="0,0,12,0" SelectionChanged="AuditFilter_Changed">
+                                    <ComboBoxItem Content="上位100件 (推奨)" IsSelected="True" Tag="100"/>
+                                    <ComboBoxItem Content="上位300件" Tag="300"/>
+                                    <ComboBoxItem Content="上位500件" Tag="500"/>
+                                    <ComboBoxItem Content="全件表示" Tag="All"/>
+                                </ComboBox>
+
                                 <TextBlock x:Name="AuditSmartSelectLabel" Text="☑️ 一括選択:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <ComboBox x:Name="AuditSmartSelectComboBox" Width="185" Height="28" FontSize="11" Margin="0,0,12,0" SelectionChanged="AuditSmartSelectComboBox_SelectionChanged">
+                                <ComboBox x:Name="AuditSmartSelectComboBox" Width="175" Height="28" FontSize="11" Margin="0,0,12,0" SelectionChanged="AuditSmartSelectComboBox_SelectionChanged">
                                     <ComboBoxItem x:Name="AuditSmartItemPreset" Content="選択プリセット..." IsSelected="True" Tag="None"/>
-                                    <ComboBoxItem Content="「すぐ整理できそう」を選択" Tag="ReadyToClean"/>
+                                    <ComboBoxItem Content="「整理推奨」を一括選択" Tag="ReadyToClean"/>
                                     <ComboBoxItem Content="世代・旧版の過去版を選択" Tag="VersionFamilyOnly"/>
                                     <ComboBoxItem Content="展開済ZIP残骸を選択" Tag="ExtractedArchiveOnly"/>
                                     <ComboBoxItem x:Name="AuditSmartItemDupCopy" Content="重複の原本以外を選択" Tag="DupCopyOnly"/>
@@ -1319,9 +1329,10 @@
                                 </ComboBox>
 
                                 <TextBlock x:Name="AuditFilterLabel" Text="絞り込み:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <ComboBox x:Name="AuditCategoryFilterComboBox" Width="145" Height="28" FontSize="11.5" Margin="0,0,10,0" SelectionChanged="AuditFilter_Changed">
+                                <ComboBox x:Name="AuditCategoryFilterComboBox" Width="135" Height="28" FontSize="11.5" Margin="0,0,10,0" SelectionChanged="AuditFilter_Changed">
                                     <ComboBoxItem Content="すべて表示" IsSelected="True" Tag="All"/>
-                                    <ComboBoxItem Content="すぐ整理できそう のみ" Tag="ReadyToClean"/>
+                                    <ComboBoxItem Content="整理推奨 のみ" Tag="ReadyToClean"/>
+                                    <ComboBoxItem Content="要確認 のみ" Tag="ReviewAdvised"/>
                                     <ComboBoxItem Content="世代・旧版 のみ" Tag="VersionFamily"/>
                                     <ComboBoxItem Content="展開済ZIP のみ" Tag="ExtractedArchive"/>
                                     <ComboBoxItem Content="墓場フォルダー のみ" Tag="GraveyardTree"/>
@@ -1352,6 +1363,14 @@
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="30" HeadersVisibility="Column" RowHeaderWidth="0"
                                   MouseDoubleClick="AuditItemsDataGrid_MouseDoubleClick"
                                   Sorting="AuditItemsDataGrid_Sorting">
+                            <DataGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem x:Name="AuditMenuIgnoreFile" Header="🛡️ このファイルを整理候補から除外 (次回から非表示)" Click="AuditIgnoreFile_Click"/>
+                                    <Separator/>
+                                    <MenuItem x:Name="AuditMenuOpenExplorer" Header="📂 エクスプローラーで表示" Click="AuditOpenExplorer_Click"/>
+                                    <MenuItem x:Name="AuditMenuCopyPath" Header="📋 完全パスをコピー" Click="AuditCopyPath_Click"/>
+                                </ContextMenu>
+                            </DataGrid.ContextMenu>
                             <DataGrid.RowStyle>
                                 <Style TargetType="DataGridRow">
                                     <Setter Property="Background" Value="{Binding RowBackgroundHex}"/>
@@ -1377,13 +1396,17 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTemplateColumn x:Name="ColAuditConfidence" Header="整理の目安" SortMemberPath="WasteScore" Width="110">
+                                <DataGridTemplateColumn x:Name="ColAuditConfidence" Header="整理の目安" SortMemberPath="WasteScore" Width="115">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <Border Background="{Binding ConfidenceBadgeBgHex}" BorderBrush="{Binding ConfidenceBadgeBorderHex}"
-                                                    BorderThickness="1" CornerRadius="10" Padding="8,2" Margin="4,2" HorizontalAlignment="Left">
-                                                <TextBlock Text="{Binding ConfidenceDisplay}" FontSize="11" FontWeight="SemiBold"
-                                                           Foreground="{Binding ConfidenceBadgeFgHex}" VerticalAlignment="Center"/>
+                                                    BorderThickness="1" CornerRadius="10" Padding="8,2" Margin="4,2" HorizontalAlignment="Left"
+                                                    Cursor="Hand" ToolTip="{Binding ScoreBreakdownSummary}" MouseDown="AuditScoreBreakdown_MouseDown">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding ConfidenceDisplay}" FontSize="11" FontWeight="SemiBold"
+                                                               Foreground="{Binding ConfidenceBadgeFgHex}" VerticalAlignment="Center"/>
+                                                    <TextBlock Text=" ℹ️" FontSize="9" VerticalAlignment="Center" Margin="2,0,0,0" Opacity="0.6"/>
+                                                </StackPanel>
                                             </Border>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>

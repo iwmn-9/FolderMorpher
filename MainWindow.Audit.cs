@@ -115,7 +115,7 @@ namespace AstraSize
 
                 string statusMsg = summary.InaccessibleDirectoriesCount > 0
                     ? $"完了: 整理候補 {items.Count:N0} 件検出 (⚠️アクセス拒否: {summary.InaccessibleDirectoriesCount} 箇所)"
-                    : $"完了: 整理候補 {items.Count:N0} 件検出 (すぐ整理可能: {summary.ReadyToCleanSizeFormatted})";
+                    : $"完了: 整理候補 {items.Count:N0} 件検出 (整理推奨: {summary.ReadyToCleanSizeFormatted})";
                 AuditStatusText.Text = statusMsg;
                 ShowToast(statusMsg);
             }
@@ -131,6 +131,7 @@ namespace AstraSize
             finally
             {
                 GlobalProgressBar.Visibility = Visibility.Collapsed;
+                UpdateIgnoredCountBadge();
             }
         }
 
@@ -229,6 +230,7 @@ namespace AstraSize
                 return;
 
             string selectedTag = (AuditCategoryFilterComboBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "All";
+            string maxDisplayTag = (AuditMaxDisplayComboBox?.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "100";
             string query = AuditSearchFilterTextBox.Text.Trim();
 
             var filtered = _lastAuditItems.AsEnumerable();
@@ -236,6 +238,10 @@ namespace AstraSize
             if (selectedTag == "ReadyToClean")
             {
                 filtered = filtered.Where(x => x.WasteScore >= 80 && !x.IsOriginalCandidate);
+            }
+            else if (selectedTag == "ReviewAdvised")
+            {
+                filtered = filtered.Where(x => x.WasteScore >= 50 && x.WasteScore < 80);
             }
             else if (selectedTag == "VersionFamily")
             {
@@ -273,7 +279,26 @@ namespace AstraSize
             var resultList = filtered.ToList();
 
             // 階層ソート適用（容量ソート時は重複グループをひとかたまりに束ね、原本候補を先頭に配置）
-            resultList = AuditReportService.SortAuditItems(resultList, _auditSortProperty, _auditSortDescending);
+            if (_auditSortProperty == "Default" || string.IsNullOrEmpty(_auditSortProperty))
+            {
+                // デフォルトは無駄度スコア降順 ➔ 容量降順（最も整理すべき重要候補が最上位に並ぶ）
+                resultList = resultList
+                    .OrderByDescending(x => x.WasteScore)
+                    .ThenByDescending(x => x.Size)
+                    .ToList();
+            }
+            else
+            {
+                resultList = AuditReportService.SortAuditItems(resultList, _auditSortProperty, _auditSortDescending);
+            }
+
+            int totalMatched = resultList.Count;
+
+            // 表示件数制限の適用 (100 / 300 / 500 / All)
+            if (maxDisplayTag != "All" && int.TryParse(maxDisplayTag, out int maxCount) && maxCount > 0)
+            {
+                resultList = resultList.Take(maxCount).ToList();
+            }
 
             // 一括仮想化バインド（1件ずつAddするループを撤廃し、数十万件でも一瞬で表示切替）
             AuditItemsDataGrid.ItemsSource = resultList;
@@ -282,7 +307,16 @@ namespace AstraSize
             string baseTitle = isJa ? "検出された整理候補一覧" : "Detected Cleanup Candidates";
             if (_lastAuditItems.Count > 0)
             {
-                AuditTableTitleText.Text = $"{baseTitle} ({resultList.Count:N0} / {_lastAuditItems.Count:N0} 件)";
+                if (resultList.Count < totalMatched)
+                {
+                    AuditTableTitleText.Text = isJa
+                        ? $"{baseTitle} (全 {_lastAuditItems.Count:N0} 件中 上位 {resultList.Count:N0} 件を表示)"
+                        : $"{baseTitle} (Showing top {resultList.Count:N0} of {_lastAuditItems.Count:N0})";
+                }
+                else
+                {
+                    AuditTableTitleText.Text = $"{baseTitle} ({resultList.Count:N0} / {_lastAuditItems.Count:N0} 件)";
+                }
             }
             else
             {
@@ -638,6 +672,126 @@ namespace AstraSize
             if (AuditKpiVersionFamily != null) AuditKpiVersionFamily.Text = _lastAuditSummary.VersionFamilySizeFormatted;
             if (AuditKpiDupWasted != null) AuditKpiDupWasted.Text = _lastAuditSummary.DuplicateWastedSizeFormatted;
             if (AuditKpiDormantSize != null) AuditKpiDormantSize.Text = _lastAuditSummary.DormantSizeFormatted;
+        }
+
+        private void AuditScoreBreakdown_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is FrameworkElement elem && elem.DataContext is AuditItem item)
+            {
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                var sb = new StringBuilder();
+                sb.AppendLine(isJa ? $"【整理スコア内訳: {item.FileName}】" : $"[Score Breakdown: {item.FileName}]");
+                sb.AppendLine(isJa ? $"総合スコア: {item.WasteScore} 点（{item.ConfidenceDisplay}）" : $"Total Score: {item.WasteScore} pts ({item.ConfidenceDisplay})");
+                sb.AppendLine(new string('─', 40));
+
+                if (item.ScoreBreakdown != null && item.ScoreBreakdown.Count > 0)
+                {
+                    foreach (var factor in item.ScoreBreakdown)
+                    {
+                        sb.AppendLine($"・{factor.DisplayText}");
+                    }
+                    sb.AppendLine(new string('─', 40));
+                    sb.AppendLine(isJa ? $"合計: {item.WasteScore} 点" : $"Total: {item.WasteScore} pts");
+                }
+                else
+                {
+                    sb.AppendLine(item.ScoreBreakdownSummary);
+                }
+
+                if (!string.IsNullOrEmpty(item.RelatedActivePath))
+                {
+                    sb.AppendLine();
+                    sb.AppendLine(isJa ? $"参照先/最新版: {item.RelatedActivePath}" : $"Reference/Active: {item.RelatedActivePath}");
+                }
+
+                MessageBox.Show(sb.ToString(), isJa ? "整理スコア内訳" : "Score Breakdown", MessageBoxButton.OK, MessageBoxImage.Information);
+                e.Handled = true;
+            }
+        }
+
+        private void AuditIgnoreFile_Click(object sender, RoutedEventArgs e)
+        {
+            if (AuditItemsDataGrid?.SelectedItem is AuditItem item)
+            {
+                AuditIgnoreService.Instance.AddIgnore(item);
+                _lastAuditItems.Remove(item);
+                UpdateAuditKpiAfterDeletion();
+                ApplyAuditFilters();
+                UpdateIgnoredCountBadge();
+
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                ShowToast(isJa 
+                    ? $"🛡️ 「{item.FileName}」を整理候補から除外しました（変更されるまで非表示）"
+                    : $"🛡️ Ignored \"{item.FileName}\" (hidden until modified)");
+            }
+        }
+
+        private void AuditIgnoredListButton_Click(object sender, RoutedEventArgs e)
+        {
+            var ignoredItems = AuditIgnoreService.Instance.GetAllItems();
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+
+            if (ignoredItems.Count == 0)
+            {
+                MessageBox.Show(
+                    isJa ? "除外（保留）登録されているファイルはありません。" : "No files are currently ignored.",
+                    isJa ? "除外リスト" : "Ignored List",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine(isJa ? $"現在 {ignoredItems.Count:N0} 件のファイルが整理候補から除外されています（更新されるまで非表示）:\n" : $"Currently {ignoredItems.Count:N0} files are ignored (hidden until modified):\n");
+
+            foreach (var ig in ignoredItems.Take(15))
+            {
+                sb.AppendLine($"・{ig.FullPath} ({ig.IgnoredAt:yyyy/MM/dd})");
+            }
+            if (ignoredItems.Count > 15)
+            {
+                sb.AppendLine(isJa ? $"\n...他 {ignoredItems.Count - 15} 件" : $"\n...and {ignoredItems.Count - 15} more");
+            }
+
+            sb.AppendLine(isJa ? "\n除外リストをすべてリセットして再度整理候補の対象にしますか？" : "\nDo you want to reset the ignore list and re-evaluate these files?");
+
+            var res = MessageBox.Show(sb.ToString(), isJa ? "整理除外リストの管理" : "Manage Ignored List", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (res == MessageBoxResult.Yes)
+            {
+                AuditIgnoreService.Instance.ClearAll();
+                UpdateIgnoredCountBadge();
+                ShowToast(isJa ? "除外リストをリセットしました（次回走査時に再評価されます）" : "Ignored list cleared");
+            }
+        }
+
+        private void AuditOpenExplorer_Click(object sender, RoutedEventArgs e)
+        {
+            if (AuditItemsDataGrid?.SelectedItem is AuditItem item && !string.IsNullOrEmpty(item.FullPath))
+            {
+                ShellHelper.SelectInExplorer(item.FullPath);
+            }
+        }
+
+        private void AuditCopyPath_Click(object sender, RoutedEventArgs e)
+        {
+            if (AuditItemsDataGrid?.SelectedItem is AuditItem item && !string.IsNullOrEmpty(item.FullPath))
+            {
+                try
+                {
+                    Clipboard.SetText(item.FullPath);
+                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                    ShowToast(isJa ? "完全パスをコピーしました" : "Path copied to clipboard");
+                }
+                catch { }
+            }
+        }
+
+        private void UpdateIgnoredCountBadge()
+        {
+            if (AuditIgnoredListButton == null) return;
+            int count = AuditIgnoreService.Instance.GetIgnoredCount();
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+            AuditIgnoredListButton.Content = isJa ? $"🛡️ 除外リスト ({count}件)" : $"🛡️ Ignored List ({count})";
         }
         #endregion
     }

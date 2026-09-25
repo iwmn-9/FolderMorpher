@@ -63,6 +63,12 @@ namespace FolderMorpher.Services
                 ct.ThrowIfCancellationRequested();
                 processedCount++;
 
+                // 整理除外（保持マーク）済みで変更のないファイルは候補から除外
+                if (AuditIgnoreService.Instance.IsIgnored(fi.FullPath, fi.Length, fi.LastWriteTime))
+                {
+                    continue;
+                }
+
                 // パス長チェック (移行先での長大化＆Excel保存不能リスクを未然に防ぐため >= 240 を危険域とする)
                 if (options.CheckPathLimits && fi.FullPath.Length >= 240)
                 {
@@ -77,7 +83,11 @@ namespace FolderMorpher.Services
                         LastAccessTime = fi.LastAccessTime,
                         IssueType = AuditIssueType.PathTooLong,
                         Detail = $"文字数: {fi.FullPath.Length} 文字 (移行危険域: 240文字以上)",
-                        WasteScore = 40
+                        WasteScore = 40,
+                        ScoreBreakdown = new List<ScoreFactorItem>
+                        {
+                            new ScoreFactorItem { NameJa = "パス長240文字超の移行リスク", NameEn = "Path length >240 chars migration risk", Points = 40 }
+                        }
                     });
                 }
 
@@ -110,7 +120,11 @@ namespace FolderMorpher.Services
                             LastAccessTime = fi.LastAccessTime,
                             IssueType = AuditIssueType.InvalidChar,
                             Detail = string.Join(" / ", reasons),
-                            WasteScore = 40
+                            WasteScore = 40,
+                            ScoreBreakdown = new List<ScoreFactorItem>
+                            {
+                                new ScoreFactorItem { NameJa = "NTFS不正文字・地雷文字の含有", NameEn = "Contains invalid/risky characters", Points = 40 }
+                            }
                         });
                     }
                 }
@@ -132,6 +146,18 @@ namespace FolderMorpher.Services
                         ? $"最終更新: {fi.LastWriteTime:yyyy/MM/dd} ({yearsOld:F1}年前) / 最終閲覧: {fi.LastAccessTime:yyyy/MM/dd}"
                         : $"最終更新: {fi.LastWriteTime:yyyy/MM/dd} ({yearsOld:F1}年前)";
 
+                    int dScore = 70;
+                    var dBreakdown = new List<ScoreFactorItem>
+                    {
+                        new ScoreFactorItem { NameJa = $"3年以上未更新 ({yearsOld:F1}年前)", NameEn = $"Unmodified for >3 years ({yearsOld:F1} yrs)", Points = 60 },
+                        new ScoreFactorItem { NameJa = "直近1年間の閲覧ゼロ", NameEn = "No read access for past 1 year", Points = 10 }
+                    };
+                    if (yearsOld > 5.0)
+                    {
+                        dScore += 10;
+                        dBreakdown.Add(new ScoreFactorItem { NameJa = "5年以上完全休眠", NameEn = "Dormant for >5 years", Points = 10 });
+                    }
+
                     items.Add(new AuditItem
                     {
                         FullPath = fi.FullPath,
@@ -142,7 +168,8 @@ namespace FolderMorpher.Services
                         LastAccessTime = fi.LastAccessTime,
                         IssueType = AuditIssueType.Dormant,
                         Detail = detailText,
-                        WasteScore = 70
+                        WasteScore = dScore,
+                        ScoreBreakdown = dBreakdown
                     });
                 }
 
@@ -310,6 +337,11 @@ namespace FolderMorpher.Services
                                 summary.DuplicateWastedBytes += fi.Length;
                             }
 
+                            var dupBreakdown = isOriginal ? new List<ScoreFactorItem>() : new List<ScoreFactorItem>
+                            {
+                                new ScoreFactorItem { NameJa = "SHA-256完全一致 (複製データ)", NameEn = "SHA-256 exact duplicate", Points = 95 }
+                            };
+
                             items.Add(new AuditItem
                             {
                                 FullPath = fi.FullPath,
@@ -325,7 +357,8 @@ namespace FolderMorpher.Services
                                 DuplicateGroupIndex = groupNum,
                                 DuplicateGroupColorIndex = (groupNum - 1) % AuditItem.GroupBgPalette.Length,
                                 IsOriginalCandidate = isOriginal,
-                                WasteScore = isOriginal ? 0 : 95
+                                WasteScore = isOriginal ? 0 : 95,
+                                ScoreBreakdown = dupBreakdown
                             });
                         }
                     }
@@ -364,6 +397,12 @@ namespace FolderMorpher.Services
                 var existingPaths = new HashSet<string>(items.Select(x => x.FullPath), StringComparer.OrdinalIgnoreCase);
                 foreach (var cand in smartCandidates)
                 {
+                    // 整理除外（保持マーク）済みで変更のないファイルは候補から除外
+                    if (AuditIgnoreService.Instance.IsIgnored(cand.FullPath, cand.Size, cand.LastWriteTime))
+                    {
+                        continue;
+                    }
+
                     if (!existingPaths.Contains(cand.FullPath))
                     {
                         existingPaths.Add(cand.FullPath);

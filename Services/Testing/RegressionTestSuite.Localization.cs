@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -63,6 +63,16 @@ namespace FolderMorpher.Services.Testing
                 if (auditItem.DuplicateGroupBadge != "GRP-1 (原本候補)")
                     throw new InvalidOperationException($"JA DuplicateGroupBadge mismatch: got '{auditItem.DuplicateGroupBadge}'");
 
+                auditItem.WasteScore = 90;
+                if (auditItem.ConfidenceDisplay != AuditItem.ConfidenceRecommendedJa)
+                    throw new InvalidOperationException($"JA ConfidenceDisplay (90) mismatch: got '{auditItem.ConfidenceDisplay}'");
+                auditItem.WasteScore = 60;
+                if (auditItem.ConfidenceDisplay != AuditItem.ConfidenceReviewNeededJa)
+                    throw new InvalidOperationException($"JA ConfidenceDisplay (60) mismatch: got '{auditItem.ConfidenceDisplay}'");
+                auditItem.WasteScore = 30;
+                if (auditItem.ConfidenceDisplay != AuditItem.ConfidenceReferenceJa)
+                    throw new InvalidOperationException($"JA ConfidenceDisplay (30) mismatch: got '{auditItem.ConfidenceDisplay}'");
+
                 var simNode = new SimFolderNode { Level = 0, InheritAcl = true };
                 if (simNode.LevelPillText != "第1階層 (ルート)")
                     throw new InvalidOperationException($"JA LevelPillText mismatch: got '{simNode.LevelPillText}'");
@@ -102,6 +112,16 @@ namespace FolderMorpher.Services.Testing
                 auditItem.IsOriginalCandidate = false;
                 if (auditItem.DuplicateGroupBadge != "GRP-1 (Duplicate)")
                     throw new InvalidOperationException($"EN DuplicateGroupBadge (dup) mismatch: got '{auditItem.DuplicateGroupBadge}'");
+
+                auditItem.WasteScore = 90;
+                if (auditItem.ConfidenceDisplay != AuditItem.ConfidenceRecommendedEn)
+                    throw new InvalidOperationException($"EN ConfidenceDisplay (90) mismatch: got '{auditItem.ConfidenceDisplay}'");
+                auditItem.WasteScore = 60;
+                if (auditItem.ConfidenceDisplay != AuditItem.ConfidenceReviewNeededEn)
+                    throw new InvalidOperationException($"EN ConfidenceDisplay (60) mismatch: got '{auditItem.ConfidenceDisplay}'");
+                auditItem.WasteScore = 30;
+                if (auditItem.ConfidenceDisplay != AuditItem.ConfidenceReferenceEn)
+                    throw new InvalidOperationException($"EN ConfidenceDisplay (30) mismatch: got '{auditItem.ConfidenceDisplay}'");
 
                 if (simNode.LevelPillText != "Level 1 (Root)")
                     throw new InvalidOperationException($"EN LevelPillText mismatch: got '{simNode.LevelPillText}'");

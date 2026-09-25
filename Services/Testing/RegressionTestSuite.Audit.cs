@@ -900,9 +900,9 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException($"Expected 見積書_修正版.xlsx as older version, got {vItems[0].FileName}");
                 }
-                if (vItems[0].WasteScore < 80 || vItems[0].ConfidenceDisplay != "すぐ整理できそう")
+                if (vItems[0].WasteScore < 80 || vItems[0].ConfidenceDisplay != AuditItem.ConfidenceRecommendedJa)
                 {
-                    throw new InvalidOperationException($"VersionFamily confidence should be 'すぐ整理できそう', got '{vItems[0].ConfidenceDisplay}' (score: {vItems[0].WasteScore})");
+                    throw new InvalidOperationException($"VersionFamily confidence should be '{AuditItem.ConfidenceRecommendedJa}', got '{vItems[0].ConfidenceDisplay}' (score: {vItems[0].WasteScore})");
                 }
                 if (string.IsNullOrEmpty(vItems[0].RelatedActivePath) || !(vItems[0].RelatedActivePath?.Contains("見積書_最終_本当.xlsx") ?? false))
                 {
@@ -919,9 +919,9 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException($"Expected ProjectLogs_2025.zip as extracted archive, got {arcItems[0].FileName}");
                 }
-                if (arcItems[0].WasteScore < 80 || arcItems[0].ConfidenceDisplay != "すぐ整理できそう")
+                if (arcItems[0].WasteScore < 80 || arcItems[0].ConfidenceDisplay != AuditItem.ConfidenceRecommendedJa)
                 {
-                    throw new InvalidOperationException($"ExtractedArchive confidence should be 'すぐ整理できそう', got '{arcItems[0].ConfidenceDisplay}' (score: {arcItems[0].WasteScore})");
+                    throw new InvalidOperationException($"ExtractedArchive confidence should be '{AuditItem.ConfidenceRecommendedJa}', got '{arcItems[0].ConfidenceDisplay}' (score: {arcItems[0].WasteScore})");
                 }
 
                 // 検証 3: 墓場フォルダー
@@ -934,9 +934,9 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException($"Expected GraveFolder as graveyard item, got {graveItems[0].FileName}");
                 }
-                if (graveItems[0].WasteScore < 80 || graveItems[0].ConfidenceDisplay != "すぐ整理できそう")
+                if (graveItems[0].WasteScore < 80 || graveItems[0].ConfidenceDisplay != AuditItem.ConfidenceRecommendedJa)
                 {
-                    throw new InvalidOperationException($"GraveyardTree confidence should be 'すぐ整理できそう', got '{graveItems[0].ConfidenceDisplay}' (score: {graveItems[0].WasteScore})");
+                    throw new InvalidOperationException($"GraveyardTree confidence should be '{AuditItem.ConfidenceRecommendedJa}', got '{graveItems[0].ConfidenceDisplay}' (score: {graveItems[0].WasteScore})");
                 }
                 long expectedGraveSize = (500 + 500 + 200) * 1024;
                 if (graveItems[0].Size != expectedGraveSize)
@@ -951,6 +951,38 @@ namespace FolderMorpher.Services.Testing
                     throw new InvalidOperationException($"Expected ExtractedArchiveCount 1, got {summary.ExtractedArchiveCount}");
                 if (summary.GraveyardTreeCount != 1)
                     throw new InvalidOperationException($"Expected GraveyardTreeCount 1, got {summary.GraveyardTreeCount}");
+
+                // 検証 5: スコア内訳 (ScoreBreakdown) の整合性
+                if (vItems[0].ScoreBreakdown.Count == 0 || string.IsNullOrEmpty(vItems[0].ScoreBreakdownSummary))
+                {
+                    throw new InvalidOperationException("ScoreBreakdown should contain factors and summary should not be empty.");
+                }
+
+                // 検証 6: 整理除外（保持マーク）リスト / スキップ記憶機能の検証
+                string testFilePath = vItems[0].FullPath;
+                long testFileSize = vItems[0].Size;
+                DateTime testLastWrite = File.GetLastWriteTimeUtc(testFilePath);
+
+                AuditIgnoreService.Instance.ClearAll();
+                if (AuditIgnoreService.Instance.IsIgnored(testFilePath, testFileSize, testLastWrite))
+                    throw new InvalidOperationException("File should NOT be ignored initially");
+
+                AuditIgnoreService.Instance.AddIgnore(vItems[0]);
+                if (!AuditIgnoreService.Instance.IsIgnored(testFilePath, testFileSize, testLastWrite))
+                    throw new InvalidOperationException("File should BE ignored after AddIgnore");
+
+                // ファイルサイズ変更で自動復帰
+                if (AuditIgnoreService.Instance.IsIgnored(testFilePath, testFileSize + 1, testLastWrite))
+                    throw new InvalidOperationException("File should NOT be ignored when size changes");
+
+                // 更新日時変更で自動復帰
+                if (AuditIgnoreService.Instance.IsIgnored(testFilePath, testFileSize, testLastWrite.AddMinutes(5)))
+                    throw new InvalidOperationException("File should NOT be ignored when LastWriteTime changes");
+
+                AuditIgnoreService.Instance.RemoveIgnore(testFilePath);
+                if (AuditIgnoreService.Instance.IsIgnored(testFilePath, testFileSize, testLastWrite))
+                    throw new InvalidOperationException("File should NOT be ignored after RemoveIgnore");
+
                 if (summary.ReadyToCleanBytes <= 0)
                     throw new InvalidOperationException($"ReadyToCleanBytes should be > 0, got {summary.ReadyToCleanBytes}");
             }
