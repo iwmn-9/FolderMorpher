@@ -1715,6 +1715,88 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(testRoot, true); } catch { }
                 }
             }
+
+            // 21. 【ADR 94】Server Search Accelerator ＆ Windows Search Provider (WSP/OLE DB) 検証
+            {
+                // A. WindowsSearchProvider.BuildSearchSql の検証（UNC & Local SQL構文生成）
+                var qContent = SearchQueryParser.Parse("契約書 2026 ext:pdf");
+                qContent.SearchContentMode = true;
+
+                // 1. UNC パスの場合（FROM "server".SystemIndex & SCOPE URL）
+                string uncPath = @"\\file-server01\SharedDocs\Legal";
+                string? uncSql = FolderMorpher.Services.ServerSearch.WindowsSearchProvider.BuildSearchSql(uncPath, qContent);
+
+                if (string.IsNullOrEmpty(uncSql))
+                    throw new Exception("ADR 94 failed: WindowsSearchProvider returned null SQL for UNC path.");
+                if (!uncSql.Contains("FROM \"file-server01\".SystemIndex"))
+                    throw new Exception("ADR 94 failed: WindowsSearchProvider SQL missing remote server SystemIndex FROM clause.");
+                if (!uncSql.Contains("SCOPE = 'file://file-server01/SharedDocs/Legal'"))
+                    throw new Exception("ADR 94 failed: WindowsSearchProvider SQL missing correct SCOPE URL.");
+                if (!uncSql.Contains("System.FileExtension = '.pdf'"))
+                    throw new Exception("ADR 94 failed: WindowsSearchProvider SQL missing file extension filter.");
+                if (!uncSql.Contains("CONTAINS(System.Search.Contents"))
+                    throw new Exception("ADR 94 failed: WindowsSearchProvider SQL missing content CONTAINS clause.");
+
+                // 2. ローカルパスの場合（FROM SystemIndex）
+                string localPath = @"C:\Data\Reports";
+                string? localSql = FolderMorpher.Services.ServerSearch.WindowsSearchProvider.BuildSearchSql(localPath, qContent);
+                if (string.IsNullOrEmpty(localSql) || !localSql.Contains("FROM SystemIndex") || localSql.Contains("\"C:\".SystemIndex"))
+                    throw new Exception("ADR 94 failed: WindowsSearchProvider local SQL generated incorrect FROM clause.");
+
+                // B. CanHandleAsync の検証
+                var provider = new FolderMorpher.Services.ServerSearch.WindowsSearchProvider();
+                if (!await provider.CanHandleAsync(@"\\server\share\dir", CancellationToken.None))
+                    throw new Exception("ADR 94 failed: CanHandleAsync should return true for UNC path.");
+                if (!await provider.CanHandleAsync(@"C:\Folder", CancellationToken.None))
+                    throw new Exception("ADR 94 failed: CanHandleAsync should return true for local drive path.");
+                if (await provider.CanHandleAsync("", CancellationToken.None))
+                    throw new Exception("ADR 94 failed: CanHandleAsync should return false for empty path.");
+
+                // C. 未接続・存在しないUNCサーバーへのクエリでクラッシュせず null フォールバックすることの検証
+                var qDummy = SearchQueryParser.Parse("test");
+                var dummyResult = await provider.QueryCandidatesAsync(@"\\non-existent-server-9999\fake-share", qDummy, CancellationToken.None);
+                if (dummyResult != null)
+                    throw new Exception("ADR 94 failed: QueryCandidatesAsync should return null for non-existent server to trigger fallback.");
+
+                // D. ServerSearchAccelerator コーディネーター＆モックプロバイダー登録動作検証
+                var accelerator = new FolderMorpher.Services.ServerSearch.ServerSearchAccelerator();
+                // 初期状態で WindowsSearchProvider が登録されていること
+                if (!accelerator.Providers.Any(p => p is FolderMorpher.Services.ServerSearch.WindowsSearchProvider))
+                    throw new Exception("ADR 94 failed: ServerSearchAccelerator should contain WindowsSearchProvider by default.");
+
+                // モックプロバイダー（特定パスで候補を返す）の登録と取得検証
+                var mockCandidates = new List<string> { @"\\server\share\doc1.pdf", @"\\server\share\doc2.pdf" };
+                var mockProvider = new MockSearchProvider(@"\\mock-server\share", mockCandidates);
+                accelerator.RegisterProvider(mockProvider);
+
+                var acceleratedCandidates = await accelerator.TryAccelerateAsync(@"\\mock-server\share\sub", qDummy, CancellationToken.None);
+                if (acceleratedCandidates == null || acceleratedCandidates.Count != 2 || acceleratedCandidates[0] != mockCandidates[0])
+                    throw new Exception("ADR 94 failed: ServerSearchAccelerator failed to return candidates from registered provider.");
+            }
+        }
+    }
+
+    internal sealed class MockSearchProvider : FolderMorpher.Services.ServerSearch.IServerSearchProvider
+    {
+        private readonly string _supportedPrefix;
+        private readonly IReadOnlyList<string> _candidates;
+
+        public string Name => "Mock Provider";
+
+        public MockSearchProvider(string supportedPrefix, IReadOnlyList<string> candidates)
+        {
+            _supportedPrefix = supportedPrefix;
+            _candidates = candidates;
+        }
+
+        public Task<bool> CanHandleAsync(string targetPath, CancellationToken ct)
+        {
+            return Task.FromResult(targetPath.StartsWith(_supportedPrefix, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public Task<IReadOnlyList<string>?> QueryCandidatesAsync(string targetPath, FolderMorpher.Models.SearchQuery query, CancellationToken ct)
+        {
+            return Task.FromResult<IReadOnlyList<string>?>(_candidates);
         }
     }
 }

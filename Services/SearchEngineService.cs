@@ -310,34 +310,81 @@ namespace FolderMorpher.Services
 
                 bool includeDirs = query.IncludeFolders || (query.IsDirectoryOnly == true);
 
-                // ★ ADR 93: TreeCache-First 差分枝刈り走査
-                // 既存の TreeCache があれば、変更のないサブツリーの走査をスキップして即時メモリ展開
-                TreeCachePruningIndex? pruningIndex = null;
+                // ★ ADR 94: Server Search Accelerator（サーバー側インデックス拝借 ＆ 候補ピンポイント原本確認）
+                // Windows Server (WSP) または WSP 互換 NAS (Synology等) がインデックスを公開していれば、
+                // 数万〜数十万ファイルのディレクトリ全走査をスキップし、返された候補（例: 83件）のみを即座に原本確認する。
+                IReadOnlyList<string>? serverCandidates = null;
                 try
                 {
-                    var cachedTree = await AstraSize.Services.StorageHistoryService.Instance.LoadTreeCacheAsync(targetFolder);
-                    if (cachedTree != null)
-                    {
-                        pruningIndex = new TreeCachePruningIndex(cachedTree);
-                    }
+                    serverCandidates = await FolderMorpher.Services.ServerSearch.ServerSearchAccelerator.Instance.TryAccelerateAsync(targetFolder, query, ct);
                 }
                 catch { }
 
-                try
+                if (serverCandidates != null && serverCandidates.Count > 0)
                 {
-                    await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
-                        targetFolder,
-                        "*.*",
-                        coverage: null,
-                        onProgress: null,
-                        ct: ct,
-                        includeDirectories: includeDirs,
-                        onEntryFound: HandleEntry,
-                        pruningIndex: pruningIndex);
+                    // ★ サーバー側インデックスの候補取得に成功！ディレクトリ全走査をスキップしてピンポイント原本確認へ！
+                    try
+                    {
+                        for (int i = 0; i < serverCandidates.Count; i++)
+                        {
+                            if (ct.IsCancellationRequested) break;
+                            string candPath = serverCandidates[i];
+                            if (!File.Exists(candPath)) continue;
+
+                            try
+                            {
+                                var fi = new FileInfo(candPath);
+                                var entry = new ScannedFileEntry(
+                                    fi.FullName,
+                                    fi.Name,
+                                    Path.GetDirectoryName(fi.FullName) ?? string.Empty,
+                                    fi.Length,
+                                    fi.CreationTimeUtc.ToLocalTime(),
+                                    fi.LastWriteTimeUtc.ToLocalTime(),
+                                    fi.LastAccessTimeUtc.ToLocalTime(),
+                                    fi.Attributes);
+
+                                HandleEntry(entry);
+                            }
+                            catch { }
+                        }
+                    }
+                    finally
+                    {
+                        contentChannel.Writer.Complete();
+                    }
                 }
-                finally
+                else
                 {
-                    contentChannel.Writer.Complete();
+                    // ★ ADR 93: TreeCache-First 差分枝刈り走査
+                    // サーバー側インデックスが未提供/非対応の場合は、従来の差分枝刈り＋局所性Live走査へ安全にフォールバック
+                    TreeCachePruningIndex? pruningIndex = null;
+                    try
+                    {
+                        var cachedTree = await AstraSize.Services.StorageHistoryService.Instance.LoadTreeCacheAsync(targetFolder);
+                        if (cachedTree != null)
+                        {
+                            pruningIndex = new TreeCachePruningIndex(cachedTree);
+                        }
+                    }
+                    catch { }
+
+                    try
+                    {
+                        await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
+                            targetFolder,
+                            "*.*",
+                            coverage: null,
+                            onProgress: null,
+                            ct: ct,
+                            includeDirectories: includeDirs,
+                            onEntryFound: HandleEntry,
+                            pruningIndex: pruningIndex);
+                    }
+                    finally
+                    {
+                        contentChannel.Writer.Complete();
+                    }
                 }
 
                 // Consumer ワーカーの完了を待機

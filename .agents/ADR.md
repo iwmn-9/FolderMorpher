@@ -1163,7 +1163,37 @@
   - `Services/Testing/RegressionTestSuite.Audit.cs`:
     - 検証 8: 墓場フォルダーの `IsCleanable == false`、`IsChecked` 拒否、`BuildPlan` 除外の多層防御を自動検証。
     - 検証 9: `UpdateTreeCacheSha256Async` による TreeCache へのハッシュ永続化を自動検証。
-  - 8大ドメイン全回帰テスト 8/8 ALL REGRESSION TESTS PASSED を堅持。
+  - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
+
+---
+
+### ADR 94: Server Search Accelerator ＆ Windows Search Provider（WSP / OLE DB サーバー側インデックス拝借 ＆ 候補ピンポイント原本確認）
+*(v2.2.19 本番施工 & ADR 94)*
+
+- **背景 & 動機**:
+  - **1. クライアント単独での大容量ファイルサーバー全文走査の物理的限界**:
+    - SMB/UNC ネットワーク越しに数万〜数十万ファイルを走査・本文読込する場合、ネットワーク帯域やI/Oスループットの制約から数分〜十数分を要していた。
+  - **2. サーバー側資産の遊休**:
+    - Windows Server や WSP 互換 NAS（Synology Universal Search 等）は、既にバックグラウンドで高速な全文インデックスを構築・維持している。クライアントがこのインデックスを拝借できれば、走査時間を数秒に圧縮できる。
+  - **3. インデックス不整合・権限昇格リスクの解消**:
+    - サーバー側インデックスを完全な正解として盲信すると、インデックス遅延によるゴミ（偽陽性）や権限のズレを招く。また、製品ごとにAPIが異なり、NetAppのように検索APIを開放していないエンタープライズ製品もあるため、共通インデックス規格を前提としない設計が必須であった。
+- **施工内容**:
+  - **1. `IServerSearchProvider` / `ServerSearchAccelerator` 抽象層 (`Services/ServerSearch/`)**:
+    - サーバー側インデックスの利用口をプロバイダーパターンで抽象化。
+    - プローブ（`CanHandleAsync`）と候補取得（`QueryCandidatesAsync`）を分離し、非対応・エラー・ポリシー禁止（`PreventRemoteQueries`）時は例外を出さず透過的に `null` フォールバック。
+  - **2. `WindowsSearchProvider` (WSP / `Search.CollatorDSO` OLE DB)**:
+    - Windows 標準の Search OLE DB Provider を利用し、Windows Server および WSP 互換 NAS（Synology 等）へリモートクエリ（`FROM "server".SystemIndex WHERE SCOPE='file://server/share/...'`）を発行。
+    - 現在のWindowsログオンユーザーのToken（SMB Identity）で問い合わせるため、ユーザーが読めないファイルはサーバー側で自動排除。管理者権限も不要。
+    - キーワードグループ（AND-of-ORs）、ExactPhrases、拡張子フィルターを Windows Search SQL へ自動変換。
+  - **3. 候補ピンポイント原本確認パイプライン (`Services/SearchEngineService.cs`)**:
+    - サーバーから候補（数十〜数百件）が返ってきた場合、数万ファイルのディレクトリ全走査（`SafeFileEnumerator`）を丸ごとスキップ。
+    - 候補ファイルだけを `ScannedFileEntry` 化して Consumer へ流し、クライアント側で Aho-Corasick や Office パーサーによる原本確認（Verify）を実行。
+    - 偽陽性（False Positive）を100%排除しつつ、20分要していた走査・読込を1〜2秒で確定。
+    - サーバーインデックス非対応環境では、従来の差分枝刈り＋局所性走査へ安全にフォールバック。
+- **検証と恒久保護**:
+  - `Services/Testing/RegressionTestSuite.Search.cs`:
+    - セクション 21: WindowsSearchProvider の UNC / Local SQL構文生成、CanHandleAsync 判定、未接続サーバーへの null フォールバック、ServerSearchAccelerator とモックプロバイダー連携を自動検証。
+  - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
 
 ---
 

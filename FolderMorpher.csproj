@@ -9,7 +9,7 @@
     <AssemblyName>FolderMorpher</AssemblyName>
     <RootNamespace>FolderMorpher</RootNamespace>
     <ApplicationTitle>FolderMorpher - Storage &amp; Migration Studio</ApplicationTitle>
-    <Version>2.2.18</Version>
+    <Version>2.2.19</Version>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <CodePage>65001</CodePage>
   </PropertyGroup>
@@ -17,6 +17,7 @@
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.105.1" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="System.Data.OleDb" Version="10.0.12" />
     <PackageReference Include="System.DirectoryServices" Version="8.0.0" />
   </ItemGroup>
 
