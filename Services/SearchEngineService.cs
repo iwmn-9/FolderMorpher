@@ -165,9 +165,9 @@ namespace FolderMorpher.Services
                 long totalHitBytes = 0;
                 long lastReportMs = 0;
 
-                const long MaxSearchFileSize = 50L * 1024 * 1024;
-                var contentChannel = Channel.CreateUnbounded<SearchResultItem>(
-                    new UnboundedChannelOptions { SingleWriter = false, SingleReader = false });
+                // BoundedChannel & Backpressure (最大2048件バッファでメモリ浪費防止)
+                var contentChannel = Channel.CreateBounded<SearchResultItem>(
+                    new BoundedChannelOptions(2048) { FullMode = BoundedChannelFullMode.Wait, SingleWriter = false, SingleReader = false });
 
                 bool hasOfficeLinkReq = query.HasOfficeLinkOnly;
                 string? officeLinkKeyword = query.OfficeLinkKeyword;
@@ -189,9 +189,9 @@ namespace FolderMorpher.Services
                     Interlocked.Add(ref totalHitBytes, hit.SizeBytes);
                 }
 
-                // Consumer ワーカー群の起動（Agent Ransack 流パイプライン）
+                // Consumer ワーカー群の起動（Shared I/O Governor による UNC Root 単位の適応並列制御）
                 int workerCount = Math.Max(2, Math.Min(Environment.ProcessorCount, 8));
-                var controller = new AdaptiveConcurrencyController();
+                var controller = SharedIoGovernor.GetController(targetFolder);
                 int deepProcessed = 0;
 
                 var consumerTasks = Enumerable.Range(0, workerCount).Select(async _ =>
@@ -266,9 +266,16 @@ namespace FolderMorpher.Services
 
                         if (needsDeepCheck)
                         {
-                            if (!item.IsDirectory && item.SizeBytes <= MaxSearchFileSize)
+                            if (!item.IsDirectory)
                             {
-                                contentChannel.Writer.TryWrite(item);
+                                if (!contentChannel.Writer.TryWrite(item))
+                                {
+                                    try
+                                    {
+                                        contentChannel.Writer.WriteAsync(item, ct).AsTask().GetAwaiter().GetResult();
+                                    }
+                                    catch (OperationCanceledException) { }
+                                }
                             }
                         }
                         else
@@ -687,18 +694,18 @@ namespace FolderMorpher.Services
             bool hasOfficeLinkReq = query.HasOfficeLinkOnly;
             string? officeLinkKeyword = query.OfficeLinkKeyword;
 
-            const long MaxSearchFileSize = 50L * 1024 * 1024;
             // ★ Sol提唱: 小さいファイル優先（Small-File First）
-            // 100KBと40MBなら100KBから先に読み、0.1〜0.3秒で初期ヒットをUIへポンポン流す
+            // 100KBと100MBなら100KBから先に読み、0.1〜0.3秒で初期ヒットをUIへポンポン流す
             var validFiles = candidates
-                .Where(c => !c.IsDirectory && c.SizeBytes <= MaxSearchFileSize && File.Exists(c.FullPath))
+                .Where(c => !c.IsDirectory && File.Exists(c.FullPath))
                 .OrderBy(c => c.SizeBytes)
                 .ToList();
 
             int processed = 0;
             int total = validFiles.Count;
 
-            var controller = new AdaptiveConcurrencyController();
+            string firstPath = validFiles.FirstOrDefault()?.FullPath ?? string.Empty;
+            var controller = SharedIoGovernor.GetController(firstPath);
 
             var po = new ParallelOptions
             {
@@ -875,6 +882,21 @@ namespace FolderMorpher.Services
                 // 3. Text files (.txt, .csv, .log, .json, code files, etc.)
                 else if (TextExtensions.Contains(ext) || ContentExtractionService.SupportedExtensions.Contains(ext))
                 {
+                    // 【Large File Pipeline - ADR 90】50MB超の巨大ファイルは分散Probeを先行実施
+                    const long LargeFileProbeThreshold = 50L * 1024 * 1024;
+                    if (item.SizeBytes > LargeFileProbeThreshold)
+                    {
+                        var probeSnippet = await ContentExtractionService.ProbeLargeFileContentAsync(item.FullPath, item.SizeBytes, requiredGroups, token);
+                        if (probeSnippet != null)
+                        {
+                            item.ContentSnippet = probeSnippet;
+                            item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
+                                ? $"Name + Content (Probe): \"{reqDesc}\""
+                                : $"Content (Probe): \"{reqDesc}\"";
+                            return true;
+                        }
+                    }
+
                     if (await ContentExtractionService.SearchTextContentAsync(item.FullPath, requiredGroups, token) is { } snippet)
                     {
                         item.ContentSnippet = snippet;

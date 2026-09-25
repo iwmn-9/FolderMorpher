@@ -123,6 +123,33 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
+        /// パスからボリュームルート（"C:"）またはUNC共有ルート（"\\server\share"）を取得します。
+        /// ネットワークドライブ（Z:\...）は正規化されて \\server\share が返されます。
+        /// </summary>
+        public static string GetVolumeOrShareRoot(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return "DEFAULT";
+            string norm = Normalize(path);
+
+            if (norm.StartsWith(@"\\"))
+            {
+                // \\server\share\path... から \\server\share を抽出
+                int thirdSlash = norm.IndexOf('\\', 2);
+                if (thirdSlash < 0) return norm;
+                int fourthSlash = norm.IndexOf('\\', thirdSlash + 1);
+                if (fourthSlash < 0) return norm;
+                return norm.Substring(0, fourthSlash);
+            }
+
+            if (norm.Length >= 2 && norm[1] == ':')
+            {
+                return norm.Substring(0, 2).ToUpperInvariant();
+            }
+
+            return "DEFAULT";
+        }
+
+        /// <summary>
         /// キャッシュされたドライブマッピングをクリアします（ドライブ割り当て変更時用）。
         /// </summary>
         public static void ClearDriveCache()

@@ -74,16 +74,23 @@ namespace FolderMorpher.Services
                 DetectVersionFamilies(dirMap, results, now);
             }
 
-            // 2. 展開済みアーカイブ残骸検出 (Extracted Archive Shadow)
-            if (checkExtractedArchives)
+            // 展開済アーカイブ・墓場フォルダー判定用の Bottom-Up 集計ツリーを O(N) で1度だけ構築
+            Dictionary<string, FolderAggInfo>? aggMap = null;
+            if (checkExtractedArchives || checkGraveyardTrees)
             {
-                DetectExtractedArchives(dirMap, results);
+                aggMap = BuildFolderAggregationMap(dirMap, recentAccessCutoff, now);
             }
 
-            // 3. 墓場フォルダー判定 (Graveyard Trees)
-            if (checkGraveyardTrees)
+            // 2. 展開済みアーカイブ残骸検出 (Extracted Archive Shadow) - O(N)
+            if (checkExtractedArchives && aggMap != null)
             {
-                DetectGraveyardTrees(dirMap, results, dormantCutoff, recentAccessCutoff, now);
+                DetectExtractedArchives(dirMap, aggMap, results);
+            }
+
+            // 3. 墓場フォルダー判定 (Graveyard Trees) - O(N)
+            if (checkGraveyardTrees && aggMap != null)
+            {
+                DetectGraveyardTrees(aggMap, results, dormantCutoff, now);
             }
 
             return results;
@@ -231,10 +238,109 @@ namespace FolderMorpher.Services
 
         #endregion
 
-        #region 2. 展開済みアーカイブ検出
+        #region 2. 展開済みアーカイブ検出 ＆ 3. 墓場フォルダー判定 (Bottom-Up O(N) 集約)
+
+        private sealed class FolderAggInfo
+        {
+            public string Path { get; set; } = string.Empty;
+            public int DirectFileCount { get; set; }
+            public long DirectBytes { get; set; }
+            public DateTime DirectMaxWrite { get; set; } = DateTime.MinValue;
+            public DateTime DirectMaxAccess { get; set; } = DateTime.MinValue;
+            public bool DirectHasRecentAccess { get; set; }
+
+            // 配下全集計（自身＋子孫フォルダー）
+            public int TotalFileCount { get; set; }
+            public long TotalBytes { get; set; }
+            public DateTime TotalMaxWrite { get; set; } = DateTime.MinValue;
+            public DateTime TotalMaxAccess { get; set; } = DateTime.MinValue;
+            public bool TotalHasRecentAccess { get; set; }
+        }
+
+        private static Dictionary<string, FolderAggInfo> BuildFolderAggregationMap(
+            Dictionary<string, List<ScannedFileEntry>> dirMap,
+            DateTime recentAccessCutoff,
+            DateTime now)
+        {
+            var aggMap = new Dictionary<string, FolderAggInfo>(StringComparer.OrdinalIgnoreCase);
+
+            // 1. 各ディレクトリの直下ファイル情報を算出 (O(N))
+            foreach (var (dirPath, files) in dirMap)
+            {
+                var normPath = dirPath.TrimEnd('\\', '/');
+                if (!aggMap.TryGetValue(normPath, out var info))
+                {
+                    info = new FolderAggInfo { Path = normPath };
+                    aggMap[normPath] = info;
+                }
+
+                info.DirectFileCount = files.Count;
+                long bytes = 0;
+                DateTime maxWrite = DateTime.MinValue;
+                DateTime maxAccess = DateTime.MinValue;
+                bool hasRecent = false;
+
+                for (int i = 0; i < files.Count; i++)
+                {
+                    var f = files[i];
+                    bytes += f.Length;
+                    if (f.LastWriteTime > maxWrite) maxWrite = f.LastWriteTime;
+                    if (f.LastAccessTime > maxAccess) maxAccess = f.LastAccessTime;
+                    if (!hasRecent && f.LastAccessTime >= recentAccessCutoff && f.LastAccessTime <= now.AddDays(1))
+                    {
+                        hasRecent = true;
+                    }
+                }
+
+                info.DirectBytes = bytes;
+                info.DirectMaxWrite = maxWrite;
+                info.DirectMaxAccess = maxAccess;
+                info.DirectHasRecentAccess = hasRecent;
+
+                // 初期値は直下ファイル集計
+                info.TotalFileCount = info.DirectFileCount;
+                info.TotalBytes = info.DirectBytes;
+                info.TotalMaxWrite = info.DirectMaxWrite;
+                info.TotalMaxAccess = info.DirectMaxAccess;
+                info.TotalHasRecentAccess = info.DirectHasRecentAccess;
+
+                // 親ディレクトリもツリー上に存在することを保証（空の親ディレクトリ救済）
+                string? parent = System.IO.Path.GetDirectoryName(normPath);
+                while (!string.IsNullOrEmpty(parent))
+                {
+                    if (!aggMap.ContainsKey(parent))
+                    {
+                        aggMap[parent] = new FolderAggInfo { Path = parent };
+                    }
+                    parent = System.IO.Path.GetDirectoryName(parent);
+                }
+            }
+
+            // 2. パスの深さ（区切り文字数）降順でソート（葉から親へ）
+            var sortedNodes = aggMap.Values
+                .OrderByDescending(n => n.Path.Count(c => c == '\\' || c == '/'))
+                .ToList();
+
+            // 3. ボトムアップ集約 (O(D)): 子の TotalXxx を親の TotalXxx に加算
+            foreach (var node in sortedNodes)
+            {
+                string? parent = System.IO.Path.GetDirectoryName(node.Path);
+                if (!string.IsNullOrEmpty(parent) && aggMap.TryGetValue(parent, out var parentInfo))
+                {
+                    parentInfo.TotalFileCount += node.TotalFileCount;
+                    parentInfo.TotalBytes += node.TotalBytes;
+                    if (node.TotalMaxWrite > parentInfo.TotalMaxWrite) parentInfo.TotalMaxWrite = node.TotalMaxWrite;
+                    if (node.TotalMaxAccess > parentInfo.TotalMaxAccess) parentInfo.TotalMaxAccess = node.TotalMaxAccess;
+                    if (node.TotalHasRecentAccess) parentInfo.TotalHasRecentAccess = true;
+                }
+            }
+
+            return aggMap;
+        }
 
         private static void DetectExtractedArchives(
             Dictionary<string, List<ScannedFileEntry>> dirMap,
+            Dictionary<string, FolderAggInfo> aggMap,
             List<AuditItem> results)
         {
             foreach (var (dirPath, files) in dirMap)
@@ -251,23 +357,12 @@ namespace FolderMorpher.Services
                         archBaseName = Path.GetFileNameWithoutExtension(archBaseName);
                     }
 
-                    // 同一ディレクトリ内に、アーカイブベース名と同名のサブディレクトリが存在するか判定
-                    string expectedSubDir = Path.Combine(dirPath, archBaseName);
-                    bool hasExtractedDir = dirMap.Keys.Any(k =>
-                        k.Equals(expectedSubDir, StringComparison.OrdinalIgnoreCase) ||
-                        k.StartsWith(expectedSubDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
-
-                    if (hasExtractedDir)
+                    // 同一ディレクトリ内に、アーカイブベース名と同名のサブディレクトリが存在するか O(1) 判定
+                    string expectedSubDir = Path.Combine(dirPath, archBaseName).TrimEnd('\\', '/');
+                    if (aggMap.TryGetValue(expectedSubDir, out var subAgg) && subAgg.TotalFileCount > 0)
                     {
-                        // 展開先フォルダー内の合計サイズ・ファイル数を算出
-                        var subFiles = dirMap.Where(kvp =>
-                            kvp.Key.Equals(expectedSubDir, StringComparison.OrdinalIgnoreCase) ||
-                            kvp.Key.StartsWith(expectedSubDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                            .SelectMany(kvp => kvp.Value)
-                            .ToList();
-
-                        long dirBytes = subFiles.Sum(f => f.Length);
-                        int dirCount = subFiles.Count;
+                        long dirBytes = subAgg.TotalBytes;
+                        int dirCount = subAgg.TotalFileCount;
 
                         bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                         string detail = isJa
@@ -298,44 +393,24 @@ namespace FolderMorpher.Services
             }
         }
 
-        #endregion
-
-        #region 3. 墓場フォルダー判定
-
         private static void DetectGraveyardTrees(
-            Dictionary<string, List<ScannedFileEntry>> dirMap,
+            Dictionary<string, FolderAggInfo> aggMap,
             List<AuditItem> results,
             DateTime dormantCutoff,
-            DateTime recentAccessCutoff,
             DateTime now)
         {
-            // 各フォルダーについて、配下（再帰）全ファイルの集計を計算
-            // ディレクトリ一覧
-            var allDirs = dirMap.Keys.ToList();
-
-            foreach (var dir in allDirs)
+            foreach (var agg in aggMap.Values)
             {
-                // 直下および配下の全ファイル
-                var descFiles = dirMap.Where(kvp =>
-                    kvp.Key.Equals(dir, StringComparison.OrdinalIgnoreCase) ||
-                    kvp.Key.StartsWith(dir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                    .SelectMany(kvp => kvp.Value)
-                    .ToList();
-
                 // 最小規模: 3ファイル以上 かつ 1MB 以上
-                if (descFiles.Count < 3) continue;
-                long totalBytes = descFiles.Sum(f => f.Length);
-                if (totalBytes < 1024 * 1024) continue;
+                if (agg.TotalFileCount < 3) continue;
+                if (agg.TotalBytes < 1024 * 1024) continue;
 
                 // 配下全ファイルの Max(LastWriteTime)
-                var maxModified = descFiles.Max(f => f.LastWriteTime);
-                if (maxModified >= dormantCutoff) continue; // 3年以内に1件でも更新があれば墓場ではない
-
-                // 直近1年以内に閲覧されたファイルがあるか
-                bool hasRecentAccess = descFiles.Any(f => f.LastAccessTime >= recentAccessCutoff && f.LastAccessTime <= now.AddDays(1));
-                if (hasRecentAccess) continue; // 現場が閲覧中なら保護
+                if (agg.TotalMaxWrite >= dormantCutoff) continue; // 3年以内に1件でも更新があれば墓場ではない
+                if (agg.TotalHasRecentAccess) continue; // 現場が閲覧中なら保護
 
                 // フォルダー名のヒューリスティクス判定
+                string dir = agg.Path;
                 string dirName = Path.GetFileName(dir.TrimEnd('\\', '/'));
                 bool hasGraveyardKeyword = GraveyardKeywords.Any(kw => dirName.Contains(kw, StringComparison.OrdinalIgnoreCase));
 
@@ -351,7 +426,7 @@ namespace FolderMorpher.Services
                     score += 10;
                     breakdown.Add(new ScoreFactorItem { NameJa = $"墓場キーワード含有 ({dirName})", NameEn = $"Graveyard keyword in folder name ({dirName})", Points = 10 });
                 }
-                double yearsOld = (now - maxModified).TotalDays / 365.25;
+                double yearsOld = (now - agg.TotalMaxWrite).TotalDays / 365.25;
                 if (yearsOld > 5.0)
                 {
                     score += 5;
@@ -361,8 +436,8 @@ namespace FolderMorpher.Services
 
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                 string detail = isJa
-                    ? $"配下全ファイル ({descFiles.Count:N0}件 / {FormatHelper.FormatBytes(totalBytes, 1)}) が{yearsOld:F1}年間未更新・閲覧ゼロ"
-                    : $"All {descFiles.Count:N0} files ({FormatHelper.FormatBytes(totalBytes, 1)}) unedited and unread for {yearsOld:F1} years";
+                    ? $"配下全ファイル ({agg.TotalFileCount:N0}件 / {FormatHelper.FormatBytes(agg.TotalBytes, 1)}) が{yearsOld:F1}年間未更新・閲覧ゼロ"
+                    : $"All {agg.TotalFileCount:N0} files ({FormatHelper.FormatBytes(agg.TotalBytes, 1)}) unedited and unread for {yearsOld:F1} years";
 
                 // 代表エントリとしてフォルダー自体を AuditItem として登録
                 results.Add(new AuditItem
@@ -370,9 +445,9 @@ namespace FolderMorpher.Services
                     FullPath = dir,
                     FileName = $"📁 {dirName}/ (フォルダー全体)",
                     DirectoryPath = Path.GetDirectoryName(dir) ?? dir,
-                    Size = totalBytes,
-                    LastWriteTime = maxModified,
-                    LastAccessTime = descFiles.Max(f => f.LastAccessTime),
+                    Size = agg.TotalBytes,
+                    LastWriteTime = agg.TotalMaxWrite,
+                    LastAccessTime = agg.TotalMaxAccess,
                     IssueType = AuditIssueType.GraveyardTree,
                     Detail = detail,
                     WasteScore = score,

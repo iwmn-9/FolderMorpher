@@ -1058,3 +1058,43 @@
      - `RegressionTestSuite.Audit.cs`: `ScoreBreakdown` 整合性、および `AuditIgnoreService` の登録・変更時自動復帰・解除動作を自動検証。
      - `RegressionTestSuite.Localization.cs`: 日英両言語での `ConfidenceDisplay` 判定を自動検証。
      - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
+
+---
+
+### ADR 90: SharedIoGovernor（I/O並列度統合ガバナー）＆ Large File Pipeline（分散Probe）＆ BoundedChannel Backpressure ＆ 新Audit O(N)ボトムアップ集約 ＆ Ignore Canonical化
+*(v2.2.17 本番施工 & ADR 90)*
+
+- **背景 & 動機**:
+  - **1. AdaptiveConcurrency の分裂と合算スパイク（I/Oガバナンスの欠如）**:
+    - `SafeFileEnumerator`（列挙側）と `SearchEngineService`（本文検索側）がそれぞれ独立に `AdaptiveConcurrencyController` を持っていたため、同一UNCサーバーに対して列挙4並列＋本文4並列の合計最大8並列が走り、サーバー負荷のスパイクやスロットリングを招く危険があった。
+  - **2. 50MB超ファイルの足切りと巨大ファイル本文検索の不在**:
+    - `MaxSearchFileSize = 50MB` の一律足切りにより、50MBを超える大容量ログファイル、CSV、ダンプ等の本文検索が一切行えなかった。しかし丸ごと全走査すると巨大ファイルのI/Oで検索がスタックするジレンマがあった。
+  - **3. Channelの無制限キューイング（メモリ肥大化）**:
+    - Producer-Consumerパイプラインが `Channel.CreateUnbounded` であったため、超高速列挙時にキューが数万件滞留しメモリを浪費するリスクがあった。
+  - **4. 墓場フォルダー・展開済ZIP判定の計算量 $O(D^2)$（大規模ファイルサーバーでの遅延）**:
+    - 各フォルダーごとに配下の全フォルダーを `StartsWith` で再帰スキャンしていたため、フォルダー階層数 $D$ に対して $O(D^2)$ の走査が発生し、10万ディレクトリ規模でCPUとメモリを圧迫していた。
+  - **5. ネットワークドライブ（Z:\）とUNC（\\server\share）の除外リスト二重化**:
+    - `AuditIgnoreService` が生パスをキーとしていたため、`Z:\` で除外したファイルが UNC パスでの走査時に再検出される不整合があった。
+- **施工内容**:
+  - **1. SharedIoGovernor による UNC Root / ボリューム単位の並列度一本化 (`Services/SharedIoGovernor.cs`)**:
+    - `PathCanonicalizer.GetVolumeOrShareRoot(path)` により `\\server\share` または `C:` を抽出し、ルート単位で単一の `AdaptiveConcurrencyController` を共有・再利用。
+    - 列挙側（`SafeFileEnumerator`）と本文検索側（`SearchEngineService`）の合算負荷を完全に単一ガバナー下で統制。
+  - **2. Large File Pipeline & 分散Probeによる巨大ファイル超高速スポット判定 (`Services/ContentExtractionService.cs`)**:
+    - 50MB足切りを撤廃。
+    - 50MB超ファイルに対して、先頭256KB、末尾256KB、中間ブロック（25%, 50%, 75% 各128KB）をスポット検査する `ProbeLargeFileContentAsync` を先行実行。
+    - Aho-Corasick 多パターン照合により、見当違いのファイルは数ミリ秒で即座に脱落、キーワードを含むファイルは全走査することなく即時スニペット付きでヒット確定。
+  - **3. BoundedChannel (2048件) による Backpressure 同期 (`Services/SearchEngineService.cs`)**:
+    - `Channel.CreateBounded<FileCandidateItem>(2048)` に改修し、本文検査の消費速度に合わせて列挙の生産速度を自然にBackpressure制御。メモリフットプリントを最小化。
+  - **4. 新Audit $O(N)$ ボトムアップ集約化 (`Services/HygieneCandidateEngine.cs`)**:
+    - 深さ降順（Deepest First）の1パス集約 `BuildFolderAggregationMap` を実装。
+    - 子フォルダーの合計容量・ファイル数・最新更新日時・アクセス日時を親へボトムアップ加算。
+    - 墓場フォルダーおよび展開済ZIPの判定をマップ参照により $O(1)$ 化し、全フォルダー走査を $O(N)$（$N$ はフォルダー総数）へ圧縮。
+  - **5. AuditIgnoreService の PathCanonicalizer 適用 (`Services/AuditIgnoreService.cs`)**:
+    - `IsIgnored`, `AddIgnore`, `RemoveIgnore`, `Load` のすべてで `PathCanonicalizer.Normalize` を適用。
+    - ドライブレターとUNCパス、大文字小文字、スラッシュ揺れを完全に同一視し、除外設定のポータビリティを保証。
+- **検証と恒久保護**:
+  - `Services/Testing/RegressionTestSuite.Search.cs`:
+    - Section 19 を新設し、`SharedIoGovernor` の UNC ルート/ボリューム同一性共有、`PathCanonicalizer.GetVolumeOrShareRoot`、55MBファイルの分散Probe合否判定を自動検証。
+  - `Services/Testing/RegressionTestSuite.Audit.cs`:
+    - 検証 6 に `PathCanonicalizer` による小文字/スラッシュ揺れパスの除外一致を自動検証。
+  - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。

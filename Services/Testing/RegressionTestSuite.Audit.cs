@@ -971,6 +971,11 @@ namespace FolderMorpher.Services.Testing
                 if (!AuditIgnoreService.Instance.IsIgnored(testFilePath, testFileSize, testLastWrite))
                     throw new InvalidOperationException("File should BE ignored after AddIgnore");
 
+                // Canonical 化による大文字小文字・スラッシュ揺れ吸収の検証
+                string variantPath = testFilePath.ToLowerInvariant().Replace('\\', '/');
+                if (!AuditIgnoreService.Instance.IsIgnored(variantPath, testFileSize, testLastWrite))
+                    throw new InvalidOperationException("File should BE ignored even with lowercase/forward-slash variant path (PathCanonicalizer)");
+
                 // ファイルサイズ変更で自動復帰
                 if (AuditIgnoreService.Instance.IsIgnored(testFilePath, testFileSize + 1, testLastWrite))
                     throw new InvalidOperationException("File should NOT be ignored when size changes");

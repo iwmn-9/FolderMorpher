@@ -163,7 +163,7 @@ namespace FolderMorpher.Services
             var folderQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
             bool matchAll = searchPattern == "*.*" || searchPattern == "*";
             int scannedFilesCount = 0;
-            var controller = new AdaptiveConcurrencyController();
+            var controller = SharedIoGovernor.GetController(rootPath);
             int maxWorkers = AdaptiveConcurrencyController.MaxConcurrency; // 4ワーカーまで待機可能
 
             // ★ Sol指摘: Worker起動レースの解消

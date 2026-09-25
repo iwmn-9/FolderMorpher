@@ -337,6 +337,116 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
+        /// 【Large File Pipeline - ADR 90】50MB超の巨大ファイル（ログ、CSV、ダンプ等）に対して、
+        /// 先頭・末尾・中間（複数ポイント）をスポット検査（分散Probe）し、早期発見・早期判定を行います。
+        /// 一致が確認できた場合は、巨大ファイル全体を読み切ることなく数ミリ秒で即座にスニペットを返却します。
+        /// </summary>
+        public static async Task<string?> ProbeLargeFileContentAsync(
+            string filePath,
+            long fileSize,
+            IReadOnlyList<List<string>> requiredGroups,
+            CancellationToken ct)
+        {
+            if (requiredGroups.Count == 0 || fileSize == 0) return null;
+
+            try
+            {
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.RandomAccess | FileOptions.Asynchronous);
+
+                // エンコーディングの自動判別（先頭ブロックから）
+                Encoding encoding = DetectTextEncoding(fs);
+
+                var patterns = new List<string>();
+                var patternToGroup = new List<int>();
+                for (int g = 0; g < requiredGroups.Count; g++)
+                {
+                    foreach (var kw in requiredGroups[g])
+                    {
+                        if (!string.IsNullOrWhiteSpace(kw))
+                        {
+                            patterns.Add(kw);
+                            patternToGroup.Add(g);
+                        }
+                    }
+                }
+                if (patterns.Count == 0) return null;
+
+                var ac = new AhoCorasickSearcher(patterns, ignoreCase: true);
+
+                // Probe ウィンドウ（先頭256KB、末尾256KB、1/4地点128KB、2/4地点128KB、3/4地点128KB）
+                var probeOffsets = new List<(long offset, int length)>();
+
+                const int WindowSizeHeadTail = 256 * 1024;
+                const int WindowSizeMid = 128 * 1024;
+
+                // 1. 先頭
+                probeOffsets.Add((0, (int)Math.Min(fileSize, WindowSizeHeadTail)));
+
+                // 2. 末尾
+                if (fileSize > WindowSizeHeadTail * 2)
+                {
+                    long tailOffset = Math.Max(0, fileSize - WindowSizeHeadTail);
+                    probeOffsets.Add((tailOffset, (int)Math.Min(fileSize - tailOffset, WindowSizeHeadTail)));
+                }
+
+                // 3. 中間 25%, 50%, 75%
+                if (fileSize > WindowSizeHeadTail * 4)
+                {
+                    long p25 = fileSize / 4;
+                    long p50 = fileSize / 2;
+                    long p75 = (fileSize * 3) / 4;
+
+                    probeOffsets.Add((p25, (int)Math.Min(fileSize - p25, WindowSizeMid)));
+                    probeOffsets.Add((p50, (int)Math.Min(fileSize - p50, WindowSizeMid)));
+                    probeOffsets.Add((p75, (int)Math.Min(fileSize - p75, WindowSizeMid)));
+                }
+
+                var satisfiedGroups = new HashSet<int>();
+                string? firstSnippet = null;
+
+                foreach (var (offset, len) in probeOffsets)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    fs.Position = offset;
+                    byte[] buffer = new byte[len];
+                    int bytesRead = await fs.ReadAsync(buffer.AsMemory(0, len), ct);
+                    if (bytesRead <= 0) continue;
+
+                    string chunk = encoding.GetString(buffer, 0, bytesRead);
+                    var matches = ac.FindMatchedIndices(chunk);
+                    foreach (var pIdx in matches)
+                    {
+                        int gIdx = patternToGroup[pIdx];
+                        satisfiedGroups.Add(gIdx);
+                        if (firstSnippet == null)
+                        {
+                            string p = ac.Patterns[pIdx];
+                            int hitPos = chunk.IndexOf(p, StringComparison.OrdinalIgnoreCase);
+                            if (hitPos >= 0)
+                            {
+                                int sStart = Math.Max(0, hitPos - DefaultSnippetRadius);
+                                int sLen = Math.Min(chunk.Length - sStart, p.Length + DefaultSnippetRadius * 2);
+                                firstSnippet = chunk.Substring(sStart, sLen).Replace('\r', ' ').Replace('\n', ' ');
+                            }
+                        }
+                    }
+
+                    // 全ての必須グループがProbeウィンドウ内で充足されたら即時合格！
+                    if (satisfiedGroups.Count == requiredGroups.Count)
+                    {
+                        return firstSnippet ?? "Match in Probe Window";
+                    }
+                }
+
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Officeファイル（Excel/Word/PowerPoint）をストリーム走査し、キーワード群の包含判定を高速実行（Early Exit対応）。
         /// </summary>
         public static bool SearchOfficeContent(string filePath, IReadOnlyList<string> keywords, out string snippet)

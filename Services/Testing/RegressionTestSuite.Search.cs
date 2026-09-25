@@ -1526,6 +1526,64 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(testRoot, recursive: true); } catch { }
                 }
             }
+
+            // 19. ADR 90: SharedIoGovernor & Large File Distributed Probe 検証
+            {
+                // A. SharedIoGovernor ＆ PathCanonicalizer.GetVolumeOrShareRoot 検証
+                SharedIoGovernor.Reset();
+                var c1 = SharedIoGovernor.GetController(@"C:\Users\Alpha\file1.txt");
+                var c2 = SharedIoGovernor.GetController(@"c:\Windows\System32");
+                if (!ReferenceEquals(c1, c2))
+                    throw new Exception("ADR 90 failed: SharedIoGovernor did not share instance for same local volume (C:).");
+
+                var unc1 = SharedIoGovernor.GetController(@"\\file-server01\ShareA\SubDir1\Doc.txt");
+                var unc2 = SharedIoGovernor.GetController(@"\\FILE-SERVER01\shareA\SubDir2\Other.xlsx");
+                if (!ReferenceEquals(unc1, unc2))
+                    throw new Exception("ADR 90 failed: SharedIoGovernor did not share instance for same UNC share (case-insensitive).");
+
+                var unc3 = SharedIoGovernor.GetController(@"\\file-server01\ShareB\Data.csv");
+                if (ReferenceEquals(unc1, unc3))
+                    throw new Exception("ADR 90 failed: SharedIoGovernor incorrectly shared instance across different UNC shares.");
+
+                if (!SharedIoGovernor.ActiveRoots.Contains("C:") || !SharedIoGovernor.ActiveRoots.Contains(@"\\file-server01\ShareA"))
+                    throw new Exception("ADR 90 failed: SharedIoGovernor.ActiveRoots did not contain expected roots.");
+
+                // B. Large File Pipeline ＆ 分散Probe（先頭・末尾・中間ブロック高速照合）検証
+                string probeDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_ProbeTest_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(probeDir);
+                try
+                {
+                    string largeFilePath = Path.Combine(probeDir, "LargeSparseTest.bin");
+                    // 55MB の巨大ファイルをシミュレート（末尾付近にマーカーを書き込む）
+                    long targetSize = 55L * 1024 * 1024;
+                    using (var fs = new FileStream(largeFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        fs.SetLength(targetSize);
+                        // 先頭 4096 バイトを UTF-8 テキストで満たし、UTF-8 判別を確実にする（スパースファイルの0埋めによる誤判定防止）
+                        byte[] header = Encoding.UTF8.GetBytes(new string('=', 4096) + "\r\n");
+                        fs.Write(header, 0, header.Length);
+
+                        // 50% 地点にマーカーを書き込む
+                        fs.Seek(targetSize / 2, SeekOrigin.Begin);
+                        byte[] marker = Encoding.UTF8.GetBytes("Special_Probe_Secret_Marker_2026");
+                        fs.Write(marker, 0, marker.Length);
+                    }
+
+                    var groupsHit = new List<List<string>> { new List<string> { "Special_Probe_Secret_Marker_2026" } };
+                    string? snippetHit = await ContentExtractionService.ProbeLargeFileContentAsync(largeFilePath, targetSize, groupsHit, CancellationToken.None);
+                    if (string.IsNullOrEmpty(snippetHit) || !snippetHit.Contains("Special_Probe_Secret_Marker_2026"))
+                        throw new Exception("ADR 90 failed: ProbeLargeFileContentAsync failed to detect keyword at 50% probe point.");
+
+                    var groupsMiss = new List<List<string>> { new List<string> { "NonExistentProbePattern_XYZ" } };
+                    string? snippetMiss = await ContentExtractionService.ProbeLargeFileContentAsync(largeFilePath, targetSize, groupsMiss, CancellationToken.None);
+                    if (!string.IsNullOrEmpty(snippetMiss))
+                        throw new Exception("ADR 90 failed: ProbeLargeFileContentAsync returned snippet for non-existent keyword.");
+                }
+                finally
+                {
+                    try { Directory.Delete(probeDir, recursive: true); } catch { }
+                }
+            }
         }
     }
 }

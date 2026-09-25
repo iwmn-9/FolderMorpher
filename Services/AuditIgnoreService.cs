@@ -32,13 +32,22 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
+        private static string NormalizeKey(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return string.Empty;
+            return PathCanonicalizer.Normalize(path);
+        }
+
+        /// <summary>
         /// 指定されたファイルが除外リストに登録されており、かつ変更されていない（サイズ・更新日時が一致）か判定します。
+        /// ネットワークドライブ（Z:\）とUNCパス（\\server\share）は同一視されます。
         /// </summary>
         public bool IsIgnored(string fullPath, long fileSizeBytes, DateTime lastWriteTime)
         {
             if (string.IsNullOrEmpty(fullPath)) return false;
+            string key = NormalizeKey(fullPath);
 
-            if (_ignoreMap.TryGetValue(fullPath, out var item))
+            if (_ignoreMap.TryGetValue(key, out var item))
             {
                 // ファイルサイズと更新日時のUtcTicksが一致していれば「変更なし」と判定し除外
                 long ticks = lastWriteTime.ToUniversalTime().Ticks;
@@ -48,7 +57,7 @@ namespace FolderMorpher.Services
                 }
 
                 // 変更があった場合は除外リストから自動解除
-                _ignoreMap.TryRemove(fullPath, out _);
+                _ignoreMap.TryRemove(key, out _);
                 Save();
             }
 
@@ -61,6 +70,7 @@ namespace FolderMorpher.Services
         public void AddIgnore(AuditItem item)
         {
             if (item == null || string.IsNullOrEmpty(item.FullPath)) return;
+            string key = NormalizeKey(item.FullPath);
 
             var entry = new AuditIgnoreItem
             {
@@ -70,7 +80,7 @@ namespace FolderMorpher.Services
                 IgnoredAt = DateTime.Now
             };
 
-            _ignoreMap[item.FullPath] = entry;
+            _ignoreMap[key] = entry;
             Save();
         }
 
@@ -80,7 +90,8 @@ namespace FolderMorpher.Services
         public bool RemoveIgnore(string fullPath)
         {
             if (string.IsNullOrEmpty(fullPath)) return false;
-            bool removed = _ignoreMap.TryRemove(fullPath, out _);
+            string key = NormalizeKey(fullPath);
+            bool removed = _ignoreMap.TryRemove(key, out _);
             if (removed) Save();
             return removed;
         }
@@ -118,7 +129,8 @@ namespace FolderMorpher.Services
                     {
                         if (!string.IsNullOrEmpty(item.FullPath))
                         {
-                            _ignoreMap[item.FullPath] = item;
+                            string key = NormalizeKey(item.FullPath);
+                            _ignoreMap[key] = item;
                         }
                     }
                 }
