@@ -196,6 +196,8 @@ namespace FolderMorpher.Services
                 int deepProcessed = 0;
                 var deferredLargeFiles = new System.Collections.Concurrent.ConcurrentBag<SearchResultItem>();
 
+                var sharedContext = CreateSearchContext(query);
+
                 var consumerTasks = Enumerable.Range(0, workerCount).Select(async _ =>
                 {
                     while (await contentChannel.Reader.WaitToReadAsync(ct))
@@ -211,7 +213,7 @@ namespace FolderMorpher.Services
 
                             try
                             {
-                                var (isHit, isDeferred) = await InspectContentItemAsync(item, query, hasOfficeLinkReq, officeLinkKeyword, ct, allowDeferred: true);
+                                var (isHit, isDeferred) = await InspectContentItemAsync(item, query, hasOfficeLinkReq, officeLinkKeyword, ct, allowDeferred: true, sharedContext: sharedContext);
                                 if (isHit)
                                 {
                                     EmitHit(item);
@@ -402,7 +404,7 @@ namespace FolderMorpher.Services
                         bool isError = false;
                         try
                         {
-                            var (isHit, _) = await InspectContentItemAsync(dItem, query, hasOfficeLinkReq, officeLinkKeyword, ct, allowDeferred: false);
+                            var (isHit, _) = await InspectContentItemAsync(dItem, query, hasOfficeLinkReq, officeLinkKeyword, ct, allowDeferred: false, sharedContext: sharedContext);
                             if (isHit)
                             {
                                 EmitHit(dItem);
@@ -836,6 +838,8 @@ namespace FolderMorpher.Services
                 }
             }
 
+            var sharedContext = CreateSearchContext(query);
+
             await Parallel.ForEachAsync(validFiles, po, async (item, token) =>
             {
                 token.ThrowIfCancellationRequested();
@@ -847,7 +851,7 @@ namespace FolderMorpher.Services
 
                 try
                 {
-                    var (isHit, isDeferred) = await InspectContentItemAsync(item, query, hasOfficeLinkReq, officeLinkKeyword, token, allowDeferred: true);
+                    var (isHit, isDeferred) = await InspectContentItemAsync(item, query, hasOfficeLinkReq, officeLinkKeyword, token, allowDeferred: true, sharedContext: sharedContext);
                     if (isHit)
                     {
                         EmitHit(item);
@@ -897,7 +901,7 @@ namespace FolderMorpher.Services
                     bool isError = false;
                     try
                     {
-                        var (isHit, _) = await InspectContentItemAsync(dItem, query, hasOfficeLinkReq, officeLinkKeyword, ct, allowDeferred: false);
+                        var (isHit, _) = await InspectContentItemAsync(dItem, query, hasOfficeLinkReq, officeLinkKeyword, ct, allowDeferred: false, sharedContext: sharedContext);
                         if (isHit)
                         {
                             EmitHit(dItem);
@@ -928,9 +932,56 @@ namespace FolderMorpher.Services
             return matched.ToList();
         }
 
+        private sealed class QuerySearchContext
+        {
+            public IReadOnlyList<List<string>> Groups { get; }
+            public string? SingleKeyword { get; }
+            public AhoCorasickSearcher? Ac { get; }
+            public List<int>? PatternToGroup { get; }
+
+            public QuerySearchContext(IReadOnlyList<List<string>> groups)
+            {
+                Groups = groups;
+                if (groups.Count == 1 && groups[0].Count == 1)
+                {
+                    SingleKeyword = groups[0][0];
+                }
+                else if (groups.Count > 0)
+                {
+                    Ac = PdfSearchHelper.CreateSearcher(groups, out var p2g);
+                    PatternToGroup = p2g;
+                }
+            }
+        }
+
+        private static QuerySearchContext CreateSearchContext(SearchQuery query)
+        {
+            var groups = new List<List<string>>();
+            if (!string.IsNullOrEmpty(query.ContentKeyword))
+            {
+                groups.Add(new List<string> { query.ContentKeyword });
+            }
+            if (query.SearchContentMode)
+            {
+                var baseGroups = query.KeywordGroups.Count > 0
+                    ? query.KeywordGroups.ToList()
+                    : query.Keywords.Select(k => new List<string> { k }).ToList();
+                groups.AddRange(baseGroups);
+                foreach (var phr in query.ExactPhrases)
+                {
+                    if (!string.IsNullOrWhiteSpace(phr))
+                    {
+                        groups.Add(new List<string> { phr });
+                    }
+                }
+            }
+            return new QuerySearchContext(groups);
+        }
+
         /// <summary>
         /// 単一ファイルの本文/リンク検査を行い、条件に合致するか判定（Early Exit・高速スニペット付き）
         /// 【ADR 91】巨大ファイルでProbe未ヒット時は allowDeferred=true なら (false, true) を返し、後回しにする。
+        /// 【ADR 95】クエリ単位で共有された QuerySearchContext を使用し、検索機械のファイル毎再生成を根絶。
         /// </summary>
         private static async Task<(bool isHit, bool isDeferred)> InspectContentItemAsync(
             SearchResultItem item,
@@ -938,7 +989,8 @@ namespace FolderMorpher.Services
             bool hasOfficeLinkReq,
             string? officeLinkKeyword,
             CancellationToken token,
-            bool allowDeferred = true)
+            bool allowDeferred = true,
+            QuerySearchContext? sharedContext = null)
         {
             string ext = Path.GetExtension(item.FullPath).ToLowerInvariant();
 
@@ -1011,7 +1063,19 @@ namespace FolderMorpher.Services
                 // 2. PDF (.pdf) with Windows IFilter and pure C# fallback
                 else if (PdfExtensions.Contains(ext))
                 {
-                    if (SearchPdfContentMultiple(item.FullPath, requiredGroups, out string snippet))
+                    bool isFullMatch = sharedContext != null && requiredGroups.Count == sharedContext.Groups.Count;
+                    bool pdfHit;
+                    string snippet;
+                    if (isFullMatch && sharedContext!.Ac != null)
+                    {
+                        pdfHit = PdfSearchHelper.SearchPdfContentMultiple(item.FullPath, sharedContext.Ac, sharedContext.PatternToGroup!, sharedContext.Groups.Count, out snippet);
+                    }
+                    else
+                    {
+                        pdfHit = SearchPdfContentMultiple(item.FullPath, requiredGroups, out snippet);
+                    }
+
+                    if (pdfHit)
                     {
                         item.ContentSnippet = snippet;
                         item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
@@ -1044,7 +1108,24 @@ namespace FolderMorpher.Services
                         }
                     }
 
-                    if (await ContentExtractionService.SearchTextContentAsync(item.FullPath, requiredGroups, token) is { } snippet)
+                    bool isFullMatch = sharedContext != null && requiredGroups.Count == sharedContext.Groups.Count;
+                    string? snippet;
+                    if (isFullMatch)
+                    {
+                        snippet = await ContentExtractionService.SearchTextContentWithBufferAsync(
+                            item.FullPath,
+                            sharedContext!.SingleKeyword,
+                            sharedContext.Ac,
+                            sharedContext.PatternToGroup,
+                            sharedContext.Groups.Count,
+                            token);
+                    }
+                    else
+                    {
+                        snippet = await ContentExtractionService.SearchTextContentAsync(item.FullPath, requiredGroups, token);
+                    }
+
+                    if (snippet is not null)
                     {
                         item.ContentSnippet = snippet;
                         item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
@@ -1080,7 +1161,7 @@ namespace FolderMorpher.Services
             snippet = string.Empty;
             try
             {
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var fs = ContentExtractionService.OpenBufferedReadStream(filePath);
                 using var zip = new ZipArchive(fs, ZipArchiveMode.Read, false);
 
                 foreach (var entry in zip.Entries)

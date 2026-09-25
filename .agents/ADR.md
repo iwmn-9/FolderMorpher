@@ -1224,4 +1224,41 @@
     - セクション 20: TreeCachePruningIndex の枝刈り判定、SafeFileEnumerator の枝刈り差分走査 parity、ContentExtractionService の単一キーワード高速パス（AVX2 / OrdinalIgnoreCase）を自動検証。
   - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
 
+---
+
+### ADR 95: Astra提唱 徹底的Live高速化 ＆ 書式分割保護 ＆ バッファ直接走査 ＆ 二重解析根絶
+*(v2.2.20 本番施工 & ADR 95)*
+
+- **背景 & 動機**:
+  - **1. PDF外れファイルにおける二重解析の発生**:
+    - Windows Native IFilter で正常に最後まで走査して「該当なし（CompleteNoMatch）」と判明したにもかかわらず、bool 返却値の曖昧さにより Pure C# フォールバック（PDFバイナリ全読み＋正規表現＋ストリーム解凍）が重複実行されていた。検索の大半を占める「外れファイル」ほど2倍の仕事をしていた。
+  - **2. Office 書式境界分割による検索漏れ（False Negative）＆ sharedStrings 二重読み**:
+    - Word/Excelでは `<w:t>契約</w:t><w:t>書</w:t>` のようにスタイルや境界でテキストが分断される場合があるが、従来のタグ除去ではタグごとに無条件で空白を挿入していたため、「契約 書」となり検索語「契約書」にヒットしなくなっていた。また生XMLに対する JIT Pre-Filter も同様の誤脱落を引き起こしていた。
+    - さらに Excel 走査において、先頭で `sharedStrings.xml` を読んだ後、後続の全体走査ループでも再度 `sharedStrings.xml` を開いて `ReadToEnd()` する二重読みが発生していた。
+  - **3. テキスト走査の行単位アロケーション（ReadLineAsync）＆ 検索機械のファイル毎再生成**:
+    - `ReadLineAsync` により行ごとに `string` をヒープ生成・GC させており、巨大ファイルや多行ログでオーバーヘッドとなっていた。また、各ファイル検査ごとに `new AhoCorasickSearcher` を再コンパイルしていた。
+  - **4. UNC 上の ZIP/PDF における細切れ Read/Seek による SMB 往復遅延**:
+    - 数百KB〜数MBの小〜中規模文書に対して遠隔 FileStream から直接 ZipArchive や PDF 解析を行うと、細かい Read/Seek が数十〜数百回発生し、SMBのRTT（往復遅延）が累積していた。
+  - **5. TreeCachePruningIndex の潜在的危険性（NTFS仕様起因の検索漏れ）**:
+    - NTFSでは親フォルダーの `LastWriteTime` は「既存ファイルの本文更新」では更新されないため、フォルダー日時一致で配下を全部スキップすると既存ファイルの編集を見逃す危険があった。
+- **施工内容**:
+  - **1. PDF 正常非一致と抽出失敗の厳格分離 (`Services/PdfSearchHelper.cs`)**:
+    - `PdfFilterStatus { Match, NoMatchComplete, FailedOrUnsupported }` を導入。
+    - IFilter で `FILTER_E_END_OF_CHUNKS` まで走査し切って一致しなかった場合は `NoMatchComplete` として即座に終了し、Pure C# フォールバックを完全スキップ。
+  - **2. 書式分割保護 ＆ sharedStrings 二重読み根絶 ＆ JIT誤脱落排除 (`Services/ContentExtractionService.cs`)**:
+    - `StripXmlTagsFast`: インライン要素（`<w:t>`, `<t>`, `<a:t>` 等）の境界では空白を挿入せず連続結合し、ブロック要素（`<w:p>`, `<w:tr>`, `<row>`, `<a:p>` 等）の境界でのみ空白を挿入。書式分割された単語を100%保護。
+    - 生XMLでの危険な JIT Pre-Filter を撤去し、タグ除去後のクリーンテキストで安全に照合。
+    - `sharedStrings.xml` を検査した後は `hasScannedSharedStrings` フラグにより後続ループでの再読を100%スキップ。充足済みグループも後続シートへ引き継ぎ。
+  - **3. ripgrep流 バッファ直接走査 ＆ 境界またぎオーバーラップ ＆ クエリ単位共有検索機械 (`Services/ContentExtractionService.cs`, `Services/SearchEngineService.cs`)**:
+    - `SearchTextContentWithBufferAsync`: 行単位の `ReadLineAsync` を完全撤去し、64KBスライディングバッファで直接走査。境界をまたぐキーワードを保護するため `MaxOverlap`（最大1024文字）を次バッファ先頭へ引き継ぎ。
+    - `QuerySearchContext`: クエリ全体のキーワードグループから `SingleKeyword` または `AhoCorasickSearcher` を検索開始時に1度だけコンパイルし、全ファイルワーカーで共有・再利用。
+  - **4. UNC 細切れ読みのメモリ一括展開 (`Services/ContentExtractionService.cs`, `OpenBufferedReadStream`)**:
+    - 20MB以下の Office / PDF ファイルは `File.ReadAllBytes` により一括でメモリへ読み込み `MemoryStream` として開く。UNC/SMBのSeek/Read往復遅延を根本から解消。
+  - **5. TreeCachePruningIndex の安全是正 (`Services/TreeCachePruningIndex.cs`)**:
+    - `EnableFolderTimestampPruning` プロパティ（既定値: `false`）を導入。通常時は検索漏れゼロの安全 Live 走査を保証し、オプトイン時のみ差分枝刈りを実行。
+- **検証と恒久保護**:
+  - `Services/Testing/RegressionTestSuite.Search.cs`:
+    - セクション 22: 書式分割 Word XML の「秘密保持契約書」連続抽出、64KB チャンク境界またぎキーワードのバッファ走査検出、TreeCachePruningIndex の安全モード（false 返却）、OpenBufferedReadStream のメモリ展開を自動検証。
+  - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
+
 

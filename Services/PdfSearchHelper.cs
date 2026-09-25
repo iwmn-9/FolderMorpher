@@ -75,8 +75,16 @@ namespace FolderMorpher.Services
 
         #endregion
 
+        private enum PdfFilterStatus
+        {
+            Match,
+            NoMatchComplete,
+            FailedOrUnsupported
+        }
+
         /// <summary>
-        /// Search for a keyword within a PDF file using IFilter first, falling back to pure C# stream scan.
+        /// Search for a keyword within a PDF file using IFilter first, falling back to pure C# stream scan
+        /// ONLY if IFilter failed or is unsupported (eliminating double-scanning on non-matching files).
         /// </summary>
         public static bool SearchPdfContent(string filePath, string keyword, out string snippet)
         {
@@ -86,9 +94,15 @@ namespace FolderMorpher.Services
             // 1. Try Windows Native IFilter (OS-level C++ Engine)
             try
             {
-                if (SearchWithIFilter(filePath, keyword, out snippet))
+                var status = SearchWithIFilter(filePath, keyword, out snippet);
+                if (status == PdfFilterStatus.Match)
                 {
                     return true;
+                }
+                if (status == PdfFilterStatus.NoMatchComplete)
+                {
+                    // ★ 正常に最後まで走査して該当なし。重いPure C#フォールバックをスキップ（二重解析根絶）
+                    return false;
                 }
             }
             catch
@@ -118,11 +132,63 @@ namespace FolderMorpher.Services
         /// </summary>
         public static bool SearchPdfContentMultiple(string filePath, IReadOnlyList<List<string>> requiredGroups, out string snippet)
         {
+            var ac = CreateSearcher(requiredGroups, out var patternToGroup);
+            if (ac == null)
+            {
+                snippet = string.Empty;
+                return false;
+            }
+            return SearchPdfContentMultiple(filePath, ac, patternToGroup, requiredGroups.Count, out snippet);
+        }
+
+        /// <summary>
+        /// 事前にコンパイル済みの AhoCorasickSearcher を再利用して PDF を走査（クエリ単位共有）。
+        /// </summary>
+        public static bool SearchPdfContentMultiple(
+            string filePath,
+            AhoCorasickSearcher ac,
+            List<int> patternToGroup,
+            int totalGroups,
+            out string snippet)
+        {
             snippet = string.Empty;
-            if (requiredGroups == null || requiredGroups.Count == 0 || !File.Exists(filePath)) return false;
+            if (!File.Exists(filePath)) return false;
+
+            // 1. Windows Native IFilter でワンパス走査
+            try
+            {
+                var status = SearchMultipleWithIFilter(filePath, ac, patternToGroup, totalGroups, out snippet);
+                if (status == PdfFilterStatus.Match)
+                {
+                    return true;
+                }
+                if (status == PdfFilterStatus.NoMatchComplete)
+                {
+                    // ★ 正常に最後まで走査して該当なし。重いPure C#フォールバックをスキップ（二重解析根絶）
+                    return false;
+                }
+            }
+            catch { }
+
+            // 2. Pure C# Fallback でワンパス走査（IFilter未導入または失敗時のみ）
+            try
+            {
+                if (SearchMultipleWithStreamFallback(filePath, ac, patternToGroup, totalGroups, out snippet))
+                {
+                    return true;
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        public static AhoCorasickSearcher? CreateSearcher(IReadOnlyList<List<string>> requiredGroups, out List<int> patternToGroup)
+        {
+            patternToGroup = new List<int>();
+            if (requiredGroups == null || requiredGroups.Count == 0) return null;
 
             var patterns = new List<string>();
-            var patternToGroup = new List<int>();
             for (int g = 0; g < requiredGroups.Count; g++)
             {
                 foreach (var kw in requiredGroups[g])
@@ -135,31 +201,8 @@ namespace FolderMorpher.Services
                 }
             }
 
-            if (patterns.Count == 0) return false;
-
-            var ac = new AhoCorasickSearcher(patterns, ignoreCase: true);
-
-            // 1. Windows Native IFilter でワンパス走査
-            try
-            {
-                if (SearchMultipleWithIFilter(filePath, ac, patternToGroup, requiredGroups.Count, out snippet))
-                {
-                    return true;
-                }
-            }
-            catch { }
-
-            // 2. Pure C# Fallback でワンパス走査
-            try
-            {
-                if (SearchMultipleWithStreamFallback(filePath, ac, patternToGroup, requiredGroups.Count, out snippet))
-                {
-                    return true;
-                }
-            }
-            catch { }
-
-            return false;
+            if (patterns.Count == 0) return null;
+            return new AhoCorasickSearcher(patterns, ignoreCase: true);
         }
         /// </summary>
         public static string ExtractAllText(string filePath, int maxChars = 200000)
@@ -264,23 +307,33 @@ namespace FolderMorpher.Services
             return string.Empty;
         }
 
-        private static bool SearchWithIFilter(string filePath, string keyword, out string snippet)
+        private static PdfFilterStatus SearchWithIFilter(string filePath, string keyword, out string snippet)
         {
             snippet = string.Empty;
             Guid riid = IFilterGuid;
             int hr = LoadIFilter(filePath, null, ref riid, out object? obj);
-            if (hr != 0 || obj is not IFilter filter) return false;
+            if (hr != 0 || obj is not IFilter filter) return PdfFilterStatus.FailedOrUnsupported;
 
             try
             {
                 hr = filter.Init(IFILTER_INIT_ALL, 0, 0, out _);
-                if (hr != 0) return false;
+                if (hr != 0) return PdfFilterStatus.FailedOrUnsupported;
 
                 char[] buffer = new char[4096];
                 var sb = new StringBuilder();
 
-                while (filter.GetChunk(out var stat) == 0)
+                while (true)
                 {
+                    int chunkHr = filter.GetChunk(out var stat);
+                    if (chunkHr != 0)
+                    {
+                        if (chunkHr == FILTER_E_END_OF_CHUNKS)
+                        {
+                            return PdfFilterStatus.NoMatchComplete; // 正常に最後まで走査完了
+                        }
+                        return PdfFilterStatus.FailedOrUnsupported;
+                    }
+
                     if ((stat.flags & CHUNK_TEXT) != 0)
                     {
                         while (true)
@@ -295,7 +348,7 @@ namespace FolderMorpher.Services
                                 if (idx >= 0)
                                 {
                                     snippet = ExtractSnippet(currentText, idx, keyword.Length);
-                                    return true; // Early Exit!
+                                    return PdfFilterStatus.Match; // Early Exit!
                                 }
 
                                 if (sb.Length > 8192)
@@ -312,12 +365,14 @@ namespace FolderMorpher.Services
                     }
                 }
             }
+            catch
+            {
+                return PdfFilterStatus.FailedOrUnsupported;
+            }
             finally
             {
                 Marshal.ReleaseComObject(filter);
             }
-
-            return false;
         }
 
         private static bool SearchWithStreamFallback(string filePath, string keyword, out string snippet)
@@ -394,7 +449,7 @@ namespace FolderMorpher.Services
             return false;
         }
 
-        private static bool SearchMultipleWithIFilter(
+        private static PdfFilterStatus SearchMultipleWithIFilter(
             string filePath,
             AhoCorasickSearcher ac,
             List<int> patternToGroup,
@@ -404,19 +459,29 @@ namespace FolderMorpher.Services
             snippet = string.Empty;
             Guid riid = IFilterGuid;
             int hr = LoadIFilter(filePath, null, ref riid, out object? obj);
-            if (hr != 0 || obj is not IFilter filter) return false;
+            if (hr != 0 || obj is not IFilter filter) return PdfFilterStatus.FailedOrUnsupported;
 
             try
             {
                 hr = filter.Init(IFILTER_INIT_ALL, 0, 0, out _);
-                if (hr != 0) return false;
+                if (hr != 0) return PdfFilterStatus.FailedOrUnsupported;
 
                 char[] buffer = new char[4096];
                 var sb = new StringBuilder();
                 var satisfiedGroups = new HashSet<int>();
 
-                while (filter.GetChunk(out var stat) == 0)
+                while (true)
                 {
+                    int chunkHr = filter.GetChunk(out var stat);
+                    if (chunkHr != 0)
+                    {
+                        if (chunkHr == FILTER_E_END_OF_CHUNKS)
+                        {
+                            return PdfFilterStatus.NoMatchComplete; // 正常に最後まで走査完了
+                        }
+                        return PdfFilterStatus.FailedOrUnsupported;
+                    }
+
                     if ((stat.flags & CHUNK_TEXT) != 0)
                     {
                         while (true)
@@ -446,7 +511,7 @@ namespace FolderMorpher.Services
 
                                 if (satisfiedGroups.Count == totalGroups)
                                 {
-                                    return true; // 全グループ充足で即座に Early Exit!
+                                    return PdfFilterStatus.Match; // 全グループ充足で即座に Early Exit!
                                 }
 
                                 if (sb.Length > 8192)
@@ -463,12 +528,14 @@ namespace FolderMorpher.Services
                     }
                 }
             }
+            catch
+            {
+                return PdfFilterStatus.FailedOrUnsupported;
+            }
             finally
             {
                 Marshal.ReleaseComObject(filter);
             }
-
-            return false;
         }
 
         private static bool SearchMultipleWithStreamFallback(

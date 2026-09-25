@@ -1621,7 +1621,10 @@ namespace FolderMorpher.Services.Testing
                 subNode1.Children.Add(file1);
                 rootNode.Children.Add(subNode1);
 
-                var pruningIndex = new FolderMorpher.Services.TreeCachePruningIndex(rootNode);
+                var pruningIndex = new FolderMorpher.Services.TreeCachePruningIndex(rootNode)
+                {
+                    EnableFolderTimestampPruning = true
+                };
 
                 // 一致するフォルダー: true が返り、配下ファイルが展開されること
                 bool prunedSuccess = pruningIndex.TryGetPrunedEntries(@"C:\TestShare\Root\UnchangedFolder", now.AddHours(-2), includeDirectories: false, out var prunedEntries);
@@ -1683,7 +1686,10 @@ namespace FolderMorpher.Services.Testing
                     };
                     cacheRoot.Children.Add(cacheModified);
 
-                    var pIndex = new FolderMorpher.Services.TreeCachePruningIndex(cacheRoot);
+                    var pIndex = new FolderMorpher.Services.TreeCachePruningIndex(cacheRoot)
+                    {
+                        EnableFolderTimestampPruning = true
+                    };
 
                     // SafeFileEnumerator で走査実行
                     var entries = new List<FolderMorpher.Services.ScannedFileEntry>();
@@ -1772,6 +1778,71 @@ namespace FolderMorpher.Services.Testing
                 var acceleratedCandidates = await accelerator.TryAccelerateAsync(@"\\mock-server\share\sub", qDummy, CancellationToken.None);
                 if (acceleratedCandidates == null || acceleratedCandidates.Count != 2 || acceleratedCandidates[0] != mockCandidates[0])
                     throw new Exception("ADR 94 failed: ServerSearchAccelerator failed to return candidates from registered provider.");
+            }
+
+            // -------------------------------------------------------------
+            // 22. ADR 95: Astra提唱 徹底的Live高速化 ＆ 書式分割保護 ＆ バッファ直接走査
+            // -------------------------------------------------------------
+            {
+                // A. 書式分割Word/Excel対応（Format-Split Boundary Protection）
+                string splitWordXml = "<w:p><w:r><w:t>秘密</w:t></w:r><w:r><w:t>保持</w:t></w:r><w:r><w:t>契約書</w:t></w:r></w:p><w:p><w:r><w:t>第1条</w:t></w:r></w:p>";
+                string cleaned = ContentExtractionService.StripXmlTagsFast(splitWordXml);
+                if (!cleaned.Contains("秘密保持契約書"))
+                    throw new Exception($"ADR 95 failed: StripXmlTagsFast failed to preserve format-split text. Got: '{cleaned}'");
+                if (!cleaned.Contains("契約書 第1条"))
+                    throw new Exception($"ADR 95 failed: StripXmlTagsFast should insert space at block boundaries (<w:p>). Got: '{cleaned}'");
+
+                // B. バッファ境界またぎ直接走査（Sliding Buffer Overlap）
+                string tempDir = Path.Combine(Path.GetTempPath(), "fm_test_adr95_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(tempDir);
+                try
+                {
+                    string boundaryFile = Path.Combine(tempDir, "boundary_test.txt");
+                    // 65536 バイト境界の直前にキーワードがまたがるように配置 (65530 文字目に配置)
+                    const string kw = "SUPER_SECRET_KEYWORD";
+                    var sb = new StringBuilder();
+                    sb.Append(new string('A', 65530));
+                    sb.Append(kw);
+                    sb.Append(new string('B', 10000));
+                    File.WriteAllText(boundaryFile, sb.ToString(), Encoding.UTF8);
+
+                    var qBoundary = SearchQueryParser.Parse(kw);
+                    qBoundary.SearchContentMode = true;
+
+                    var snippet = await ContentExtractionService.SearchTextContentWithBufferAsync(
+                        boundaryFile,
+                        kw,
+                        null,
+                        null,
+                        1,
+                        CancellationToken.None);
+
+                    if (snippet == null || !snippet.Contains(kw))
+                        throw new Exception("ADR 95 failed: SearchTextContentWithBufferAsync missed keyword across 64KB chunk boundary.");
+
+                    // C. 安全是正検証: TreeCachePruningIndex の安全化
+                    var mockRoot = new FileItemNode
+                    {
+                        FullPath = @"C:\Mock",
+                        LastModified = DateTime.UtcNow,
+                        IsDirectory = true
+                    };
+                    var pruner = new TreeCachePruningIndex(mockRoot);
+                    if (pruner.TryGetPrunedEntries(@"C:\Mock", DateTime.UtcNow, true, out _))
+                        throw new Exception("ADR 95 failed: TreeCachePruningIndex must return false to avoid skipping modified files.");
+
+                    // D. OpenBufferedReadStream メモリ展開の検証
+                    using var memStream = ContentExtractionService.OpenBufferedReadStream(boundaryFile);
+                    if (memStream is not MemoryStream)
+                        throw new Exception("ADR 95 failed: OpenBufferedReadStream should buffer files under 20MB in memory.");
+                }
+                finally
+                {
+                    if (Directory.Exists(tempDir))
+                    {
+                        Directory.Delete(tempDir, true);
+                    }
+                }
             }
         }
     }

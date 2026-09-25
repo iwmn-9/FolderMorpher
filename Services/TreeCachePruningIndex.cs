@@ -41,8 +41,16 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
+        /// フォルダー日時に基づく枝刈りを有効化するかどうか（既定値: false）。
+        /// 【安全原則】NTFSでは子ファイルの本文更新時に親フォルダーのLastWriteTimeが更新されないため、
+        /// 検索漏れ（false negative）を防止すべく既定では無効化（安全Live走査）。
+        /// 変更頻度が極めて低い読み取り専用アーカイブ等で明示的にオプトインされた場合のみ動作する。
+        /// </summary>
+        public bool EnableFolderTimestampPruning { get; set; } = false;
+
+        /// <summary>
         /// 指定フォルダーがキャッシュに存在し、かつ更新日時が一致しているか判定。
-        /// 一致していれば、配下の全ファイル（再帰的）をメモリ上で即座に収集して返す。
+        /// EnableFolderTimestampPruning が有効な場合のみ枝刈りを実行し配下エントリを返す。
         /// </summary>
         public bool TryGetPrunedEntries(
             string folderPath,
@@ -51,6 +59,11 @@ namespace FolderMorpher.Services
             out List<ScannedFileEntry>? entries)
         {
             entries = null;
+            if (!EnableFolderTimestampPruning)
+            {
+                return false;
+            }
+
             string key = PathCanonicalizer.Normalize(folderPath);
             if (!_foldersByPath.TryGetValue(key, out var cachedFolder) || cachedFolder == null)
             {

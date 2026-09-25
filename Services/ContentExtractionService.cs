@@ -126,13 +126,16 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// 【Agent Ransack流】XML文字列からタグ（<... >）を除去し、テキストノードの内容のみを高速抽出（正規表現ゼロ・1パス処理）
+        /// XML文字列からタグを除去し、テキストノードを高速抽出。
+        /// 【書式分割対応】<w:t>契約</w:t><w:t>書</w:t> 等のインライン書式境界で単語が分断されないよう、
+        /// ブロック要素（段落・行・セル等）の境界でのみスペースを挿入し、インライン要素境界は連続結合する。
         /// </summary>
         public static string StripXmlTagsFast(string xml)
         {
             if (string.IsNullOrEmpty(xml)) return string.Empty;
             var sb = new StringBuilder(Math.Min(xml.Length, 16384));
             bool insideTag = false;
+            int tagStart = -1;
             bool lastWasSpace = false;
 
             for (int i = 0; i < xml.Length; i++)
@@ -141,15 +144,30 @@ namespace FolderMorpher.Services
                 if (c == '<')
                 {
                     insideTag = true;
-                    if (!lastWasSpace)
-                    {
-                        sb.Append(' ');
-                        lastWasSpace = true;
-                    }
+                    tagStart = i;
                 }
                 else if (c == '>')
                 {
                     insideTag = false;
+                    // ブロック要素の開始または終了タグかを判定（段落・行・セルの区切りでのみ空白を挿入）
+                    if (tagStart >= 0)
+                    {
+                        ReadOnlySpan<char> tag = xml.AsSpan(tagStart + 1, i - tagStart - 1).TrimStart('/');
+                        if (tag.StartsWith("w:p", StringComparison.OrdinalIgnoreCase) ||
+                            tag.StartsWith("w:tr", StringComparison.OrdinalIgnoreCase) ||
+                            tag.StartsWith("row", StringComparison.OrdinalIgnoreCase) ||
+                            tag.StartsWith("a:p", StringComparison.OrdinalIgnoreCase) ||
+                            tag.StartsWith("w:tc", StringComparison.OrdinalIgnoreCase) ||
+                            tag.StartsWith("c ", StringComparison.OrdinalIgnoreCase) ||
+                            tag.Equals("c", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!lastWasSpace)
+                            {
+                                sb.Append(' ');
+                                lastWasSpace = true;
+                            }
+                        }
+                    }
                 }
                 else if (!insideTag)
                 {
@@ -268,6 +286,38 @@ namespace FolderMorpher.Services
         {
             if (requiredGroups.Count == 0) return null;
 
+            string? singleKw = null;
+            AhoCorasickSearcher? ac = null;
+            List<int>? patternToGroup = null;
+
+            if (requiredGroups.Count == 1 && requiredGroups[0].Count == 1)
+            {
+                singleKw = requiredGroups[0][0];
+            }
+            else
+            {
+                ac = PdfSearchHelper.CreateSearcher(requiredGroups, out patternToGroup);
+                if (ac == null) return null;
+            }
+
+            return await SearchTextContentWithBufferAsync(filePath, singleKw, ac, patternToGroup, requiredGroups.Count, ct);
+        }
+
+        /// <summary>
+        /// 【ripgrep流 高速バッファ直接検索】
+        /// 行単位（ReadLineAsync）の文字列生成とGCを完全排除し、64KBスライディングバッファ（境界またぎオーバーラップ付き）で
+        /// 直接探索を実行。検索器（singleKeyword または AhoCorasickSearcher）をクエリ単位で共有して再利用する。
+        /// </summary>
+        public static async Task<string?> SearchTextContentWithBufferAsync(
+            string filePath,
+            string? singleKeyword,
+            AhoCorasickSearcher? ac,
+            List<int>? patternToGroup,
+            int totalGroups,
+            CancellationToken ct)
+        {
+            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath)) return null;
+
             try
             {
                 using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan | FileOptions.Asynchronous);
@@ -284,70 +334,77 @@ namespace FolderMorpher.Services
                 if (!isUtf16 && nulls >= 2) return null; // 純粋なバイナリは即座に脱落
 
                 Encoding encoding = DetectTextEncoding(fs);
+                using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 65536);
 
-                var patterns = new List<string>();
-                var patternToGroup = new List<int>();
-                for (int g = 0; g < requiredGroups.Count; g++)
-                {
-                    foreach (var kw in requiredGroups[g])
-                    {
-                        if (!string.IsNullOrWhiteSpace(kw))
-                        {
-                            patterns.Add(kw);
-                            patternToGroup.Add(g);
-                        }
-                    }
-                }
-                if (patterns.Count == 0) return null;
+                const int BufferSize = 65536;
+                const int MaxOverlap = 1024;
+                char[] buffer = new char[BufferSize];
+                int overlapChars = 0;
 
-                // ★ ADR 93: 単一キーワードの超高速パス（Aho-Corasick構築をスキップし、JIT/AVX2最適化された直接探索）
-                if (patterns.Count == 1 && requiredGroups.Count == 1)
+                // 単一キーワードの JIT/AVX2 高速パス
+                if (!string.IsNullOrEmpty(singleKeyword))
                 {
-                    string singleKw = patterns[0];
-                    using (var readerFast = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 65536))
+                    while (true)
                     {
-                        string? lineFast;
-                        while ((lineFast = await readerFast.ReadLineAsync(ct)) != null)
+                        int charsRead = await reader.ReadBlockAsync(buffer.AsMemory(overlapChars, BufferSize - overlapChars), ct);
+                        int totalChars = overlapChars + charsRead;
+                        if (totalChars == 0) break;
+
+                        string chunkText = new string(buffer, 0, totalChars);
+                        int idx = chunkText.IndexOf(singleKeyword, StringComparison.OrdinalIgnoreCase);
+                        if (idx >= 0)
                         {
-                            int idx = lineFast.IndexOf(singleKw, StringComparison.OrdinalIgnoreCase);
-                            if (idx >= 0)
-                            {
-                                return ExtractSnippet(lineFast, idx, singleKw.Length);
-                            }
+                            return ExtractSnippet(chunkText, idx, singleKeyword.Length);
                         }
+
+                        if (charsRead == 0) break; // EOF
+
+                        // 次のバッファへオーバーラップ（境界またぎ単語保護）
+                        overlapChars = Math.Min(totalChars, MaxOverlap);
+                        Array.Copy(buffer, totalChars - overlapChars, buffer, 0, overlapChars);
                     }
                     return null;
                 }
 
-                var ac = new AhoCorasickSearcher(patterns, ignoreCase: true);
-
-                // 行単位ストリーム走査（Aho-Corasick ワンパス判定 ＆ Early Exit）
-                using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 65536);
-                var satisfiedGroups = new HashSet<int>();
-                string? firstSnippet = null;
-
-                string? line;
-                while ((line = await reader.ReadLineAsync(ct)) != null)
+                // 複数キーワード（Aho-Corasick ワンパス探索 ＆ Early Exit）
+                if (ac != null && patternToGroup != null)
                 {
-                    var matches = ac.FindMatchedIndices(line);
-                    foreach (var pIdx in matches)
+                    var satisfiedGroups = new HashSet<int>();
+                    string? firstSnippet = null;
+
+                    while (true)
                     {
-                        int gIdx = patternToGroup[pIdx];
-                        satisfiedGroups.Add(gIdx);
-                        if (firstSnippet == null)
+                        int charsRead = await reader.ReadBlockAsync(buffer.AsMemory(overlapChars, BufferSize - overlapChars), ct);
+                        int totalChars = overlapChars + charsRead;
+                        if (totalChars == 0) break;
+
+                        string chunkText = new string(buffer, 0, totalChars);
+                        var matches = ac.FindMatchedIndices(chunkText);
+                        foreach (var pIdx in matches)
                         {
-                            string p = ac.Patterns[pIdx];
-                            int matchIdx = line.IndexOf(p, StringComparison.OrdinalIgnoreCase);
-                            if (matchIdx >= 0)
+                            int gIdx = patternToGroup[pIdx];
+                            satisfiedGroups.Add(gIdx);
+                            if (firstSnippet == null)
                             {
-                                firstSnippet = ExtractSnippet(line, matchIdx, p.Length);
+                                string p = ac.Patterns[pIdx];
+                                int matchIdx = chunkText.IndexOf(p, StringComparison.OrdinalIgnoreCase);
+                                if (matchIdx >= 0)
+                                {
+                                    firstSnippet = ExtractSnippet(chunkText, matchIdx, p.Length);
+                                }
                             }
                         }
-                    }
 
-                    if (satisfiedGroups.Count == requiredGroups.Count)
-                    {
-                        return firstSnippet ?? (requiredGroups[0].Count > 0 ? requiredGroups[0][0] : string.Empty);
+                        if (satisfiedGroups.Count == totalGroups)
+                        {
+                            return firstSnippet ?? (ac.Patterns.Count > 0 ? ac.Patterns[0] : string.Empty);
+                        }
+
+                        if (charsRead == 0) break; // EOF
+
+                        // 次のバッファへオーバーラップ
+                        overlapChars = Math.Min(totalChars, MaxOverlap);
+                        Array.Copy(buffer, totalChars - overlapChars, buffer, 0, overlapChars);
                     }
                 }
             }
@@ -465,6 +522,25 @@ namespace FolderMorpher.Services
             }
         }
 
+
+
+        /// <summary>
+        /// UNC/ネットワークファイルの細切れRead/SeekによるSMB往復遅延を隠蔽するため、
+        /// 20MB以下のファイルは一括でメモリへ読み込み MemoryStream として開く。
+        /// 20MB超の巨大ファイルは FileStream(SequentialScan) で安全に開く。
+        /// </summary>
+        public static Stream OpenBufferedReadStream(string filePath)
+        {
+            var fi = new FileInfo(filePath);
+            const long MaxMemoryBufferedSize = 20 * 1024 * 1024; // 20MB
+            if (fi.Length > 0 && fi.Length <= MaxMemoryBufferedSize)
+            {
+                byte[] bytes = File.ReadAllBytes(filePath);
+                return new MemoryStream(bytes, writable: false);
+            }
+            return new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan);
+        }
+
         /// <summary>
         /// Officeファイル（Excel/Word/PowerPoint）をストリーム走査し、キーワード群の包含判定を高速実行（Early Exit対応）。
         /// </summary>
@@ -480,13 +556,17 @@ namespace FolderMorpher.Services
         public static bool SearchOfficeContent(string filePath, IReadOnlyList<List<string>> requiredGroups, out string snippet)
         {
             snippet = string.Empty;
-            if (requiredGroups.Count == 0) return false;
+            if (requiredGroups.Count == 0 || !File.Exists(filePath)) return false;
 
             try
             {
                 string ext = Path.GetExtension(filePath).ToLowerInvariant();
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan);
-                using var zip = new ZipArchive(fs, ZipArchiveMode.Read, false);
+                using var stream = OpenBufferedReadStream(filePath);
+                using var zip = new ZipArchive(stream, ZipArchiveMode.Read, false);
+
+                var foundGroups = new HashSet<int>();
+                string firstFoundSnippet = string.Empty;
+                bool hasScannedSharedStrings = false;
 
                 // Excel (.xlsx / .xlsm) の場合は sharedStrings.xml を最優先・ピンポイント探索
                 if (ext == ".xlsx" || ext == ".xlsm")
@@ -494,48 +574,47 @@ namespace FolderMorpher.Services
                     ZipArchiveEntry? sharedEntry = zip.Entries.FirstOrDefault(e => e.FullName.EndsWith("sharedstrings.xml", StringComparison.OrdinalIgnoreCase));
                     if (sharedEntry != null)
                     {
-                        using var stream = sharedEntry.Open();
-                        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 65536);
-                        string text = reader.ReadToEnd();
-
-                        var sharedSatisfied = new HashSet<int>();
-                        string firstSnippet = string.Empty;
+                        hasScannedSharedStrings = true;
+                        using var sStream = sharedEntry.Open();
+                        using var reader = new StreamReader(sStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 65536);
+                        string xml = reader.ReadToEnd();
+                        string cleanShared = StripXmlTagsFast(xml);
 
                         for (int g = 0; g < requiredGroups.Count; g++)
                         {
                             foreach (var kw in requiredGroups[g])
                             {
-                                int idx = text.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
+                                int idx = cleanShared.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
                                 if (idx >= 0)
                                 {
-                                    sharedSatisfied.Add(g);
-                                    if (string.IsNullOrEmpty(firstSnippet))
+                                    foundGroups.Add(g);
+                                    if (string.IsNullOrEmpty(firstFoundSnippet))
                                     {
-                                        firstSnippet = ExtractSnippet(text, idx, kw.Length);
+                                        firstFoundSnippet = ExtractSnippet(cleanShared, idx, kw.Length);
                                     }
                                     break;
                                 }
                             }
                         }
 
-                        if (sharedSatisfied.Count == requiredGroups.Count)
+                        if (foundGroups.Count == requiredGroups.Count)
                         {
-                            snippet = firstSnippet;
+                            snippet = firstFoundSnippet;
                             return true; // sharedStrings で全グループが揃ったので Early exit!
                         }
                     }
                 }
 
-                // Word (.docx), PowerPoint (.pptx), または sharedStrings だけでは見つからなかった Excel の探索
-                var foundGroups = new HashSet<int>();
-                string firstFoundSnippet = string.Empty;
-
+                // Word (.docx), PowerPoint (.pptx), または sharedStrings だけでは不足していた Excel シートの探索
                 foreach (var entry in zip.Entries)
                 {
                     string entryName = entry.FullName.ToLowerInvariant();
                     if (!entryName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) && !entryName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase)) continue;
-                    if (!entryName.Contains("sharedstrings") &&
-                        !entryName.Contains("sheet") &&
+
+                    // ★ 二重読みの完全排除：sharedStrings.xml を既に検査済みならスキップ！
+                    if (hasScannedSharedStrings && entryName.Contains("sharedstrings")) continue;
+
+                    if (!entryName.Contains("sheet") &&
                         !entryName.Contains("document") &&
                         !entryName.Contains("slide") &&
                         !entryName.Contains("comment") &&
@@ -544,29 +623,13 @@ namespace FolderMorpher.Services
                         continue;
                     }
 
-                    using var stream = entry.Open();
-                    using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 65536);
+                    using var eStream = entry.Open();
+                    using var reader = new StreamReader(eStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 65536);
                     string xml = reader.ReadToEnd();
 
-                    // 【Agent Ransack流 JIT Pre-Filter】
-                    // 生XMLに未充足グループのキーワードが1つも含まれていなければタグ除去すらスキップ（超高速脱落）
-                    bool hasAnyCandidate = false;
-                    for (int g = 0; g < requiredGroups.Count; g++)
-                    {
-                        if (foundGroups.Contains(g)) continue;
-                        foreach (var kw in requiredGroups[g])
-                        {
-                            if (xml.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
-                            {
-                                hasAnyCandidate = true;
-                                break;
-                            }
-                        }
-                        if (hasAnyCandidate) break;
-                    }
-                    if (!hasAnyCandidate) continue;
-
+                    // 【書式分割対応】タグ除去後のクリーンテキストで未充足グループを探索
                     string clean = StripXmlTagsFast(xml);
+                    if (string.IsNullOrWhiteSpace(clean)) continue;
 
                     for (int g = 0; g < requiredGroups.Count; g++)
                     {
