@@ -392,7 +392,8 @@ namespace FolderMorpher.Services
                     options.DormantYearsThreshold,
                     options.CheckVersionFamilies,
                     options.CheckExtractedArchives,
-                    options.CheckGraveyardTrees);
+                    options.CheckGraveyardTrees,
+                    options.TargetDirectory);
 
                 var existingPaths = new HashSet<string>(items.Select(x => x.FullPath), StringComparer.OrdinalIgnoreCase);
                 foreach (var cand in smartCandidates)

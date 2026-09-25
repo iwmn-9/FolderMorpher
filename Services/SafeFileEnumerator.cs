@@ -163,7 +163,8 @@ namespace FolderMorpher.Services
             var folderQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
             bool matchAll = searchPattern == "*.*" || searchPattern == "*";
             int scannedFilesCount = 0;
-            var controller = SharedIoGovernor.GetController(rootPath);
+            var governor = SharedIoGovernor.GetGovernor(rootPath);
+            var controller = governor.EnumerationController;
             int maxWorkers = AdaptiveConcurrencyController.MaxConcurrency; // 4ワーカーまで待機可能
 
             // ★ Sol指摘: Worker起動レースの解消
@@ -268,6 +269,7 @@ namespace FolderMorpher.Services
                         }
 
                         Interlocked.Increment(ref activeWorkers);
+                        using var slot = await governor.AcquireSlotAsync(ct);
                         using var lease = await controller.AcquireAsync(ct);
                         try
                         {

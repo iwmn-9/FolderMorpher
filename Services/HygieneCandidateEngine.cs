@@ -48,7 +48,8 @@ namespace FolderMorpher.Services
             double dormantYearsThreshold = 3.0,
             bool checkVersionFamilies = true,
             bool checkExtractedArchives = true,
-            bool checkGraveyardTrees = true)
+            bool checkGraveyardTrees = true,
+            string? targetRoot = null)
         {
             var results = new List<AuditItem>();
             if (scannedFiles == null || scannedFiles.Count == 0) return results;
@@ -78,7 +79,7 @@ namespace FolderMorpher.Services
             Dictionary<string, FolderAggInfo>? aggMap = null;
             if (checkExtractedArchives || checkGraveyardTrees)
             {
-                aggMap = BuildFolderAggregationMap(dirMap, recentAccessCutoff, now);
+                aggMap = BuildFolderAggregationMap(dirMap, recentAccessCutoff, now, targetRoot);
             }
 
             // 2. 展開済みアーカイブ残骸検出 (Extracted Archive Shadow) - O(N)
@@ -90,7 +91,7 @@ namespace FolderMorpher.Services
             // 3. 墓場フォルダー判定 (Graveyard Trees) - O(N)
             if (checkGraveyardTrees && aggMap != null)
             {
-                DetectGraveyardTrees(aggMap, results, dormantCutoff, now);
+                DetectGraveyardTrees(aggMap, results, dormantCutoff, now, targetRoot);
             }
 
             return results;
@@ -260,9 +261,11 @@ namespace FolderMorpher.Services
         private static Dictionary<string, FolderAggInfo> BuildFolderAggregationMap(
             Dictionary<string, List<ScannedFileEntry>> dirMap,
             DateTime recentAccessCutoff,
-            DateTime now)
+            DateTime now,
+            string? targetRoot = null)
         {
             var aggMap = new Dictionary<string, FolderAggInfo>(StringComparer.OrdinalIgnoreCase);
+            string? normTarget = string.IsNullOrEmpty(targetRoot) ? null : targetRoot.TrimEnd('\\', '/');
 
             // 1. 各ディレクトリの直下ファイル情報を算出 (O(N))
             foreach (var (dirPath, files) in dirMap)
@@ -305,13 +308,25 @@ namespace FolderMorpher.Services
                 info.TotalHasRecentAccess = info.DirectHasRecentAccess;
 
                 // 親ディレクトリもツリー上に存在することを保証（空の親ディレクトリ救済）
+                // 【ADR 91】targetRoot より上位には絶対に遡らない（Root境界保護）
                 string? parent = System.IO.Path.GetDirectoryName(normPath);
                 while (!string.IsNullOrEmpty(parent))
                 {
+                    if (normTarget != null && !parent.StartsWith(normTarget, StringComparison.OrdinalIgnoreCase))
+                    {
+                        break;
+                    }
+
                     if (!aggMap.ContainsKey(parent))
                     {
                         aggMap[parent] = new FolderAggInfo { Path = parent };
                     }
+
+                    if (normTarget != null && string.Equals(parent, normTarget, StringComparison.OrdinalIgnoreCase))
+                    {
+                        break; // targetRoot 自体で打ち切り
+                    }
+
                     parent = System.IO.Path.GetDirectoryName(parent);
                 }
             }
@@ -324,8 +339,16 @@ namespace FolderMorpher.Services
             // 3. ボトムアップ集約 (O(D)): 子の TotalXxx を親の TotalXxx に加算
             foreach (var node in sortedNodes)
             {
+                // targetRoot 自体は親を持たないのでスキップ
+                if (normTarget != null && string.Equals(node.Path, normTarget, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 string? parent = System.IO.Path.GetDirectoryName(node.Path);
-                if (!string.IsNullOrEmpty(parent) && aggMap.TryGetValue(parent, out var parentInfo))
+                if (!string.IsNullOrEmpty(parent) &&
+                    (normTarget == null || parent.StartsWith(normTarget, StringComparison.OrdinalIgnoreCase)) &&
+                    aggMap.TryGetValue(parent, out var parentInfo))
                 {
                     parentInfo.TotalFileCount += node.TotalFileCount;
                     parentInfo.TotalBytes += node.TotalBytes;
@@ -397,10 +420,20 @@ namespace FolderMorpher.Services
             Dictionary<string, FolderAggInfo> aggMap,
             List<AuditItem> results,
             DateTime dormantCutoff,
-            DateTime now)
+            DateTime now,
+            string? targetRoot = null)
         {
+            string? normTarget = string.IsNullOrEmpty(targetRoot) ? null : targetRoot.TrimEnd('\\', '/');
+
             foreach (var agg in aggMap.Values)
             {
+                // 【ADR 91】targetRoot が指定されている場合、監査対象外のフォルダーや targetRoot 自体は墓場候補にしない
+                if (normTarget != null)
+                {
+                    if (!agg.Path.StartsWith(normTarget, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (string.Equals(agg.Path, normTarget, StringComparison.OrdinalIgnoreCase)) continue;
+                }
+
                 // 最小規模: 3ファイル以上 かつ 1MB 以上
                 if (agg.TotalFileCount < 3) continue;
                 if (agg.TotalBytes < 1024 * 1024) continue;

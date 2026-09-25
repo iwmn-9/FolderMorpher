@@ -6,8 +6,8 @@ using FolderMorpher.Services;
 namespace FolderMorpher.Services.Testing
 {
     /// <summary>
-    /// FolderMorpher 自動回帰テストスイート（7大ドメイン包括検証）
-    /// 過去に蓄積された全31件の再発防止セーフティネットを7大機能ドメインに統合・整線
+    /// FolderMorpher 自動回帰テストスイート（8大ドメイン包括検証）
+    /// 過去に蓄積された全31件の再発防止セーフティネットを8大機能ドメインに統合・整線
     /// </summary>
     public static partial class RegressionTestSuite
     {
@@ -27,37 +27,37 @@ namespace FolderMorpher.Services.Testing
             try
             {
                 // Domain 1
-                Console.WriteLine("\n[TEST 1/7] Domain 1: Live ACL & Effective Access (Canonical DACL, Rollback SDDL, Delta Apply, Conflict & Real Traversal)...");
+                Console.WriteLine("\n[TEST 1/8] Domain 1: Live ACL & Effective Access (Canonical DACL, Rollback SDDL, Delta Apply, Conflict & Real Traversal)...");
                 await TestDomain_LiveAclAndEffectiveAccessAsync();
                 Console.WriteLine("  --> [PASS] Domain 1: Live ACL & Effective Access 100% verified.");
                 passCount++;
 
                 // Domain 2
-                Console.WriteLine("\n[TEST 2/7] Domain 2: Storage Explorer & UNC Traversal (Win32 LargeFetch/8.3 Skip, SafeFindHandle, Concurrency 2 & 0s History Cache)...");
+                Console.WriteLine("\n[TEST 2/8] Domain 2: Storage Explorer & UNC Traversal (Win32 LargeFetch/8.3 Skip, SafeFindHandle, Concurrency 2 & 0s History Cache)...");
                 await TestDomain_StorageAndUncTraversalAsync();
                 Console.WriteLine("  --> [PASS] Domain 2: Storage Explorer & UNC Traversal 100% verified.");
                 passCount++;
 
                 // Domain 3
-                Console.WriteLine("\n[TEST 3/7] Domain 3: Simulation Studio (Plan-First Skeleton, Robocopy /XD, Lazy Loading, D&D & Rollback Rotation)...");
+                Console.WriteLine("\n[TEST 3/8] Domain 3: Simulation Studio (Plan-First Skeleton, Robocopy /XD, Lazy Loading, D&D & Rollback Rotation)...");
                 await TestDomain_SimulationStudioAsync();
                 Console.WriteLine("  --> [PASS] Domain 3: Simulation Studio 100% verified.");
                 passCount++;
 
                 // Domain 4
-                Console.WriteLine("\n[TEST 4/7] Domain 4: Audit & Hygiene (Head-Tail Hash, Bandwidth Throttler, Smart Original Protection, ScannedFileEntry & Safe Deletion)...");
+                Console.WriteLine("\n[TEST 4/8] Domain 4: Audit & Hygiene (Head-Tail Hash, Bandwidth Throttler, Smart Original Protection, ScannedFileEntry & Safe Deletion)...");
                 await TestDomain_AuditAndHygieneAsync();
                 Console.WriteLine("  --> [PASS] Domain 4: Audit & Hygiene 100% verified.");
                 passCount++;
 
                 // Domain 5
-                Console.WriteLine("\n[TEST 5/7] Domain 5: Media Optimizer & LinkFixer (PNG Signature/Alpha Preservation, Sanctum Guard, In-Place LinkFix & Scoped Rollback)...");
+                Console.WriteLine("\n[TEST 5/8] Domain 5: Media Optimizer & LinkFixer (PNG Signature/Alpha Preservation, Sanctum Guard, In-Place LinkFix & Scoped Rollback)...");
                 await TestDomain_MediaOptimizerAndLinkFixerAsync();
                 Console.WriteLine("  --> [PASS] Domain 5: Media Optimizer & LinkFixer 100% verified.");
                 passCount++;
 
                 // Domain 6
-                Console.WriteLine("\n[TEST 6/7] Domain 6: MFT & Defensive Hardening (Initial LCN 0-Base, AppSettings Cascade & Mutation Invariants)...");
+                Console.WriteLine("\n[TEST 6/8] Domain 6: MFT & Defensive Hardening (Initial LCN 0-Base, AppSettings Cascade & Mutation Invariants)...");
                 await TestDomain_MftAndHardeningAsync();
                 Console.WriteLine("  --> [PASS] Domain 6: MFT & Defensive Hardening 100% verified.");
                 passCount++;
@@ -69,7 +69,7 @@ namespace FolderMorpher.Services.Testing
                 passCount++;
 
                 // Domain 8
-                Console.WriteLine("\n[TEST 8/8] Domain 8: Search Studio (Everything-Like Query Parsing, In-Memory 0s Tree Search & Fast Content Streaming)...");
+                Console.WriteLine("\n[TEST 8/8] Domain 8: Search Studio (Advanced Query Parsing, In-Memory 0s Tree Search & Fast Content Streaming)...");
                 await TestDomain_SearchStudioAsync();
                 Console.WriteLine("  --> [PASS] Domain 8: Search Studio 100% verified.");
                 passCount++;

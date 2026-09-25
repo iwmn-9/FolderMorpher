@@ -1529,24 +1529,30 @@ namespace FolderMorpher.Services.Testing
 
             // 19. ADR 90: SharedIoGovernor & Large File Distributed Probe 検証
             {
-                // A. SharedIoGovernor ＆ PathCanonicalizer.GetVolumeOrShareRoot 検証
+                // A. SharedIoGovernor ＆ PathCanonicalizer.GetVolumeOrShareRoot ＆ 学習分離 (ADR 91) 検証
                 SharedIoGovernor.Reset();
-                var c1 = SharedIoGovernor.GetController(@"C:\Users\Alpha\file1.txt");
-                var c2 = SharedIoGovernor.GetController(@"c:\Windows\System32");
-                if (!ReferenceEquals(c1, c2))
-                    throw new Exception("ADR 90 failed: SharedIoGovernor did not share instance for same local volume (C:).");
+                var g1 = SharedIoGovernor.GetGovernor(@"C:\Users\Alpha\file1.txt");
+                var g2 = SharedIoGovernor.GetGovernor(@"c:\Windows\System32");
+                if (!ReferenceEquals(g1, g2))
+                    throw new Exception("ADR 90/91 failed: SharedIoGovernor did not share SharedVolumeGovernor for same local volume (C:).");
 
-                var unc1 = SharedIoGovernor.GetController(@"\\file-server01\ShareA\SubDir1\Doc.txt");
-                var unc2 = SharedIoGovernor.GetController(@"\\FILE-SERVER01\shareA\SubDir2\Other.xlsx");
-                if (!ReferenceEquals(unc1, unc2))
-                    throw new Exception("ADR 90 failed: SharedIoGovernor did not share instance for same UNC share (case-insensitive).");
+                // 【ADR 91】列挙用と本文読込用のコントローラーが分離され、学習汚染が発生しないことの検証
+                if (ReferenceEquals(g1.EnumerationController, g1.ContentController))
+                    throw new Exception("ADR 91 failed: EnumerationController and ContentController must be separate instances.");
+                if (g1.GlobalSlotGate.CurrentCount != AdaptiveConcurrencyController.MaxConcurrency)
+                    throw new Exception($"ADR 91 failed: GlobalSlotGate initial count should be {AdaptiveConcurrencyController.MaxConcurrency}, got {g1.GlobalSlotGate.CurrentCount}");
 
-                var unc3 = SharedIoGovernor.GetController(@"\\file-server01\ShareB\Data.csv");
-                if (ReferenceEquals(unc1, unc3))
-                    throw new Exception("ADR 90 failed: SharedIoGovernor incorrectly shared instance across different UNC shares.");
+                var uncG1 = SharedIoGovernor.GetGovernor(@"\\file-server01\ShareA\SubDir1\Doc.txt");
+                var uncG2 = SharedIoGovernor.GetGovernor(@"\\FILE-SERVER01\shareA\SubDir2\Other.xlsx");
+                if (!ReferenceEquals(uncG1, uncG2))
+                    throw new Exception("ADR 90/91 failed: SharedIoGovernor did not share governor for same UNC share (case-insensitive).");
+
+                var uncG3 = SharedIoGovernor.GetGovernor(@"\\file-server01\ShareB\Data.csv");
+                if (ReferenceEquals(uncG1, uncG3))
+                    throw new Exception("ADR 90/91 failed: SharedIoGovernor incorrectly shared governor across different UNC shares.");
 
                 if (!SharedIoGovernor.ActiveRoots.Contains("C:") || !SharedIoGovernor.ActiveRoots.Contains(@"\\file-server01\ShareA"))
-                    throw new Exception("ADR 90 failed: SharedIoGovernor.ActiveRoots did not contain expected roots.");
+                    throw new Exception("ADR 90/91 failed: SharedIoGovernor.ActiveRoots did not contain expected roots.");
 
                 // B. Large File Pipeline ＆ 分散Probe（先頭・末尾・中間ブロック高速照合）検証
                 string probeDir = Path.Combine(Path.GetTempPath(), "FolderMorpher_ProbeTest_" + Guid.NewGuid().ToString("N"));

@@ -185,7 +185,7 @@
     - `Domain 5`: Media Optimizer & LinkFixer (PNG透過保持, 聖域保護, SafeFileEnumerator, PartiallyFixed)
     - `Domain 6`: MFT & Defensive Hardening (Initial LCN 0-Base, AppSettings Cascade)
     - `Domain 7`: Bilingual Localization & Storage Forecasting (JA/EN Switch, Holt Forecasting)
-    - `Domain 8`: Search Studio (Everything Parser, In-Memory Fast Match, Content Search)
+    - `Domain 8`: Search Studio (Advanced Query Parser, In-Memory Fast Match, Content Search)
 
 ---
 
@@ -217,7 +217,7 @@
 
 ---
 
-## 14. 【統合ファイル検索】Search Studio（Everything構文・0秒インメモリ＆プログレッシブ直接走査・OpenXMLストリーム全文検索・スタジオ連携Hub）
+## 14. 【統合ファイル検索】Search Studio（高度な検索構文・0秒インメモリ＆プログレッシブ直接走査・OpenXMLストリーム全文検索・スタジオ連携Hub）
 *(v2.2.0 新規施工 & ADR 60)*
 
 - **0秒インメモリ高速検索 ＆ プログレッシブ直接走査のハイブリッド・アーキテクチャ (`SearchEngineService`)**:
@@ -226,7 +226,7 @@
     - 対象フォルダーが指定された場合、全スキャン済みツリーを無差別に走査せず、指定パスに一致する `FileItemNode` を探索してその部分木のみを起点に走査。
     - 指定フォルダーがスキャン済みツリーに含まれていない場合は、シームレスに直接走査（DirectFolder）へフォールバックし、ユーザーの探索テンポを阻害しない。
   - **プログレッシブ直接走査**: 未スキャンの任意パスやUNC共有に対しては、ADR 35/49 の正本である `SafeFileEnumerator` を貫通させて非同期プログレッシブ走査を実施。進捗（走査件数・ヒット数）をUIへリアルタイム反映。
-- **Everything 互換クエリ構文解析器 (`SearchQueryParser`)**:
+- **高度な検索クエリ構文解析器 (`SearchQueryParser`)**:
   - 高速・直感的な検索構文をフルサポート（未実装の `duplicate:` 構文は排除し、100%嘘のない仕様に統一）：
     - 拡張子フィルタ: `ext:xlsx,docx`
     - サイズ条件: `size:>100MB`, `size:<10MB`（KB/MB/GB/TB対応）
@@ -278,7 +278,7 @@
 - **ファイル名優先（Name-first）マッチングによる親フォルダー巻き添えヒットの完全根絶**:
   - キーワード照合において、`\` や `/` を含まない通常単語は `node.FullPath` ではなく **`node.Name`（ファイル名単体）** と照合。
   - 上位の親フォルダー名（例: `D:\プロジェクトA\...`）にキーワードが含まれている場合に、配下の全ファイルが巻き添えで大量ヒットする事故を原理的に根絶。
-  - 親フォルダーも含めて絞り込みたい場合は、`path:xxx` 構文またはキーワードに `\` を含める（例: `2024\報告書`）ことで、Everything準拠の直感的なパス絞り込みを両立。
+  - 親フォルダーも含めて絞り込みたい場合は、`path:xxx` 構文またはキーワードに `\` を含める（例: `2024\報告書`）ことで、直感的なパス絞り込みを両立。
 - **回帰テスト Domain 8 の強化 & CI 8/8 ALL PASSED 維持**:
   - 回帰テストに PDF（IFilter/ストリーム探索）、テキスト、バイナリEarly Drop、`SearchContentMode` トグル、および `IncludeFolders`（既定false/trueのフォルダー排他・包含）と親フォルダー巻き添え防止の包括アサーションを追加し、全8大ドメイン回帰テストで 100% 検証を担保。
 
@@ -914,12 +914,12 @@
 
 ---
 
-### ADR 86: Agent Ransack 流超高速直接走査 ＆ 2文字日本語検索漏れ根絶 ＆ 500件上限撤去
+### ADR 86: ストリーミング型 Live 直接走査 ＆ 2文字日本語検索漏れ根絶 ＆ 500件上限撤去
 *(v2.2.13 本番施工 & ADR 86)*
 
 - **背景 & 動機**:
   - **インデックス無しでも超高速な本文検索の追求**:
-    - インデックスのない状態でも高速に本文検索できる Agent Ransack（FileLocator Pro）の技法を FolderMorpher に全面導入。
+    - インデックスのない状態でも高速に本文検索できるインライン・ストリーミング走査技術を FolderMorpher に全面導入。
     - 従来の `SearchDirectFolderAsync` では、ファイル列挙（SafeFileEnumerator）が全件完了するまで本文検査が 1 件も開始されず、大容量フォルダや UNC 共有で数十秒間の待たされ感（フリーズ感）が発生していた。
   - **2文字日本語キーワード検索の漏れと 500件上限の正体**:
     - 2文字の日本語（例：「設計」「仕様」「報告」等）で本文検索をかけた際、SQLite trigram は 3文字以上を前提とするため、全候補を原本 Verify に回す設計にしていたが、SQL クエリ内部にハードコードされた `LIMIT 500` の存在により、500件枠から溢れたファイルが原本 Verify に送られず 100% 漏れていた（False Negative）。
@@ -929,13 +929,13 @@
      - `ContentIndexService.cs` における属性検索、ファイル名先行表示、全体検索の全 SQL から `LIMIT 500` を完全撤去。大規模環境でも上限なく全件がヒット・検証されるよう改善。
   2. **2文字日本語キーワードの検索漏れ根絶**:
      - `ContentIndexService.cs` の候補抽出条件を `Status IN (0, 1)` に拡大し、`LIMIT 500` 撤去と相まって、2文字以下のキーワードでも該当ファイルが確実に原本 Verify（Aho-Corasick）へ送られ、漏れゼロ（False Negative 0%）を保証。
-  3. **Agent Ransack 流 Producer-Consumer Channel パイプライン（列挙と本文走査の完全並行化）**:
+  3. **ストリーミング型 Producer-Consumer Channel パイプライン（列挙と本文走査の完全並行化）**:
      - `SearchEngineService.SearchDirectFolderAsync` において `System.Threading.Channels.Channel<SearchResultItem>` を導入。
      - ファイル列挙（Producer）で見つかった本文候補（`needsDeepCheck`）を即座に Channel へ投入。
      - バックグラウンドで待機する Consumer ワーカー群（`AdaptiveConcurrencyController` 制御下、最大8並行）が即座にファイルを開いて本文検査を開始。
      - 検索開始からわずか数百ミリ秒で 1 件目のヒットが画面（UI）にポップアップ表示される超高速ストリーミングを実現。
      - 単一ファイルの本文検査ロジックを `InspectContentItemAsync` として一本化（正本の単一性を維持）。
-  4. **Agent Ransack 流 I/O & XML 解析最適化**:
+  4. **ストリーミング I/O & 高速XML解析最適化**:
      - `FileOptions.SequentialScan` ＋ 64KB バッファ（`FileStream`, `StreamReader`）を `ContentExtractionService` のテキスト・Office 解析に全面適用し、OS の Read-Ahead キャッシュを最大活用。
      - `StripXmlTagsFast`: Office OpenXML（`.docx`, `.xlsx`, `.pptx`）のタグ除去において正規表現（`Regex.Replace`）を全廃し、1パスの高速 char スキャン＆空白圧縮へ刷新。
      - Office 本文走査において生XMLでの事前キーワード存在チェック（Pre-Filter）を導入し、ヒットしないファイルの不要なタグ除去をスキップして即脱落。
@@ -953,7 +953,7 @@
   - **検索専用 FTS5 DB の運用コストと肥大化の解消**:
     - 検索専用の SQLite DB（`folder_morpher_search.db`）は、120万〜数百万ファイル環境で数GB〜10GB以上に肥大化し、ディスク・ネットワーク負荷や WAL ロック競合を発生させていた。
     - 実態として、DBは検索専用にしか使われておらず、アプリ内にはすでに高速・軽量なスキャンツリー（インメモリおよびポータブルな `TreeCaches/*.json`）が存在していた。
-    - 加えて、Agent Ransack 流の Producer-Consumer Channel パイプライン（列挙と本文走査の完全並行化 ＋ 64KB SequentialScan ＋ XML高速タグ除去）が完成したことにより、重厚なインデックスがなくとも開始数百ミリ秒でストリーミング検索が可能となった。
+    - 加えて、ストリーミング型 Producer-Consumer Channel パイプライン（列挙と本文走査の完全並行化 ＋ 64KB SequentialScan ＋ XML高速タグ除去）が完成したことにより、重厚なインデックスがなくとも開始数百ミリ秒でストリーミング検索が可能となった。
   - **ネットワークドライブ（Z:\）と UNC の二重化解消**:
     - ネットワークドライブ（例: `Z:\`）と UNC パス（例: `\\server\share`）が、中身同一であるにもかかわらず別名として扱われ、キャッシュや検索走査が二重化する問題があった。
   - **共有キャッシュツリー（JSON）への SHA-256 保持**:
@@ -961,7 +961,7 @@
 - **施工内容**:
   1. **検索専用 FTS5 DB の完全撤去と 2 大柱への一本化**:
      - `MainWindow.Search.cs` および `MainWindow.Storage.cs` から SQLite インデックス（`folder_morpher_search.db`、`_contentIndex`、`ContentIndexWatcherService`）のUI依存を完全に撤去。
-     - 検索ルートを「① スキャン済みツリー / 共有JSONキャッシュによる 0秒インメモリ検索（ファイル名・属性一致を先行表示 ＋ 本文ストリーミング合流）」および「② 未スキャンUNC / 初見フォルダに対する Agent Ransack 流 Live 直接走査（Channel パイプライン）」の 2 大柱へ一本化。
+     - 検索ルートを「① スキャン済みツリー / 共有JSONキャッシュによる 0秒インメモリ検索（ファイル名・属性一致を先行表示 ＋ 本文ストリーミング合流）」および「② 未スキャンUNC / 初見フォルダに対する Live 直接走査（Channel パイプライン）」の 2 大柱へ一本化。
      - 巨大なローカル SQLite DB の肥大化やロック競合、裏での常時ディスク・ネットワーク負荷を完全に根絶。
   2. **パス正規化エンジン（`Services/PathCanonicalizer.cs`）新設**:
      - `WNetGetConnectionW`（`mpr.dll`）により、ネットワークドライブ（例: `Z:\`）を実体の UNC パス（`\\server\share`）へ自動解決。
@@ -1098,3 +1098,36 @@
   - `Services/Testing/RegressionTestSuite.Audit.cs`:
     - 検証 6 に `PathCanonicalizer` による小文字/スラッシュ揺れパスの除外一致を自動検証。
   - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
+
+---
+
+### ADR 91: SharedVolumeGovernor（スロット枠とレイテンシ学習の完全分離）＆ Deferred Large Files（2段構えパイプライン）＆ Hygiene TargetRoot 境界ガード ＆ ドキュメント他社製品名・商標の完全整線
+*(v2.2.17 本番施工 & ADR 91)*
+
+- **背景 & 動機**:
+  - **1. スロット共有とレイテンシ学習の混同による性能劣化**:
+    - ADR 90 で同一ボリュームに対して `AdaptiveConcurrencyController` を一本化したが、ディレクトリ列挙（5〜15ms）と本文読込（50〜200ms）のレイテンシ特性は全く異なる。重い本文読込の計測値によってベースラインが汚染され、列挙側の並列度まで下限（2並列）に急降下・固着する問題があった。
+  - **2. 巨大ファイル（50MB超）のパイプライン詰まり vs 検索漏れ**:
+    - 50MB超ファイルで分散Probeが不一致だった場合、その場で全文読込（Sequential Scan）を行うと、後続の軽量ファイル走査が詰まって体感速度が著しく低下する。かといって読まなければ検索漏れになる。
+  - **3. Hygiene ボトムアップ集約の TargetRoot 境界漏れ**:
+    - 集約処理が親フォルダーやドライブレター（`C:\` 等）にまで遡って集計マップに登録され、ルート自身やルート外が墓場フォルダー候補として誤検出されるリスクがあった。
+  - **4. ドキュメントにおける他社製品名・商標表記の是正**:
+    - `AGENTS.md` や `ADR.md` 内に他社製品名（`Agent Ransack`, `FileLocator Pro`, `Everything` 等）が散見され、プロプライエタリなアーキテクチャ記述・自律開発ドキュメントとして不適切であった。
+- **施工内容**:
+  - **1. SharedVolumeGovernor による物理スロット枠とレイテンシ学習の分離 (`Services/SharedIoGovernor.cs`)**:
+    - `SharedVolumeGovernor` を新設。ボリューム全体の最大同時I/O数を `GlobalSlotGate`（`SemaphoreSlim(4, 4)`）で物理的に統制。
+    - レイテンシ適応学習は `EnumerationController`（列挙専用）と `ContentController`（本文読込専用）に完全分離。列挙側の高速性・安定性を確保しつつ、重い本文読込による学習汚染を根本根絶。
+  - **2. Deferred Large Files（2段構えパイプライン）(`Services/SearchEngineService.cs`)**:
+    - 50MB超ファイルで分散Probeがヒットした場合は即座に結果を提示。
+    - Probe未ヒットの場合はその場での全文読込をスキップし、`deferredLargeFiles`（後回しキュー）へ退避。
+    - 通常ファイルの列挙・本文検索が完了した直後に、退避された巨大ファイルの全文検索を順次実行。パイプラインの詰まりを解消しつつ、検索漏れ（False Negative）ゼロを完全保証。
+  - **3. Hygiene TargetRoot 境界ガード (`Services/HygieneCandidateEngine.cs`, `Services/AuditReportService.cs`)**:
+    - `BuildFolderAggregationMap` および `DetectGraveyardTrees` に `targetRoot` を引き渡し、親ディレクトリへの遡及登録を `targetRoot` で打ち切り。
+    - `targetRoot` 外および `targetRoot` 自身が墓場フォルダー候補として出力される誤爆を物理的に排除。
+  - **4. ドキュメント他社製品名・商標の完全整線 (`AGENTS.md`, `ADR.md`, `RegressionTestSuite.cs`)**:
+    - 全出現箇所を「ストリーミング型 Producer-Consumer Live 直接走査」「高度な検索クエリ構文」等の構造的・技術的表現へ整線。
+- **検証と恒久保護**:
+  - `Services/Testing/RegressionTestSuite.Search.cs`: `SharedVolumeGovernor` のスロット共有・コントローラー分離検証、`GlobalSlotGate` の初期値4検証。
+  - `Services/Testing/RegressionTestSuite.Audit.cs`: TargetRoot 境界ガード（親やルート自身の墓場誤爆防止）の検証。
+  - 8大ドメイン全回帰テスト 8/8 ALL REGRESSION TESTS PASSED を堅持。
+

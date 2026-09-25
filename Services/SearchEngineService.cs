@@ -191,8 +191,10 @@ namespace FolderMorpher.Services
 
                 // Consumer ワーカー群の起動（Shared I/O Governor による UNC Root 単位の適応並列制御）
                 int workerCount = Math.Max(2, Math.Min(Environment.ProcessorCount, 8));
-                var controller = SharedIoGovernor.GetController(targetFolder);
+                var governor = SharedIoGovernor.GetGovernor(targetFolder);
+                var controller = governor.ContentController;
                 int deepProcessed = 0;
+                var deferredLargeFiles = new System.Collections.Concurrent.ConcurrentBag<SearchResultItem>();
 
                 var consumerTasks = Enumerable.Range(0, workerCount).Select(async _ =>
                 {
@@ -202,15 +204,21 @@ namespace FolderMorpher.Services
                         {
                             if (ct.IsCancellationRequested) return;
 
+                            using var slot = await governor.AcquireSlotAsync(ct);
                             using var lease = await controller.AcquireAsync(ct);
                             var fileSw = Stopwatch.StartNew();
                             bool isError = false;
 
                             try
                             {
-                                if (await InspectContentItemAsync(item, query, hasOfficeLinkReq, officeLinkKeyword, ct))
+                                var (isHit, isDeferred) = await InspectContentItemAsync(item, query, hasOfficeLinkReq, officeLinkKeyword, ct, allowDeferred: true);
+                                if (isHit)
                                 {
                                     EmitHit(item);
+                                }
+                                else if (isDeferred)
+                                {
+                                    deferredLargeFiles.Add(item);
                                 }
                             }
                             catch (Exception ex)
@@ -320,6 +328,37 @@ namespace FolderMorpher.Services
 
                 // Consumer ワーカーの完了を待機
                 await Task.WhenAll(consumerTasks);
+
+                // 【ADR 91】通常ファイル走査完了後、Probe未ヒットの巨大ファイル群を順次全文検査（検索漏れゼロ保証）
+                if (!deferredLargeFiles.IsEmpty)
+                {
+                    foreach (var dItem in deferredLargeFiles)
+                    {
+                        if (ct.IsCancellationRequested) break;
+                        using var slot = await governor.AcquireSlotAsync(ct);
+                        using var lease = await controller.AcquireAsync(ct);
+                        var fileSw = Stopwatch.StartNew();
+                        bool isError = false;
+                        try
+                        {
+                            var (isHit, _) = await InspectContentItemAsync(dItem, query, hasOfficeLinkReq, officeLinkKeyword, ct, allowDeferred: false);
+                            if (isHit)
+                            {
+                                EmitHit(dItem);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            isError = ex is System.Net.Sockets.SocketException ||
+                                      (ex is IOException ioEx && (ioEx.HResult == unchecked((int)0x8007003B) || ioEx.HResult == unchecked((int)0x80070040) || ioEx.HResult == unchecked((int)0x80070036)));
+                        }
+                        finally
+                        {
+                            fileSw.Stop();
+                            lease.Report(fileSw.Elapsed.TotalMilliseconds, isError);
+                        }
+                    }
+                }
 
                 lock (batchLock)
                 {
@@ -705,7 +744,9 @@ namespace FolderMorpher.Services
             int total = validFiles.Count;
 
             string firstPath = validFiles.FirstOrDefault()?.FullPath ?? string.Empty;
-            var controller = SharedIoGovernor.GetController(firstPath);
+            var governor = SharedIoGovernor.GetGovernor(firstPath);
+            var controller = governor.ContentController;
+            var deferredLargeFiles = new System.Collections.Concurrent.ConcurrentBag<SearchResultItem>();
 
             var po = new ParallelOptions
             {
@@ -738,15 +779,21 @@ namespace FolderMorpher.Services
             {
                 token.ThrowIfCancellationRequested();
 
+                using var slot = await governor.AcquireSlotAsync(token);
                 using var lease = await controller.AcquireAsync(token);
                 var fileSw = Stopwatch.StartNew();
                 bool isError = false;
 
                 try
                 {
-                    if (await InspectContentItemAsync(item, query, hasOfficeLinkReq, officeLinkKeyword, token))
+                    var (isHit, isDeferred) = await InspectContentItemAsync(item, query, hasOfficeLinkReq, officeLinkKeyword, token, allowDeferred: true);
+                    if (isHit)
                     {
                         EmitHit(item);
+                    }
+                    else if (isDeferred)
+                    {
+                        deferredLargeFiles.Add(item);
                     }
                 }
                 catch (Exception ex)
@@ -777,6 +824,37 @@ namespace FolderMorpher.Services
                 }
             });
 
+            // 【ADR 91】通常ファイル走査完了後、Probe未ヒットの巨大ファイル群を順次全文検査（検索漏れゼロ保証）
+            if (!deferredLargeFiles.IsEmpty)
+            {
+                foreach (var dItem in deferredLargeFiles)
+                {
+                    if (ct.IsCancellationRequested) break;
+                    using var slot = await governor.AcquireSlotAsync(ct);
+                    using var lease = await controller.AcquireAsync(ct);
+                    var fileSw = Stopwatch.StartNew();
+                    bool isError = false;
+                    try
+                    {
+                        var (isHit, _) = await InspectContentItemAsync(dItem, query, hasOfficeLinkReq, officeLinkKeyword, ct, allowDeferred: false);
+                        if (isHit)
+                        {
+                            EmitHit(dItem);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        isError = ex is System.Net.Sockets.SocketException ||
+                                  (ex is IOException ioEx && (ioEx.HResult == unchecked((int)0x8007003B) || ioEx.HResult == unchecked((int)0x80070040) || ioEx.HResult == unchecked((int)0x80070036)));
+                    }
+                    finally
+                    {
+                        fileSw.Stop();
+                        lease.Report(fileSw.Elapsed.TotalMilliseconds, isError);
+                    }
+                }
+            }
+
             lock (batchLock)
             {
                 if (progressiveBatch.Count > 0 && batchYield != null)
@@ -790,14 +868,16 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// 【Agent Ransack流】単一ファイルの本文/リンク検査を行い、条件に合致するか判定（Early Exit・高速スニペット付き）
+        /// 単一ファイルの本文/リンク検査を行い、条件に合致するか判定（Early Exit・高速スニペット付き）
+        /// 【ADR 91】巨大ファイルでProbe未ヒット時は allowDeferred=true なら (false, true) を返し、後回しにする。
         /// </summary>
-        private static async Task<bool> InspectContentItemAsync(
+        private static async Task<(bool isHit, bool isDeferred)> InspectContentItemAsync(
             SearchResultItem item,
             SearchQuery query,
             bool hasOfficeLinkReq,
             string? officeLinkKeyword,
-            CancellationToken token)
+            CancellationToken token,
+            bool allowDeferred = true)
         {
             string ext = Path.GetExtension(item.FullPath).ToLowerInvariant();
 
@@ -849,7 +929,7 @@ namespace FolderMorpher.Services
             if (requiredGroups.Count == 0 && !hasOfficeLinkReq)
             {
                 item.MatchedReason = "Name";
-                return true;
+                return (true, false);
             }
             else if (requiredGroups.Count > 0)
             {
@@ -864,7 +944,7 @@ namespace FolderMorpher.Services
                         item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
                             ? $"Name + Content: \"{reqDesc}\""
                             : $"Content: \"{reqDesc}\"";
-                        return true;
+                        return (true, false);
                     }
                 }
                 // 2. PDF (.pdf) with Windows IFilter and pure C# fallback
@@ -876,13 +956,13 @@ namespace FolderMorpher.Services
                         item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
                             ? $"Name + PDF Content: \"{reqDesc}\""
                             : $"PDF Content: \"{reqDesc}\"";
-                        return true;
+                        return (true, false);
                     }
                 }
                 // 3. Text files (.txt, .csv, .log, .json, code files, etc.)
                 else if (TextExtensions.Contains(ext) || ContentExtractionService.SupportedExtensions.Contains(ext))
                 {
-                    // 【Large File Pipeline - ADR 90】50MB超の巨大ファイルは分散Probeを先行実施
+                    // 【Large File Pipeline - ADR 90/91】50MB超の巨大ファイルは分散Probeを先行実施
                     const long LargeFileProbeThreshold = 50L * 1024 * 1024;
                     if (item.SizeBytes > LargeFileProbeThreshold)
                     {
@@ -893,7 +973,13 @@ namespace FolderMorpher.Services
                             item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
                                 ? $"Name + Content (Probe): \"{reqDesc}\""
                                 : $"Content (Probe): \"{reqDesc}\"";
-                            return true;
+                            return (true, false);
+                        }
+
+                        // 【ADR 91】Probe で外れた巨大ファイルは、通常ファイル検索の完了後まで後回し（Deferred）
+                        if (allowDeferred)
+                        {
+                            return (false, true);
                         }
                     }
 
@@ -903,7 +989,7 @@ namespace FolderMorpher.Services
                         item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
                             ? $"Name + Content: \"{reqDesc}\""
                             : $"Content: \"{reqDesc}\"";
-                        return true;
+                        return (true, false);
                     }
                 }
             }
@@ -915,11 +1001,11 @@ namespace FolderMorpher.Services
                     item.MatchedReason = string.IsNullOrEmpty(officeLinkKeyword)
                         ? "Office External Link"
                         : $"OfficeLink: \"{officeLinkKeyword}\"";
-                    return true;
+                    return (true, false);
                 }
             }
 
-            return false;
+            return (false, false);
         }
 
         private static bool SearchPdfContentMultiple(string filePath, IReadOnlyList<List<string>> requiredGroups, out string snippet)

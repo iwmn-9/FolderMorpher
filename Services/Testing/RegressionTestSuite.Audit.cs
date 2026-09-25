@@ -988,6 +988,20 @@ namespace FolderMorpher.Services.Testing
                 if (AuditIgnoreService.Instance.IsIgnored(testFilePath, testFileSize, testLastWrite))
                     throw new InvalidOperationException("File should NOT be ignored after RemoveIgnore");
 
+                // 検証 7: ADR 91 TargetRoot 境界ガードの検証
+                // 対象フォルダー配下のみが墓場候補になり、親フォルダーやターゲットルート自体が墓場候補に含まれていないこと
+                foreach (var gItem in graveItems)
+                {
+                    if (!gItem.FullPath.StartsWith(testDir, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException($"Graveyard candidate leaked outside target directory: {gItem.FullPath}");
+                    }
+                    if (string.Equals(gItem.FullPath.TrimEnd('\\', '/'), testDir.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException($"Target root itself must never be reported as graveyard candidate: {gItem.FullPath}");
+                    }
+                }
+
                 if (summary.ReadyToCleanBytes <= 0)
                     throw new InvalidOperationException($"ReadyToCleanBytes should be > 0, got {summary.ReadyToCleanBytes}");
             }
