@@ -1038,6 +1038,67 @@ namespace FolderMorpher.Services.Testing
 
                 if (summary.ReadyToCleanBytes <= 0)
                     throw new InvalidOperationException($"ReadyToCleanBytes should be > 0, got {summary.ReadyToCleanBytes}");
+
+                // 検証 10: ADR 97 Astraレビュー是正（削除計画の重複安全情報全行集約 ＆ IsIgnored 動作）
+                // 休眠行と重複行の両方に存在する同一物理ファイルについて、休眠行のみを BuildPlan に渡しても
+                // 重複グループの原本参照（OriginalCandidatePath, OriginalExpectedSize 等）が集約されること
+                string dupOriginalPath = Path.Combine(testDir, "OriginalFile.txt");
+                string dupCopyPath = Path.Combine(testDir, "CopyFile.txt");
+                File.WriteAllText(dupOriginalPath, "DUPLICATE_CONTENT_DATA_12345");
+                File.WriteAllText(dupCopyPath, "DUPLICATE_CONTENT_DATA_12345");
+                long dupSize = new FileInfo(dupOriginalPath).Length;
+                DateTime dupWriteUtc = File.GetLastWriteTimeUtc(dupOriginalPath);
+
+                var originalItem = new AuditItem
+                {
+                    FullPath = dupOriginalPath,
+                    FileName = "OriginalFile.txt",
+                    Size = dupSize,
+                    LastWriteTime = dupWriteUtc,
+                    IssueType = AuditIssueType.Duplicate,
+                    DuplicateGroupId = "GRP_TEST_001",
+                    IsOriginalCandidate = true,
+                    IsChecked = false
+                };
+
+                var duplicateItem = new AuditItem
+                {
+                    FullPath = dupCopyPath,
+                    FileName = "CopyFile.txt",
+                    Size = dupSize,
+                    LastWriteTime = dupWriteUtc,
+                    IssueType = AuditIssueType.Duplicate,
+                    DuplicateGroupId = "GRP_TEST_001",
+                    IsOriginalCandidate = false,
+                    IsChecked = false
+                };
+
+                var dormantItem = new AuditItem
+                {
+                    FullPath = dupCopyPath, // 同一物理ファイル
+                    FileName = "CopyFile.txt",
+                    Size = dupSize,
+                    LastWriteTime = dupWriteUtc,
+                    IssueType = AuditIssueType.Dormant,
+                    DuplicateGroupId = string.Empty,
+                    IsOriginalCandidate = false,
+                    IsChecked = true // 休眠行のみ選択
+                };
+
+                // 全アイテムリストとして3つを渡し、選択は休眠行のみ
+                var allItems = new List<AuditItem> { originalItem, duplicateItem, dormantItem };
+                var plan = AuditCleanupService.BuildPlan(allItems);
+
+                if (plan.Count != 1)
+                    throw new InvalidOperationException($"ADR 97 failed: Expected 1 plan item for CopyFile.txt, got {plan.Count}");
+
+                var planItem = plan[0];
+                if (planItem.OriginalCandidatePath != dupOriginalPath)
+                    throw new InvalidOperationException($"ADR 97 failed: BuildPlan failed to aggregate OriginalCandidatePath from duplicate sibling item. Got: '{planItem.OriginalCandidatePath}'");
+                if (planItem.OriginalExpectedSize != dupSize)
+                    throw new InvalidOperationException($"ADR 97 failed: BuildPlan failed to aggregate OriginalExpectedSize. Got: {planItem.OriginalExpectedSize}");
+                if (!planItem.OriginalExpectedLastWriteTimeUtc.HasValue || planItem.OriginalExpectedLastWriteTimeUtc.Value != dupWriteUtc.ToUniversalTime())
+                    throw new InvalidOperationException($"ADR 97 failed: BuildPlan failed to aggregate OriginalExpectedLastWriteTimeUtc.");
             }
             finally
             {

@@ -236,7 +236,7 @@ namespace AstraSize
             string maxDisplayTag = (AuditMaxDisplayComboBox?.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "100";
             string query = AuditSearchFilterTextBox.Text.Trim();
 
-            var filtered = _lastAuditItems.AsEnumerable();
+            var filtered = _lastAuditItems.Where(x => !x.IsIgnored);
 
             if (selectedTag == "ReadyToClean")
             {
@@ -386,69 +386,94 @@ namespace AstraSize
             _isAuditBatchUpdating = true;
             try
             {
+                // ★ ADR 97: 一括選択プリセットを表示中アイテム（visibleList）に限定
+                // 画面に100件しか表示されていないのに裏で数千件が選択される不一致を完全解消
                 switch (tag)
                 {
                     case "ReadyToClean":
-                        // 「すぐ整理できそう」な候補（スコア80以上・原本以外）を一括選択
-                        foreach (var ai in _lastAuditItems)
+                        foreach (var ai in _lastAuditItems) ai.IsChecked = false;
+                        int rtcCount = 0;
+                        foreach (var ai in visibleList)
                         {
-                            ai.IsChecked = ai.WasteScore >= 80 && !ai.IsOriginalCandidate;
+                            if (ai.WasteScore >= 80 && !ai.IsOriginalCandidate)
+                            {
+                                ai.IsChecked = true;
+                                rtcCount++;
+                            }
                         }
-                        ShowToast("「すぐ整理できそう」な候補（重複・旧版・ZIP残骸等）を一括選択しました");
+                        ShowToast($"表示中の「すぐ整理できそう」な候補 {rtcCount:N0} 件を選択しました");
                         break;
 
                     case "VersionFamilyOnly":
-                        // 世代・旧版の過去版を選択
-                        foreach (var ai in _lastAuditItems)
+                        foreach (var ai in _lastAuditItems) ai.IsChecked = false;
+                        int vfCount = 0;
+                        foreach (var ai in visibleList)
                         {
-                            ai.IsChecked = (ai.IssueType == AuditIssueType.VersionFamily);
+                            if (ai.IssueType == AuditIssueType.VersionFamily)
+                            {
+                                ai.IsChecked = true;
+                                vfCount++;
+                            }
                         }
-                        ShowToast("世代・旧版の過去版を一括選択しました");
+                        ShowToast($"表示中の世代・旧版の過去版 {vfCount:N0} 件を選択しました");
                         break;
 
                     case "ExtractedArchiveOnly":
-                        // 展開済ZIP残骸を選択
-                        foreach (var ai in _lastAuditItems)
+                        foreach (var ai in _lastAuditItems) ai.IsChecked = false;
+                        int eaCount = 0;
+                        foreach (var ai in visibleList)
                         {
-                            ai.IsChecked = (ai.IssueType == AuditIssueType.ExtractedArchive);
+                            if (ai.IssueType == AuditIssueType.ExtractedArchive)
+                            {
+                                ai.IsChecked = true;
+                                eaCount++;
+                            }
                         }
-                        ShowToast("展開済ZIP残骸を一括選択しました");
+                        ShowToast($"表示中の展開済ZIP残骸 {eaCount:N0} 件を選択しました");
                         break;
 
                     case "DupCopyOnly":
-                        // 重複ファイルの原本候補以外を選択（原本は保護）
-                        foreach (var ai in _lastAuditItems)
+                        foreach (var ai in _lastAuditItems) ai.IsChecked = false;
+                        int dupCount = 0;
+                        foreach (var ai in visibleList)
                         {
-                            if (ai.IssueType == AuditIssueType.Duplicate)
+                            if (ai.IssueType == AuditIssueType.Duplicate && !ai.IsOriginalCandidate)
                             {
-                                ai.IsChecked = !ai.IsOriginalCandidate;
-                            }
-                            else
-                            {
-                                ai.IsChecked = false;
+                                ai.IsChecked = true;
+                                dupCount++;
                             }
                         }
-                        ShowToast("重複ファイルの原本以外（コピー）を一括選択しました");
+                        ShowToast($"表示中の重複ファイルの原本以外（コピー） {dupCount:N0} 件を選択しました");
                         break;
 
                     case "Dormant3Y":
-                        // 3年以上前の休眠ファイルを選択
                         DateTime threshold3Y = DateTime.Now.AddYears(-3);
-                        foreach (var ai in _lastAuditItems)
+                        foreach (var ai in _lastAuditItems) ai.IsChecked = false;
+                        int d3Count = 0;
+                        foreach (var ai in visibleList)
                         {
-                            ai.IsChecked = (ai.IssueType == AuditIssueType.Dormant && ai.LastWriteTime < threshold3Y);
+                            if (ai.IssueType == AuditIssueType.Dormant && ai.LastWriteTime < threshold3Y)
+                            {
+                                ai.IsChecked = true;
+                                d3Count++;
+                            }
                         }
-                        ShowToast("3年以上未更新の休眠ファイルを選択しました");
+                        ShowToast($"表示中の3年以上未更新ファイル {d3Count:N0} 件を選択しました");
                         break;
 
                     case "Dormant5Y":
-                        // 5年以上前の休眠ファイルを選択
                         DateTime threshold5Y = DateTime.Now.AddYears(-5);
-                        foreach (var ai in _lastAuditItems)
+                        foreach (var ai in _lastAuditItems) ai.IsChecked = false;
+                        int d5Count = 0;
+                        foreach (var ai in visibleList)
                         {
-                            ai.IsChecked = (ai.IssueType == AuditIssueType.Dormant && ai.LastWriteTime < threshold5Y);
+                            if (ai.IssueType == AuditIssueType.Dormant && ai.LastWriteTime < threshold5Y)
+                            {
+                                ai.IsChecked = true;
+                                d5Count++;
+                            }
                         }
-                        ShowToast("5年以上未更新の休眠ファイルを選択しました");
+                        ShowToast($"表示中の5年以上未更新ファイル {d5Count:N0} 件を選択しました");
                         break;
 
                     case "SelectVisible":

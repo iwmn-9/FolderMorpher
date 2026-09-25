@@ -357,6 +357,7 @@ namespace FolderMorpher.Services
                                 DuplicateGroupIndex = groupNum,
                                 DuplicateGroupColorIndex = (groupNum - 1) % AuditItem.GroupBgPalette.Length,
                                 IsOriginalCandidate = isOriginal,
+                                IsIgnored = AuditIgnoreService.Instance.IsIgnored(fi.FullPath, fi.Length, fi.LastWriteTime),
                                 WasteScore = isOriginal ? 0 : 95,
                                 ScoreBreakdown = dupBreakdown
                             });

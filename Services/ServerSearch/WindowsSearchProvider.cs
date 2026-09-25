@@ -244,6 +244,13 @@ namespace FolderMorpher.Services.ServerSearch
                 }
             }
 
+            // ContentKeyword (content:"..." 構文) の SQL 条件生成
+            if (!string.IsNullOrWhiteSpace(query.ContentKeyword))
+            {
+                string escapedContent = EscapeContainsTerm(query.ContentKeyword);
+                whereClauses.Add($"(CONTAINS(System.Search.Contents, '\"{escapedContent}\"') OR CONTAINS(System.FileName, '\"{escapedContent}\"') OR System.FileName LIKE '%{EscapeLike(query.ContentKeyword)}%')");
+            }
+
             // キーワードグループ（AND-of-ORs）の SQL 条件生成
             if (query.KeywordGroups != null && query.KeywordGroups.Count > 0)
             {

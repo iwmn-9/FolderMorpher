@@ -1288,5 +1288,39 @@
   - `Services/Testing/RegressionTestSuite.Search.cs`: 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
   - Windows Server / CI ヘッドレス環境でのネイティブ COM クラッシュを根絶。
 
+---
+
+### ADR 97: Astra全体レビュー完全是正 ＆ 外部Index網羅性担保 ＆ 削除安全集約 ＆ 3GiBオーバーフロー防止 ＆ XML文字参照復元 ＆ 表示選択整合
+*(v2.2.20 本番施工 & ADR 97)*
+
+- **背景 & 動機**:
+  - Astra によるコードベース横断レビューにより、検索、削除安全、大容量ファイル処理、Office 解析、UI整合性の 5 大領域にわたる潜在的課題が指摘された。
+  - **課題 1（検索網羅性）**: 外部Index（Windows Search WSP）が候補を返した際に通常走査を完全にスキップすると、WSPの2,000件上限や単語境界の違い（部分一致等）により、インデックス外のファイルが走査漏れ（False Negative）となるリスク。
+  - **課題 2（削除安全情報抜け）**: 削除計画（`BuildPlan`）において、ユーザーが「休眠行」や「旧版行」側のみを選択した場合、その物理ファイルが重複グループに属していても原本参照情報が集約されず、原本生存確認・SHA-256再照合がバイパスされるリスク。
+  - **課題 3（巨大ファイル・エンコーディング）**: 3GiB を超えるテキストファイルで `(int)fs.Length` のキャストによる負数オーバーフロー（`OverflowException` ➔ 偽の不一致）。また、BOM なし UTF-16LE/BE テキストが先頭 NUL カウントによりバイナリとして誤判定・脱落するリスク。
+  - **課題 4（Office XML 文字参照・セル境界）**: `StripXmlTagsFast` で `<w:t>R&amp;D</w:t>` などの XML 文字参照がデコードされず検索漏れになる問題。また、Excel 共有文字列 `<si>` やセル `<c>` 境界で空白が挟まれず単語が結合するリスク。
+  - **課題 5（表示件数と一括選択の不一致 ＆ 重複除外記憶）**: 表示件数制限（上位100件等）がある状態で「整理推奨を一括選択」すると、画面外の見えないアイテムまで全選択されてしまう不整合。また、重複候補で「整理除外（スキップ記憶）」を設定しても一覧から消えない問題。
+- **施工内容**:
+  - **1. 外部Index先行ブースト ＆ 完全網羅走査 (`Services/SearchEngineService.cs`, `WindowsSearchProvider.cs`)**:
+    - `WindowsSearchProvider.BuildSearchSql`: `content:"..."`（`query.ContentKeyword`）に対応。
+    - `SearchEngineService.SearchDirectFolderAsync`: サーバーIndexから候補が得られた場合、早期原本確認キュー（先頭ブースト）として即時投入しつつ、**通常のディレクトリ走査（`SafeFileEnumerator`）を省略せずに継続実行**。先行投入済みのパスは `seenPaths.Contains(...)` で $O(1)$ スキップし、上限や単語境界による走査漏れを 100% 根絶。
+  - **2. 削除計画における安全情報の全行集約 (`Services/AuditCleanupService.cs`)**:
+    - `BuildPlan`: 全アイテム（`itemList`）から `FullPath` ➔ `DuplicateGroupId` の集約マップを作成。休眠行のみ選択時でも、同一物理ファイルが重複グループに属していれば原本参照（`OriginalCandidatePath`, `OriginalExpectedSize`, `OriginalExpectedLastWriteTimeUtc`）を同一ファイルの他行から 100% 確実に集約・マージ。原本生存確認・SHA-256 再照合がバイパスされる穴を完全に塞いだ。
+  - **3. 巨大ファイル 3GiB オーバーフロー防止 ＆ BOMなしUTF-16 ＆ 長大キーワード境界保護 (`Services/ContentExtractionService.cs`)**:
+    - `DetectTextEncoding`, `ReadStreamWithEncodingAsync`, `SearchTextContentWithBufferAsync`: 先に `(int)fs.Length` にキャストしていた箇所を `Math.Min(1024L, Math.Max(0L, fs.Length))` 等で安全に境界制限してからキャストするよう修正。3GiB 超での負数オーバーフローを根絶。
+    - `SearchTextContentWithBufferAsync`: 先頭バイナリ早期ドロップにおいて、奇数/偶数バイトに 0x00 が並ぶ BOM なし UTF-16LE/BE ヒューリスティック判定を追加し、テキストファイルがバイナリとして誤脱落するのを防止。
+    - 最長キーワード長に応じた動的オーバーラップ幅（最大16,384文字）を導入。
+  - **4. Office XML 文字参照復元 ＆ セル/共有文字列境界保護 (`Services/ContentExtractionService.cs`)**:
+    - `StripXmlTagsFast`: ブロック/境界タグの判定に `<si>`, `<c>`, `<v>`, `<w:tc>` 等を追加し、Excel 共有文字列やセル間の文字が結合されるのを防止。
+    - 抽出結果に対して `System.Net.WebUtility.HtmlDecode` を適用し、`<w:t>R&amp;D</w:t>` などの文字参照を `R&D` へ完全復元。
+  - **5. 「見せる量」と「処理する量」の完全一致 ＆ 重複候補の除外記憶 (`MainWindow.Audit.cs`, `Services/AuditReportService.cs`, `Models/AuditModels.cs`)**:
+    - `AuditItem` に `IsIgnored` プロパティを追加。`AuditReportService.cs` の重複生成ループで除外記憶判定を反映し、UI 表示フィルターで除外候補を即時非表示化。
+    - `AuditSmartSelectComboBox_SelectionChanged`: 一括選択プリセット（整理推奨、旧版、重複等）を現在画面にバインドされている `visibleList`（`ItemsSource`、例: 上位100件）のみを対象に適用するよう改修。
+- **検証と恒久保護**:
+  - `Services/Testing/RegressionTestSuite.Search.cs`: Section 23（XML文字参照復元、Excel境界、BOMなしUTF-16LE、3GiB境界計算、WSP content:構文）を追加し検証。
+  - `Services/Testing/RegressionTestSuite.Audit.cs`: 検証 10（休眠行のみ選択時の重複原本安全情報集約）を追加し検証。
+  - 全 8 ドメイン自動回帰テスト 8/8 ALL PASS を達成。
+
+
 
 

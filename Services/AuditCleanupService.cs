@@ -63,6 +63,14 @@ namespace FolderMorpher.Services
                 .GroupBy(i => i.DuplicateGroupId)
                 .ToDictionary(g => g.Key, g => g.First());
 
+            // ★ ADR 97: 全アイテムから FullPath -> DuplicateGroupId の集約マップを作成
+            // ユーザーが「休眠行」や「旧版行」側のみを選択した場合でも、その物理ファイルが重複グループに
+            // 属していれば、原本の生存確認および SHA-256 再照合が 100% 確実に発動するよう安全情報を集約する。
+            var dupGroupByFullPath = itemList
+                .Where(i => !string.IsNullOrEmpty(i.DuplicateGroupId))
+                .GroupBy(i => i.FullPath, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().DuplicateGroupId, StringComparer.OrdinalIgnoreCase);
+
             // 2. チェックされているアイテムのみを抽出し、FullPath でグループ化
             // （Sol指摘対応: 墓場フォルダーなどフォルダー項目の事故削除を防止するため IsCleanable で二重ガード）
             var checkedItems = itemList.Where(i => i.IsChecked && i.IsCleanable).ToList();
@@ -72,7 +80,15 @@ namespace FolderMorpher.Services
                 {
                     var first = g.First();
                     AuditItem? origItem = null;
-                    if (!string.IsNullOrEmpty(first.DuplicateGroupId) && origByGroup.TryGetValue(first.DuplicateGroupId, out var oi))
+
+                    // 選択された行、または同一 FullPath の他行から DuplicateGroupId を探索
+                    string? dupGroupId = g.Select(i => i.DuplicateGroupId).FirstOrDefault(id => !string.IsNullOrEmpty(id));
+                    if (string.IsNullOrEmpty(dupGroupId))
+                    {
+                        dupGroupByFullPath.TryGetValue(g.Key, out dupGroupId);
+                    }
+
+                    if (!string.IsNullOrEmpty(dupGroupId) && origByGroup.TryGetValue(dupGroupId, out var oi))
                     {
                         // 自身が原本候補でない場合のみ原本参照を設定
                         if (!string.Equals(oi.FullPath, g.Key, StringComparison.OrdinalIgnoreCase))

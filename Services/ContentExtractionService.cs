@@ -149,15 +149,17 @@ namespace FolderMorpher.Services
                 else if (c == '>')
                 {
                     insideTag = false;
-                    // ブロック要素の開始または終了タグかを判定（段落・行・セルの区切りでのみ空白を挿入）
+                    // ブロック要素の開始または終了タグかを判定（段落・行・セル・共有文字列の区切りでのみ空白を挿入）
                     if (tagStart >= 0)
                     {
                         ReadOnlySpan<char> tag = xml.AsSpan(tagStart + 1, i - tagStart - 1).TrimStart('/');
                         if (tag.StartsWith("w:p", StringComparison.OrdinalIgnoreCase) ||
                             tag.StartsWith("w:tr", StringComparison.OrdinalIgnoreCase) ||
+                            tag.StartsWith("w:tc", StringComparison.OrdinalIgnoreCase) ||
                             tag.StartsWith("row", StringComparison.OrdinalIgnoreCase) ||
                             tag.StartsWith("a:p", StringComparison.OrdinalIgnoreCase) ||
-                            tag.StartsWith("w:tc", StringComparison.OrdinalIgnoreCase) ||
+                            tag.StartsWith("si", StringComparison.OrdinalIgnoreCase) ||
+                            tag.StartsWith("v", StringComparison.OrdinalIgnoreCase) ||
                             tag.StartsWith("c ", StringComparison.OrdinalIgnoreCase) ||
                             tag.Equals("c", StringComparison.OrdinalIgnoreCase))
                         {
@@ -186,7 +188,18 @@ namespace FolderMorpher.Services
                     }
                 }
             }
-            return sb.ToString().Trim();
+
+            string rawText = sb.ToString().Trim();
+            // ★ ADR 97: XML/HTML文字参照（&amp; -> &, &lt; -> < 等）の完全復元
+            if (rawText.Contains('&'))
+            {
+                try
+                {
+                    rawText = System.Net.WebUtility.HtmlDecode(rawText);
+                }
+                catch { }
+            }
+            return rawText;
         }
 
         /// <summary>
@@ -197,7 +210,7 @@ namespace FolderMorpher.Services
             long origPos = stream.Position;
             try
             {
-                byte[] head = new byte[Math.Min(4096, (int)(stream.Length - origPos))];
+                byte[] head = new byte[(int)Math.Min(4096L, Math.Max(0L, stream.Length - origPos))];
                 int bytesRead = stream.Read(head, 0, head.Length);
                 stream.Position = origPos;
 
@@ -262,7 +275,8 @@ namespace FolderMorpher.Services
         private static async Task<string?> ReadStreamWithEncodingAsync(FileStream fs, Encoding encoding, CancellationToken ct)
         {
             using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 65536, leaveOpen: true);
-            char[] buffer = new char[Math.Min(MaxCharsPerDocument, (int)Math.Min(fs.Length, MaxCharsPerDocument))];
+            int bufLen = (int)Math.Min((long)MaxCharsPerDocument, Math.Min(Math.Max(0L, fs.Length), (long)MaxCharsPerDocument));
+            char[] buffer = new char[Math.Max(1, bufLen)];
             int charsRead = await reader.ReadBlockAsync(buffer.AsMemory(0, buffer.Length), ct);
             return charsRead > 0 ? new string(buffer, 0, charsRead) : null;
         }
@@ -323,21 +337,34 @@ namespace FolderMorpher.Services
                 using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan | FileOptions.Asynchronous);
                 if (fs.Length == 0) return null;
 
-                // 先頭バイトでバイナリ早期脱落判定
-                byte[] head = new byte[Math.Min(1024, (int)fs.Length)];
+                // 先頭バイトでバイナリ早期脱落判定（3GiB超での負数オーバーフロー防止）
+                byte[] head = new byte[(int)Math.Min(1024L, Math.Max(0L, fs.Length))];
                 int bytesRead = await fs.ReadAsync(head.AsMemory(0, head.Length), ct);
                 fs.Position = 0;
 
                 int nulls = 0;
-                for (int i = 0; i < bytesRead; i++) if (head[i] == 0) nulls++;
-                bool isUtf16 = (bytesRead >= 2 && ((head[0] == 0xFF && head[1] == 0xFE) || (head[0] == 0xFE && head[1] == 0xFF)));
-                if (!isUtf16 && nulls >= 2) return null; // 純粋なバイナリは即座に脱落
+                int oddNulls = 0;
+                int evenNulls = 0;
+                for (int i = 0; i < bytesRead; i++)
+                {
+                    if (head[i] == 0)
+                    {
+                        nulls++;
+                        if ((i % 2) == 1) oddNulls++; else evenNulls++;
+                    }
+                }
+                bool isUtf16Bom = (bytesRead >= 2 && ((head[0] == 0xFF && head[1] == 0xFE) || (head[0] == 0xFE && head[1] == 0xFF)));
+                // ★ ADR 97: BOMなしUTF-16LE/BE（奇数/偶数バイトの25%超がNUL）をバイナリ脱落から保護
+                bool isUtf16NoBom = (bytesRead >= 8 && (oddNulls >= (bytesRead / 4) || evenNulls >= (bytesRead / 4)));
+                if (!isUtf16Bom && !isUtf16NoBom && nulls >= 2) return null; // 純粋なバイナリは即座に脱落
 
                 Encoding encoding = DetectTextEncoding(fs);
                 using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 65536);
 
                 const int BufferSize = 65536;
-                const int MaxOverlap = 1024;
+                // ★ ADR 97: クエリ内の最長キーワード長に応じた動的オーバーラップ幅（長大キーワードの境界またぎ漏れ根絶）
+                int maxKeywordLen = Math.Max(singleKeyword?.Length ?? 0, (ac?.Patterns.Count > 0 ? ac.Patterns.Max(p => p.Length) : 0));
+                int maxOverlap = Math.Clamp(Math.Max(1024, maxKeywordLen * 2), 1024, 16384);
                 char[] buffer = new char[BufferSize];
                 int overlapChars = 0;
 
@@ -360,7 +387,7 @@ namespace FolderMorpher.Services
                         if (charsRead == 0) break; // EOF
 
                         // 次のバッファへオーバーラップ（境界またぎ単語保護）
-                        overlapChars = Math.Min(totalChars, MaxOverlap);
+                        overlapChars = Math.Min(totalChars, maxOverlap);
                         Array.Copy(buffer, totalChars - overlapChars, buffer, 0, overlapChars);
                     }
                     return null;
@@ -403,7 +430,7 @@ namespace FolderMorpher.Services
                         if (charsRead == 0) break; // EOF
 
                         // 次のバッファへオーバーラップ
-                        overlapChars = Math.Min(totalChars, MaxOverlap);
+                        overlapChars = Math.Min(totalChars, maxOverlap);
                         Array.Copy(buffer, totalChars - overlapChars, buffer, 0, overlapChars);
                     }
                 }

@@ -85,6 +85,7 @@ namespace FolderMorpher.Models
         public int DuplicateGroupIndex { get; set; }
         public int DuplicateGroupColorIndex { get; set; }
         public bool IsOriginalCandidate { get; set; }
+        public bool IsIgnored { get; set; }
 
         // 整理候補スコア & 親しみやすい目安
         public int WasteScore { get; set; } = 50;

@@ -315,6 +315,13 @@ namespace FolderMorpher.Services
                 // ★ ADR 94: Server Search Accelerator（サーバー側インデックス拝借 ＆ 候補ピンポイント原本確認）
                 // Windows Server (WSP) または WSP 互換 NAS (Synology等) がインデックスを公開していれば、
                 // 数万〜数十万ファイルのディレクトリ全走査をスキップし、返された候補（例: 83件）のみを即座に原本確認する。
+                var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                // ★ ADR 94 & ADR 97: Server Search Accelerator（先行ブースト ＆ 完全網羅走査）
+                // サーバー側インデックス（WSP等）から候補が得られた場合、まずその候補群を「先行原本確認」として
+                // 最優先でパイプラインへ投入し、初期結果を秒速でユーザーへ提示する。
+                // ただし外部インデックスの件数上限（2000件）や語境界による取りこぼしを防ぐため、
+                // 通常のディレクトリ走査も省略せずに継続実行し、先行投入済みのパスは重複スキップ（seenPaths）する。
                 IReadOnlyList<string>? serverCandidates = null;
                 try
                 {
@@ -324,69 +331,68 @@ namespace FolderMorpher.Services
 
                 if (serverCandidates != null && serverCandidates.Count > 0)
                 {
-                    // ★ サーバー側インデックスの候補取得に成功！ディレクトリ全走査をスキップしてピンポイント原本確認へ！
-                    try
+                    for (int i = 0; i < serverCandidates.Count; i++)
                     {
-                        for (int i = 0; i < serverCandidates.Count; i++)
+                        if (ct.IsCancellationRequested) break;
+                        string candPath = serverCandidates[i];
+                        if (string.IsNullOrEmpty(candPath) || !seenPaths.Add(candPath)) continue;
+                        if (!File.Exists(candPath)) continue;
+
+                        try
                         {
-                            if (ct.IsCancellationRequested) break;
-                            string candPath = serverCandidates[i];
-                            if (!File.Exists(candPath)) continue;
+                            var fi = new FileInfo(candPath);
+                            var entry = new ScannedFileEntry(
+                                fi.FullName,
+                                fi.Name,
+                                Path.GetDirectoryName(fi.FullName) ?? string.Empty,
+                                fi.Length,
+                                fi.CreationTimeUtc.ToLocalTime(),
+                                fi.LastWriteTimeUtc.ToLocalTime(),
+                                fi.LastAccessTimeUtc.ToLocalTime(),
+                                fi.Attributes);
 
-                            try
-                            {
-                                var fi = new FileInfo(candPath);
-                                var entry = new ScannedFileEntry(
-                                    fi.FullName,
-                                    fi.Name,
-                                    Path.GetDirectoryName(fi.FullName) ?? string.Empty,
-                                    fi.Length,
-                                    fi.CreationTimeUtc.ToLocalTime(),
-                                    fi.LastWriteTimeUtc.ToLocalTime(),
-                                    fi.LastAccessTimeUtc.ToLocalTime(),
-                                    fi.Attributes);
-
-                                HandleEntry(entry);
-                            }
-                            catch { }
+                            HandleEntry(entry);
                         }
-                    }
-                    finally
-                    {
-                        contentChannel.Writer.Complete();
+                        catch { }
                     }
                 }
-                else
-                {
-                    // ★ ADR 93: TreeCache-First 差分枝刈り走査
-                    // サーバー側インデックスが未提供/非対応の場合は、従来の差分枝刈り＋局所性Live走査へ安全にフォールバック
-                    TreeCachePruningIndex? pruningIndex = null;
-                    try
-                    {
-                        var cachedTree = await AstraSize.Services.StorageHistoryService.Instance.LoadTreeCacheAsync(targetFolder);
-                        if (cachedTree != null)
-                        {
-                            pruningIndex = new TreeCachePruningIndex(cachedTree);
-                        }
-                    }
-                    catch { }
 
-                    try
+                // ★ ADR 93: TreeCache-First 差分枝刈り走査 ＋ 局所性Live走査
+                // サーバー候補の投入後も、全階層の網羅的走査を確実に実行（False Negative ゼロ保証）
+                TreeCachePruningIndex? pruningIndex = null;
+                try
+                {
+                    var cachedTree = await AstraSize.Services.StorageHistoryService.Instance.LoadTreeCacheAsync(targetFolder);
+                    if (cachedTree != null)
                     {
-                        await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
-                            targetFolder,
-                            "*.*",
-                            coverage: null,
-                            onProgress: null,
-                            ct: ct,
-                            includeDirectories: includeDirs,
-                            onEntryFound: HandleEntry,
-                            pruningIndex: pruningIndex);
+                        pruningIndex = new TreeCachePruningIndex(cachedTree);
                     }
-                    finally
-                    {
-                        contentChannel.Writer.Complete();
-                    }
+                }
+                catch { }
+
+                try
+                {
+                    await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
+                        targetFolder,
+                        "*.*",
+                        coverage: null,
+                        onProgress: null,
+                        ct: ct,
+                        includeDirectories: includeDirs,
+                        onEntryFound: entry =>
+                        {
+                            // サーバー側候補として先行投入済みのパスは二重走査をスキップ
+                            if (seenPaths.Count > 0 && seenPaths.Contains(entry.FullPath))
+                            {
+                                return;
+                            }
+                            HandleEntry(entry);
+                        },
+                        pruningIndex: pruningIndex);
+                }
+                finally
+                {
+                    contentChannel.Writer.Complete();
                 }
 
                 // Consumer ワーカーの完了を待機

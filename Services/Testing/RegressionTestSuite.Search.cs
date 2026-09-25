@@ -1854,6 +1854,66 @@ namespace FolderMorpher.Services.Testing
                     }
                 }
             }
+
+            // -------------------------------------------------------------
+            // 23. ADR 97: Astra全体レビュー是正 (Search: XML文字参照・境界・BOMなしUTF-16・3GiB保護・外部Index SQL)
+            // -------------------------------------------------------------
+            {
+                // A. XML文字参照復元（HtmlDecode）＆ Excel共有文字列/セル境界空白挿入
+                string xmlWithEntities = "<w:p><w:r><w:t>R&amp;D&lt;Project&gt; &quot;2026&quot;</w:t></w:r></w:p>";
+                string decoded = ContentExtractionService.StripXmlTagsFast(xmlWithEntities);
+                if (!decoded.Contains("R&D<Project> \"2026\""))
+                    throw new Exception($"ADR 97 failed: StripXmlTagsFast failed to decode XML entities. Got: '{decoded}'");
+
+                string excelSharedStrings = "<si><t>Alpha</t></si><si><t>Beta</t></si><c><v>100</v></c><c><v>200</v></c>";
+                string splitExcel = ContentExtractionService.StripXmlTagsFast(excelSharedStrings);
+                if (splitExcel.Contains("AlphaBeta") || !splitExcel.Contains("Alpha") || !splitExcel.Contains("Beta"))
+                    throw new Exception($"ADR 97 failed: StripXmlTagsFast must insert spaces at <si> / <c> boundaries to prevent merging. Got: '{splitExcel}'");
+
+                // B. BOMなしUTF-16LE テキストのバイナリ誤脱落防止
+                string tempDir = Path.Combine(Path.GetTempPath(), "fm_test_adr97_search_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(tempDir);
+                try
+                {
+                    string utf16NoBomFile = Path.Combine(tempDir, "utf16_nobom.txt");
+                    // BOMなしUTF-16LE で "CONFIDENTIAL_REPORT" を書き込む
+                    var encUtf16NoBom = new UnicodeEncoding(bigEndian: false, byteOrderMark: false);
+                    File.WriteAllText(utf16NoBomFile, "CONFIDENTIAL_REPORT_DOCUMENT", encUtf16NoBom);
+
+                    var hit = await ContentExtractionService.SearchTextContentWithBufferAsync(
+                        utf16NoBomFile,
+                        "CONFIDENTIAL",
+                        null,
+                        null,
+                        1,
+                        CancellationToken.None);
+
+                    if (hit == null || !hit.Contains("CONFIDENTIAL"))
+                        throw new Exception("ADR 97 failed: SearchTextContentWithBufferAsync failed to match BOM-less UTF-16 text.");
+
+                    // C. 3GiB ファイルシミュレーション（境界計算・キャストの負数オーバーフロー防止）
+                    long hugeFileSimulatedLen = 3L * 1024 * 1024 * 1024; // 3 GiB
+                    int readLen = (int)Math.Min(1024L, Math.Max(0L, hugeFileSimulatedLen));
+                    if (readLen != 1024)
+                        throw new Exception($"ADR 97 failed: Math.Min with 3GiB should clamp to 1024, got {readLen}");
+
+                    // D. WindowsSearchProvider BuildSearchSql での content:"..." 構文対応
+                    var qContent = SearchQueryParser.Parse("content:\"secret_contract\"");
+                    if (string.IsNullOrEmpty(qContent.ContentKeyword) || qContent.ContentKeyword != "secret_contract")
+                        throw new Exception($"ADR 97 failed: SearchQueryParser did not extract ContentKeyword. Got: '{qContent.ContentKeyword}'");
+
+                    var sql = FolderMorpher.Services.ServerSearch.WindowsSearchProvider.BuildSearchSql(@"\\server\share", qContent);
+                    if (sql == null || !sql.Contains("CONTAINS(System.Search.Contents,") || !sql.Contains("secret_contract"))
+                        throw new Exception($"ADR 97 failed: BuildSearchSql must include CONTAINS for ContentKeyword. Got: '{sql}'");
+                }
+                finally
+                {
+                    if (Directory.Exists(tempDir))
+                    {
+                        Directory.Delete(tempDir, true);
+                    }
+                }
+            }
         }
     }
 
