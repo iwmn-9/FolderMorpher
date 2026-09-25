@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -328,12 +329,14 @@ namespace FolderMorpher.Services
             AhoCorasickSearcher? ac,
             List<int>? patternToGroup,
             int totalGroups,
-            CancellationToken ct)
+            CancellationToken ct,
+            Action<double>? reportIoElapsed = null)
         {
-            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath)) return null;
+            if (string.IsNullOrEmpty(filePath)) return null;
 
             try
             {
+                var ioSw = Stopwatch.StartNew();
                 using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan | FileOptions.Asynchronous);
                 if (fs.Length == 0) return null;
 
@@ -341,6 +344,8 @@ namespace FolderMorpher.Services
                 byte[] head = new byte[(int)Math.Min(1024L, Math.Max(0L, fs.Length))];
                 int bytesRead = await fs.ReadAsync(head.AsMemory(0, head.Length), ct);
                 fs.Position = 0;
+                ioSw.Stop();
+                reportIoElapsed?.Invoke(ioSw.Elapsed.TotalMilliseconds);
 
                 int nulls = 0;
                 int oddNulls = 0;
@@ -552,43 +557,59 @@ namespace FolderMorpher.Services
 
 
         /// <summary>
+        /// <summary>
         /// UNC/ネットワークファイルの細切れRead/SeekによるSMB往復遅延を隠蔽するため、
         /// 20MB以下のファイルは一括でメモリへ読み込み MemoryStream として開く。
         /// 20MB超の巨大ファイルは FileStream(SequentialScan) で安全に開く。
+        /// 【ADR 98 - Sol指摘対応】既知サイズ（knownSize）がある場合は不要な FileInfo RPC を全廃し、
+        /// 純粋なネットワークI/O所要時間を reportIoElapsed へ報告する。
         /// </summary>
-        public static Stream OpenBufferedReadStream(string filePath)
+        public static Stream OpenBufferedReadStream(string filePath, long knownSize = -1, Action<double>? reportIoElapsed = null)
         {
-            var fi = new FileInfo(filePath);
+            var sw = Stopwatch.StartNew();
+            long length = knownSize;
+            if (length < 0)
+            {
+                var fi = new FileInfo(filePath);
+                length = fi.Length;
+            }
             const long MaxMemoryBufferedSize = 20 * 1024 * 1024; // 20MB
-            if (fi.Length > 0 && fi.Length <= MaxMemoryBufferedSize)
+            Stream resultStream;
+            if (length > 0 && length <= MaxMemoryBufferedSize)
             {
                 byte[] bytes = File.ReadAllBytes(filePath);
-                return new MemoryStream(bytes, writable: false);
+                resultStream = new MemoryStream(bytes, writable: false);
             }
-            return new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan);
+            else
+            {
+                resultStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan);
+            }
+            sw.Stop();
+            reportIoElapsed?.Invoke(sw.Elapsed.TotalMilliseconds);
+            return resultStream;
         }
 
         /// <summary>
         /// Officeファイル（Excel/Word/PowerPoint）をストリーム走査し、キーワード群の包含判定を高速実行（Early Exit対応）。
         /// </summary>
-        public static bool SearchOfficeContent(string filePath, IReadOnlyList<string> keywords, out string snippet)
+        public static bool SearchOfficeContent(string filePath, IReadOnlyList<string> keywords, out string snippet, long knownSize = -1, Action<double>? reportIoElapsed = null)
         {
             var groups = keywords.Select(k => new List<string> { k }).ToList();
-            return SearchOfficeContent(filePath, groups, out snippet);
+            return SearchOfficeContent(filePath, groups, out snippet, knownSize, reportIoElapsed);
         }
 
         /// <summary>
         /// Officeファイル（Excel/Word/PowerPoint）をストリーム走査し、ORグループ群の包含判定を高速実行（Early Exit対応）。
         /// </summary>
-        public static bool SearchOfficeContent(string filePath, IReadOnlyList<List<string>> requiredGroups, out string snippet)
+        public static bool SearchOfficeContent(string filePath, IReadOnlyList<List<string>> requiredGroups, out string snippet, long knownSize = -1, Action<double>? reportIoElapsed = null)
         {
             snippet = string.Empty;
-            if (requiredGroups.Count == 0 || !File.Exists(filePath)) return false;
+            if (requiredGroups.Count == 0 || string.IsNullOrEmpty(filePath)) return false;
 
             try
             {
                 string ext = Path.GetExtension(filePath).ToLowerInvariant();
-                using var stream = OpenBufferedReadStream(filePath);
+                using var stream = OpenBufferedReadStream(filePath, knownSize, reportIoElapsed);
                 using var zip = new ZipArchive(stream, ZipArchiveMode.Read, false);
 
                 var foundGroups = new HashSet<int>();

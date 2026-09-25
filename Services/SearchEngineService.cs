@@ -190,7 +190,7 @@ namespace FolderMorpher.Services
                 }
 
                 // Consumer ワーカー群の起動（Shared I/O Governor による UNC Root 単位の適応並列制御）
-                int workerCount = Math.Max(2, Math.Min(Environment.ProcessorCount, 8));
+                int workerCount = Math.Max(4, Math.Min(Environment.ProcessorCount * 2, AdaptiveConcurrencyController.ContentMaxConcurrency));
                 var governor = SharedIoGovernor.GetGovernor(targetFolder);
                 var controller = governor.ContentController;
                 int deepProcessed = 0;
@@ -206,14 +206,22 @@ namespace FolderMorpher.Services
                         {
                             if (ct.IsCancellationRequested) return;
 
-                            using var slot = await governor.AcquireSlotAsync(ct);
                             using var lease = await controller.AcquireAsync(ct);
-                            var fileSw = Stopwatch.StartNew();
+                            double measuredIoMs = 0;
                             bool isError = false;
 
                             try
                             {
-                                var (isHit, isDeferred) = await InspectContentItemAsync(item, query, hasOfficeLinkReq, officeLinkKeyword, ct, allowDeferred: true, sharedContext: sharedContext);
+                                var (isHit, isDeferred) = await InspectContentItemAsync(
+                                    item,
+                                    query,
+                                    hasOfficeLinkReq,
+                                    officeLinkKeyword,
+                                    ct,
+                                    allowDeferred: true,
+                                    sharedContext: sharedContext,
+                                    reportIoElapsed: ms => measuredIoMs = ms);
+
                                 if (isHit)
                                 {
                                     EmitHit(item);
@@ -230,8 +238,8 @@ namespace FolderMorpher.Services
                             }
                             finally
                             {
-                                fileSw.Stop();
-                                lease.Report(fileSw.Elapsed.TotalMilliseconds, isError);
+                                // ★ ADR 98: CPU解析時間を除外した「純粋なI/O時間」のみをGovernorへ報告（誤った崖落ち防止）
+                                lease.Report(measuredIoMs > 0 ? measuredIoMs : 15.0, isError);
                             }
 
                             int dp = Interlocked.Increment(ref deepProcessed);
@@ -805,7 +813,7 @@ namespace FolderMorpher.Services
             // ★ Sol提唱: 小さいファイル優先（Small-File First）
             // 100KBと100MBなら100KBから先に読み、0.1〜0.3秒で初期ヒットをUIへポンポン流す
             var validFiles = candidates
-                .Where(c => !c.IsDirectory && File.Exists(c.FullPath))
+                .Where(c => !c.IsDirectory)
                 .OrderBy(c => c.SizeBytes)
                 .ToList();
 
@@ -819,7 +827,7 @@ namespace FolderMorpher.Services
 
             var po = new ParallelOptions
             {
-                MaxDegreeOfParallelism = AdaptiveConcurrencyController.MaxConcurrency,
+                MaxDegreeOfParallelism = AdaptiveConcurrencyController.ContentMaxConcurrency,
                 CancellationToken = ct
             };
 
@@ -850,14 +858,22 @@ namespace FolderMorpher.Services
             {
                 token.ThrowIfCancellationRequested();
 
-                using var slot = await governor.AcquireSlotAsync(token);
                 using var lease = await controller.AcquireAsync(token);
-                var fileSw = Stopwatch.StartNew();
+                double measuredIoMs = 0;
                 bool isError = false;
 
                 try
                 {
-                    var (isHit, isDeferred) = await InspectContentItemAsync(item, query, hasOfficeLinkReq, officeLinkKeyword, token, allowDeferred: true, sharedContext: sharedContext);
+                    var (isHit, isDeferred) = await InspectContentItemAsync(
+                        item,
+                        query,
+                        hasOfficeLinkReq,
+                        officeLinkKeyword,
+                        token,
+                        allowDeferred: true,
+                        sharedContext: sharedContext,
+                        reportIoElapsed: ms => measuredIoMs = ms);
+
                     if (isHit)
                     {
                         EmitHit(item);
@@ -874,8 +890,8 @@ namespace FolderMorpher.Services
                 }
                 finally
                 {
-                    fileSw.Stop();
-                    lease.Report(fileSw.Elapsed.TotalMilliseconds, isError);
+                    // ★ ADR 98: CPU解析時間を除外した「純粋なI/O時間」のみをGovernorへ報告
+                    lease.Report(measuredIoMs > 0 ? measuredIoMs : 15.0, isError);
                 }
 
                 int c = Interlocked.Increment(ref processed);
@@ -901,13 +917,21 @@ namespace FolderMorpher.Services
                 foreach (var dItem in deferredLargeFiles)
                 {
                     if (ct.IsCancellationRequested) break;
-                    using var slot = await governor.AcquireSlotAsync(ct);
                     using var lease = await controller.AcquireAsync(ct);
-                    var fileSw = Stopwatch.StartNew();
+                    double measuredIoMs = 0;
                     bool isError = false;
                     try
                     {
-                        var (isHit, _) = await InspectContentItemAsync(dItem, query, hasOfficeLinkReq, officeLinkKeyword, ct, allowDeferred: false, sharedContext: sharedContext);
+                        var (isHit, _) = await InspectContentItemAsync(
+                            dItem,
+                            query,
+                            hasOfficeLinkReq,
+                            officeLinkKeyword,
+                            ct,
+                            allowDeferred: false,
+                            sharedContext: sharedContext,
+                            reportIoElapsed: ms => measuredIoMs = ms);
+
                         if (isHit)
                         {
                             EmitHit(dItem);
@@ -920,8 +944,7 @@ namespace FolderMorpher.Services
                     }
                     finally
                     {
-                        fileSw.Stop();
-                        lease.Report(fileSw.Elapsed.TotalMilliseconds, isError);
+                        lease.Report(measuredIoMs > 0 ? measuredIoMs : 15.0, isError);
                     }
                 }
             }
@@ -996,7 +1019,8 @@ namespace FolderMorpher.Services
             string? officeLinkKeyword,
             CancellationToken token,
             bool allowDeferred = true,
-            QuerySearchContext? sharedContext = null)
+            QuerySearchContext? sharedContext = null,
+            Action<double>? reportIoElapsed = null)
         {
             string ext = Path.GetExtension(item.FullPath).ToLowerInvariant();
 
@@ -1057,7 +1081,7 @@ namespace FolderMorpher.Services
                 // 1. Office (OpenXML: .xlsx, .xlsm, .docx, .pptx)
                 if (OfficeExtensions.Contains(ext))
                 {
-                    if (ContentExtractionService.SearchOfficeContent(item.FullPath, requiredGroups, out string snippet))
+                    if (ContentExtractionService.SearchOfficeContent(item.FullPath, requiredGroups, out string snippet, item.SizeBytes, reportIoElapsed))
                     {
                         item.ContentSnippet = snippet;
                         item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
@@ -1069,6 +1093,7 @@ namespace FolderMorpher.Services
                 // 2. PDF (.pdf) with Windows IFilter and pure C# fallback
                 else if (PdfExtensions.Contains(ext))
                 {
+                    var pdfIoSw = Stopwatch.StartNew();
                     bool isFullMatch = sharedContext != null && requiredGroups.Count == sharedContext.Groups.Count;
                     bool pdfHit;
                     string snippet;
@@ -1080,6 +1105,8 @@ namespace FolderMorpher.Services
                     {
                         pdfHit = SearchPdfContentMultiple(item.FullPath, requiredGroups, out snippet);
                     }
+                    pdfIoSw.Stop();
+                    reportIoElapsed?.Invoke(pdfIoSw.Elapsed.TotalMilliseconds);
 
                     if (pdfHit)
                     {
@@ -1124,11 +1151,15 @@ namespace FolderMorpher.Services
                             sharedContext.Ac,
                             sharedContext.PatternToGroup,
                             sharedContext.Groups.Count,
-                            token);
+                            token,
+                            reportIoElapsed);
                     }
                     else
                     {
+                        var textIoSw = Stopwatch.StartNew();
                         snippet = await ContentExtractionService.SearchTextContentAsync(item.FullPath, requiredGroups, token);
+                        textIoSw.Stop();
+                        reportIoElapsed?.Invoke(textIoSw.Elapsed.TotalMilliseconds);
                     }
 
                     if (snippet is not null)

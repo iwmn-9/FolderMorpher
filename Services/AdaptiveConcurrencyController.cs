@@ -30,9 +30,14 @@ namespace FolderMorpher.Services
         public const int MinConcurrency = 2;
         public const int DefaultConcurrency = 2;
         public const int MaxConcurrency = 4;
+        public const int ContentDefaultConcurrency = 4;
+        public const int ContentMaxConcurrency = 12;
 
-        private int _currentConcurrency = DefaultConcurrency;
-        private int _sessionMaxCeiling = MaxConcurrency;
+        public int MinConcurrencyLimit { get; }
+        public int MaxConcurrencyLimit { get; }
+
+        private int _currentConcurrency;
+        private int _sessionMaxCeiling;
         private int _activeSlots = 0;
 
         private readonly SemaphoreSlim _signal = new(0, int.MaxValue);
@@ -65,6 +70,14 @@ namespace FolderMorpher.Services
         private long _marginalGainEvalStartSample = 0;
 
         private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
+
+        public AdaptiveConcurrencyController(int min = MinConcurrency, int defaultVal = DefaultConcurrency, int max = MaxConcurrency)
+        {
+            MinConcurrencyLimit = Math.Max(1, min);
+            MaxConcurrencyLimit = Math.Max(MinConcurrencyLimit, max);
+            _currentConcurrency = Math.Clamp(defaultVal, MinConcurrencyLimit, MaxConcurrencyLimit);
+            _sessionMaxCeiling = MaxConcurrencyLimit;
+        }
 
         public int CurrentConcurrency => Volatile.Read(ref _currentConcurrency);
         public int SessionMaxCeiling => Volatile.Read(ref _sessionMaxCeiling);
@@ -152,10 +165,10 @@ namespace FolderMorpher.Services
                 long nowTicks = _stopwatch.ElapsedTicks;
                 long sampleIndex = ++_totalSamplesReported;
 
-                // 1. ネットワークエラー検知時（即時崖落ち ➔ 2、天井クランプ、クールダウン）
+                // 1. ネットワークエラー検知時（即時崖落ち ➔ 最小限、クールダウン）
                 if (isNetworkError)
                 {
-                    ApplyCliffDecrease("Network/IO Error detected");
+                    ApplyCliffDecrease("Network/IO Error detected", isFatalError: true);
                     return;
                 }
 
@@ -195,7 +208,7 @@ namespace FolderMorpher.Services
                     }
                     if (spikeCount >= 3)
                     {
-                        ApplyCliffDecrease($"Emergency Window ({spikeCount}/8 spikes > 2x baseline)");
+                        ApplyCliffDecrease($"Emergency Window ({spikeCount}/8 spikes > 2x baseline)", isFatalError: false);
                         return;
                     }
                 }
@@ -203,7 +216,7 @@ namespace FolderMorpher.Services
                 // 4. 単一サンプル異常スパイク検知 (単一サンプルが baseline_p95 * 3.0 超かつ > 60ms)
                 if (elapsedMs > Math.Max(60.0, _baselineP95 * 3.0))
                 {
-                    ApplyCliffDecrease($"Latency spike ({elapsedMs:F1}ms > 3x baseline)");
+                    ApplyCliffDecrease($"Latency spike ({elapsedMs:F1}ms > 3x baseline)", isFatalError: false);
                     return;
                 }
 
@@ -249,10 +262,10 @@ namespace FolderMorpher.Services
             double elapsedSec = (double)(latestTime - oldestTime) / Stopwatch.Frequency;
             double currentThroughput = elapsedSec > 0.05 ? _sampleCount / elapsedSec : 10.0;
 
-            // A. 過負荷検知 (p95 > baseline * 1.8) ➔ 即座に崖落ち
+            // A. 過負荷検知 (p95 > baseline * 1.8) ➔ Multiplicative Decrease (半減)
             if (currentP95 > Math.Max(60.0, _baselineP95 * 1.8))
             {
-                ApplyCliffDecrease($"p95 degraded ({currentP95:F1}ms vs baseline {_baselineP95:F1}ms)");
+                ApplyCliffDecrease($"p95 degraded ({currentP95:F1}ms vs baseline {_baselineP95:F1}ms)", isFatalError: false);
                 return;
             }
 
@@ -266,28 +279,34 @@ namespace FolderMorpher.Services
                     double throughputGain = (currentThroughput - _throughputBeforeIncrease) / Math.Max(1.0, _throughputBeforeIncrease);
                     if (throughputGain < 0.05 || currentP95 > _baselineP95 * 1.4)
                     {
-                        // 効用なし・サーバー負荷増大 ➔ 1段戻して天井クランプ
-                        int rolledBack = Math.Max(MinConcurrency, _currentConcurrency - 1);
+                        // 効用なし・サーバー負荷増大 ➔ 1段戻して一時天井クランプ
+                        int rolledBack = Math.Max(MinConcurrencyLimit, _currentConcurrency - 1);
                         Volatile.Write(ref _currentConcurrency, rolledBack);
-                        Volatile.Write(ref _sessionMaxCeiling, rolledBack); // この天井で固定
-                        _cooldownUntilTicks = nowTicks + (long)(Stopwatch.Frequency * 30); // 30秒クールダウン
+                        Volatile.Write(ref _sessionMaxCeiling, rolledBack);
+                        _cooldownUntilTicks = nowTicks + (long)(Stopwatch.Frequency * 15); // 15秒クールダウン
                         _lastConcurrencyChangeSample = sampleIndex;
                         return;
+                    }
+                    else
+                    {
+                        // 昇格成功: 天井も必要に応じて押し上げる
+                        Volatile.Write(ref _sessionMaxCeiling, Math.Max(_sessionMaxCeiling, _currentConcurrency));
                     }
                 }
                 return;
             }
 
             // C. 昇格判定 (Additive Increase: +1)
-            // 条件:
-            // 1. クールダウン中でない (現在時刻 > cooldown)
-            // 2. 現在の並列度 < セッション天井 かつ < 最大並列度 (4)
-            // 3. 前回の変更から 40 サンプル以上経過
-            // 4. currentP95 <= baselineP95 * 1.3
+            // クールダウン解除時はセッション天井を徐々に再解放（AIMD再昇格サポート）
+            if (nowTicks > _cooldownUntilTicks && _sessionMaxCeiling < MaxConcurrencyLimit)
+            {
+                Volatile.Write(ref _sessionMaxCeiling, Math.Min(MaxConcurrencyLimit, _sessionMaxCeiling + 1));
+            }
+
             if (nowTicks > _cooldownUntilTicks &&
                 _currentConcurrency < _sessionMaxCeiling &&
-                _currentConcurrency < MaxConcurrency &&
-                (sampleIndex - _lastConcurrencyChangeSample) >= 40 &&
+                _currentConcurrency < MaxConcurrencyLimit &&
+                (sampleIndex - _lastConcurrencyChangeSample) >= 30 &&
                 currentP95 <= _baselineP95 * 1.3)
             {
                 _throughputBeforeIncrease = currentThroughput;
@@ -301,13 +320,13 @@ namespace FolderMorpher.Services
             }
         }
 
-        private void ApplyCliffDecrease(string reason)
+        private void ApplyCliffDecrease(string reason, bool isFatalError = false)
         {
-            // 崖落ち: 下限は厳格に MinConcurrency (2)
-            int decreased = MinConcurrency; // 4 ➔ 2, 3 ➔ 2
+            // AIMD: 致命的エラー時は最小限へ即時崖落ち、レイテンシ悪化時は半減
+            int decreased = isFatalError ? MinConcurrencyLimit : Math.Max(MinConcurrencyLimit, _currentConcurrency / 2);
             Volatile.Write(ref _currentConcurrency, decreased);
-            Volatile.Write(ref _sessionMaxCeiling, decreased); // 一度落ちたら二度とその走査中は上げない
-            _cooldownUntilTicks = _stopwatch.ElapsedTicks + (long)(Stopwatch.Frequency * 30); // 30秒クールダウン
+            Volatile.Write(ref _sessionMaxCeiling, Math.Max(MinConcurrencyLimit, _currentConcurrency)); // 一時的バックオフ
+            _cooldownUntilTicks = _stopwatch.ElapsedTicks + (long)(Stopwatch.Frequency * 20); // 20秒クールダウン後に再挑戦可能
             _evaluatingMarginalGain = false;
             _lastConcurrencyChangeSample = _totalSamplesReported;
             _emergencyCount = 0; // Emergency Window をリセット

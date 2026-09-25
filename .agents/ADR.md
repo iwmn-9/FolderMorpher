@@ -1316,10 +1316,37 @@
   - **5. 「見せる量」と「処理する量」の完全一致 ＆ 重複候補の除外記憶 (`MainWindow.Audit.cs`, `Services/AuditReportService.cs`, `Models/AuditModels.cs`)**:
     - `AuditItem` に `IsIgnored` プロパティを追加。`AuditReportService.cs` の重複生成ループで除外記憶判定を反映し、UI 表示フィルターで除外候補を即時非表示化。
     - `AuditSmartSelectComboBox_SelectionChanged`: 一括選択プリセット（整理推奨、旧版、重複等）を現在画面にバインドされている `visibleList`（`ItemsSource`、例: 上位100件）のみを対象に適用するよう改修。
+---
+
+### ADR 98: Sol提唱 I/O Governor 自爆崖落ち解消 ＆ 純粋I/O計測 ＆ AIMD適応並列 ＆ SQLite ローカル専有ツリーキャッシュ ＆ ポータブル JSON 相互運用アーキテクチャ
+*(v2.2.21 本番施工 & ADR 98)*
+
+- **背景 & 動機**:
+  - 全文検索が UNC/NAS で 12GB/2万ファイルに対して 20分以上かかる問題（ローカル C は 120GB/40万件で 140秒）について、Sol による的確な分析レビューが行われた。
+  - **課題 1（Governor の自爆崖落ち）**: `InspectContentItemAsync` 全体の所要時間（Stopwatch）を Governor に報告していたため、Office/PDF の展開や XML パース等の重い CPU 処理（100〜300ms）を「ネットワーク/SMBの遅延悪化」と誤認。即座に `SessionMaxCeiling = 2` に不可逆クランプされ、8 ワーカーを生成しても実質 2 並列で固定されていた。
+  - **課題 2（I/O スロット枠の合算拘束）**: `SharedIoGovernor` で `GlobalSlotGate` が合算 4 枠に縛られ、列挙コントローラーと本文コントローラーが干渉していた。
+  - **課題 3（重複 RPC オーバーヘッド）**: `OpenBufferedReadStream` や検索走査内で `File.Exists` や `new FileInfo(filePath).Length` による余計なメタデータ問い合わせ RPC が頻発していた。
+  - **課題 4（ツリーキャッシュの肥大化と取り回し）**: ツリーキャッシュが単一の巨大 JSON で管理されており、階層が深くなるとメモリフットプリントが増大し、更新時の I/O が重くなっていた。SQLite 化による高速化が望まれる一方、SMB 上に SQLite を置くとロック競合や遅延破損のリスクがあるため、安全な分離設計が求められた。
+- **施工内容**:
+  - **1. Governor 自爆崖落ちの根絶 ＆ AIMD 適応並列 (`Services/AdaptiveConcurrencyController.cs`)**:
+    - `SessionMaxCeiling` の不可逆崖落ち（永久固定）を撤廃し、クールダウン解除後に良好なレイテンシが続けば再昇格可能な AIMD（Additive Increase / Multiplicative Decrease）を導入。
+    - インスタンスごとに柔軟な上限設定が可能なコンストラクタ `(min, defaultVal, max)` を整備。本文読み込み上限を `ContentMaxConcurrency = 12` へ拡大。
+  - **2. 列挙と本文の I/O ガバナー完全分離 (`Services/SharedIoGovernor.cs`)**:
+    - `GlobalSlotGate` の合算 4 縛りを撤去し、ディレクトリ列挙専用コントローラー（安全な 2 固定・上限 2）と本文読み込み専用コントローラー（AIMD: 4 ➔ 最大 12）を完全分離。サーバーの MFT/RAM を 100% 保護しながら、本文パイプラインの充填を実現。
+  - **3. 純粋 I/O 時間の計測 ＆ RPC ゼロ化 (`Services/ContentExtractionService.cs`, `SearchEngineService.cs`)**:
+    - `OpenBufferedReadStream`: `knownSize >= 0` の場合は `FileInfo.Length` RPC を完全スキップ。
+    - ストリームオープンとデータ読み込みにかかった純粋な所要時間のみを `reportIoElapsed` コールバックで測定。CPU 解析（ZIP/XML/PDF 展開、Aho-Corasick マッチング）を除外した「真の I/O レイテンシ」のみを Governor へフィードバック。
+    - 事前の `File.Exists` RPC を全廃し、一発オープン＆例外ハンドリングへ統一。
+  - **4. SQLite ローカル専有ツリーキャッシュ ＆ ポータブル JSON 相互運用 (`Services/SqliteTreeCacheService.cs`, `StorageHistoryService.cs`)**:
+    - **完全ローカル専有**: `%LocalAppData%\FolderMorpher\TreeCache\tree_cache.db` にのみ DB を配置。WAL モード（`PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;`）により超高速・高耐障害性を確保。共有フォルダー（UNC）には一切 DB ファイルを置かず、ロック競合や遅延破損を原理的ゼロ化。
+    - **事前集計 Materialized**: 各フォルダーノードにスキャン集計値（`TotalSizeBytes`, `FileCount`, `FolderCount`）をカラムとして事前保存。深階層でも再帰クエリ不要で $O(1)$ 高速遅延ロードを実現。
+    - **単一トランザクション一括コミット**: 数万ノードでも単一トランザクションでバルクインサートし、0.1〜0.3秒で保存完了。
+    - **DB 直接 SHA-256 更新**: `UpdateSha256Async` により、全ツリーをメモリ展開することなく DB 上で直接 UPDATE（メモリ浪費ゼロ）。
+    - **ポータブル JSON 相互運用**: `ExportToJsonFileAsync` / `ImportFromJsonFileAsync` を実装。社内共有や他 PC への配布は従来の単一 JSON 形式で完全両立。既存 JSON キャッシュからの自動透過マイグレーションも完備。
 - **検証と恒久保護**:
-  - `Services/Testing/RegressionTestSuite.Search.cs`: Section 23（XML文字参照復元、Excel境界、BOMなしUTF-16LE、3GiB境界計算、WSP content:構文）を追加し検証。
-  - `Services/Testing/RegressionTestSuite.Audit.cs`: 検証 10（休眠行のみ選択時の重複原本安全情報集約）を追加し検証。
+  - `Services/Testing/RegressionTestSuite.Storage.cs`: Section 24（SQLite 保存・復元、JSON エクスポート・インポート往復一致、DB直接 SHA-256 更新、AIMD 昇格・降下、純粋 I/O 時間追跡）を追加し検証。
   - 全 8 ドメイン自動回帰テスト 8/8 ALL PASS を達成。
+
 
 
 

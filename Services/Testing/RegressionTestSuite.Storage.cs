@@ -598,6 +598,242 @@ namespace FolderMorpher.Services.Testing
             {
                 throw new InvalidOperationException($"TreeCache Sha256 欠落エラー: 復元されたノードの Sha256 が一致しません (期待: {fileNode.Sha256}, 実際: {restoredFile.Sha256})");
             }
+
+            // 3. Section 24: SQLite ツリーキャッシュ ＆ ポータブル JSON 相互運用性検証 (ADR 98)
+            await TestSqliteTreeCacheAndJsonInteroperabilityAsync();
+
+            // 4. Section 24b: Sol 提唱 I/O Governor AIMD ＆ 純粋 I/O 時間追跡検証 (ADR 98)
+            await TestIoGovernorAimdAndPureIoTrackingAsync();
+        }
+
+        /// <summary>
+        /// Section 24: SQLite ツリーキャッシュの高速保存・復元、および JSON エクスポート/インポート相互運用性の厳格検証
+        /// </summary>
+        private static async Task TestSqliteTreeCacheAndJsonInteroperabilityAsync()
+        {
+            var tempDir = Path.Combine(Path.GetTempPath(), $"FolderMorpher_TreeCacheTest_{Guid.NewGuid():N}");
+            Directory.CreateDirectory(tempDir);
+
+            try
+            {
+                var testDbPath = Path.Combine(tempDir, "test_tree_cache.db");
+                var cacheService = new SqliteTreeCacheService(testDbPath);
+
+                // 1. 合成ツリー構築 (ルート -> 子フォルダ -> ファイル2件)
+                var rootPath = @"C:\MockShare\ProjectAlpha";
+                var root = new FileItemNode(rootPath, "ProjectAlpha", 1024 * 1024 * 50, true)
+                {
+                    FileCount = 2,
+                    FolderCount = 1,
+                    CachedTopFiles = new List<LargestFileInfo>
+                    {
+                        new LargestFileInfo { FullPath = @"C:\MockShare\ProjectAlpha\Sub\report.pdf", Size = 1024 * 1024 * 40 }
+                    },
+                    CachedExtensionStats = new List<ExtensionStat>
+                    {
+                        new ExtensionStat { Extension = ".pdf", FileCount = 1, TotalSize = 1024 * 1024 * 40 },
+                        new ExtensionStat { Extension = ".txt", FileCount = 1, TotalSize = 1024 * 1024 * 10 }
+                    }
+                };
+
+                var subDir = new FileItemNode(Path.Combine(rootPath, "Sub"), "Sub", 1024 * 1024 * 50, true)
+                {
+                    Parent = root,
+                    Level = 1,
+                    FileCount = 2,
+                    FolderCount = 0
+                };
+                root.Children.Add(subDir);
+
+                var file1 = new FileItemNode(Path.Combine(subDir.FullPath, "report.pdf"), "report.pdf", 1024 * 1024 * 40, false)
+                {
+                    Parent = subDir,
+                    Level = 2,
+                    Sha256 = "AAAA1111222233334444555566667777888899990000AAAABBBBCCCCDDDDEEEEFFFF"
+                };
+                subDir.Children.Add(file1);
+
+                var file2 = new FileItemNode(Path.Combine(subDir.FullPath, "notes.txt"), "notes.txt", 1024 * 1024 * 10, false)
+                {
+                    Parent = subDir,
+                    Level = 2,
+                    Sha256 = "BBBB1111222233334444555566667777888899990000AAAABBBBCCCCDDDDEEEEFFFF"
+                };
+                subDir.Children.Add(file2);
+
+                // 2. SQLite DB へ保存
+                await cacheService.SaveTreeAsync(root);
+
+                // 3. SQLite DB からロードして検証
+                var loaded = await cacheService.LoadTreeAsync(rootPath);
+                if (loaded == null)
+                {
+                    throw new InvalidOperationException("SqliteTreeCache: LoadTreeAsync でツリーがロードできませんでした。");
+                }
+
+                if (loaded.FullPath != rootPath || loaded.Size != root.Size || loaded.FileCount != 2)
+                {
+                    throw new InvalidOperationException($"SqliteTreeCache: ルートノードの集計値不一致 (Path: {loaded.FullPath}, Size: {loaded.Size}, Files: {loaded.FileCount})");
+                }
+
+                if (loaded.Children.Count != 1 || loaded.Children[0].Children.Count != 2)
+                {
+                    throw new InvalidOperationException($"SqliteTreeCache: 階層構造の復元不正 (Sub: {loaded.Children.Count}, Files: {loaded.Children[0].Children.Count})");
+                }
+
+                var restoredFile1 = loaded.Children[0].Children.FirstOrDefault(c => c.Name == "report.pdf");
+                if (restoredFile1 == null || restoredFile1.Sha256 != file1.Sha256)
+                {
+                    throw new InvalidOperationException("SqliteTreeCache: report.pdf の SHA-256 ハッシュが正しく復元されていません。");
+                }
+
+                if (loaded.CachedTopFiles == null || loaded.CachedTopFiles.Count != 1 || loaded.CachedTopFiles[0].FullPath != file1.FullPath)
+                {
+                    throw new InvalidOperationException("SqliteTreeCache: CachedTopFiles インサイトが復元されていません。");
+                }
+
+                // 4. UpdateSha256Async (DB 直接更新) の検証
+                var newSha = "FFFF0000999988887777666655554444333322221111FFFF00009999888877776666";
+                var updateMap = new Dictionary<string, string>
+                {
+                    { file2.FullPath, newSha }
+                };
+                await cacheService.UpdateSha256Async(rootPath, updateMap);
+
+                var reloaded = await cacheService.LoadTreeAsync(rootPath);
+                var reloadedFile2 = reloaded?.Children[0].Children.FirstOrDefault(c => c.Name == "notes.txt");
+                if (reloadedFile2 == null || reloadedFile2.Sha256 != newSha)
+                {
+                    throw new InvalidOperationException("SqliteTreeCache: UpdateSha256Async による DB 直接更新が反映されていません。");
+                }
+
+                // 5. JSON ポータブル エクスポート ＆ インポート検証 (相互運用性)
+                var exportJsonPath = Path.Combine(tempDir, "exported_tree.json");
+                await cacheService.ExportToJsonFileAsync(rootPath, exportJsonPath);
+
+                if (!File.Exists(exportJsonPath) || new FileInfo(exportJsonPath).Length == 0)
+                {
+                    throw new InvalidOperationException("SqliteTreeCache: ExportToJsonFileAsync で有効な JSON ファイルが出力されませんでした。");
+                }
+
+                // 別の新しい空 SQLite DB へインポート
+                var testDbPath2 = Path.Combine(tempDir, "test_tree_cache_import.db");
+                var cacheService2 = new SqliteTreeCacheService(testDbPath2);
+
+                bool imported = await cacheService2.ImportFromJsonFileAsync(exportJsonPath);
+                if (!imported)
+                {
+                    throw new InvalidOperationException("SqliteTreeCache: ImportFromJsonFileAsync が失敗しました。");
+                }
+
+                var importedTree = await cacheService2.LoadTreeAsync(rootPath);
+                if (importedTree == null || importedTree.Size != root.Size || importedTree.FileCount != 2)
+                {
+                    throw new InvalidOperationException("SqliteTreeCache: インポートされたツリーの完全性検証失敗。");
+                }
+
+                var importedFile2 = importedTree.Children[0].Children.FirstOrDefault(c => c.Name == "notes.txt");
+                if (importedFile2 == null || importedFile2.Sha256 != newSha)
+                {
+                    throw new InvalidOperationException("SqliteTreeCache: インポート後のツリーで更新済み SHA-256 が一致しません。");
+                }
+
+                // 6. DeleteRootAsync の検証
+                await cacheService.DeleteRootAsync(rootPath);
+                var deletedCheck = await cacheService.LoadTreeAsync(rootPath);
+                if (deletedCheck != null)
+                {
+                    throw new InvalidOperationException("SqliteTreeCache: DeleteRootAsync 後もレコードが残存しています。");
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// Section 24b: Sol 提唱 I/O Governor AIMD ＆ 純粋 I/O 時間追跡の検証
+        /// </summary>
+        private static async Task TestIoGovernorAimdAndPureIoTrackingAsync()
+        {
+            // 1. AIMD AdaptiveConcurrencyController の動作検証
+            var controller = new AdaptiveConcurrencyController(min: 2, defaultVal: 4, max: 12);
+            if (controller.CurrentConcurrency != 4)
+            {
+                throw new InvalidOperationException($"AdaptiveConcurrencyController: 初期並列度が 4 ではありません (実際: {controller.CurrentConcurrency})");
+            }
+
+            // 50件のサンプルでベースライン確定
+            for (int i = 0; i < 50; i++)
+            {
+                controller.ReleaseSlot(30, false);
+            }
+
+            if (!controller.BaselineEstablished)
+            {
+                throw new InvalidOperationException("AdaptiveConcurrencyController: 50サンプル後もベースラインが確立されていません。");
+            }
+
+            // ベースライン確立後、さらに低遅延（30ms）を 45回報告 (sampleIndex - _lastConcurrencyChangeSample >= 30 かつ % 15 == 0)
+            // -> 加算増加 (Additive Increase) で昇格すること
+            for (int i = 0; i < 45; i++)
+            {
+                controller.ReleaseSlot(30, false);
+            }
+
+            if (controller.CurrentConcurrency <= 4)
+            {
+                throw new InvalidOperationException($"AdaptiveConcurrencyController: 低遅延時の AIMD 加算昇格が機能していません (実際: {controller.CurrentConcurrency})");
+            }
+
+            // 異常高レイテンシ（2500ms）を報告 -> 乗算減少 (Multiplicative Decrease) で即座に安全降下すること
+            controller.ReleaseSlot(2500, false);
+            int reducedConcurrency = controller.CurrentConcurrency;
+            if (reducedConcurrency >= 10)
+            {
+                throw new InvalidOperationException($"AdaptiveConcurrencyController: 異常高遅延時の乗算減少が機能していません (実際: {reducedConcurrency})");
+            }
+
+            // 2. SharedIoGovernor の独立性検証
+            var volGov = SharedIoGovernor.GetGovernor(@"C:\TestDrive\Folder");
+            if (volGov.EnumerationController.MaxConcurrencyLimit != 2)
+            {
+                throw new InvalidOperationException("SharedIoGovernor: EnumerationController の上限が 2 ではありません。");
+            }
+            if (volGov.ContentController.MaxConcurrencyLimit != 12)
+            {
+                throw new InvalidOperationException("SharedIoGovernor: ContentController の上限が 12 ではありません。");
+            }
+
+            // 3. ContentExtractionService.OpenBufferedReadStream の knownSize 動作検証
+            var tempFile = Path.Combine(Path.GetTempPath(), $"morpher_io_test_{Guid.NewGuid():N}.txt");
+            await File.WriteAllTextAsync(tempFile, "Hello Morphers! This is pure I/O test.");
+            try
+            {
+                double reportedIoMs = -1;
+                var fileInfo = new FileInfo(tempFile);
+
+                using (var stream = ContentExtractionService.OpenBufferedReadStream(
+                    tempFile,
+                    knownSize: fileInfo.Length,
+                    reportIoElapsed: elapsedMs => reportedIoMs = elapsedMs))
+                {
+                    if (stream == null || stream.Length == 0)
+                    {
+                        throw new InvalidOperationException("ContentExtractionService: OpenBufferedReadStream が空ストリームを返しました。");
+                    }
+                }
+
+                if (reportedIoMs < 0)
+                {
+                    throw new InvalidOperationException("ContentExtractionService: 純粋 I/O 時間のコールバックが呼び出されませんでした。");
+                }
+            }
+            finally
+            {
+                try { File.Delete(tempFile); } catch { }
+            }
         }
     }
 }

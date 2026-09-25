@@ -20,19 +20,21 @@ namespace FolderMorpher.Services
         public string RootKey { get; }
 
         /// <summary>
-        /// ボリューム全体の同時実行スロット枠（最大4）。列挙と本文読込の合算が4を超えないことを物理保証。
+        /// ディレクトリ列挙専用のレイテンシ適応コントローラー（ベースライン 5〜15ms、安全な2並列固定・上限2）。
+        /// サーバーのファイルシステム管理領域・メタデータキャッシュを100%保護。
+        /// </summary>
+        public AdaptiveConcurrencyController EnumerationController { get; } = new(min: 2, defaultVal: 2, max: 2);
+
+        /// <summary>
+        /// 本文読み込み専用のレイテンシ適応コントローラー（AIMD: 4 ➔ 6 ➔ 8 ➔ 最大12）。
+        /// SMBパイプラインを充填し、RTT遅延を隠蔽してスループットを最大化。
+        /// </summary>
+        public AdaptiveConcurrencyController ContentController { get; } = new(min: 2, defaultVal: 4, max: 12);
+
+        /// <summary>
+        /// 後方互換性プロパティ（ADR 91互換）。
         /// </summary>
         public SemaphoreSlim GlobalSlotGate { get; } = new(AdaptiveConcurrencyController.MaxConcurrency, AdaptiveConcurrencyController.MaxConcurrency);
-
-        /// <summary>
-        /// ディレクトリ列挙専用のレイテンシ適応コントローラー（ベースライン 5〜15ms）。
-        /// </summary>
-        public AdaptiveConcurrencyController EnumerationController { get; } = new();
-
-        /// <summary>
-        /// 本文読み込み専用のレイテンシ適応コントローラー（ベースライン 50〜200ms）。
-        /// </summary>
-        public AdaptiveConcurrencyController ContentController { get; } = new();
 
         public SharedVolumeGovernor(string rootKey)
         {
@@ -40,23 +42,11 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// 全体スロット枠（GlobalSlotGate）を確保し、完了時に解放する Disposable を返します。
+        /// 後方互換性メソッド: 本文コントローラーのスロットリースを獲得します。
         /// </summary>
         public async Task<IDisposable> AcquireSlotAsync(CancellationToken ct)
         {
-            await GlobalSlotGate.WaitAsync(ct).ConfigureAwait(false);
-            return new SlotReleaser(GlobalSlotGate);
-        }
-
-        private sealed class SlotReleaser : IDisposable
-        {
-            private SemaphoreSlim? _gate;
-            public SlotReleaser(SemaphoreSlim gate) => _gate = gate;
-            public void Dispose()
-            {
-                var g = Interlocked.Exchange(ref _gate, null);
-                g?.Release();
-            }
+            return await ContentController.AcquireAsync(ct).ConfigureAwait(false);
         }
     }
 

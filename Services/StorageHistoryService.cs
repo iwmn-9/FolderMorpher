@@ -461,46 +461,98 @@ namespace AstraSize.Services
         {
             if (rootNode == null || string.IsNullOrWhiteSpace(rootNode.FullPath)) return;
 
-            await Task.Run(async () =>
+            // 1. ローカル専有 SQLite DB へ高速保存（正本・ADR 98）
+            try
             {
-                try
+                await SqliteTreeCacheService.Instance.SaveTreeAsync(rootNode);
+            }
+            catch
+            {
+                // SQLite 保存エラー時は安全に続行
+            }
+
+            // 2. 共有マスター更新やカスタム指定がある場合、ポータブル JSON も出力（オプトイン共有・互換性維持）
+            if (AppSettingsService.Instance.Current.WriteMode != CacheWriteMode.Local)
+            {
+                await Task.Run(async () =>
                 {
-                    var filePath = GetTreeCacheWriteFilePath(rootNode.FullPath);
-                    var dir = Path.GetDirectoryName(filePath);
-                    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-                    var (topFiles, extStats) = (rootNode.CachedTopFiles != null && rootNode.CachedExtensionStats != null)
-                        ? (rootNode.CachedTopFiles, rootNode.CachedExtensionStats)
-                        : DiskScanService.GetInsightsForNode(rootNode);
-
-                    var cacheRoot = new TreeCacheRoot
+                    try
                     {
-                        TargetPath = rootNode.FullPath,
-                        Timestamp = DateTime.Now,
-                        Root = ToCacheNode(rootNode),
-                        TopFiles = topFiles,
-                        ExtensionStats = extStats
-                    };
+                        var filePath = GetTreeCacheWriteFilePath(rootNode.FullPath);
+                        var dir = Path.GetDirectoryName(filePath);
+                        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-                    var options = new JsonSerializerOptions { WriteIndented = false };
-                    var json = JsonSerializer.Serialize(cacheRoot, options);
+                        var (topFiles, extStats) = (rootNode.CachedTopFiles != null && rootNode.CachedExtensionStats != null)
+                            ? (rootNode.CachedTopFiles, rootNode.CachedExtensionStats)
+                            : DiskScanService.GetInsightsForNode(rootNode);
 
-                    // アトミック書き込みで共有破損を防止
-                    var tempFile = filePath + $".tmp_{Guid.NewGuid():N}";
-                    await File.WriteAllTextAsync(tempFile, json);
-                    File.Move(tempFile, filePath, overwrite: true);
-                }
-                catch
-                {
-                    // バックグラウンドキャッシュ保存エラーはUIを阻害しないよう安全に無視
-                }
-            });
+                        var cacheRoot = new TreeCacheRoot
+                        {
+                            TargetPath = rootNode.FullPath,
+                            Timestamp = DateTime.Now,
+                            Root = ToCacheNode(rootNode),
+                            TopFiles = topFiles,
+                            ExtensionStats = extStats
+                        };
+
+                        var options = new JsonSerializerOptions { WriteIndented = false };
+                        var json = JsonSerializer.Serialize(cacheRoot, options);
+
+                        var tempFile = filePath + $".tmp_{Guid.NewGuid():N}";
+                        await File.WriteAllTextAsync(tempFile, json);
+                        File.Move(tempFile, filePath, overwrite: true);
+                    }
+                    catch
+                    {
+                        // バックグラウンドキャッシュ保存エラーはUIを阻害しないよう安全に無視
+                    }
+                });
+            }
         }
 
         public async Task<FileItemNode?> LoadTreeCacheAsync(string targetPath)
         {
             if (string.IsNullOrWhiteSpace(targetPath)) return null;
 
+            // 1. ローカル専有 SQLite DB からの高速ロードを最優先試行（ADR 98）
+            try
+            {
+                var sqliteNode = await SqliteTreeCacheService.Instance.LoadTreeAsync(targetPath);
+                if (sqliteNode != null)
+                {
+                    // 共有フォルダー（UNC）に明示的な新世代 JSON が存在する場合の同期チェック
+                    var sharedJsonPath = GetTreeCacheReadFilePath(targetPath);
+                    if (!string.IsNullOrEmpty(sharedJsonPath) && File.Exists(sharedJsonPath) &&
+                        AppSettingsService.Instance.Current.WriteMode != CacheWriteMode.Local)
+                    {
+                        try
+                        {
+                            var sharedTime = File.GetLastWriteTimeUtc(sharedJsonPath);
+                            var roots = await SqliteTreeCacheService.Instance.GetAllRootsAsync();
+                            var normTarget = PathCanonicalizer.Normalize(targetPath);
+                            var rootSummary = roots.FirstOrDefault(r => string.Equals(r.NormalizedPath, normTarget, StringComparison.OrdinalIgnoreCase));
+
+                            if (rootSummary != null && sharedTime > rootSummary.Timestamp.ToUniversalTime())
+                            {
+                                // 共有 JSON の方が新しい場合、SQLite へ再インポートして最新化
+                                if (await SqliteTreeCacheService.Instance.ImportFromJsonFileAsync(sharedJsonPath))
+                                {
+                                    return await SqliteTreeCacheService.Instance.LoadTreeAsync(targetPath);
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+
+                    return sqliteNode;
+                }
+            }
+            catch
+            {
+                // SQLite 読み込みエラー時は JSON フォールバックへ
+            }
+
+            // 2. SQLite に未登録の場合、既存 JSON キャッシュを検索して自動インポート（自己移行）
             return await Task.Run(async () =>
             {
                 try
@@ -516,6 +568,14 @@ namespace AstraSize.Services
                     node.CachedTopFiles = cacheRoot.TopFiles;
                     node.CachedExtensionStats = cacheRoot.ExtensionStats;
                     DiskScanService.CalculatePercentages(node, node.Size > 0 ? node.Size : 1);
+
+                    // 次回以降のためにローカル SQLite へ自動移行
+                    try
+                    {
+                        await SqliteTreeCacheService.Instance.SaveTreeAsync(node);
+                    }
+                    catch { }
+
                     return node;
                 }
                 catch
@@ -526,8 +586,8 @@ namespace AstraSize.Services
         }
 
         /// <summary>
-        /// Audit等で計算された SHA-256 ハッシュを既存の TreeCache へ書き戻して永続化する（Sol提唱 ADR 92）。
-        /// 次回スキャンや検索・Auditでの再計算コストを劇的に削減し、ファイルサーバー知識の再利用を実現する。
+        /// Audit等で計算された SHA-256 ハッシュを既存の TreeCache へ書き戻して永続化する（Sol提唱 ADR 92/98）。
+        /// SQLite DB 上で直接一括更新し、メモリ浪費と再計算コストを劇的に削減。
         /// </summary>
         public async Task UpdateTreeCacheSha256Async(string targetPath, IEnumerable<AuditItem> auditItems)
         {
@@ -540,45 +600,56 @@ namespace AstraSize.Services
 
             if (hashMap.Count == 0) return;
 
-            await Task.Run(async () =>
+            // 1. SQLite DB のレコードを直接一括 UPDATE（ADR 98）
+            try
             {
-                try
-                {
-                    var rootNode = await LoadTreeCacheAsync(targetPath);
-                    if (rootNode == null) return;
+                await SqliteTreeCacheService.Instance.UpdateSha256Async(targetPath, hashMap);
+            }
+            catch
+            {
+                // バックグラウンドキャッシュ更新はUIを阻害しないよう安全に無視
+            }
 
-                    int updatedCount = 0;
-                    void TraverseAndApply(FileItemNode node)
+            // 2. 共有設定されている場合は JSON も同期更新
+            if (AppSettingsService.Instance.Current.WriteMode != CacheWriteMode.Local)
+            {
+                await Task.Run(async () =>
+                {
+                    try
                     {
-                        if (hashMap.TryGetValue(node.FullPath, out var hash))
+                        var rootNode = await LoadTreeCacheAsync(targetPath);
+                        if (rootNode == null) return;
+
+                        int updatedCount = 0;
+                        void TraverseAndApply(FileItemNode node)
                         {
-                            if (node.Sha256 != hash)
+                            if (hashMap.TryGetValue(node.FullPath, out var hash))
                             {
-                                node.Sha256 = hash;
-                                updatedCount++;
+                                if (node.Sha256 != hash)
+                                {
+                                    node.Sha256 = hash;
+                                    updatedCount++;
+                                }
+                            }
+                            if (node.Children != null)
+                            {
+                                for (int i = 0; i < node.Children.Count; i++)
+                                {
+                                    TraverseAndApply(node.Children[i]);
+                                }
                             }
                         }
-                        if (node.Children != null)
+
+                        TraverseAndApply(rootNode);
+
+                        if (updatedCount > 0)
                         {
-                            for (int i = 0; i < node.Children.Count; i++)
-                            {
-                                TraverseAndApply(node.Children[i]);
-                            }
+                            await SaveTreeCacheAsync(rootNode);
                         }
                     }
-
-                    TraverseAndApply(rootNode);
-
-                    if (updatedCount > 0)
-                    {
-                        await SaveTreeCacheAsync(rootNode);
-                    }
-                }
-                catch
-                {
-                    // バックグラウンドキャッシュ更新はUIを阻害しないよう安全に無視
-                }
-            });
+                    catch { }
+                });
+            }
         }
 
         public void ApplyTreeDiff(FileItemNode current, FileItemNode cached)
@@ -623,7 +694,7 @@ namespace AstraSize.Services
             }
         }
 
-        private static TreeCacheNode ToCacheNode(FileItemNode node)
+        internal static TreeCacheNode ToCacheNode(FileItemNode node)
         {
             var c = new TreeCacheNode
             {
@@ -646,7 +717,7 @@ namespace AstraSize.Services
             return c;
         }
 
-        private static FileItemNode FromCacheNode(TreeCacheNode c, FileItemNode? parent, int level)
+        internal static FileItemNode FromCacheNode(TreeCacheNode c, FileItemNode? parent, int level)
         {
             var node = new FileItemNode
             {
