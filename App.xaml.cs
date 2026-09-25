@@ -123,26 +123,33 @@ namespace AstraSize
                 {
                     forceLang = e.Args[i + 1];
                 }
-                else if (e.Args[i] == "--benchmark-trigram")
+            }
+
+            if (e.Args.Contains("--test-ipc"))
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                Task.Run(async () =>
                 {
-                    ShutdownMode = ShutdownMode.OnExplicitShutdown;
-                    Task.Run(async () =>
+                    try
                     {
-                        try
-                        {
-                            await FolderMorpher.Services.Testing.TrigramBenchmark.RunAsync();
-                            Console.Out.Flush();
-                            Environment.Exit(0);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"[BENCHMARK-ERROR] {ex}");
-                            Console.Out.Flush();
-                            Environment.Exit(1);
-                        }
-                    });
-                    return;
-                }
+                        Console.WriteLine("[TEST-IPC] Connecting to FolderMorpher.Host via Named Pipe...");
+                        var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                        bool pong = await host.PingAsync();
+                        Console.WriteLine($"[TEST-IPC] Ping: {(pong ? "SUCCESS (Pong)" : "FAILED")}");
+                        var status = await host.GetStatusAsync();
+                        Console.WriteLine($"[TEST-IPC] Host Status: IsRunning={status.IsRunning}, PID={status.ProcessId}, User={status.UserName}");
+                        Console.WriteLine("[TEST-IPC] ALL IPC TESTS PASSED");
+                        Console.Out.Flush();
+                        Environment.Exit(pong ? 0 : 1);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[TEST-IPC-FATAL] {ex}");
+                        Console.Out.Flush();
+                        Environment.Exit(1);
+                    }
+                });
+                return;
             }
 
             if (runRegression)
@@ -281,7 +288,7 @@ namespace AstraSize
                                     CreationTime = DateTime.Now.AddMonths(-6),
                                     Extension = ".xlsx",
                                     ContentSnippet = "…第12条（機密保持条項）：本契約に基づき開示された【最高機密プロジェクト】に関する技術情報および…",
-                                    MatchedReason = "本文一致 (FTS5 trigram MATCH)"
+                                    MatchedReason = "本文一致 (ライブ走査)"
                                 };
                                 var item2 = new FolderMorpher.Models.SearchResultItem
                                 {

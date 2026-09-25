@@ -232,6 +232,11 @@ namespace FolderMorpher.Host
             return await _simProjectService.DeploySkeletonAsync(new[] { rootNode }, targetRoot, null, ct);
         }
 
+        public async Task<DeploySkeletonResult> DeploySkeletonPlanAsync(SkeletonDeployPlan plan, CancellationToken ct)
+        {
+            return await _simProjectService.DeploySkeletonAsync(plan, null, ct);
+        }
+
         public Task<AclVerificationResult> VerifyFolderDaclAsync(string targetPath, SimFolderNode planNode, CancellationToken ct)
         {
             return Task.Run(() =>

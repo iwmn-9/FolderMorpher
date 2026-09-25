@@ -47,6 +47,7 @@ namespace FolderMorpher.Contracts
         // ==========================================
         Task<string> GenerateMigrationPackageAsync(List<SimFolderNode> rootNodes, MigrationPackageOptions options, CancellationToken ct);
         Task<DeploySkeletonResult> DeploySkeletonTreeAsync(string targetRoot, SimFolderNode rootNode, CancellationToken ct);
+        Task<DeploySkeletonResult> DeploySkeletonPlanAsync(SkeletonDeployPlan plan, CancellationToken ct);
         Task<AclVerificationResult> VerifyFolderDaclAsync(string targetPath, SimFolderNode planNode, CancellationToken ct);
 
         // ==========================================

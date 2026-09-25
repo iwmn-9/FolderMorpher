@@ -73,7 +73,10 @@ namespace AstraSize
 
             try
             {
-                var (images, videos) = await _mediaService.ScanMediaAsync(options, progress, _mediaCts.Token);
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(_mediaCts.Token);
+                var scanRes = await host.ScanMediaAsync(options, progress, _mediaCts.Token);
+                var images = scanRes.Images;
+                var videos = scanRes.Videos;
                 _lastMediaImages = images;
                 _lastMediaVideos = videos;
 
@@ -164,7 +167,9 @@ namespace AstraSize
             try
             {
                 using var cts = new CancellationTokenSource();
-                var summary = await _mediaService.OptimizeImagesAsync(_lastMediaTargets, options, progress, cts.Token);
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(cts.Token);
+                var hostProgress = new Progress<string>(s => MediaStatusText.Text = s);
+                var summary = await host.OptimizeImagesAsync(_lastMediaTargets, options, hostProgress, cts.Token);
                 _lastMediaSummary = summary;
 
                 MediaItemsDataGrid.Items.Refresh();

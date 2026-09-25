@@ -1,11 +1,9 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Security;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,7 +22,6 @@ namespace AstraSize
 {
     public partial class MainWindow
     {
-        private readonly SearchEngineService _searchEngine = new();
         private CancellationTokenSource? _searchCts;
         private DispatcherTimer? _searchDebounceTimer;
         private readonly ObservableCollection<SearchResultItem> _searchResults = new();
@@ -62,7 +59,7 @@ namespace AstraSize
             // （チェックを入れた途端に検索が走り出す不快感を解消）
         }
 
-        private void SearchSyncIndexButton_Click(object sender, RoutedEventArgs e)
+        private void SearchRefreshButton_Click(object sender, RoutedEventArgs e)
         {
             // 現在の入力条件で検索を再実行（最新化）
             ExecuteSearch(isIncremental: false);
@@ -135,7 +132,7 @@ namespace AstraSize
 
         #region Search Execution Core (Smart Auto-Routing)
 
-        private async void ExecuteSearch(bool isIncremental, bool isAutoRefresh = false)
+        private async void ExecuteSearch(bool isIncremental)
         {
             string rawQuery = SearchInputBox?.Text?.Trim() ?? string.Empty;
             var query = SearchQueryParser.Parse(rawQuery);
@@ -275,6 +272,8 @@ namespace AstraSize
                     catch { }
                 }
 
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(ct);
+
                 if (hasScannedTree)
                 {
                     // 🚀 ルート1: スキャン済みツリー対象 (0秒インメモリ検索 ＋ 本文ストリーミング)
@@ -286,7 +285,7 @@ namespace AstraSize
                         nameOnlyQuery.SearchContentMode = false;
                         nameOnlyQuery.ContentKeyword = string.Empty;
 
-                        treeResults = await _searchEngine.SearchInMemoryAsync(scopedRoots, nameOnlyQuery, null, ct, null);
+                        treeResults = await host.SearchInMemoryAsync(targetFolder, nameOnlyQuery, null, ct);
                         if (currentGen == Volatile.Read(ref _searchGeneration))
                         {
                             _allSearchResults = treeResults.ToList();
@@ -306,7 +305,7 @@ namespace AstraSize
                     if (query.SearchContentMode && hasTarget)
                     {
                         // Step 2: 本文検索がONの場合は、ライブ直接走査をバックグラウンド実行して本文ヒットを合流！
-                        var liveHits = await _searchEngine.SearchDirectFolderAsync(targetFolder, query, batchYield, progress, ct);
+                        var liveHits = await host.SearchAsync(targetFolder, query, progress, ct);
                         if (currentGen == Volatile.Read(ref _searchGeneration))
                         {
                             // treeResults と liveHits をマージ（同一パスならスニペットありを優先）
@@ -360,7 +359,7 @@ namespace AstraSize
                             : (query.SearchContentMode ? "🔍 Live scanning (instant name hits & content search)..." : "🔍 Running live direct search...");
                     }
 
-                    var results = await _searchEngine.SearchDirectFolderAsync(targetFolder, query, batchYield, progress, ct);
+                    var results = await host.SearchAsync(targetFolder, query, progress, ct);
                     if (currentGen == Volatile.Read(ref _searchGeneration))
                     {
                         _allSearchResults = results;
@@ -812,94 +811,7 @@ namespace AstraSize
 
         #endregion
 
-        #region JIT Permission Verification & Auto-Purge
-
-        /// <summary>
-        /// 検索ヒットしたファイル群の読み取りアクセス権を高速並列検証し、
-        /// アクセス拒否（権限剥奪）やファイル消失を検知した場合は結果から除外して裏でDBから自動パージする。
-        /// </summary>
-        private async Task<List<SearchResultItem>> VerifyAndFilterPermissionsAsync(List<SearchResultItem> items, CancellationToken ct)
-        {
-            if (items == null || items.Count == 0) return items ?? new List<SearchResultItem>();
-
-            var accessibleItems = new ConcurrentBag<SearchResultItem>();
-            var inaccessiblePaths = new ConcurrentBag<string>();
-
-            var po = new ParallelOptions
-            {
-                MaxDegreeOfParallelism = 16,
-                CancellationToken = ct
-            };
-
-            await Parallel.ForEachAsync(items, po, (item, token) =>
-            {
-                token.ThrowIfCancellationRequested();
-                if (CanAccessItem(item))
-                {
-                    accessibleItems.Add(item);
-                }
-                else
-                {
-                    inaccessiblePaths.Add(item.FullPath);
-                }
-                return ValueTask.CompletedTask;
-            });
-
-
-
-            // 元の順序を維持して返却
-            var accessibleSet = new HashSet<string>(accessibleItems.Select(x => x.FullPath), StringComparer.OrdinalIgnoreCase);
-            return items.Where(x => accessibleSet.Contains(x.FullPath)).ToList();
-        }
-
-        private static bool CanAccessItem(SearchResultItem item)
-        {
-            try
-            {
-                if (item.IsDirectory)
-                {
-                    return Directory.Exists(item.FullPath);
-                }
-                else
-                {
-                    if (!File.Exists(item.FullPath)) return false;
-                    // 実際に読み取りオープン可能か検証 (共有モードを広く取ってロック中の誤検知を回避)
-                    using var fs = new FileStream(item.FullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                    return true;
-                }
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return false;
-            }
-            catch (SecurityException)
-            {
-                return false;
-            }
-            catch (FileNotFoundException)
-            {
-                return false;
-            }
-            catch (DirectoryNotFoundException)
-            {
-                return false;
-            }
-            catch (PathTooLongException)
-            {
-                return false;
-            }
-            catch (IOException)
-            {
-                // 共有違反（他プロセスが排他ロック中等）はファイル自体は存在し権限もあるためアクセス可能とみなす
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        #region Sort & Watcher
+        #region Sort
 
         private static int CalculateRelevanceScore(SearchResultItem item, string rawQuery)
         {
@@ -1016,8 +928,6 @@ namespace AstraSize
         }
 
 
-
-        #endregion
 
         #endregion
     }

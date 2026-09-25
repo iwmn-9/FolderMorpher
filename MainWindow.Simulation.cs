@@ -1549,7 +1549,8 @@ namespace AstraSize
             try
             {
                 using var cts = new CancellationTokenSource();
-                var deployResult = await _simService.DeploySkeletonAsync(plan, progress, cts.Token);
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(cts.Token);
+                var deployResult = await host.DeploySkeletonPlanAsync(plan, cts.Token);
 
                 // Verify: 展開先ルートおよび新規作成された全フォルダーの実在検証 ＆ エラー件数照合
                 bool allPathsExist = Directory.Exists(plan.DestinationRoot) &&
