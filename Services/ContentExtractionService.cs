@@ -300,6 +300,25 @@ namespace FolderMorpher.Services
                 }
                 if (patterns.Count == 0) return null;
 
+                // ★ ADR 93: 単一キーワードの超高速パス（Aho-Corasick構築をスキップし、JIT/AVX2最適化された直接探索）
+                if (patterns.Count == 1 && requiredGroups.Count == 1)
+                {
+                    string singleKw = patterns[0];
+                    using (var readerFast = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 65536))
+                    {
+                        string? lineFast;
+                        while ((lineFast = await readerFast.ReadLineAsync(ct)) != null)
+                        {
+                            int idx = lineFast.IndexOf(singleKw, StringComparison.OrdinalIgnoreCase);
+                            if (idx >= 0)
+                            {
+                                return ExtractSnippet(lineFast, idx, singleKw.Length);
+                            }
+                        }
+                    }
+                    return null;
+                }
+
                 var ac = new AhoCorasickSearcher(patterns, ignoreCase: true);
 
                 // 行単位ストリーム走査（Aho-Corasick ワンパス判定 ＆ Early Exit）
@@ -580,6 +599,68 @@ namespace FolderMorpher.Services
         }
 
         #endregion
+
+        /// <summary>
+        /// メモリ内文字列に対してグループ検索を実行し、全グループが充足された場合にスニペットを返します。
+        /// 単一キーワードの場合は Aho-Corasick をスキップし、JIT/AVX2 最適化された IndexOf で直接走査します（ADR 93）。
+        /// </summary>
+        public static string? SearchTextWithSnippet(string text, IReadOnlyList<List<string>> requiredGroups)
+        {
+            if (string.IsNullOrEmpty(text) || requiredGroups.Count == 0) return null;
+
+            // 単一キーワードの超高速パス
+            if (requiredGroups.Count == 1 && requiredGroups[0].Count == 1)
+            {
+                string kw = requiredGroups[0][0];
+                int idx = text.IndexOf(kw, StringComparison.OrdinalIgnoreCase);
+                if (idx >= 0)
+                {
+                    return ExtractSnippet(text, idx, kw.Length);
+                }
+                return null;
+            }
+
+            var patterns = new List<string>();
+            var patternToGroup = new List<int>();
+            for (int g = 0; g < requiredGroups.Count; g++)
+            {
+                foreach (var kw in requiredGroups[g])
+                {
+                    if (!string.IsNullOrWhiteSpace(kw))
+                    {
+                        patterns.Add(kw);
+                        patternToGroup.Add(g);
+                    }
+                }
+            }
+            if (patterns.Count == 0) return null;
+
+            var ac = new AhoCorasickSearcher(patterns, ignoreCase: true);
+            var satisfied = new HashSet<int>();
+            string? firstSnippet = null;
+
+            var matches = ac.FindMatchedIndices(text);
+            foreach (var pIdx in matches)
+            {
+                int gIdx = patternToGroup[pIdx];
+                satisfied.Add(gIdx);
+                if (firstSnippet == null)
+                {
+                    string p = ac.Patterns[pIdx];
+                    int mIdx = text.IndexOf(p, StringComparison.OrdinalIgnoreCase);
+                    if (mIdx >= 0)
+                    {
+                        firstSnippet = ExtractSnippet(text, mIdx, p.Length);
+                    }
+                }
+            }
+
+            if (satisfied.Count == requiredGroups.Count)
+            {
+                return firstSnippet ?? (patterns.Count > 0 ? patterns[0] : string.Empty);
+            }
+            return null;
+        }
 
         /// <summary>
         /// 本文テキスト内からキーワードの一致スニペット（前後文字列）を抽出します。

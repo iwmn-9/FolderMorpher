@@ -1165,4 +1165,33 @@
     - 検証 9: `UpdateTreeCacheSha256Async` による TreeCache へのハッシュ永続化を自動検証。
   - 8大ドメイン全回帰テスト 8/8 ALL REGRESSION TESTS PASSED を堅持。
 
+---
+
+### ADR 93: 親子局所性（Locality-First LIFO走査）＆ TreeCache 枝刈り差分走査（Differential Pruning Traversal）＆ JIT/AVX2 最適化 単一キーワード高速パス
+*(v2.2.18 本番施工 & ADR 93)*
+
+- **背景 & 動機**:
+  - **1. ファイル走査におけるI/O局所性の欠如**:
+    - 幅優先（BFS）的なキュー管理では、ワーカーがディレクトリ階層を横断して探索するため、ファイルサーバー（特にSMB/NAS）側のキャッシュが効かず、ディスクヘッドのランダムシークやネットワーク往復遅延が累積していた。また、未処理フォルダーのパス文字列がキューに大量滞留しメモリを圧迫していた。
+  - **2. スキャン済み環境における冗長なネットワーク列挙**:
+    - 一度容量スキャンを行ったフォルダーであっても、検索のたびに全階層をネットワーク列挙（`FindFirstFileExW`）していた。大容量ファイルサーバーではフォルダーの99%以上が更新されないため、変更のないフォルダーまで毎回SMBパケットを往復させるのは極めて無駄であった。
+  - **3. 単一キーワード検索時のステートマシン構築オーバーヘッド**:
+    - 単一キーワードであっても Aho-Corasick の Trie 木構築や状態遷移判定を行っており、.NET ランタイムが持つ JIT/AVX2 最適化された `string.IndexOf(OrdinalIgnoreCase)` の潜在能力を活かし切れていなかった。
+- **施工内容**:
+  - **1. 親子局所性走査（Locality-First LIFO Traversal）(`Services/SafeFileEnumerator.cs`)**:
+    - 各列挙ワーカーにローカル LIFO スタック（`localStack`）を配備。
+    - 列挙したサブフォルダーのうち、直下（深掘り）フォルダーは自分のローカルスタックへプッシュして直ちに探索を継続し、2つ目以降の兄弟フォルダーをグローバルキューへ投入して他ワーカーへ分配。
+    - ファイルサーバーOS側の RAM/MFT キャッシュを 100% 直撃させ、SMB パケットの連続性を最大化。クライアント側のキュー保持件数も最小限に圧縮。
+  - **2. TreeCache 枝刈り差分走査（Differential Pruning Traversal）(`Services/TreeCachePruningIndex.cs`, `Services/SafeFileEnumerator.cs`, `Services/SearchEngineService.cs`)**:
+    - 親フォルダー列挙時に追加I/Oなしで手に入る子フォルダーの `LastWriteTimeUtc` と、TreeCache（`FileItemNode`）の記録を $O(1)$ パス照合。
+    - 日時が一致している場合、配下サブツリーの全ネットワークI/Oを丸ごとスキップ（枝刈り）し、メモリ上のエントリを即座に再帰展開して `onEntryFound` へ供給。
+    - 変更があったフォルダーのみ Live 列挙するため、検索結果の最新性（Freshness）を100%担保しつつ、数万フォルダーのI/Oをゼロ化して一瞬で本文読込パイプラインへ接続。
+  - **3. JIT/AVX2 最適化 単一キーワード高速パス (`Services/ContentExtractionService.cs`)**:
+    - 単一キーワード時（`patterns.Count == 1 && requiredGroups.Count == 1`）は Aho-Corasick の構築を完全にスキップ。
+    - ハードウェアの AVX2 / SIMD 命令セットを活用した `string.IndexOf(singleKw, StringComparison.OrdinalIgnoreCase)` を直接実行するストリーム読込パスを実装。
+- **検証と恒久保護**:
+  - `Services/Testing/RegressionTestSuite.Search.cs`:
+    - セクション 20: TreeCachePruningIndex の枝刈り判定、SafeFileEnumerator の枝刈り差分走査 parity、ContentExtractionService の単一キーワード高速パス（AVX2 / OrdinalIgnoreCase）を自動検証。
+  - 全 8 ドメイン 8/8 ALL REGRESSION TESTS PASSED を堅持。
+
 

@@ -155,7 +155,8 @@ namespace FolderMorpher.Services
             CancellationToken ct = default,
             IReadOnlyList<string>? excludeFolderPatterns = null,
             bool includeDirectories = false,
-            Action<ScannedFileEntry>? onEntryFound = null)
+            Action<ScannedFileEntry>? onEntryFound = null,
+            TreeCachePruningIndex? pruningIndex = null)
         {
             var resultFiles = new System.Collections.Concurrent.ConcurrentBag<ScannedFileEntry>();
             if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath)) return new List<ScannedFileEntry>();
@@ -222,6 +223,36 @@ namespace FolderMorpher.Services
                     if (!sd.IsReparsePoint && !ShouldExcludeDirectory(sd.Name, excludeFolderPatterns))
                     {
                         string dirPath = Path.Combine(rootPath, sd.Name);
+
+                        // ★ ADR 93: TreeCache Pruning（ルート直下の枝刈り判定）
+                        if (pruningIndex != null && pruningIndex.TryGetPrunedEntries(dirPath, sd.LastWriteTimeUtc, includeDirectories, out var prunedEntries))
+                        {
+                            if (prunedEntries != null)
+                            {
+                                for (int p = 0; p < prunedEntries.Count; p++)
+                                {
+                                    var pEntry = prunedEntries[p];
+                                    if (!pEntry.Attributes.HasFlag(FileAttributes.Directory) &&
+                                        !matchAll && !System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(searchPattern, pEntry.Name, ignoreCase: true))
+                                    {
+                                        continue;
+                                    }
+                                    resultFiles.Add(pEntry);
+                                    onEntryFound?.Invoke(pEntry);
+                                    int count = Interlocked.Increment(ref scannedFilesCount);
+                                    if (coverage != null)
+                                    {
+                                        lock (coverage) coverage.TotalFilesFound++;
+                                    }
+                                    if (count % 100 == 0)
+                                    {
+                                        onProgress?.Invoke(count);
+                                    }
+                                }
+                            }
+                            continue; // 枝刈り成功時はキューに投入せず配下I/Oスキップ
+                        }
+
                         folderQueue.Enqueue(dirPath);
                         if (includeDirectories)
                         {
@@ -265,10 +296,16 @@ namespace FolderMorpher.Services
                 {
                     var localSubDirs = new List<NativeFindEntry>(64);
                     var localFiles = new List<NativeFindEntry>(128);
+                    var localStack = new Stack<string>(32); // ★ 親子局所性 LIFO スタック
 
                     while (!ct.IsCancellationRequested)
                     {
-                        if (!folderQueue.TryDequeue(out var currentPath))
+                        string? currentPath;
+                        if (localStack.Count > 0)
+                        {
+                            currentPath = localStack.Pop(); // ★ 親子局所性: 直下のサブフォルダーを優先深掘りしてMFTキャッシュを直撃
+                        }
+                        else if (!folderQueue.TryDequeue(out currentPath))
                         {
                             // キューが空でも、別ワーカーが探索中ならサブフォルダが追加される可能性がある
                             if (Volatile.Read(ref activeWorkers) == 0 && folderQueue.IsEmpty)
@@ -307,14 +344,54 @@ namespace FolderMorpher.Services
                                 continue;
                             }
 
-                            // サブフォルダーをキューへ追加
+                            // サブフォルダーの処理（枝刈り ＆ 親子局所性キューイング）
+                            bool firstSubDir = true;
                             for (int i = 0; i < localSubDirs.Count; i++)
                             {
                                 var sd = localSubDirs[i];
                                 if (sd.IsReparsePoint) continue;
                                 if (ShouldExcludeDirectory(sd.Name, excludeFolderPatterns)) continue;
                                 string dirPath = Path.Combine(currentPath, sd.Name);
-                                folderQueue.Enqueue(dirPath);
+
+                                // ★ ADR 93: TreeCache Pruning（ワーカーループ内の枝刈り判定）
+                                if (pruningIndex != null && pruningIndex.TryGetPrunedEntries(dirPath, sd.LastWriteTimeUtc, includeDirectories, out var prunedEntries))
+                                {
+                                    if (prunedEntries != null)
+                                    {
+                                        for (int p = 0; p < prunedEntries.Count; p++)
+                                        {
+                                            var pEntry = prunedEntries[p];
+                                            if (!pEntry.Attributes.HasFlag(FileAttributes.Directory) &&
+                                                !matchAll && !System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(searchPattern, pEntry.Name, ignoreCase: true))
+                                            {
+                                                continue;
+                                            }
+                                            resultFiles.Add(pEntry);
+                                            onEntryFound?.Invoke(pEntry);
+                                            int count = Interlocked.Increment(ref scannedFilesCount);
+                                            if (coverage != null)
+                                            {
+                                                lock (coverage) coverage.TotalFilesFound++;
+                                            }
+                                            if (count % 100 == 0)
+                                            {
+                                                onProgress?.Invoke(count);
+                                            }
+                                        }
+                                    }
+                                    continue; // 枝刈り成功時はキューに投入せず配下I/Oスキップ
+                                }
+
+                                if (firstSubDir)
+                                {
+                                    localStack.Push(dirPath); // 最初のサブフォルダーは自分のスタックへ積んで直下を掘る
+                                    firstSubDir = false;
+                                }
+                                else
+                                {
+                                    folderQueue.Enqueue(dirPath); // 2つ目以降はグローバルキューへ積んで他ワーカーへ分配
+                                }
+
                                 if (includeDirectories)
                                 {
                                     var dirEntry = new ScannedFileEntry(

@@ -310,6 +310,19 @@ namespace FolderMorpher.Services
 
                 bool includeDirs = query.IncludeFolders || (query.IsDirectoryOnly == true);
 
+                // ★ ADR 93: TreeCache-First 差分枝刈り走査
+                // 既存の TreeCache があれば、変更のないサブツリーの走査をスキップして即時メモリ展開
+                TreeCachePruningIndex? pruningIndex = null;
+                try
+                {
+                    var cachedTree = await AstraSize.Services.StorageHistoryService.Instance.LoadTreeCacheAsync(targetFolder);
+                    if (cachedTree != null)
+                    {
+                        pruningIndex = new TreeCachePruningIndex(cachedTree);
+                    }
+                }
+                catch { }
+
                 try
                 {
                     await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
@@ -319,7 +332,8 @@ namespace FolderMorpher.Services
                         onProgress: null,
                         ct: ct,
                         includeDirectories: includeDirs,
-                        onEntryFound: HandleEntry);
+                        onEntryFound: HandleEntry,
+                        pruningIndex: pruningIndex);
                 }
                 finally
                 {

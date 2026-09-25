@@ -1590,6 +1590,131 @@ namespace FolderMorpher.Services.Testing
                     try { Directory.Delete(probeDir, recursive: true); } catch { }
                 }
             }
+
+            // 20. 【ADR 93】TreeCache 枝刈り差分走査 ＆ 親子局所性（LIFO）＆ 単一キーワード高速パス検証
+            {
+                // A. TreeCachePruningIndex の単体検証
+                DateTime now = DateTime.UtcNow;
+                var rootNode = new AstraSize.Models.FileItemNode
+                {
+                    FullPath = @"C:\TestShare\Root",
+                    Name = "Root",
+                    IsDirectory = true,
+                    LastModified = now
+                };
+
+                var subNode1 = new AstraSize.Models.FileItemNode
+                {
+                    FullPath = @"C:\TestShare\Root\UnchangedFolder",
+                    Name = "UnchangedFolder",
+                    IsDirectory = true,
+                    LastModified = now.AddHours(-2)
+                };
+                var file1 = new AstraSize.Models.FileItemNode
+                {
+                    FullPath = @"C:\TestShare\Root\UnchangedFolder\Doc1.txt",
+                    Name = "Doc1.txt",
+                    IsDirectory = false,
+                    Size = 1024,
+                    LastModified = now.AddHours(-2)
+                };
+                subNode1.Children.Add(file1);
+                rootNode.Children.Add(subNode1);
+
+                var pruningIndex = new FolderMorpher.Services.TreeCachePruningIndex(rootNode);
+
+                // 一致するフォルダー: true が返り、配下ファイルが展開されること
+                bool prunedSuccess = pruningIndex.TryGetPrunedEntries(@"C:\TestShare\Root\UnchangedFolder", now.AddHours(-2), includeDirectories: false, out var prunedEntries);
+                if (!prunedSuccess || prunedEntries == null || prunedEntries.Count != 1 || prunedEntries[0].FullPath != file1.FullPath)
+                    throw new Exception("ADR 93 failed: TreeCachePruningIndex failed to prune matching folder.");
+
+                // 日時が異なるフォルダー: false が返ること（変更検知）
+                bool changedPruned = pruningIndex.TryGetPrunedEntries(@"C:\TestShare\Root\UnchangedFolder", now.AddMinutes(-5), includeDirectories: false, out _);
+                if (changedPruned)
+                    throw new Exception("ADR 93 failed: TreeCachePruningIndex falsely pruned modified folder.");
+
+                // B. 実ディレクトリを用いた SafeFileEnumerator 差分枝刈り走査の Parity 検証
+                string testRoot = Path.Combine(Path.GetTempPath(), "FolderMorpher_PruningTest_" + Guid.NewGuid().ToString("N"));
+                string unchangedDir = Path.Combine(testRoot, "UnchangedDir");
+                string modifiedDir = Path.Combine(testRoot, "ModifiedDir");
+
+                Directory.CreateDirectory(unchangedDir);
+                Directory.CreateDirectory(modifiedDir);
+
+                string f1 = Path.Combine(unchangedDir, "doc_cached.txt");
+                string f2 = Path.Combine(modifiedDir, "doc_live.txt");
+                File.WriteAllText(f1, "Cached file content");
+                File.WriteAllText(f2, "Live file content");
+
+                try
+                {
+                    // キャッシュツリー構築
+                    var cacheRoot = new AstraSize.Models.FileItemNode
+                    {
+                        FullPath = testRoot,
+                        Name = Path.GetFileName(testRoot),
+                        IsDirectory = true,
+                        LastModified = Directory.GetLastWriteTimeUtc(testRoot)
+                    };
+                    var cacheUnchanged = new AstraSize.Models.FileItemNode
+                    {
+                        FullPath = unchangedDir,
+                        Name = "UnchangedDir",
+                        IsDirectory = true,
+                        LastModified = Directory.GetLastWriteTimeUtc(unchangedDir)
+                    };
+                    cacheUnchanged.Children.Add(new AstraSize.Models.FileItemNode
+                    {
+                        FullPath = f1,
+                        Name = "doc_cached.txt",
+                        IsDirectory = false,
+                        Size = 19,
+                        LastModified = File.GetLastWriteTimeUtc(f1)
+                    });
+                    cacheRoot.Children.Add(cacheUnchanged);
+
+                    // modifiedDir はキャッシュには古めの日時を記録しておく（実ディスクとの差異を作る）
+                    var cacheModified = new AstraSize.Models.FileItemNode
+                    {
+                        FullPath = modifiedDir,
+                        Name = "ModifiedDir",
+                        IsDirectory = true,
+                        LastModified = DateTime.UtcNow.AddDays(-1)
+                    };
+                    cacheRoot.Children.Add(cacheModified);
+
+                    var pIndex = new FolderMorpher.Services.TreeCachePruningIndex(cacheRoot);
+
+                    // SafeFileEnumerator で走査実行
+                    var entries = new List<FolderMorpher.Services.ScannedFileEntry>();
+                    await FolderMorpher.Services.SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
+                        testRoot,
+                        onEntryFound: entry => { lock (entries) { entries.Add(entry); } },
+                        pruningIndex: pIndex);
+
+                    // unchangedDir 内の doc_cached.txt と modifiedDir 内の doc_live.txt の双方が漏れなく取得できていること
+                    if (!entries.Any(e => e.FullPath.Equals(f1, StringComparison.OrdinalIgnoreCase)))
+                        throw new Exception("ADR 93 failed: SafeFileEnumerator missed pruned cache file.");
+                    if (!entries.Any(e => e.FullPath.Equals(f2, StringComparison.OrdinalIgnoreCase)))
+                        throw new Exception("ADR 93 failed: SafeFileEnumerator missed live enumerated file.");
+
+                    // C. ContentExtractionService 単一キーワード高速パス（AVX2 / OrdinalIgnoreCase）の検証
+                    string sampleDoc = "これは特許出願用の極秘技術文書です。識別コードはAlphaOmega2026です。";
+                    var singleGroup = new List<List<string>> { new List<string> { "AlphaOmega2026" } };
+                    string? singleSnippet = ContentExtractionService.SearchTextWithSnippet(sampleDoc, singleGroup);
+                    if (string.IsNullOrEmpty(singleSnippet) || !singleSnippet.Contains("AlphaOmega2026"))
+                        throw new Exception("ADR 93 failed: ContentExtractionService single-keyword fast path failed to match or generate snippet.");
+
+                    var nonMatchGroup = new List<List<string>> { new List<string> { "NonExistentKey999" } };
+                    string? nonMatchSnippet = ContentExtractionService.SearchTextWithSnippet(sampleDoc, nonMatchGroup);
+                    if (!string.IsNullOrEmpty(nonMatchSnippet))
+                        throw new Exception("ADR 93 failed: ContentExtractionService single-keyword fast path false positive.");
+                }
+                finally
+                {
+                    try { Directory.Delete(testRoot, true); } catch { }
+                }
+            }
         }
     }
 }
