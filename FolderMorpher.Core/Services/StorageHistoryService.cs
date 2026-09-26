@@ -520,30 +520,8 @@ namespace AstraSize.Services
                 var sqliteNode = await SqliteTreeCacheService.Instance.LoadTreeAsync(targetPath);
                 if (sqliteNode != null)
                 {
-                    // 共有フォルダー（UNC）に明示的な新世代 JSON が存在する場合の同期チェック
-                    var sharedJsonPath = GetTreeCacheReadFilePath(targetPath);
-                    if (!string.IsNullOrEmpty(sharedJsonPath) && File.Exists(sharedJsonPath) &&
-                        AppSettingsService.Instance.Current.WriteMode != CacheWriteMode.Local)
-                    {
-                        try
-                        {
-                            var sharedTime = File.GetLastWriteTimeUtc(sharedJsonPath);
-                            var roots = await SqliteTreeCacheService.Instance.GetAllRootsAsync();
-                            var normTarget = PathCanonicalizer.Normalize(targetPath);
-                            var rootSummary = roots.FirstOrDefault(r => string.Equals(r.NormalizedPath, normTarget, StringComparison.OrdinalIgnoreCase));
-
-                            if (rootSummary != null && sharedTime > rootSummary.Timestamp.ToUniversalTime())
-                            {
-                                // 共有 JSON の方が新しい場合、SQLite へ再インポートして最新化
-                                if (await SqliteTreeCacheService.Instance.ImportFromJsonFileAsync(sharedJsonPath))
-                                {
-                                    return await SqliteTreeCacheService.Instance.LoadTreeAsync(targetPath);
-                                }
-                            }
-                        }
-                        catch { }
-                    }
-
+                    if (await TryImportNewerSharedCacheAsync(targetPath))
+                        return await SqliteTreeCacheService.Instance.LoadTreeAsync(targetPath);
                     return sqliteNode;
                 }
             }
@@ -583,6 +561,51 @@ namespace AstraSize.Services
                     return null;
                 }
             });
+        }
+
+        public async Task<FileItemNode?> LoadTreeCacheBranchAsync(string rootPath, string folderPath)
+        {
+            if (string.IsNullOrWhiteSpace(rootPath) || string.IsNullOrWhiteSpace(folderPath)) return null;
+            FileItemNode? branch = null;
+            try { branch = await SqliteTreeCacheService.Instance.LoadBranchAsync(rootPath, folderPath); }
+            catch { /* Fall back to the existing JSON import route. */ }
+            if (branch != null)
+            {
+                if (await TryImportNewerSharedCacheAsync(rootPath))
+                    branch = await SqliteTreeCacheService.Instance.LoadBranchAsync(rootPath, folderPath);
+                return branch;
+            }
+
+            var root = await LoadTreeCacheAsync(rootPath);
+            if (root == null) return null;
+            var pending = new Stack<FileItemNode>();
+            pending.Push(root);
+            while (pending.Count > 0)
+            {
+                var node = pending.Pop();
+                if (string.Equals(node.FullPath, folderPath, StringComparison.OrdinalIgnoreCase)) return node;
+                foreach (var child in node.Children)
+                    if (child.IsDirectory) pending.Push(child);
+            }
+            return null;
+        }
+
+        private async Task<bool> TryImportNewerSharedCacheAsync(string targetPath)
+        {
+            if (AppSettingsService.Instance.Current.WriteMode == CacheWriteMode.Local) return false;
+            try
+            {
+                var sharedJsonPath = GetTreeCacheReadFilePath(targetPath);
+                if (string.IsNullOrEmpty(sharedJsonPath) || !File.Exists(sharedJsonPath)) return false;
+                var roots = await SqliteTreeCacheService.Instance.GetAllRootsAsync();
+                var normalized = PathCanonicalizer.Normalize(targetPath);
+                var rootSummary = roots.FirstOrDefault(root =>
+                    string.Equals(root.NormalizedPath, normalized, StringComparison.OrdinalIgnoreCase));
+                return rootSummary != null &&
+                    File.GetLastWriteTimeUtc(sharedJsonPath) > rootSummary.Timestamp.ToUniversalTime() &&
+                    await SqliteTreeCacheService.Instance.ImportFromJsonFileAsync(sharedJsonPath);
+            }
+            catch { return false; }
         }
 
         /// <summary>

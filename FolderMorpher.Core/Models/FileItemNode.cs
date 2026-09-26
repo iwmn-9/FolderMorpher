@@ -61,11 +61,26 @@ namespace AstraSize.Models
 
         public bool CanExpand
         {
-            get => IsDirectory && Children.Count > 0;
+            get => IsDirectory && (Children.Count > 0 || HasUnloadedChildren);
             set { }
         }
 
         public bool HasChildren => CanExpand;
+        private bool _hasUnloadedChildren;
+        public bool HasUnloadedChildren
+        {
+            get => _hasUnloadedChildren;
+            set
+            {
+                if (_hasUnloadedChildren == value) return;
+                _hasUnloadedChildren = value;
+                OnPropertyChanged(nameof(HasUnloadedChildren));
+                OnPropertyChanged(nameof(CanExpand));
+                OnPropertyChanged(nameof(HasChildren));
+                OnPropertyChanged("ExpandGlyph");
+                OnPropertyChanged("ExpandIcon");
+            }
+        }
 
         private double _percentage;
         public double Percentage
@@ -113,6 +128,7 @@ namespace AstraSize.Models
                     _isExpanded = value;
                     OnPropertyChanged(nameof(IsExpanded));
                     OnPropertyChanged("ExpandGlyph");
+                    OnPropertyChanged("ExpandIcon");
                 }
             }
         }

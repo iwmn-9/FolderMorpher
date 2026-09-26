@@ -152,7 +152,9 @@ namespace AstraSize
                         Directory.CreateDirectory(testRoot);
                         try
                         {
-                            var matchFile = Path.Combine(testRoot, "ipc-search-match.txt");
+                            var sourceChildPath = Path.Combine(testRoot, "source-folder");
+                            Directory.CreateDirectory(sourceChildPath);
+                            var matchFile = Path.Combine(sourceChildPath, "ipc-search-match.txt");
                             await File.WriteAllTextAsync(matchFile, "FolderMorpher IPC roundtrip");
                             using var testCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(45));
                             var scan = await host.ScanStorageAsync(
@@ -161,7 +163,12 @@ namespace AstraSize
                                 throw new InvalidOperationException($"Storage DTO roundtrip failed: {scan.ErrorMessage}");
                             if (Math.Abs(scan.RootNode.Children[0].PercentageOfRoot - 100.0) > 0.01)
                                 throw new InvalidOperationException("Storage percentage was lost at the IPC boundary.");
-                            var topFiles = await host.GetStorageTopFilesAsync(scan.RootNode, testCts.Token);
+                            if (!scan.RootNode.Children[0].HasUnloadedChildren || scan.RootNode.Children[0].Children.Count != 0)
+                                throw new InvalidOperationException("Storage scan did not return a lazy child folder.");
+                            var loadedChildren = await host.GetStorageChildrenAsync(testRoot, sourceChildPath);
+                            if (!loadedChildren.Any(child => child.FullPath == matchFile))
+                                throw new InvalidOperationException("Storage lazy expansion DTO roundtrip failed.");
+                            var topFiles = await host.GetStorageTopFilesAsync(testRoot, scan.RootNode, testCts.Token);
                             if (!topFiles.Any(file => file.FullPath == matchFile))
                                 throw new InvalidOperationException("Storage top files DTO roundtrip failed.");
                             var forecast = await host.AnalyzeStorageHistoryAsync(new()
@@ -173,8 +180,6 @@ namespace AstraSize
                             if (forecast.TotalScans != 3 || forecast.LinearRegression is not { Slope: > 0 })
                                 throw new InvalidOperationException("Storage forecast DTO roundtrip failed.");
                             Console.WriteLine($"[TEST-IPC] StorageScan: {scan.TotalFiles} file(s)");
-                            var sourceChildPath = Path.Combine(testRoot, "source-folder");
-                            Directory.CreateDirectory(sourceChildPath);
                             var sourceFolder = await host.LoadMigrationSourceFolderAsync(testRoot, testCts.Token);
                             if (!sourceFolder.Children.Any(child => child.FullPath == sourceChildPath))
                                 throw new InvalidOperationException("Migration source directory DTO roundtrip failed.");

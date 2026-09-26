@@ -106,7 +106,7 @@ namespace FolderMorpher.Host
                 }
                 catch { /* History availability must not invalidate a fresh scan. */ }
 
-                result.RootNode = StorageDtoMapper.ToDto(rootNode);
+                result.RootNode = StorageDtoMapper.ToLevelDto(rootNode, 1);
                 RememberScanRoot(rootNode);
                 result.Elapsed = sw.Elapsed;
                 result.TotalBytes = rootNode.Size;
@@ -138,8 +138,17 @@ namespace FolderMorpher.Host
 
         public async Task<StorageNodeDto?> LoadCachedTreeAsync(string targetPath)
         {
-            var tree = FindLiveScanNode(targetPath) ?? await _storageHistory.LoadTreeCacheAsync(targetPath);
-            return tree == null ? null : StorageDtoMapper.ToDto(tree);
+            var tree = FindLiveScanNode(targetPath) ??
+                await _storageHistory.LoadTreeCacheBranchAsync(targetPath, targetPath);
+            return tree == null ? null : StorageDtoMapper.ToLevelDto(tree, 1);
+        }
+
+        public async Task<List<StorageNodeDto>> GetStorageChildrenAsync(string rootPath, string folderPath)
+        {
+            var folder = FindLiveScanNode(folderPath) ??
+                await _storageHistory.LoadTreeCacheBranchAsync(rootPath, folderPath);
+            if (folder == null) throw new DirectoryNotFoundException($"Cached folder not found: {folderPath}");
+            return folder.Children.Select(child => StorageDtoMapper.ToLevelDto(child, 0)).ToList();
         }
 
         public async Task<bool> HasCachedTreeAsync(string targetPath)
@@ -175,13 +184,23 @@ namespace FolderMorpher.Host
             }).ToList();
         }
 
-        public Task<List<StorageTopFileDto>> GetStorageTopFilesAsync(StorageNodeDto node, CancellationToken ct)
+        public async Task<List<StorageTopFileDto>> GetStorageTopFilesAsync(string rootPath, StorageNodeDto node, CancellationToken ct)
         {
-            return Task.Run(() =>
+            var liveNode = FindLiveScanNode(node.FullPath);
+            if (liveNode != null)
             {
-                var (topFiles, _) = DiskScanService.GetInsightsForNode(StorageDtoMapper.ToCore(node));
+                var (topFiles, _) = await Task.Run(() => DiskScanService.GetInsightsForNode(liveNode), ct);
                 return topFiles.Select(StorageDtoMapper.ToDto).ToList();
-            }, ct);
+            }
+            var cachedBranch = await _storageHistory.LoadTreeCacheBranchAsync(rootPath, node.FullPath);
+            if (cachedBranch != null && await _treeCache.LoadBranchAsync(rootPath, node.FullPath) != null)
+            {
+                var cachedFiles = await _treeCache.GetTopFilesForSubtreeAsync(rootPath, node.FullPath);
+                return cachedFiles.Select(StorageDtoMapper.ToDto).ToList();
+            }
+            var source = cachedBranch ?? StorageDtoMapper.ToCore(node);
+            var (fallbackFiles, _) = await Task.Run(() => DiskScanService.GetInsightsForNode(source), ct);
+            return fallbackFiles.Select(StorageDtoMapper.ToDto).ToList();
         }
 
         public Task<StorageForecastDto> AnalyzeStorageHistoryAsync(

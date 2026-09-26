@@ -671,6 +671,15 @@ namespace FolderMorpher.Services.Testing
                     throw new InvalidOperationException($"SqliteTreeCache: 階層構造の復元不正 (Sub: {loaded.Children.Count}, Files: {loaded.Children[0].Children.Count})");
                 }
 
+                var shallowRoot = await cacheService.LoadBranchAsync(rootPath, rootPath);
+                var shallowSub = await cacheService.LoadBranchAsync(rootPath, subDir.FullPath);
+                if (shallowRoot?.Children.Count != 1 || !shallowRoot.Children[0].HasUnloadedChildren ||
+                    shallowRoot.Children[0].Children.Count != 0 || shallowSub?.Children.Count != 2)
+                    throw new InvalidOperationException("SqliteTreeCache: 階層単位の遅延読込が不正です。");
+                var branchTop = await cacheService.GetTopFilesForSubtreeAsync(rootPath, subDir.FullPath);
+                if (branchTop?.FirstOrDefault()?.FullPath != file1.FullPath)
+                    throw new InvalidOperationException("SqliteTreeCache: 遅延読込時の上位ファイル集計が不正です。");
+
                 var restoredFile1 = loaded.Children[0].Children.FirstOrDefault(c => c.Name == "report.pdf");
                 if (restoredFile1 == null || restoredFile1.Sha256 != file1.Sha256)
                 {

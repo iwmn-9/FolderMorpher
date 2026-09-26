@@ -18,7 +18,8 @@ internal static class StorageNodeMapper
         LastModified = node.LastModified,
         CreationTime = node.CreationTime,
         Sha256 = node.Sha256,
-        ErrorMessage = node.ErrorMessage
+        ErrorMessage = node.ErrorMessage,
+        HasUnloadedChildren = node.HasUnloadedChildren
     };
 
     public static StorageNodeDto ToTreeDto(FileItemNode node)
@@ -39,6 +40,7 @@ internal static class StorageNodeMapper
             Sha256 = dto.Sha256,
             ErrorMessage = dto.ErrorMessage,
             DiffBytes = dto.DiffBytes,
+            HasUnloadedChildren = dto.HasUnloadedChildren,
             Percentage = dto.PercentageOfRoot,
             Level = parent == null ? 0 : parent.Level + 1,
             CachedTopFiles = dto.CachedTopFiles.Select(ToViewFile).ToList(),

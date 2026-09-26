@@ -339,33 +339,9 @@ namespace FolderMorpher.Services
                     using var reader = loadNodesCmd.ExecuteReader();
                     while (reader.Read())
                     {
-                        var fullPath = reader.GetString(0);
-                        var name = reader.GetString(1);
+                        var node = ReadNode(reader, false);
+                        var fullPath = node.FullPath;
                         var parentPath = reader.IsDBNull(2) ? null : reader.GetString(2);
-                        var size = reader.GetInt64(3);
-                        var fileCount = reader.GetInt32(4);
-                        var folderCount = reader.GetInt32(5);
-                        var isDir = reader.GetInt32(6) == 1;
-                        var isExp = reader.GetInt32(7) == 1;
-                        DateTime? lastMod = reader.IsDBNull(8) ? null : DateTime.TryParse(reader.GetString(8), out var lm) ? lm : null;
-                        DateTime? createTime = reader.IsDBNull(9) ? null : DateTime.TryParse(reader.GetString(9), out var ct) ? ct : null;
-                        var sha = reader.IsDBNull(10) ? null : reader.GetString(10);
-                        var level = reader.GetInt32(11);
-
-                        var node = new FileItemNode
-                        {
-                            FullPath = fullPath,
-                            Name = name,
-                            Size = size,
-                            FileCount = fileCount,
-                            FolderCount = folderCount,
-                            IsDirectory = isDir,
-                            IsExpanded = isExp,
-                            LastModified = lastMod,
-                            CreationTime = createTime,
-                            Sha256 = sha,
-                            Level = level
-                        };
 
                         if (parentPath == null || !nodeMap.TryGetValue(parentPath, out var parentNode))
                         {
@@ -401,6 +377,118 @@ namespace FolderMorpher.Services
                 return rootNode;
             });
         }
+
+        private static FileItemNode ReadNode(SqliteDataReader reader, bool markUnloaded)
+        {
+            var isDirectory = reader.GetInt32(6) == 1;
+            var fileCount = reader.GetInt32(4);
+            var folderCount = reader.GetInt32(5);
+            return new FileItemNode
+            {
+                FullPath = reader.GetString(0),
+                Name = reader.GetString(1),
+                Size = reader.GetInt64(3),
+                FileCount = fileCount,
+                FolderCount = folderCount,
+                IsDirectory = isDirectory,
+                IsExpanded = !markUnloaded && reader.GetInt32(7) == 1,
+                LastModified = reader.IsDBNull(8) ? null : DateTime.TryParse(reader.GetString(8), out var modified) ? modified : null,
+                CreationTime = reader.IsDBNull(9) ? null : DateTime.TryParse(reader.GetString(9), out var created) ? created : null,
+                Sha256 = reader.IsDBNull(10) ? null : reader.GetString(10),
+                Level = reader.GetInt32(11),
+                HasUnloadedChildren = markUnloaded && isDirectory && (fileCount > 0 || folderCount > 0)
+            };
+        }
+
+        /// <summary>Load one folder and its direct children through the indexed ParentPath lookup.</summary>
+        public Task<FileItemNode?> LoadBranchAsync(string rootPath, string folderPath) => Task.Run(() =>
+        {
+            EnsureInitialized();
+            using var conn = new SqliteConnection(_connectionString);
+            conn.Open();
+            long rootId;
+            long rootBytes;
+            string? topFilesJson;
+            string? extStatsJson;
+            using (var rootCmd = conn.CreateCommand())
+            {
+                rootCmd.CommandText = "SELECT Id, TotalSizeBytes, TopFilesJson, ExtensionStatsJson FROM TreeRoots WHERE NormalizedPath = @path;";
+                rootCmd.Parameters.AddWithValue("@path", PathCanonicalizer.Normalize(rootPath));
+                using var reader = rootCmd.ExecuteReader();
+                if (!reader.Read()) return null;
+                rootId = reader.GetInt64(0);
+                rootBytes = reader.GetInt64(1);
+                topFilesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
+                extStatsJson = reader.IsDBNull(3) ? null : reader.GetString(3);
+            }
+
+            FileItemNode? branch;
+            using (var nodeCmd = conn.CreateCommand())
+            {
+                nodeCmd.CommandText = @"SELECT FullPath, Name, ParentPath, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level
+                    FROM TreeNodes WHERE RootId = @rootId AND FullPath = @path;";
+                nodeCmd.Parameters.AddWithValue("@rootId", rootId);
+                nodeCmd.Parameters.AddWithValue("@path", folderPath);
+                using var reader = nodeCmd.ExecuteReader();
+                if (!reader.Read()) return null;
+                branch = ReadNode(reader, false);
+                branch.Percentage = rootBytes > 0 ? (double)branch.Size / rootBytes * 100 : 0;
+            }
+
+            using (var childrenCmd = conn.CreateCommand())
+            {
+                childrenCmd.CommandText = @"SELECT FullPath, Name, ParentPath, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level
+                    FROM TreeNodes WHERE RootId = @rootId AND ParentPath = @path ORDER BY IsDirectory DESC, Size DESC;";
+                childrenCmd.Parameters.AddWithValue("@rootId", rootId);
+                childrenCmd.Parameters.AddWithValue("@path", folderPath);
+                using var reader = childrenCmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    var child = ReadNode(reader, true);
+                    child.Parent = branch;
+                    child.Percentage = rootBytes > 0 ? (double)child.Size / rootBytes * 100 : 0;
+                    branch.Children.Add(child);
+                }
+            }
+
+            if (string.Equals(folderPath, rootPath, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrEmpty(topFilesJson))
+                    try { branch.CachedTopFiles = JsonSerializer.Deserialize<List<LargestFileInfo>>(topFilesJson); } catch { }
+                if (!string.IsNullOrEmpty(extStatsJson))
+                    try { branch.CachedExtensionStats = JsonSerializer.Deserialize<List<ExtensionStat>>(extStatsJson); } catch { }
+            }
+            return branch;
+        });
+
+        public Task<List<LargestFileInfo>> GetTopFilesForSubtreeAsync(string rootPath, string folderPath) => Task.Run(() =>
+        {
+            EnsureInitialized();
+            using var conn = new SqliteConnection(_connectionString);
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"SELECT Name, FullPath, Size FROM TreeNodes
+                WHERE RootId = (SELECT Id FROM TreeRoots WHERE NormalizedPath = @root)
+                  AND IsDirectory = 0 AND FullPath >= @lower AND FullPath < @upper
+                ORDER BY Size DESC LIMIT 10;";
+            cmd.Parameters.AddWithValue("@root", PathCanonicalizer.Normalize(rootPath));
+            var lower = folderPath.TrimEnd('\\') + "\\";
+            cmd.Parameters.AddWithValue("@lower", lower);
+            cmd.Parameters.AddWithValue("@upper", lower[..^1] + "]");
+            var files = new List<LargestFileInfo>();
+            using var reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                var path = reader.GetString(1);
+                var extension = Path.GetExtension(path);
+                files.Add(new LargestFileInfo
+                {
+                    Name = reader.GetString(0), FullPath = path, Size = reader.GetInt64(2),
+                    Extension = extension, Category = DiskScanService.GetCategoryForExtension(extension)
+                });
+            }
+            return files;
+        });
 
         /// <summary>
         /// キャッシュ内のファイル SHA-256 ハッシュを DB 上で直接一括更新する（Sol提唱 ADR 92/98）。

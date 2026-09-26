@@ -14,6 +14,12 @@ public static class PresentationTestRunner
         parent.IsExpanded = true;
         if (parent.ExpandIcon != "▼" || parent.BadgeBackground != "#FEF3C7")
             throw new InvalidOperationException("Storage node expanded presentation changed.");
+        var lazy = new FileItemNode(@"C:\Root\Lazy", "Lazy", 1, true) { HasUnloadedChildren = true };
+        var iconChanged = false;
+        lazy.PropertyChanged += (_, args) => iconChanged |= args.PropertyName == nameof(lazy.ExpandIcon);
+        lazy.IsExpanded = true;
+        if (!lazy.HasChildren || lazy.ExpandIcon != "▼" || !iconChanged)
+            throw new InvalidOperationException("Lazy folder expansion did not notify the arrow binding.");
         parent.Children[0].Percentage = 40;
         parent.Children[0].DiffBytes = 50 * 1024 * 1024;
         if (parent.Children[0].ShareFormatted != "40.0%" ||

@@ -25,8 +25,9 @@ namespace AstraSize
     {
         #region Tab 1: Storage Explorer & Multi-Tab Management
         private bool _isInitializingTabs = false;
+        private readonly Dictionary<FileItemNode, Task> _storageChildrenLoads = new();
 
-        private async void InitializeStorageTabs()
+        private async Task InitializeStorageTabsAsync()
         {
             StorageTabsItemsControl.ItemsSource = StorageTabs;
             _isInitializingTabs = true;
@@ -391,31 +392,76 @@ namespace AstraSize
             }
         }
 
-        private void ExpandCollapseButton_Click(object sender, RoutedEventArgs e)
+        private async void ExpandCollapseButton_Click(object sender, RoutedEventArgs e)
         {
             if (sender is FrameworkElement fe && fe.Tag is FileItemNode node && _currentTab != null)
             {
-                node.IsExpanded = !node.IsExpanded;
-                _currentTab.FlattenTree();
-                FileTreeDataGrid.ItemsSource = _currentTab.VisibleFlatList;
+                e.Handled = true;
+                await ToggleStorageNodeAsync(node);
             }
         }
 
-        private void FileTreeDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        private async void FileTreeDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
+            if (e.OriginalSource is DependencyObject source &&
+                (source is Button || FindVisualParent<Button>(source) != null)) return;
             if (FileTreeDataGrid.SelectedItem is FileItemNode item)
             {
                 if (item.IsDirectory)
                 {
-                    item.IsExpanded = !item.IsExpanded;
-                    _currentTab?.FlattenTree();
-                    FileTreeDataGrid.ItemsSource = _currentTab?.VisibleFlatList;
+                    await ToggleStorageNodeAsync(item);
                 }
                 else
                 {
                     OpenInExplorer(item.FullPath);
                 }
             }
+        }
+
+        internal async Task ToggleStorageNodeAsync(FileItemNode node)
+        {
+            var tab = _currentTab;
+            if (tab == null) return;
+            try
+            {
+                var expand = !node.IsExpanded;
+                if (expand)
+                    await EnsureStorageChildrenLoadedAsync(node, tab);
+                node.IsExpanded = expand;
+                tab.FlattenTree();
+                if (ReferenceEquals(_currentTab, tab))
+                    FileTreeDataGrid.ItemsSource = tab.VisibleFlatList;
+            }
+            catch (Exception ex)
+            {
+                StatusTextBlock.Text = $"フォルダーを開けません: {ex.Message}";
+                Debug.WriteLine($"Storage expansion failed for {node.FullPath}: {ex}");
+            }
+        }
+
+        private async Task EnsureStorageChildrenLoadedAsync(FileItemNode node, ScanTabModel tab)
+        {
+            if (!node.HasUnloadedChildren) return;
+            if (!_storageChildrenLoads.TryGetValue(node, out var load))
+            {
+                load = LoadStorageChildrenAsync(node, tab);
+                _storageChildrenLoads.Add(node, load);
+            }
+            try { await load; }
+            finally { _storageChildrenLoads.Remove(node); }
+        }
+
+        private static async Task LoadStorageChildrenAsync(FileItemNode node, ScanTabModel tab)
+        {
+            var rootPath = tab.RootNode?.FullPath ?? throw new InvalidOperationException("スキャンルートがありません。");
+            var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+            var children = await host.GetStorageChildrenAsync(rootPath, node.FullPath);
+            if (children.Count == 0)
+                throw new InvalidOperationException("キャッシュに子要素が見つかりません。");
+            node.Children.Clear();
+            foreach (var child in children)
+                node.Children.Add(FolderMorpher.HostClient.StorageNodeMapper.ToViewNode(child, node));
+            node.HasUnloadedChildren = false;
         }
 
         private void FileTreeDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -429,7 +475,14 @@ namespace AstraSize
         private async void UpdateDynamicInsightsForNode(FileItemNode node)
         {
             if (InsightsTargetScopeTextBlock == null || TopFilesDataGrid == null || FolderChildSharesDataGrid == null) return;
+            var selectedTab = _currentTab;
             InsightsTargetScopeTextBlock.Text = $"スコープ: {node.Name}";
+            if (selectedTab is { } tab && node.HasUnloadedChildren)
+            {
+                try { await EnsureStorageChildrenLoadedAsync(node, tab); }
+                catch (Exception ex) { Debug.WriteLine($"Storage insight child load failed for {node.FullPath}: {ex}"); }
+            }
+            if (!ReferenceEquals(selectedTab, _currentTab)) return;
 
             // 1. Direct children breakdown (relative shares in this folder) - 即時表示
             long parentSize = node.Size > 0 ? node.Size : 1;
@@ -460,8 +513,8 @@ namespace AstraSize
                 try
                 {
                     var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
-                    var dto = FolderMorpher.HostClient.StorageNodeMapper.ToTreeDto(node);
-                    var result = await host.GetStorageTopFilesAsync(dto, CancellationToken.None);
+                    var dto = FolderMorpher.HostClient.StorageNodeMapper.ToFlatDto(node);
+                    var result = await host.GetStorageTopFilesAsync(_currentTab?.RootNode?.FullPath ?? node.FullPath, dto, CancellationToken.None);
                     var computedTop = result.Select(FolderMorpher.HostClient.StorageNodeMapper.ToViewFile).ToList();
                     node.CachedTopFiles = computedTop;
                     if (FileTreeDataGrid.SelectedItem == node || _currentTab?.RootNode == node)

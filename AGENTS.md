@@ -65,7 +65,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 | 機能領域 / タブ | XAML (MainWindow / View) | C# コードビハインド | 関連 Service / Model | 責務と概要 |
 | :--- | :--- | :--- | :--- | :--- |
 | **全体共通 / 左サイドバー** | `SidebarBorder`, `SidebarToggleButton` (L22-75) | `MainWindow.xaml.cs`<br>`MainWindow.Localization.cs` | `Converters/ValueConverters.cs` | 収縮対応ナビゲーション（幅220px ⇄ 58px）、グローバルステータスバー、通知トースト、言語切替（日英）、環境設定モーダル |
-| **Tab 1: 容量分析**<br>(Storage Explorer) | `StorageTabPanel` (L82-410)<br>`HistoryWindow.xaml` | `MainWindow.Storage.cs`<br>`HistoryWindow.xaml.cs` | `DiskScanService.cs`<br>`StorageHistoryService.cs`<br>`StorageForecastingService.cs`<br>`ScanTabModel.cs`<br>`FileItemNode.cs` | 複数タブスキャン、ドライブ空き容量メーター、全体占有率メーター、容量上位Top10（Explorer起動連動）、直下シェア内訳、推移グラフ直下の3連KPIハイライトカード（上限到達予測・日次ペース・R²信頼度） |
+| **Tab 1: 容量分析**<br>(Storage Explorer) | `StorageTabPanel` (L82-410)<br>`HistoryWindow.xaml` | `MainWindow.Storage.cs`<br>`HistoryWindow.xaml.cs` | `DiskScanService.cs`<br>`SqliteTreeCacheService.cs`<br>`StorageHistoryService.cs`<br>`ScanTabModel.cs`<br>`FileItemNode.cs` | Hostからルートと直下だけを取得し、フォルダー展開時に子の一階層を取得する。容量上位Top10と直下シェアもHostで集計。複数タブ、容量推移、予測を提供 |
 | **Tab 2: ファイル検索**<br>(Search Studio) | `SearchTabPanel`<br>(`MainWindow.xaml`) | `MainWindow.Search.cs` | `SearchEngineService.cs`<br>`ServerSearchAccelerator.cs`<br>`WindowsSearchProvider.cs`<br>`TreeCachePruningIndex.cs`<br>`PathCanonicalizer.cs`<br>`SharedIoGovernor.cs`<br>`ContentExtractionService.cs`<br>`SearchQueryParser.cs`<br>`PdfSearchHelper.cs`<br>`SearchModels.cs` | **検索専用DB肥大化ゼロ（インメモリ0秒検索 ＋ ストリーミング型 Live 直接走査への一本化）**、**サーバー側インデックス拝借＆候補ピンポイント原本確認（ServerSearchAccelerator: WSP / Synology 等）**、**Producer-Consumer Channel パイプライン（最大12並行）**、ripgrep流 64KBスライディングバッファ直接走査、Office/PDF 境界分割保護＆二重解析根絶、UNCルート単位 I/O ガバナー（`SharedIoGovernor` AIMD）、パス正規化エンジン（`PathCanonicalizer`: Z:\ ⇄ UNC 自動解決）、Tabler File-Type バッジ、高機能検索クエリ構文（ワイルドカード・論理演算・属性指定）、右クリック連携およびExcel/CSV出力 |
 | **Tab 3: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `Views/LiveAclStudio.xaml`<br>(`LiveAclFolderView`, `LiveAclReverseView`, `LiveAclDiffModalOverlay`, `NewFolderModalOverlay`) | `Views/LiveAclStudio.xaml.cs` | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACL可視化・編集、**Dry-Run差分チェックモーダル（AclChangePlan貫通・継承変更警告・セマンティックVerify・SDDLロールバック）**、AD逆引き権限監査、均一幅ADアカウントカード、ADパレットUI統一、ADバックグラウンド自動同期、ツリーインライン新規フォルダー作成 |
 | **Tab 4: 移行スタジオ**<br>(Simulation Studio) | `SimulationTabPanel` (L608-995) | `MainWindow.Simulation.cs` | `SimulationProjectService.cs`<br>`MigrationPackageService.cs`<br>`MigrationPackageModels.cs`<br>`SimModels.cs` | 現行ファイルサーバーから新環境への仮想ツリー設計（N:1マッピング）、ACL引き継ぎ設計、ADパレット統一、全画面・全出力完全日英両対応、ヘッダーレイアウト整線、ガワ先行作成の実機DACLセマンティックVerify、エンタープライズ移行パッケージ出力（TargetRoot必須検証・Wave分割・Runbook Excel・安全停止手順・多重コピー防止/XD・%~dp0相対ログ・exit /b 1・遅延展開排除・Dry-Run bat同梱） |
@@ -87,13 +87,13 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの設計判断記録（ADR 1〜102）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの設計判断記録（ADR 1〜103）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 
 #### 主要な中核原則サマリー（詳細は `.agents/ADR.md` 参照）
 
-設計判断（ADR 1〜102）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
+設計判断（ADR 1〜103）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
 
 1. **全体占有率メーター & 2連カード（Storage / ADR 61）**:
    - 親フォルダーに対する直下シェア（右ペイン「選択フォルダーの内訳」）と、スキャン対象ルート総容量に対する全体占有率を二重加算防止のため厳格分離。ルート行は `―`（ハイフン）表示。メトリクスカードは「スキャン対象 容量」「前回差分推移」の2連カード化。
@@ -117,10 +117,10 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
    - **ストリーミング走査の最適化**: ripgrep流 64KBスライディングバッファ直接走査、Office書式境界分割保護（`<w:t>` 連続結合・HTMLデコード・セル境界空白保護）、PDF正常非一致の早期脱落、親子局所性（Locality-First LIFO走査）、パス正規化エンジン（`PathCanonicalizer`: Z:\ ⇄ UNC 自動解決＆同一視）。
    - **列挙結果の保持を選択**: 共通列挙器は既定で一覧を返す。検索の逐次コールバック利用時は `collectResults: false` とし、全件を別途メモリへ蓄積しない。名前・パス・本文条件の共通判定は `MatchesSearchTerms` に集約。
    - **UI・デザイン言語**: フル幅モダンカードリスト、Tabler File-Type バッジ（Option 1 折れ曲がり角付き書類ベクターアイコン ＆ 統一フォルダー）。
-7. **SQLite ローカル専有ツリーキャッシュ ＆ ポータブル JSON 相互運用（ADR 98）**:
+7. **SQLite ローカル専有ツリーキャッシュ ＆ ポータブル JSON 相互運用（ADR 98・103）**:
    - **完全ローカル専有**: `%LocalAppData%\FolderMorpher\TreeCache\tree_cache.db`（WALモード）にのみ DB を配置。共有フォルダー（UNC）には一切 DB を置かず、ロック競合・遅延破損をゼロ化。
-   - **事前集計 Materialized**: スキャン完了時に計算済みの集計値（`TotalSizeBytes`, `FileCount`, `FolderCount`）をカラムに直保持。深階層でも再帰クエリ不要で $O(1)$ 高速遅延ロード。
-   - **単一トランザクション一括コミット**: 数万ノードを単一トランザクションでバルクインサート（0.1〜0.3秒で保存完了）。
+   - **事前集計と階層単位の取得**: 集計値を各ノードに保存し、GUIへの全件復元・全件IPC送信を避ける。`LoadTreeCacheBranchAsync` と `GetStorageChildrenAsync` はルートまたはクリックされたフォルダーの直下だけ読む。検索・エクスポート用の全ツリー読込は別経路に残る。
+   - **単一トランザクション一括コミット**: DB保存は一括トランザクション。数百万ノードの保存所要時間は別途計測し、以前の「0.1〜0.3秒」を保証値と扱わない。
    - **DB直接 SHA-256 更新**: `UpdateSha256Async` によりメモリ展開ゼロで高速 UPDATE。
    - **ポータブル JSON 相互運用**: `ExportToJsonFileAsync` / `ImportFromJsonFileAsync` により社内配布・共有用には単一 JSON を出力。既存 JSON キャッシュからの自動透過マイグレーション完備。
 8. **UI共通整線 ＆ 深階層ツリー操作性（ADR 65, 66, 69）**:

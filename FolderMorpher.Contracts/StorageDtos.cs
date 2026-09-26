@@ -16,6 +16,7 @@ public sealed class StorageNodeDto
     public string? Sha256 { get; set; }
     public string? ErrorMessage { get; set; }
     public long? DiffBytes { get; set; }
+    public bool HasUnloadedChildren { get; set; }
     public List<StorageTopFileDto> CachedTopFiles { get; set; } = new();
     public List<StorageExtensionStatDto> CachedExtensionStats { get; set; } = new();
     public List<StorageNodeDto> Children { get; set; } = new();

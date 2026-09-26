@@ -30,6 +30,8 @@ public static class SnapshotRunner
                         {
                             if (!await mw.InitialLocalization.WaitAsync(TimeSpan.FromSeconds(30)))
                                 throw new InvalidOperationException("Window localization failed before snapshot.");
+                            if (!await mw.InitialStorage.WaitAsync(TimeSpan.FromSeconds(30)))
+                                throw new InvalidOperationException("Storage tabs failed to initialize before snapshot.");
                             if (ForcedLanguage is { } language)
                                 FolderMorpher.Services.LocalizationService.Instance.SetLanguage(language);
 
@@ -95,6 +97,15 @@ public static class SnapshotRunner
                                 mw.SearchKpiTotalSizeText.Text = "18.8 MB";
                                 mw.SearchKpiElapsedText.Text = "0.04s";
                                 mw.SearchStatusText.Text = "⚡ インデックス高速検索完了: 4 件ヒット (38 ms)";
+                            }
+                            else if (selectTab == 101)
+                            {
+                                mw.NavTabStorage.IsChecked = true;
+                                var firstLazyFolder = mw.FileTreeDataGrid.ItemsSource?
+                                    .OfType<AstraSize.Models.FileItemNode>()
+                                    .FirstOrDefault(node => node.HasUnloadedChildren);
+                                if (firstLazyFolder != null)
+                                    await mw.ToggleStorageNodeAsync(firstLazyFolder);
                             }
                             else if (selectTab == 2) mw.NavTabLiveAcl.IsChecked = true;
 
@@ -338,7 +349,6 @@ public static class SnapshotRunner
                         }
                         finally
                         {
-                            FolderMorpher.HostClient.FolderMorpherHostClient.Instance.StopLaunchedHostForTests();
                             shutdown(snapshotExitCode);
                         }
                     }

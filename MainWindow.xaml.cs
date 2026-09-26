@@ -24,6 +24,8 @@ namespace AstraSize
     {
         private readonly TaskCompletionSource<bool> _initialLocalization = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal Task<bool> InitialLocalization => _initialLocalization.Task;
+        private readonly TaskCompletionSource<bool> _initialStorage = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal Task<bool> InitialStorage => _initialStorage.Task;
 
         // Cancellation Tokens
         private CancellationTokenSource? _scanCts;
@@ -168,7 +170,8 @@ namespace AstraSize
                 _initialLocalization.TrySetResult(true);
                 var settingsHost = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
                 await settingsHost.SetLanguageAsync(language == AppLanguage.English ? "en" : "ja");
-                InitializeStorageTabs();
+                await InitializeStorageTabsAsync();
+                _initialStorage.TrySetResult(true);
                 if (!ClientModeState.IsClientMode)
                 {
                     InitializeSimulationStudio();
@@ -179,6 +182,7 @@ namespace AstraSize
             catch (Exception ex)
             {
                 _initialLocalization.TrySetResult(false);
+                _initialStorage.TrySetResult(false);
                 Debug.WriteLine($"MainWindow_Loaded Error: {ex}");
             }
         }
