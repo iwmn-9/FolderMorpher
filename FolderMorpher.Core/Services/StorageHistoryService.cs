@@ -678,42 +678,38 @@ namespace AstraSize.Services
         public void ApplyTreeDiff(FileItemNode current, FileItemNode cached)
         {
             if (current == null || cached == null) return;
-
-            // キャッシュノードのパスとサイズをマップ化
-            var cacheMap = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-            BuildCachePathMap(cached, cacheMap);
-
-            // 現在のツリーに差分を再帰適用
-            ApplyDiffRecursive(current, cacheMap);
+            ApplyTreeDiff(current, EnumeratePathSizes(cached));
         }
 
-        private void BuildCachePathMap(FileItemNode node, Dictionary<string, long> map)
+        public void ApplyTreeDiff(FileItemNode current, IEnumerable<(string FullPath, long Size)> previousNodes)
         {
-            if (!string.IsNullOrEmpty(node.FullPath))
+            if (current == null || previousNodes == null) return;
+            // Reuse path strings already owned by the new scan; the old DB is streamed row by row.
+            var currentMap = new Dictionary<string, FileItemNode>(StringComparer.OrdinalIgnoreCase);
+            var pending = new Stack<FileItemNode>();
+            pending.Push(current);
+            while (pending.Count > 0)
             {
-                map[node.FullPath] = node.Size;
-            }
-            foreach (var child in node.Children)
-            {
-                BuildCachePathMap(child, map);
-            }
-        }
-
-        private void ApplyDiffRecursive(FileItemNode node, Dictionary<string, long> cacheMap)
-        {
-            if (cacheMap.TryGetValue(node.FullPath, out var prevSize))
-            {
-                node.DiffBytes = node.Size - prevSize;
-            }
-            else
-            {
-                // 前回存在しなかった新規ファイル/フォルダ
+                var node = pending.Pop();
                 node.DiffBytes = node.Size;
+                if (!string.IsNullOrEmpty(node.FullPath)) currentMap[node.FullPath] = node;
+                foreach (var child in node.Children) pending.Push(child);
             }
-
-            foreach (var child in node.Children)
+            foreach (var (path, size) in previousNodes)
             {
-                ApplyDiffRecursive(child, cacheMap);
+                if (currentMap.TryGetValue(path, out var node)) node.DiffBytes = node.Size - size;
+            }
+        }
+
+        private static IEnumerable<(string FullPath, long Size)> EnumeratePathSizes(FileItemNode root)
+        {
+            var pending = new Stack<FileItemNode>();
+            pending.Push(root);
+            while (pending.Count > 0)
+            {
+                var node = pending.Pop();
+                if (!string.IsNullOrEmpty(node.FullPath)) yield return (node.FullPath, node.Size);
+                foreach (var child in node.Children) pending.Push(child);
             }
         }
 

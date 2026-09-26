@@ -100,9 +100,24 @@ namespace FolderMorpher.Host
 
                 try
                 {
-                    var previousRoot = FindLiveScanNode(request.TargetPath) ??
-                        await _storageHistory.LoadTreeCacheAsync(request.TargetPath);
-                    if (previousRoot != null) _storageHistory.ApplyTreeDiff(rootNode, previousRoot);
+                    var previousRoot = FindLiveScanNode(request.TargetPath);
+                    if (previousRoot != null)
+                    {
+                        _storageHistory.ApplyTreeDiff(rootNode, previousRoot);
+                    }
+                    else
+                    {
+                        // Check shared JSON freshness without materializing the old SQLite tree.
+                        var cachedBranch = await _storageHistory.LoadTreeCacheBranchAsync(request.TargetPath, request.TargetPath);
+                        if (cachedBranch != null)
+                        {
+                            if (await _treeCache.HasRootAsync(request.TargetPath))
+                                await Task.Run(() => _storageHistory.ApplyTreeDiff(rootNode,
+                                    _treeCache.EnumeratePathSizes(request.TargetPath, ct)), ct);
+                            else
+                                _storageHistory.ApplyTreeDiff(rootNode, cachedBranch);
+                        }
+                    }
                 }
                 catch { /* History availability must not invalidate a fresh scan. */ }
 
@@ -154,9 +169,7 @@ namespace FolderMorpher.Host
         public async Task<bool> HasCachedTreeAsync(string targetPath)
         {
             if (FindLiveScanNode(targetPath) != null) return true;
-            var normalized = PathCanonicalizer.Normalize(targetPath);
-            return (await _treeCache.GetAllRootsAsync()).Any(root =>
-                string.Equals(root.NormalizedPath, normalized, StringComparison.OrdinalIgnoreCase));
+            return await _treeCache.HasRootAsync(targetPath);
         }
 
         public async Task SaveTreeCacheAsync(StorageNodeDto rootNode)
@@ -193,7 +206,7 @@ namespace FolderMorpher.Host
                 return topFiles.Select(StorageDtoMapper.ToDto).ToList();
             }
             var cachedBranch = await _storageHistory.LoadTreeCacheBranchAsync(rootPath, node.FullPath);
-            if (cachedBranch != null && await _treeCache.LoadBranchAsync(rootPath, node.FullPath) != null)
+            if (cachedBranch != null && await _treeCache.HasRootAsync(rootPath))
             {
                 var cachedFiles = await _treeCache.GetTopFilesForSubtreeAsync(rootPath, node.FullPath);
                 return cachedFiles.Select(StorageDtoMapper.ToDto).ToList();
@@ -258,15 +271,25 @@ namespace FolderMorpher.Host
 
         public async Task<List<SearchResultDto>> SearchInMemoryAsync(string targetPath, SearchQueryDto query, IProgress<SearchProgressDto>? progress, CancellationToken ct)
         {
-            var cachedRoot = FindLiveScanNode(targetPath) ?? await _storageHistory.LoadTreeCacheAsync(targetPath);
-            if (cachedRoot == null)
-            {
-                return new List<SearchResultDto>();
-            }
-
             IProgress<SearchProgressReport>? coreProgress = progress == null ? null
                 : new Progress<SearchProgressReport>(report => progress.Report(SearchDtoMapper.ToDto(report)));
-            var results = await _searchEngine.SearchInMemoryAsync(new[] { cachedRoot }, SearchDtoMapper.ToCore(query), coreProgress, ct);
+            var coreQuery = SearchDtoMapper.ToCore(query);
+            var liveRoot = FindLiveScanNode(targetPath);
+            List<SearchResultItem> results;
+            if (liveRoot != null)
+            {
+                results = await _searchEngine.SearchInMemoryAsync(new[] { liveRoot }, coreQuery, coreProgress, ct);
+            }
+            else
+            {
+                // This also imports a newer shared JSON cache when configured.
+                var cachedRoot = await _storageHistory.LoadTreeCacheBranchAsync(targetPath, targetPath);
+                if (cachedRoot == null) return new List<SearchResultDto>();
+                results = await _treeCache.HasRootAsync(targetPath)
+                    ? await _searchEngine.SearchCachedEntriesAsync(
+                        _treeCache.EnumerateSearchEntries(targetPath, ct), coreQuery, coreProgress, ct)
+                    : await _searchEngine.SearchInMemoryAsync(new[] { cachedRoot }, coreQuery, coreProgress, ct);
+            }
             return results.Select(SearchDtoMapper.ToDto).ToList();
         }
 

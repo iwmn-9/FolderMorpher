@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using AstraSize.Models;
@@ -23,14 +24,27 @@ namespace FolderMorpher.Services
         public int FolderCount { get; set; }
     }
 
+    /// <summary>Search facts read one row at a time without constructing a parent/child tree.</summary>
+    public readonly record struct TreeCacheSearchEntry(
+        string FullPath, string Name, long SizeBytes, bool IsDirectory,
+        DateTime? LastModified, DateTime? CreationTime,
+        long? LastModifiedBinary = null, long? CreationTimeBinary = null)
+    {
+        public DateTime? GetLastModified() => LastModified ??
+            (LastModifiedBinary.HasValue ? DateTime.FromBinary(LastModifiedBinary.Value) : null);
+
+        public DateTime? GetCreationTime() => CreationTime ??
+            (CreationTimeBinary.HasValue ? DateTime.FromBinary(CreationTimeBinary.Value) : null);
+    }
+
     /// <summary>
     /// SQLite ローカル専有ツリーキャッシュ サービス（ADR 98）。
     /// 
     /// 【設計方針】
     /// 1. 完全ローカル専有: %LocalAppData%\FolderMorpher\TreeCache\tree_cache.db にのみ保持。
     ///    共有フォルダー（UNC）には一切 DB ファイルを配置せず、ロック競合や遅延破損をゼロ化。
-    /// 2. 事前集計 Materialized: 各フォルダーノードに集計サイズ・ファイル数を保存し、深階層でも O(1) 遅延ロード可能。
-    /// 3. 単一トランザクション一括コミット: 数万ノードでもミリ秒単位で超高速保存。
+    /// 2. 親ID・名前を正本にし、パス例外のみ補助値を保存。部分木は連続ID範囲で走査する。
+    /// 3. 事前集計と単一トランザクション: 直下の遅延ロードとDB保存を両立する。
     /// 4. ポータブル JSON 相互運用: 他 PC やチーム共有向けに JSON エクスポート / インポートを完全保証。
     /// </summary>
     public sealed class SqliteTreeCacheService
@@ -49,7 +63,13 @@ namespace FolderMorpher.Services
             var dir = Path.Combine(localBase, "TreeCache");
             Directory.CreateDirectory(dir);
 
-            _dbFilePath = Path.Combine(dir, "tree_cache.db");
+            var isRegression = Environment.GetCommandLineArgs().Contains("--test-regression");
+            var testPath = isRegression
+                ? Environment.GetEnvironmentVariable("FOLDERMORPHER_TEST_TREE_CACHE_DB")
+                    ?? Path.Combine(Path.GetTempPath(), "FolderMorpher_regression_tree_cache.db")
+                : null;
+            _dbFilePath = testPath == null ? Path.Combine(dir, "tree_cache.db") : Path.GetFullPath(testPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(_dbFilePath)!);
 
             var builder = new SqliteConnectionStringBuilder
             {
@@ -85,6 +105,87 @@ namespace FolderMorpher.Services
 
         public string DbFilePath => _dbFilePath;
 
+        public Task<bool> HasRootAsync(string targetPath) => Task.Run(() =>
+        {
+            EnsureInitialized();
+            using var conn = new SqliteConnection(_connectionString);
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT 1 FROM TreeRoots WHERE NormalizedPath = @path LIMIT 1;";
+            cmd.Parameters.AddWithValue("@path", PathCanonicalizer.Normalize(targetPath));
+            return cmd.ExecuteScalar() != null;
+        });
+
+        public IEnumerable<TreeCacheSearchEntry> EnumerateSearchEntries(string targetPath, System.Threading.CancellationToken ct = default)
+            => EnumerateFlatEntries(targetPath, includeDates: true, ct);
+
+        public IEnumerable<(string FullPath, long Size)> EnumeratePathSizes(string targetPath, System.Threading.CancellationToken ct = default)
+        {
+            foreach (var entry in EnumerateFlatEntries(targetPath, includeDates: false, ct))
+                yield return (entry.FullPath, entry.SizeBytes);
+        }
+
+        private IEnumerable<TreeCacheSearchEntry> EnumerateFlatEntries(
+            string targetPath, bool includeDates, System.Threading.CancellationToken ct)
+        {
+            EnsureInitialized();
+            using var conn = new SqliteConnection(_connectionString);
+            conn.Open();
+            var root = FindRoot(conn, targetPath);
+            if (root == null) yield break;
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = includeDates
+                ? @"SELECT Id, ParentId, Name, Size, IsDirectory, LastModified, CreationTime, PathSuffix
+                    FROM TreeNodes WHERE RootId = @rootId ORDER BY Id;"
+                : @"SELECT Id, ParentId, Name, Size, IsDirectory, NULL, NULL, PathSuffix
+                    FROM TreeNodes WHERE RootId = @rootId ORDER BY Id;";
+            cmd.Parameters.AddWithValue("@rootId", root.Value.Id);
+            using var reader = cmd.ExecuteReader();
+            var ancestors = new List<(long Id, string Path)>();
+            while (reader.Read())
+            {
+                ct.ThrowIfCancellationRequested();
+                var id = reader.GetInt64(0);
+                var parentId = reader.IsDBNull(1) ? (long?)null : reader.GetInt64(1);
+                while (ancestors.Count > 0 && ancestors[^1].Id != parentId)
+                    ancestors.RemoveAt(ancestors.Count - 1);
+                if (parentId != null && ancestors.Count == 0)
+                    throw new InvalidDataException("Tree cache rows are not in parent-before-child order.");
+                var name = reader.GetString(2);
+                var suffix = reader.IsDBNull(7) ? null : reader.GetString(7);
+                var path = parentId == null ? root.Value.OriginalPath : ChildPath(ancestors[^1].Path, name, suffix);
+                var isDirectory = reader.GetInt32(4) == 1;
+                if (isDirectory) ancestors.Add((id, path));
+                yield return new TreeCacheSearchEntry(path, name, reader.GetInt64(3), isDirectory,
+                    null, null, reader.IsDBNull(5) ? null : reader.GetInt64(5),
+                    reader.IsDBNull(6) ? null : reader.GetInt64(6));
+            }
+        }
+
+        private static (long Id, string OriginalPath)? FindRoot(SqliteConnection conn, string targetPath)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT Id, OriginalTargetPath FROM TreeRoots WHERE NormalizedPath = @path;";
+            cmd.Parameters.AddWithValue("@path", PathCanonicalizer.Normalize(targetPath));
+            using var reader = cmd.ExecuteReader();
+            return reader.Read() ? (reader.GetInt64(0), reader.GetString(1)) : null;
+        }
+
+        private static string ChildPath(string parentPath, string name, string? suffix)
+        {
+            if (suffix == null) return Path.Combine(parentPath, name);
+            return Path.IsPathFullyQualified(suffix) ? suffix : Path.Combine(parentPath, suffix);
+        }
+
+        private static string? GetPathSuffix(string parentPath, FileItemNode node)
+        {
+            var expected = Path.Combine(parentPath, node.Name);
+            if (string.Equals(expected, node.FullPath, StringComparison.Ordinal)) return null;
+            var prefix = parentPath.TrimEnd('\\') + "\\";
+            return node.FullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? node.FullPath[prefix.Length..] : node.FullPath;
+        }
+
         private void EnsureInitialized()
         {
             if (_isInitialized) return;
@@ -103,7 +204,7 @@ namespace FolderMorpher.Services
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     CREATE TABLE IF NOT EXISTS TreeRoots (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        Id INTEGER PRIMARY KEY,
                         NormalizedPath TEXT UNIQUE NOT NULL,
                         OriginalTargetPath TEXT NOT NULL,
                         Timestamp TEXT NOT NULL,
@@ -117,18 +218,17 @@ namespace FolderMorpher.Services
                     CREATE TABLE IF NOT EXISTS TreeNodes (
                         Id INTEGER PRIMARY KEY,
                         RootId INTEGER NOT NULL REFERENCES TreeRoots(Id) ON DELETE CASCADE,
-                        FullPath TEXT NOT NULL,
                         Name TEXT NOT NULL,
                         ParentId INTEGER,
+                        PathSuffix TEXT,
+                        SubtreeEndId INTEGER,
                         Size INTEGER NOT NULL,
                         FileCount INTEGER NOT NULL,
                         FolderCount INTEGER NOT NULL,
                         IsDirectory INTEGER NOT NULL,
-                        IsExpanded INTEGER NOT NULL,
-                        LastModified TEXT,
-                        CreationTime TEXT,
-                        Sha256 TEXT,
-                        Level INTEGER NOT NULL
+                        LastModified INTEGER,
+                        CreationTime INTEGER,
+                        Sha256 BLOB
                     );
 
                 ";
@@ -151,23 +251,38 @@ namespace FolderMorpher.Services
                     }
                 }
 
+                using (var columns = conn.CreateCommand())
+                {
+                    columns.CommandText = "PRAGMA table_info(TreeNodes);";
+                    using var reader = columns.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        if (reader.GetString(1) != "FullPath") continue;
+                        reader.Close();
+                        MigrateCompactNodes(conn);
+                        migrated = true;
+                        break;
+                    }
+                }
+
                 using var indexes = conn.CreateCommand();
                 indexes.CommandText = @"
                     DROP INDEX IF EXISTS idx_treenodes_root;
-                    CREATE INDEX IF NOT EXISTS idx_treenodes_root_parent ON TreeNodes(RootId, ParentId);
-                    CREATE INDEX IF NOT EXISTS idx_treenodes_root_path ON TreeNodes(RootId, FullPath);";
+                    DROP INDEX IF EXISTS idx_treenodes_root_path;
+                    CREATE INDEX IF NOT EXISTS idx_treenodes_root_parent ON TreeNodes(RootId, ParentId, Name);
+                    CREATE INDEX IF NOT EXISTS idx_treenodes_root_order ON TreeNodes(RootId, Id);";
                 indexes.ExecuteNonQuery();
 
                 using var version = conn.CreateCommand();
                 version.CommandText = "PRAGMA user_version;";
-                var vacuumPending = migrated || Convert.ToInt64(version.ExecuteScalar()) == 104;
+                var vacuumPending = migrated || Convert.ToInt64(version.ExecuteScalar()) == 106;
                 if (vacuumPending)
                 {
                     // The old table and indexes still occupy free pages until a one-time vacuum.
                     try
                     {
                         using var vacuum = conn.CreateCommand();
-                        vacuum.CommandText = "VACUUM; PRAGMA user_version=105;";
+                        vacuum.CommandText = "VACUUM; PRAGMA user_version=107;";
                         vacuum.ExecuteNonQuery();
                     }
                     catch (SqliteException ex)
@@ -234,6 +349,134 @@ namespace FolderMorpher.Services
                 migrate.ExecuteNonQuery();
                 tx.Commit();
             }
+        }
+
+        private static void MigrateCompactNodes(SqliteConnection conn)
+        {
+            // Keep the old table intact until all rows and parent links have been checked.
+            using var tx = conn.BeginTransaction();
+            using var cmd = conn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = @"
+                CREATE TABLE TreeNodesCompact (
+                    Id INTEGER PRIMARY KEY,
+                    RootId INTEGER NOT NULL REFERENCES TreeRoots(Id) ON DELETE CASCADE,
+                    Name TEXT NOT NULL,
+                    ParentId INTEGER,
+                    PathSuffix TEXT,
+                    SubtreeEndId INTEGER,
+                    Size INTEGER NOT NULL,
+                    FileCount INTEGER NOT NULL,
+                    FolderCount INTEGER NOT NULL,
+                    IsDirectory INTEGER NOT NULL,
+                    LastModified INTEGER,
+                    CreationTime INTEGER,
+                    Sha256 BLOB
+                );
+                INSERT INTO TreeNodesCompact
+                    (Id, RootId, Name, ParentId, PathSuffix, Size, FileCount, FolderCount,
+                     IsDirectory, LastModified, CreationTime, Sha256)
+                SELECT n.Id, n.RootId, n.Name, n.ParentId,
+                       CASE WHEN n.ParentId IS NULL OR n.FullPath = p.FullPath || '\' || n.Name THEN NULL
+                            WHEN substr(n.FullPath, 1, length(p.FullPath) + 1) = p.FullPath || '\'
+                                THEN substr(n.FullPath, length(p.FullPath) + 2)
+                            ELSE n.FullPath END,
+                       n.Size, n.FileCount, n.FolderCount,
+                       n.IsDirectory, n.LastModified, n.CreationTime, n.Sha256
+                FROM TreeNodes n LEFT JOIN TreeNodes p ON p.Id = n.ParentId AND p.RootId = n.RootId;";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = @"SELECT
+                (SELECT COUNT(*) FROM TreeNodes) - (SELECT COUNT(*) FROM TreeNodesCompact)
+                + (SELECT COUNT(*) FROM TreeNodesCompact n
+                   WHERE n.ParentId IS NOT NULL AND NOT EXISTS
+                       (SELECT 1 FROM TreeNodesCompact p WHERE p.Id = n.ParentId AND p.RootId = n.RootId));";
+            if ((long)cmd.ExecuteScalar()! != 0)
+                throw new InvalidDataException("Tree cache compaction found missing nodes or parent links; original cache was preserved.");
+
+            using (var oldDates = conn.CreateCommand())
+            using (var convert = conn.CreateCommand())
+            using (var finishFolder = conn.CreateCommand())
+            {
+                oldDates.Transaction = tx;
+                oldDates.CommandText = @"SELECT Id, ParentId, IsDirectory, LastModified, CreationTime, Sha256
+                    FROM TreeNodes ORDER BY Id;";
+                convert.Transaction = tx;
+                convert.CommandText = @"UPDATE TreeNodesCompact
+                    SET LastModified = @modified, CreationTime = @created, Sha256 = @sha WHERE Id = @id;";
+                var id = convert.Parameters.Add("@id", SqliteType.Integer);
+                var modified = convert.Parameters.Add("@modified", SqliteType.Integer);
+                var created = convert.Parameters.Add("@created", SqliteType.Integer);
+                var sha = convert.Parameters.Add("@sha", SqliteType.Blob);
+                finishFolder.Transaction = tx;
+                finishFolder.CommandText = "UPDATE TreeNodesCompact SET SubtreeEndId = @end WHERE Id = @id;";
+                var finishedId = finishFolder.Parameters.Add("@id", SqliteType.Integer);
+                var endId = finishFolder.Parameters.Add("@end", SqliteType.Integer);
+                var ancestors = new Stack<long>();
+                long previousId = 0;
+                using var reader = oldDates.ExecuteReader();
+                while (reader.Read())
+                {
+                    var nodeId = reader.GetInt64(0);
+                    var parentId = reader.IsDBNull(1) ? (long?)null : reader.GetInt64(1);
+                    while (ancestors.Count > 0 && ancestors.Peek() != parentId)
+                    {
+                        finishedId.Value = ancestors.Pop();
+                        endId.Value = previousId;
+                        finishFolder.ExecuteNonQuery();
+                    }
+                    if (parentId != null && (ancestors.Count == 0 || ancestors.Peek() != parentId))
+                        throw new InvalidDataException("Tree cache IDs are not in parent-before-child order.");
+                    if (reader.GetInt32(2) == 1) ancestors.Push(nodeId);
+                    if (!reader.IsDBNull(3) || !reader.IsDBNull(4) || !reader.IsDBNull(5))
+                    {
+                        id.Value = nodeId;
+                        modified.Value = ParseStoredDate(reader, 3);
+                        created.Value = ParseStoredDate(reader, 4);
+                        var storedSha = reader.IsDBNull(5) ? null : ToStoredSha(reader.GetString(5));
+                        sha.SqliteType = storedSha is byte[] ? SqliteType.Blob : SqliteType.Text;
+                        sha.Value = storedSha ?? DBNull.Value;
+                        convert.ExecuteNonQuery();
+                    }
+                    previousId = nodeId;
+                }
+                while (ancestors.Count > 0)
+                {
+                    finishedId.Value = ancestors.Pop();
+                    endId.Value = previousId;
+                    finishFolder.ExecuteNonQuery();
+                }
+            }
+            cmd.CommandText = @"DROP TABLE TreeNodes;
+                ALTER TABLE TreeNodesCompact RENAME TO TreeNodes;
+                PRAGMA user_version=106;";
+            cmd.ExecuteNonQuery();
+            tx.Commit();
+        }
+
+        private static object ParseStoredDate(SqliteDataReader reader, int ordinal)
+        {
+            if (reader.IsDBNull(ordinal)) return DBNull.Value;
+            return DateTime.TryParse(reader.GetString(ordinal), out var date) ? date.ToBinary() : DBNull.Value;
+        }
+
+        private static object? ToStoredSha(string? hash)
+        {
+            if (string.IsNullOrEmpty(hash)) return null;
+            if (hash.Length == 64 && hash.All(Uri.IsHexDigit)) return Convert.FromHexString(hash);
+            return hash;
+        }
+
+        private static string? ReadSha(SqliteDataReader reader, int ordinal)
+        {
+            if (reader.IsDBNull(ordinal)) return null;
+            return reader.GetFieldType(ordinal) == typeof(byte[])
+                ? Convert.ToHexString(reader.GetFieldValue<byte[]>(ordinal)) : reader.GetString(ordinal);
+        }
+
+        private static DateTime? ReadDate(SqliteDataReader reader, int ordinal)
+        {
+            if (reader.IsDBNull(ordinal)) return null;
+            return DateTime.FromBinary(reader.GetInt64(ordinal));
         }
 
         /// <summary>
@@ -328,45 +571,49 @@ namespace FolderMorpher.Services
                         insertNodeCmd.Transaction = tx;
                         insertNodeCmd.CommandText = @"
                             INSERT INTO TreeNodes (
-                                Id, RootId, FullPath, Name, ParentId, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level
+                                Id, RootId, Name, ParentId, PathSuffix, SubtreeEndId, Size, FileCount, FolderCount, IsDirectory, LastModified, CreationTime, Sha256
                             ) VALUES (
-                                @id, @rootId, @path, @name, @parentId, @size, @files, @folders, @isDir, @isExp, @mod, @create, @sha, @lvl
+                                @id, @rootId, @name, @parentId, @suffix, NULL, @size, @files, @folders, @isDir, @mod, @create, @sha
                             );
                         ";
 
                         var pId = insertNodeCmd.Parameters.Add("@id", SqliteType.Integer);
                         var pRootId = insertNodeCmd.Parameters.Add("@rootId", SqliteType.Integer);
-                        var pPath = insertNodeCmd.Parameters.Add("@path", SqliteType.Text);
                         var pName = insertNodeCmd.Parameters.Add("@name", SqliteType.Text);
                         var pParentId = insertNodeCmd.Parameters.Add("@parentId", SqliteType.Integer);
+                        var pSuffix = insertNodeCmd.Parameters.Add("@suffix", SqliteType.Text);
                         var pSize = insertNodeCmd.Parameters.Add("@size", SqliteType.Integer);
                         var pFiles = insertNodeCmd.Parameters.Add("@files", SqliteType.Integer);
                         var pFolders = insertNodeCmd.Parameters.Add("@folders", SqliteType.Integer);
                         var pIsDir = insertNodeCmd.Parameters.Add("@isDir", SqliteType.Integer);
-                        var pIsExp = insertNodeCmd.Parameters.Add("@isExp", SqliteType.Integer);
-                        var pMod = insertNodeCmd.Parameters.Add("@mod", SqliteType.Text);
-                        var pCreate = insertNodeCmd.Parameters.Add("@create", SqliteType.Text);
-                        var pSha = insertNodeCmd.Parameters.Add("@sha", SqliteType.Text);
-                        var pLvl = insertNodeCmd.Parameters.Add("@lvl", SqliteType.Integer);
+                        var pMod = insertNodeCmd.Parameters.Add("@mod", SqliteType.Integer);
+                        var pCreate = insertNodeCmd.Parameters.Add("@create", SqliteType.Integer);
+                        var pSha = insertNodeCmd.Parameters.Add("@sha", SqliteType.Blob);
 
                         pRootId.Value = rootId;
 
-                        void InsertRecursive(FileItemNode node, long? parentId)
+                        using var finishNodeCmd = conn.CreateCommand();
+                        finishNodeCmd.Transaction = tx;
+                        finishNodeCmd.CommandText = "UPDATE TreeNodes SET SubtreeEndId = @end WHERE Id = @id;";
+                        var finishId = finishNodeCmd.Parameters.Add("@id", SqliteType.Integer);
+                        var finishEnd = finishNodeCmd.Parameters.Add("@end", SqliteType.Integer);
+
+                        void InsertRecursive(FileItemNode node, long? parentId, string? parentPath)
                         {
                             var nodeId = ++nextNodeId;
                             pId.Value = nodeId;
-                            pPath.Value = node.FullPath ?? string.Empty;
                             pName.Value = node.Name ?? string.Empty;
                             pParentId.Value = (object?)parentId ?? DBNull.Value;
+                            pSuffix.Value = parentPath == null ? DBNull.Value : GetPathSuffix(parentPath, node) ?? (object)DBNull.Value;
                             pSize.Value = node.Size;
                             pFiles.Value = node.FileCount;
                             pFolders.Value = node.FolderCount;
                             pIsDir.Value = node.IsDirectory ? 1 : 0;
-                            pIsExp.Value = node.IsExpanded ? 1 : 0;
-                            pMod.Value = node.LastModified.HasValue ? (object)node.LastModified.Value.ToString("o") : DBNull.Value;
-                            pCreate.Value = node.CreationTime.HasValue ? (object)node.CreationTime.Value.ToString("o") : DBNull.Value;
-                            pSha.Value = !string.IsNullOrEmpty(node.Sha256) ? (object)node.Sha256 : DBNull.Value;
-                            pLvl.Value = node.Level;
+                            pMod.Value = node.LastModified.HasValue ? node.LastModified.Value.ToBinary() : DBNull.Value;
+                            pCreate.Value = node.CreationTime.HasValue ? node.CreationTime.Value.ToBinary() : DBNull.Value;
+                            var storedSha = ToStoredSha(node.Sha256);
+                            pSha.SqliteType = storedSha is byte[] ? SqliteType.Blob : SqliteType.Text;
+                            pSha.Value = storedSha ?? DBNull.Value;
 
                             insertNodeCmd.ExecuteNonQuery();
 
@@ -374,12 +621,18 @@ namespace FolderMorpher.Services
                             {
                                 for (int i = 0; i < node.Children.Count; i++)
                                 {
-                                    InsertRecursive(node.Children[i], nodeId);
+                                    InsertRecursive(node.Children[i], nodeId, node.FullPath);
                                 }
+                            }
+                            if (node.IsDirectory)
+                            {
+                                finishId.Value = nodeId;
+                                finishEnd.Value = nextNodeId;
+                                finishNodeCmd.ExecuteNonQuery();
                             }
                         }
 
-                        InsertRecursive(rootNode, null);
+                        InsertRecursive(rootNode, null, null);
                     }
 
                     tx.Commit();
@@ -409,60 +662,61 @@ namespace FolderMorpher.Services
                 conn.Open();
 
                 long rootId = -1;
+                string? originalPath = null;
                 string? topFilesJson = null;
                 string? extStatsJson = null;
 
                 using (var findCmd = conn.CreateCommand())
                 {
-                    findCmd.CommandText = "SELECT Id, TopFilesJson, ExtensionStatsJson FROM TreeRoots WHERE NormalizedPath = @path;";
+                    findCmd.CommandText = "SELECT Id, OriginalTargetPath, TopFilesJson, ExtensionStatsJson FROM TreeRoots WHERE NormalizedPath = @path;";
                     findCmd.Parameters.AddWithValue("@path", canonicalPath);
                     using var reader = findCmd.ExecuteReader();
                     if (reader.Read())
                     {
                         rootId = reader.GetInt64(0);
-                        if (!reader.IsDBNull(1)) topFilesJson = reader.GetString(1);
-                        if (!reader.IsDBNull(2)) extStatsJson = reader.GetString(2);
+                        originalPath = reader.GetString(1);
+                        if (!reader.IsDBNull(2)) topFilesJson = reader.GetString(2);
+                        if (!reader.IsDBNull(3)) extStatsJson = reader.GetString(3);
                     }
                 }
 
                 if (rootId <= 0) return null;
 
-                // Level ASC でソートして読み込むことで、親が必ず辞書に先に存在するかマップ化が容易
+                // SaveTreeAsync allocates IDs in preorder, so parent IDs precede their children.
                 var nodeMap = new Dictionary<long, FileItemNode>();
                 FileItemNode? rootNode = null;
 
                 using (var loadNodesCmd = conn.CreateCommand())
                 {
                     loadNodesCmd.CommandText = @"
-                        SELECT FullPath, Name, ParentId, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level, Id
+                        SELECT Name, ParentId, Size, FileCount, FolderCount, IsDirectory, LastModified, CreationTime, Sha256, Id, PathSuffix
                         FROM TreeNodes
                         WHERE RootId = @rootId
-                        ORDER BY Level ASC;
+                        ORDER BY Id;
                     ";
                     loadNodesCmd.Parameters.AddWithValue("@rootId", rootId);
 
                     using var reader = loadNodesCmd.ExecuteReader();
                     while (reader.Read())
                     {
-                        var node = ReadNode(reader, false);
-                        var nodeId = reader.GetInt64(12);
-                        var parentId = reader.IsDBNull(2) ? (long?)null : reader.GetInt64(2);
-
-                        if (parentId == null || !nodeMap.TryGetValue(parentId.Value, out var parentNode))
+                        var nodeId = reader.GetInt64(9);
+                        var parentId = reader.IsDBNull(1) ? (long?)null : reader.GetInt64(1);
+                        if (parentId == null)
                         {
-                            // ルートノード
-                            if (rootNode == null)
-                            {
-                                rootNode = node;
-                            }
+                            var node = ReadNode(reader, originalPath!, 0, false);
+                            rootNode ??= node;
+                            nodeMap[nodeId] = node;
                         }
                         else
                         {
+                            if (!nodeMap.TryGetValue(parentId.Value, out var parentNode))
+                                throw new InvalidDataException("Tree cache node has no preceding parent.");
+                            var suffix = reader.IsDBNull(10) ? null : reader.GetString(10);
+                            var node = ReadNode(reader, ChildPath(parentNode.FullPath, reader.GetString(0), suffix), parentNode.Level + 1, false);
                             node.Parent = parentNode;
                             parentNode.Children.Add(node);
+                            nodeMap[nodeId] = node;
                         }
-
-                        nodeMap[nodeId] = node;
                     }
                 }
 
@@ -483,26 +737,105 @@ namespace FolderMorpher.Services
             });
         }
 
-        private static FileItemNode ReadNode(SqliteDataReader reader, bool markUnloaded)
+        private static FileItemNode ReadNode(SqliteDataReader reader, string fullPath, int level, bool markUnloaded)
         {
-            var isDirectory = reader.GetInt32(6) == 1;
-            var fileCount = reader.GetInt32(4);
-            var folderCount = reader.GetInt32(5);
+            var isDirectory = reader.GetInt32(5) == 1;
+            var fileCount = reader.GetInt32(3);
+            var folderCount = reader.GetInt32(4);
             return new FileItemNode
             {
-                FullPath = reader.GetString(0),
-                Name = reader.GetString(1),
-                Size = reader.GetInt64(3),
+                FullPath = fullPath,
+                Name = reader.GetString(0),
+                Size = reader.GetInt64(2),
                 FileCount = fileCount,
                 FolderCount = folderCount,
                 IsDirectory = isDirectory,
-                IsExpanded = !markUnloaded && reader.GetInt32(7) == 1,
-                LastModified = reader.IsDBNull(8) ? null : DateTime.TryParse(reader.GetString(8), out var modified) ? modified : null,
-                CreationTime = reader.IsDBNull(9) ? null : DateTime.TryParse(reader.GetString(9), out var created) ? created : null,
-                Sha256 = reader.IsDBNull(10) ? null : reader.GetString(10),
-                Level = reader.GetInt32(11),
+                IsExpanded = false,
+                LastModified = ReadDate(reader, 6),
+                CreationTime = ReadDate(reader, 7),
+                Sha256 = ReadSha(reader, 8),
+                Level = level,
                 HasUnloadedChildren = markUnloaded && isDirectory && (fileCount > 0 || folderCount > 0)
             };
+        }
+
+        private static long? FindNodeId(SqliteConnection conn, long rootId, string originalRootPath,
+            string path, Dictionary<string, long>? pathIds = null, SqliteTransaction? transaction = null)
+        {
+            var rootPath = originalRootPath.TrimEnd('\\');
+            using var cmd = conn.CreateCommand();
+            cmd.Transaction = transaction;
+            cmd.CommandText = "SELECT Id FROM TreeNodes WHERE RootId = @rootId AND ParentId IS NULL LIMIT 1;";
+            cmd.Parameters.AddWithValue("@rootId", rootId);
+            var rootValue = cmd.ExecuteScalar();
+            if (rootValue == null) return null;
+            var id = Convert.ToInt64(rootValue);
+            if (string.Equals(path.TrimEnd('\\'), rootPath, StringComparison.OrdinalIgnoreCase)) return id;
+            if (!path.StartsWith(rootPath + "\\", StringComparison.OrdinalIgnoreCase)) return null;
+
+            var currentPath = rootPath;
+            var relative = path[(rootPath.Length + 1)..].TrimEnd('\\');
+            cmd.CommandText = "SELECT Id FROM TreeNodes WHERE RootId = @rootId AND ParentId = @parentId AND Name = @name LIMIT 1;";
+            var parentParam = cmd.Parameters.Add("@parentId", SqliteType.Integer);
+            var nameParam = cmd.Parameters.Add("@name", SqliteType.Text);
+            foreach (var segment in relative.Split('\\', StringSplitOptions.RemoveEmptyEntries))
+            {
+                currentPath += "\\" + segment;
+                if (pathIds != null && pathIds.TryGetValue(currentPath, out var cached))
+                {
+                    id = cached;
+                    continue;
+                }
+                parentParam.Value = id;
+                nameParam.Value = segment;
+                var found = cmd.ExecuteScalar();
+                if (found == null)
+                {
+                    // Sparse compatibility path for caches whose former FullPath skipped an intermediate node.
+                    using var exceptional = conn.CreateCommand();
+                    exceptional.Transaction = transaction;
+                    exceptional.CommandText = @"SELECT Id FROM TreeNodes WHERE RootId = @rootId
+                        AND ParentId = @parentId AND (PathSuffix = @relative OR PathSuffix = @full) LIMIT 1;";
+                    exceptional.Parameters.AddWithValue("@rootId", rootId);
+                    exceptional.Parameters.AddWithValue("@parentId", id);
+                    exceptional.Parameters.AddWithValue("@relative", path[(currentPath.Length - segment.Length)..]);
+                    exceptional.Parameters.AddWithValue("@full", path);
+                    found = exceptional.ExecuteScalar();
+                    return found == null ? null : Convert.ToInt64(found);
+                }
+                id = Convert.ToInt64(found);
+                pathIds?.Add(currentPath, id);
+            }
+            return id;
+        }
+
+        private static string BuildPath(SqliteConnection conn, long rootId, string originalRootPath, long nodeId)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT Name, ParentId, PathSuffix FROM TreeNodes WHERE RootId = @rootId AND Id = @id;";
+            cmd.Parameters.AddWithValue("@rootId", rootId);
+            var idParam = cmd.Parameters.Add("@id", SqliteType.Integer);
+            var segments = new Stack<string>();
+            var id = nodeId;
+            while (true)
+            {
+                idParam.Value = id;
+                using var reader = cmd.ExecuteReader();
+                if (!reader.Read()) throw new InvalidDataException("Tree cache path has a missing parent.");
+                if (reader.IsDBNull(1)) break;
+                var segment = reader.IsDBNull(2) ? reader.GetString(0) : reader.GetString(2);
+                if (Path.IsPathFullyQualified(segment))
+                {
+                    var absolute = segment;
+                    while (segments.Count > 0) absolute = Path.Combine(absolute, segments.Pop());
+                    return absolute;
+                }
+                segments.Push(segment);
+                id = reader.GetInt64(1);
+            }
+            var path = originalRootPath;
+            while (segments.Count > 0) path = Path.Combine(path, segments.Pop());
+            return path;
         }
 
         /// <summary>Load one folder and its direct children through the indexed ParentId lookup.</summary>
@@ -512,46 +845,52 @@ namespace FolderMorpher.Services
             using var conn = new SqliteConnection(_connectionString);
             conn.Open();
             long rootId;
+            string originalPath;
             long rootBytes;
             string? topFilesJson;
             string? extStatsJson;
             using (var rootCmd = conn.CreateCommand())
             {
-                rootCmd.CommandText = "SELECT Id, TotalSizeBytes, TopFilesJson, ExtensionStatsJson FROM TreeRoots WHERE NormalizedPath = @path;";
+                rootCmd.CommandText = "SELECT Id, OriginalTargetPath, TotalSizeBytes, TopFilesJson, ExtensionStatsJson FROM TreeRoots WHERE NormalizedPath = @path;";
                 rootCmd.Parameters.AddWithValue("@path", PathCanonicalizer.Normalize(rootPath));
                 using var reader = rootCmd.ExecuteReader();
                 if (!reader.Read()) return null;
                 rootId = reader.GetInt64(0);
-                rootBytes = reader.GetInt64(1);
-                topFilesJson = reader.IsDBNull(2) ? null : reader.GetString(2);
-                extStatsJson = reader.IsDBNull(3) ? null : reader.GetString(3);
+                originalPath = reader.GetString(1);
+                rootBytes = reader.GetInt64(2);
+                topFilesJson = reader.IsDBNull(3) ? null : reader.GetString(3);
+                extStatsJson = reader.IsDBNull(4) ? null : reader.GetString(4);
             }
 
+            var branchIdValue = FindNodeId(conn, rootId, originalPath, folderPath);
+            if (branchIdValue == null) return null;
             FileItemNode? branch;
-            long branchId;
+            var branchId = branchIdValue.Value;
             using (var nodeCmd = conn.CreateCommand())
             {
-                nodeCmd.CommandText = @"SELECT FullPath, Name, ParentId, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level, Id
-                    FROM TreeNodes WHERE RootId = @rootId AND FullPath = @path;";
+                nodeCmd.CommandText = @"SELECT Name, ParentId, Size, FileCount, FolderCount, IsDirectory, LastModified, CreationTime, Sha256, Id, PathSuffix
+                    FROM TreeNodes WHERE RootId = @rootId AND Id = @id;";
                 nodeCmd.Parameters.AddWithValue("@rootId", rootId);
-                nodeCmd.Parameters.AddWithValue("@path", folderPath);
+                nodeCmd.Parameters.AddWithValue("@id", branchId);
                 using var reader = nodeCmd.ExecuteReader();
                 if (!reader.Read()) return null;
-                branch = ReadNode(reader, false);
-                branchId = reader.GetInt64(12);
+                var relative = folderPath.TrimEnd('\\')[originalPath.TrimEnd('\\').Length..].TrimStart('\\');
+                var level = relative.Length == 0 ? 0 : relative.Count(c => c == '\\') + 1;
+                branch = ReadNode(reader, folderPath, level, false);
                 branch.Percentage = rootBytes > 0 ? (double)branch.Size / rootBytes * 100 : 0;
             }
 
             using (var childrenCmd = conn.CreateCommand())
             {
-                childrenCmd.CommandText = @"SELECT FullPath, Name, ParentId, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level
+                childrenCmd.CommandText = @"SELECT Name, ParentId, Size, FileCount, FolderCount, IsDirectory, LastModified, CreationTime, Sha256, Id, PathSuffix
                     FROM TreeNodes WHERE RootId = @rootId AND ParentId = @parentId ORDER BY IsDirectory DESC, Size DESC;";
                 childrenCmd.Parameters.AddWithValue("@rootId", rootId);
                 childrenCmd.Parameters.AddWithValue("@parentId", branchId);
                 using var reader = childrenCmd.ExecuteReader();
                 while (reader.Read())
                 {
-                    var child = ReadNode(reader, true);
+                    var suffix = reader.IsDBNull(10) ? null : reader.GetString(10);
+                    var child = ReadNode(reader, ChildPath(branch.FullPath, reader.GetString(0), suffix), branch.Level + 1, true);
                     child.Parent = branch;
                     child.Percentage = rootBytes > 0 ? (double)child.Size / rootBytes * 100 : 0;
                     branch.Children.Add(child);
@@ -573,24 +912,36 @@ namespace FolderMorpher.Services
             EnsureInitialized();
             using var conn = new SqliteConnection(_connectionString);
             conn.Open();
+            var root = FindRoot(conn, rootPath);
+            if (root == null) return new List<LargestFileInfo>();
+            var folderId = FindNodeId(conn, root.Value.Id, root.Value.OriginalPath, folderPath);
+            if (folderId == null) return new List<LargestFileInfo>();
+            long lastId;
+            using (var endCmd = conn.CreateCommand())
+            {
+                endCmd.CommandText = "SELECT SubtreeEndId FROM TreeNodes WHERE RootId = @rootId AND Id = @folderId;";
+                endCmd.Parameters.AddWithValue("@rootId", root.Value.Id);
+                endCmd.Parameters.AddWithValue("@folderId", folderId.Value);
+                var end = endCmd.ExecuteScalar();
+                if (end == null || end == DBNull.Value) return new List<LargestFileInfo>();
+                lastId = Convert.ToInt64(end);
+            }
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = @"SELECT Name, FullPath, Size FROM TreeNodes
-                WHERE RootId = (SELECT Id FROM TreeRoots WHERE NormalizedPath = @root)
-                  AND IsDirectory = 0 AND FullPath >= @lower AND FullPath < @upper
+            cmd.CommandText = @"SELECT Id, Name, Size FROM TreeNodes
+                WHERE RootId = @rootId AND Id > @folderId AND Id <= @lastId AND IsDirectory = 0
                 ORDER BY Size DESC LIMIT 10;";
-            cmd.Parameters.AddWithValue("@root", PathCanonicalizer.Normalize(rootPath));
-            var lower = folderPath.TrimEnd('\\') + "\\";
-            cmd.Parameters.AddWithValue("@lower", lower);
-            cmd.Parameters.AddWithValue("@upper", lower[..^1] + "]");
+            cmd.Parameters.AddWithValue("@folderId", folderId.Value);
+            cmd.Parameters.AddWithValue("@rootId", root.Value.Id);
+            cmd.Parameters.AddWithValue("@lastId", lastId);
             var files = new List<LargestFileInfo>();
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
-                var path = reader.GetString(1);
+                var path = BuildPath(conn, root.Value.Id, root.Value.OriginalPath, reader.GetInt64(0));
                 var extension = Path.GetExtension(path);
                 files.Add(new LargestFileInfo
                 {
-                    Name = reader.GetString(0), FullPath = path, Size = reader.GetInt64(2),
+                    Name = reader.GetString(1), FullPath = path, Size = reader.GetInt64(2),
                     Extension = extension, Category = DiskScanService.GetCategoryForExtension(extension)
                 });
             }
@@ -614,19 +965,8 @@ namespace FolderMorpher.Services
                 using var conn = new SqliteConnection(_connectionString);
                 conn.Open();
 
-                long rootId = -1;
-                using (var findCmd = conn.CreateCommand())
-                {
-                    findCmd.CommandText = "SELECT Id FROM TreeRoots WHERE NormalizedPath = @path;";
-                    findCmd.Parameters.AddWithValue("@path", canonicalPath);
-                    var existing = findCmd.ExecuteScalar();
-                    if (existing != null && existing != DBNull.Value)
-                    {
-                        rootId = Convert.ToInt64(existing);
-                    }
-                }
-
-                if (rootId <= 0) return;
+                var root = FindRoot(conn, canonicalPath);
+                if (root == null) return;
 
                 using var tx = conn.BeginTransaction();
                 try
@@ -636,16 +976,21 @@ namespace FolderMorpher.Services
                     updateCmd.CommandText = @"
                         UPDATE TreeNodes
                         SET Sha256 = @sha
-                        WHERE RootId = @rootId AND FullPath = @path;
+                        WHERE RootId = @rootId AND Id = @id;
                     ";
-                    var pSha = updateCmd.Parameters.Add("@sha", SqliteType.Text);
-                    var pPath = updateCmd.Parameters.Add("@path", SqliteType.Text);
-                    updateCmd.Parameters.AddWithValue("@rootId", rootId);
+                    var pSha = updateCmd.Parameters.Add("@sha", SqliteType.Blob);
+                    var pId = updateCmd.Parameters.Add("@id", SqliteType.Integer);
+                    updateCmd.Parameters.AddWithValue("@rootId", root.Value.Id);
+                    var pathIds = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
                     foreach (var kvp in hashMap)
                     {
-                        pSha.Value = (object?)kvp.Value ?? DBNull.Value;
-                        pPath.Value = kvp.Key;
+                        var id = FindNodeId(conn, root.Value.Id, root.Value.OriginalPath, kvp.Key, pathIds, tx);
+                        if (id == null) continue;
+                        var storedSha = ToStoredSha(kvp.Value);
+                        pSha.SqliteType = storedSha is byte[] ? SqliteType.Blob : SqliteType.Text;
+                        pSha.Value = storedSha ?? DBNull.Value;
+                        pId.Value = id.Value;
                         updateCmd.ExecuteNonQuery();
                     }
 

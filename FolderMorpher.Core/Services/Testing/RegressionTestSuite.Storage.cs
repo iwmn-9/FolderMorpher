@@ -122,7 +122,7 @@ namespace FolderMorpher.Services.Testing
             if (Math.Abs(child.SharePercentage - 40.0) > 0.001) throw new InvalidOperationException("UI Binding Error: child.SharePercentage should be 40.0");
             if (child.IsDriveRoot) throw new InvalidOperationException("UI Binding Error: child.IsDriveRoot should be false");
 
-            // 2. TreeCache の IsExpanded 永続化と復元の検証
+            // 2. TreeCache does not persist transient GUI expansion state.
             var historyService = new StorageHistoryService();
             string testDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_CacheExp_" + Guid.NewGuid().ToString("N"));
             try
@@ -141,7 +141,7 @@ namespace FolderMorpher.Services.Testing
                 if (restored == null) throw new InvalidOperationException("Cache expansion test failed: restored node is null");
                 var restoredSub = restored.Children.FirstOrDefault(c => c.Name == "ExpandedSub");
                 if (restoredSub == null) throw new InvalidOperationException("Cache expansion test failed: restoredSub is null");
-                if (!restoredSub.IsExpanded) throw new InvalidOperationException("Cache expansion test failed: restoredSub.IsExpanded was not preserved as true");
+                if (restoredSub.IsExpanded) throw new InvalidOperationException("Tree cache restored a transient GUI expansion state.");
             }
             finally
             {
@@ -640,7 +640,9 @@ namespace FolderMorpher.Services.Testing
                 {
                     Parent = subDir,
                     Level = 2,
-                    Sha256 = "AAAA1111222233334444555566667777888899990000AAAABBBBCCCCDDDDEEEEFFFF"
+                    LastModified = DateTime.SpecifyKind(new DateTime(2026, 9, 26, 13, 28, 30).AddTicks(1234567), DateTimeKind.Local),
+                    CreationTime = DateTime.SpecifyKind(new DateTime(2026, 1, 2, 3, 4, 5).AddTicks(7654321), DateTimeKind.Utc),
+                    Sha256 = new string('A', 64)
                 };
                 subDir.Children.Add(file1);
 
@@ -681,10 +683,50 @@ namespace FolderMorpher.Services.Testing
                 if (branchTop?.FirstOrDefault()?.FullPath != file1.FullPath)
                     throw new InvalidOperationException("SqliteTreeCache: 遅延読込時の上位ファイル集計が不正です。");
 
+                var searchQuery = new SearchQuery { MinSizeBytes = 20L * 1024 * 1024 };
+                searchQuery.Keywords.Add("report");
+                var searchEngine = new SearchEngineService();
+                var memoryHits = await searchEngine.SearchInMemoryAsync(new[] { root }, searchQuery);
+                var dbHits = await searchEngine.SearchCachedEntriesAsync(
+                    cacheService.EnumerateSearchEntries(rootPath), searchQuery);
+                if (!await cacheService.HasRootAsync(rootPath) ||
+                    memoryHits.Select(item => item.FullPath).SingleOrDefault() != file1.FullPath ||
+                    dbHits.Select(item => item.FullPath).SingleOrDefault() != file1.FullPath)
+                    throw new InvalidOperationException("SqliteTreeCache: DB逐次検索とスキャンツリー検索の結果が一致しません。");
+                searchQuery.MaxModifiedUtc = file1.LastModified!.Value.ToUniversalTime().AddTicks(-1);
+                if ((await searchEngine.SearchCachedEntriesAsync(
+                        cacheService.EnumerateSearchEntries(rootPath), searchQuery)).Count != 0 ||
+                    (await searchEngine.SearchInMemoryAsync(new[] { root }, searchQuery)).Count != 0)
+                    throw new InvalidOperationException("SqliteTreeCache: 整数日時による検索条件が現行ツリーと一致しません。");
+
+                var currentRoot = new FileItemNode(rootPath, "ProjectAlpha", 60L * 1024 * 1024, true);
+                var currentSub = new FileItemNode(subDir.FullPath, "Sub", currentRoot.Size, true);
+                var currentReport = new FileItemNode(file1.FullPath, "report.pdf", 42L * 1024 * 1024, false);
+                var newFile = new FileItemNode(Path.Combine(subDir.FullPath, "new.bin"), "new.bin", 18L * 1024 * 1024, false);
+                currentRoot.Children.Add(currentSub);
+                currentSub.Children.Add(currentReport);
+                currentSub.Children.Add(newFile);
+                new StorageHistoryService().ApplyTreeDiff(currentRoot, cacheService.EnumeratePathSizes(rootPath));
+                if (currentRoot.DiffBytes != 10L * 1024 * 1024 ||
+                    currentReport.DiffBytes != 2L * 1024 * 1024 || newFile.DiffBytes != newFile.Size)
+                    throw new InvalidOperationException("SqliteTreeCache: DB逐次差分が既存の差分意味論と一致しません。");
+
                 var restoredFile1 = loaded.Children[0].Children.FirstOrDefault(c => c.Name == "report.pdf");
                 if (restoredFile1 == null || restoredFile1.Sha256 != file1.Sha256)
                 {
                     throw new InvalidOperationException("SqliteTreeCache: report.pdf の SHA-256 ハッシュが正しく復元されていません。");
+                }
+                if (restoredFile1.LastModified != file1.LastModified || restoredFile1.CreationTime != file1.CreationTime)
+                    throw new InvalidOperationException("SqliteTreeCache: 整数日時の精度または DateTime.Kind が失われました。");
+                using (var verifyTypes = new SqliteConnection($"Data Source={testDbPath}"))
+                {
+                    verifyTypes.Open();
+                    using var typeQuery = verifyTypes.CreateCommand();
+                    typeQuery.CommandText = "SELECT typeof(LastModified), typeof(CreationTime), typeof(Sha256) FROM TreeNodes WHERE Name = 'report.pdf';";
+                    using var typeReader = typeQuery.ExecuteReader();
+                    if (!typeReader.Read() || typeReader.GetString(0) != "integer" ||
+                        typeReader.GetString(1) != "integer" || typeReader.GetString(2) != "blob")
+                        throw new InvalidOperationException("SqliteTreeCache: 日時またはSHA-256の保存型が不正です。");
                 }
 
                 if (loaded.CachedTopFiles == null || loaded.CachedTopFiles.Count != 1 || loaded.CachedTopFiles[0].FullPath != file1.FullPath)
@@ -759,6 +801,7 @@ namespace FolderMorpher.Services.Testing
             const string rootPath = @"C:\LegacyShare";
             const string folderPath = @"C:\LegacyShare\Sub";
             const string filePath = @"C:\LegacyShare\Sub\report.txt";
+            const string sparsePath = @"C:\LegacyShare\Missing\orphan.txt";
             using (var conn = new SqliteConnection($"Data Source={dbPath}"))
             {
                 conn.Open();
@@ -780,24 +823,31 @@ namespace FolderMorpher.Services.Testing
                     INSERT INTO TreeRoots VALUES (1, 'C:\LegacyShare', 'C:\LegacyShare', '2026-01-01', 100, 1, 1, NULL, NULL);
                     INSERT INTO TreeNodes VALUES (10, 1, 'C:\LegacyShare', 'LegacyShare', NULL, 100, 1, 1, 1, 1, NULL, NULL, NULL, 0);
                     INSERT INTO TreeNodes VALUES (11, 1, 'C:\LegacyShare\Sub', 'Sub', 'C:\LegacyShare', 100, 1, 0, 1, 0, NULL, NULL, NULL, 1);
-                    INSERT INTO TreeNodes VALUES (12, 1, 'C:\LegacyShare\Sub\report.txt', 'report.txt', 'C:\LegacyShare\Sub', 100, 0, 0, 0, 0, NULL, NULL, 'ABC123', 2);";
+                    INSERT INTO TreeNodes VALUES (12, 1, 'C:\LegacyShare\Sub\report.txt', 'report.txt', 'C:\LegacyShare\Sub', 100, 0, 0, 0, 0, NULL, NULL, 'ABC123', 2);
+                    INSERT INTO TreeNodes VALUES (13, 1, 'C:\LegacyShare\Missing\orphan.txt', 'orphan.txt', 'C:\LegacyShare', 1, 0, 0, 0, 0, NULL, NULL, NULL, 1);";
                 seed.ExecuteNonQuery();
             }
 
             var cache = new SqliteTreeCacheService(dbPath);
             var tree = await cache.LoadTreeAsync(rootPath);
             var branch = await cache.LoadBranchAsync(rootPath, folderPath);
-            if (tree?.Children.SingleOrDefault()?.Children.SingleOrDefault()?.Sha256 != "ABC123" ||
+            var sparse = await cache.LoadBranchAsync(rootPath, sparsePath);
+            if (tree?.Children.FirstOrDefault(child => child.Name == "Sub")?.Children.SingleOrDefault()?.Sha256 != "ABC123" ||
                 branch?.Children.SingleOrDefault()?.FullPath != filePath)
                 throw new InvalidOperationException("SqliteTreeCache: 旧DBの親ID移行で階層またはSHA-256が失われました。");
+            if (sparse?.FullPath != sparsePath ||
+                !cache.EnumerateSearchEntries(rootPath).Any(entry => entry.FullPath == sparsePath))
+                throw new InvalidOperationException("SqliteTreeCache: 旧DBの例外的なパスが失われました。");
 
             using var verify = new SqliteConnection($"Data Source={dbPath}");
             verify.Open();
             using var schema = verify.CreateCommand();
-            schema.CommandText = "SELECT ParentId FROM TreeNodes WHERE FullPath = @path;";
-            schema.Parameters.AddWithValue("@path", filePath);
+            schema.CommandText = "SELECT ParentId FROM TreeNodes WHERE Id = 12;";
             if ((long)schema.ExecuteScalar()! != 11)
                 throw new InvalidOperationException("SqliteTreeCache: 旧DBから親IDへの移行結果が不正です。");
+            schema.CommandText = "SELECT COUNT(*) FROM pragma_table_info('TreeNodes') WHERE name IN ('FullPath', 'IsExpanded', 'Level');";
+            if ((long)schema.ExecuteScalar()! != 0)
+                throw new InvalidOperationException("SqliteTreeCache: 旧DBの冗長列が残っています。");
         }
 
         /// <summary>

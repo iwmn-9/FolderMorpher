@@ -66,7 +66,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 | :--- | :--- | :--- | :--- | :--- |
 | **全体共通 / 左サイドバー** | `SidebarBorder`, `SidebarToggleButton` (L22-75) | `MainWindow.xaml.cs`<br>`MainWindow.Localization.cs` | `Converters/ValueConverters.cs` | 収縮対応ナビゲーション（幅220px ⇄ 58px）、グローバルステータスバー、通知トースト、言語切替（日英）、環境設定モーダル |
 | **Tab 1: 容量分析**<br>(Storage Explorer) | `StorageTabPanel` (L82-410)<br>`HistoryWindow.xaml` | `MainWindow.Storage.cs`<br>`HistoryWindow.xaml.cs` | `DiskScanService.cs`<br>`SqliteTreeCacheService.cs`<br>`StorageHistoryService.cs`<br>`ScanTabModel.cs`<br>`FileItemNode.cs` | Hostからルートと直下だけを取得し、フォルダー展開時に子の一階層を取得する。容量上位Top10と直下シェアもHostで集計。複数タブ、容量推移、予測を提供 |
-| **Tab 2: ファイル検索**<br>(Search Studio) | `SearchTabPanel`<br>(`MainWindow.xaml`) | `MainWindow.Search.cs` | `SearchEngineService.cs`<br>`ServerSearchAccelerator.cs`<br>`WindowsSearchProvider.cs`<br>`TreeCachePruningIndex.cs`<br>`PathCanonicalizer.cs`<br>`SharedIoGovernor.cs`<br>`ContentExtractionService.cs`<br>`SearchQueryParser.cs`<br>`PdfSearchHelper.cs`<br>`SearchModels.cs` | **検索専用DB肥大化ゼロ（インメモリ0秒検索 ＋ ストリーミング型 Live 直接走査への一本化）**、**サーバー側インデックス拝借＆候補ピンポイント原本確認（ServerSearchAccelerator: WSP / Synology 等）**、**Producer-Consumer Channel パイプライン（最大12並行）**、ripgrep流 64KBスライディングバッファ直接走査、Office/PDF 境界分割保護＆二重解析根絶、UNCルート単位 I/O ガバナー（`SharedIoGovernor` AIMD）、パス正規化エンジン（`PathCanonicalizer`: Z:\ ⇄ UNC 自動解決）、Tabler File-Type バッジ、高機能検索クエリ構文（ワイルドカード・論理演算・属性指定）、右クリック連携およびExcel/CSV出力 |
+| **Tab 2: ファイル検索**<br>(Search Studio) | `SearchTabPanel`<br>(`MainWindow.xaml`) | `MainWindow.Search.cs` | `SearchEngineService.cs`<br>`ServerSearchAccelerator.cs`<br>`WindowsSearchProvider.cs`<br>`TreeCachePruningIndex.cs`<br>`PathCanonicalizer.cs`<br>`SharedIoGovernor.cs`<br>`ContentExtractionService.cs`<br>`SearchQueryParser.cs`<br>`PdfSearchHelper.cs`<br>`SearchModels.cs` | **検索専用DBなし（現行スキャンツリーのメモリ照合・ローカルTreeCache逐次照合・未スキャン対象のLive直接走査）**、**サーバー側インデックス拝借＆候補ピンポイント原本確認（ServerSearchAccelerator: WSP / Synology 等）**、**Producer-Consumer Channel パイプライン（最大12並行）**、ripgrep流 64KBスライディングバッファ直接走査、Office/PDF 境界分割保護＆二重解析根絶、UNCルート単位 I/O ガバナー（`SharedIoGovernor` AIMD）、パス正規化エンジン（`PathCanonicalizer`: Z:\ ⇄ UNC 自動解決）、Tabler File-Type バッジ、高機能検索クエリ構文（ワイルドカード・論理演算・属性指定）、右クリック連携およびExcel/CSV出力 |
 | **Tab 3: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `Views/LiveAclStudio.xaml`<br>(`LiveAclFolderView`, `LiveAclReverseView`, `LiveAclDiffModalOverlay`, `NewFolderModalOverlay`) | `Views/LiveAclStudio.xaml.cs` | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACL可視化・編集、**Dry-Run差分チェックモーダル（AclChangePlan貫通・継承変更警告・セマンティックVerify・SDDLロールバック）**、AD逆引き権限監査、均一幅ADアカウントカード、ADパレットUI統一、ADバックグラウンド自動同期、ツリーインライン新規フォルダー作成 |
 | **Tab 4: 移行スタジオ**<br>(Simulation Studio) | `SimulationTabPanel` (L608-995) | `MainWindow.Simulation.cs` | `SimulationProjectService.cs`<br>`MigrationPackageService.cs`<br>`MigrationPackageModels.cs`<br>`SimModels.cs` | 現行ファイルサーバーから新環境への仮想ツリー設計（N:1マッピング）、ACL引き継ぎ設計、ADパレット統一、全画面・全出力完全日英両対応、ヘッダーレイアウト整線、ガワ先行作成の実機DACLセマンティックVerify、エンタープライズ移行パッケージ出力（TargetRoot必須検証・Wave分割・Runbook Excel・安全停止手順・多重コピー防止/XD・%~dp0相対ログ・exit /b 1・遅延展開排除・Dry-Run bat同梱） |
 | **Tab 5: リンク修復**<br>(LinkFixer) | `LinkFixTabPanel` (L998-1094) | `MainWindow.LinkFix.cs` | `LinkFixService.cs`<br>`OfficeLinkFixService.cs` | サーバー移行後の切断ショートカット（.lnk）およびOffice内部リンク（.xlsx/.xlsm）検出・修復、**VBAマクロ非破壊保護＆通常XML混在時の部分修復（PartiallyFixed）**、全社配布用GPOログオンスクリプト（.ps1）生成 |
@@ -78,6 +78,8 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 
 **検索の現行入口**: `MainWindow.Search.cs` → `FolderMorpherHostClient` → `HostService.Search.cs` → `SearchEngineService`。直接走査は `SafeFileEnumerator.EnumerateFileEntriesParallelAsync(..., collectResults: false)` のコールバックで逐次処理する。ファイル名・パス・本文条件の共通判定は `SearchEngineService.MatchesSearchTerms` が正本。`TreeCachePruningIndex` はフォルダー時刻だけでは検索の完全性を保証できないため、通常画面の直接走査では構築しない。
 
+スキャンツリーがHostメモリにない場合のキャッシュ検索は、TreeCacheを全ツリーへ復元せず `SqliteTreeCacheService.EnumerateSearchEntries` から逐次照合する。再スキャンの前回差分も旧ツリーを復元せずDB行を逐次読む。どちらもローカルDBだけを読むのでUNCへの追加I/Oは発生しない。
+
 **旧方式**: 検索専用 FTS5 と Watcher は ADR 87 で通常画面から退役し、ADR 100 で旧サービスと専用テストも撤去した。`Microsoft.Data.Sqlite` は現行の `SqliteTreeCacheService` で引き続き使用する。
 
 `USER_REQUIREMENTS.md` はユーザーの意図で Git 管理から除外されている。無断で追跡・公開しない。ローカルにある場合は要求の正本として参照する。後続 ADR と記述が異なる箇所は時系列とユーザーの最新指示を確認する。GitHub 上で見えないことを理由に要求が存在しないと推定しない。
@@ -87,13 +89,13 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの設計判断記録（ADR 1〜103）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの設計判断記録（ADR 1〜105）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 
 #### 主要な中核原則サマリー（詳細は `.agents/ADR.md` 参照）
 
-設計判断（ADR 1〜103）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
+設計判断（ADR 1〜105）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
 
 1. **全体占有率メーター & 2連カード（Storage / ADR 61）**:
    - 親フォルダーに対する直下シェア（右ペイン「選択フォルダーの内訳」）と、スキャン対象ルート総容量に対する全体占有率を二重加算防止のため厳格分離。ルート行は `―`（ハイフン）表示。メトリクスカードは「スキャン対象 容量」「前回差分推移」の2連カード化。
@@ -112,15 +114,15 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
    - `SharedIoGovernor`: ディレクトリ列挙専用コントローラー（安全な2並列固定・上限2）と本文読み込み専用コントローラー（AIMD: 4 ➔ 最大12並列）を完全分離。
    - 純粋I/O時間計測（CPU展開・パース時間を除外した真のネットワーク遅延）と、再昇格可能な AIMD（不可逆崖落ち永久固定の撤廃）により、サーバーを保護しつつ SMB スループットを最大化。重複 RPC（事前の `File.Exists`、既知サイズの `FileInfo.Length`）を全廃。
 6. **検索スタジオのアーキテクチャ（Search Studio / ADR 87, 90, 93, 94, 95, 96, 97, 99）**:
-   - **検索専用ローカルDBの完全撤去（肥大化・ロック競合ゼロ）**: 「スキャンツリー／キャッシュによる 0秒インメモリ検索」＋「未スキャンUNCに対するストリーミング型 Live 直接走査（Producer-Consumer Channel パイプライン）」へ一本化。
+   - **検索専用ローカルDBの完全撤去**: Host内の現行スキャンツリーはメモリ照合、永続TreeCacheは行単位で逐次照合、未スキャンUNCはストリーミングLive直接走査とする。条件判定は `SearchEngineService` に集約する。
    - **サーバー側インデックス拝借（ServerSearchAccelerator）**: Windows Server WSP / Synology 等の既存インデックスから候補を秒速取得しつつ、網羅走査を併用して False Negative を完全防止。
    - **ストリーミング走査の最適化**: ripgrep流 64KBスライディングバッファ直接走査、Office書式境界分割保護（`<w:t>` 連続結合・HTMLデコード・セル境界空白保護）、PDF正常非一致の早期脱落、親子局所性（Locality-First LIFO走査）、パス正規化エンジン（`PathCanonicalizer`: Z:\ ⇄ UNC 自動解決＆同一視）。
    - **列挙結果の保持を選択**: 共通列挙器は既定で一覧を返す。検索の逐次コールバック利用時は `collectResults: false` とし、全件を別途メモリへ蓄積しない。名前・パス・本文条件の共通判定は `MatchesSearchTerms` に集約。
    - **UI・デザイン言語**: フル幅モダンカードリスト、Tabler File-Type バッジ（Option 1 折れ曲がり角付き書類ベクターアイコン ＆ 統一フォルダー）。
-7. **SQLite ローカル専有ツリーキャッシュ ＆ ポータブル JSON 相互運用（ADR 98・103・104）**:
+7. **SQLite ローカル専有ツリーキャッシュ ＆ ポータブル JSON 相互運用（ADR 98・103〜105）**:
    - **完全ローカル専有**: `%LocalAppData%\FolderMorpher\TreeCache\tree_cache.db`（WALモード）にのみ DB を配置。共有フォルダー（UNC）には一切 DB を置かず、ロック競合・遅延破損をゼロ化。
    - **事前集計と階層単位の取得**: 集計値を各ノードに保存し、GUIへの全件復元・全件IPC送信を避ける。`LoadTreeCacheBranchAsync` と `GetStorageChildrenAsync` はルートまたはクリックされたフォルダーの直下だけ読む。検索・エクスポート用の全ツリー読込は別経路に残る。
-   - **親IDによる省容量化**: `TreeNodes.ParentId` と `(RootId, ParentId)` 索引を使い、各行と索引への長い `ParentPath` の重複保存を廃止。旧DBは起動時にトランザクション移行・整合性確認・VACUUMを一度行う。実C:\キャッシュで約991MB→587MB、153万ノードの件数・容量を保持。旧HostとのIPCはバージョン不一致を明示して接続を拒む。
+   - **親ID・名前による省容量化**: `FullPath/ParentPath` とその索引を廃止し、`RootId, ParentId, Name` を正本にする。例外行だけ `PathSuffix` を保存。日時は整数、正規SHA-256は32バイトBLOB、部分木の連続ID範囲は `SubtreeEndId` に保持する。`IsExpanded/Level` はDBに保存しない。旧DBはトランザクション移行、件数・親リンク検証、VACUUMを行う。実DBコピー約165万ノードで約651MB→198MBを確認。旧HostとのIPCはバージョン不一致を明示して接続を拒む。
    - **単一トランザクション一括コミット**: DB保存は一括トランザクション。数百万ノードの保存所要時間は別途計測し、以前の「0.1〜0.3秒」を保証値と扱わない。
    - **DB直接 SHA-256 更新**: `UpdateSha256Async` によりメモリ展開ゼロで高速 UPDATE。
    - **ポータブル JSON 相互運用**: `ExportToJsonFileAsync` / `ImportFromJsonFileAsync` により社内配布・共有用には単一 JSON を出力。既存 JSON キャッシュからの自動透過マイグレーション完備。

@@ -41,12 +41,46 @@ namespace FolderMorpher.Services
         /// <summary>
         /// Perform instant in-memory search on pre-scanned trees
         /// </summary>
-        public async Task<List<SearchResultItem>> SearchInMemoryAsync(
+        public Task<List<SearchResultItem>> SearchInMemoryAsync(
             IEnumerable<FileItemNode> rootNodes,
             SearchQuery query,
             IProgress<SearchProgressReport>? progress = null,
             CancellationToken ct = default,
             IProgress<IReadOnlyList<SearchResultItem>>? batchYield = null)
+        {
+            return SearchEntriesAsync(EnumerateTreeEntries(rootNodes), query, progress, ct, batchYield);
+        }
+
+        public Task<List<SearchResultItem>> SearchCachedEntriesAsync(
+            IEnumerable<TreeCacheSearchEntry> entries,
+            SearchQuery query,
+            IProgress<SearchProgressReport>? progress = null,
+            CancellationToken ct = default,
+            IProgress<IReadOnlyList<SearchResultItem>>? batchYield = null)
+        {
+            return SearchEntriesAsync(entries, query, progress, ct, batchYield);
+        }
+
+        private static IEnumerable<TreeCacheSearchEntry> EnumerateTreeEntries(IEnumerable<FileItemNode> roots)
+        {
+            var stack = new Stack<FileItemNode>();
+            foreach (var root in roots.Reverse()) stack.Push(root);
+            while (stack.Count > 0)
+            {
+                var node = stack.Pop();
+                yield return new TreeCacheSearchEntry(
+                    node.FullPath, node.Name, node.SizeBytes, node.IsDirectory,
+                    node.LastModified, node.CreationTime);
+                for (int i = node.Children.Count - 1; i >= 0; i--) stack.Push(node.Children[i]);
+            }
+        }
+
+        private static async Task<List<SearchResultItem>> SearchEntriesAsync(
+            IEnumerable<TreeCacheSearchEntry> entries,
+            SearchQuery query,
+            IProgress<SearchProgressReport>? progress,
+            CancellationToken ct,
+            IProgress<IReadOnlyList<SearchResultItem>>? batchYield)
         {
             return await Task.Run(async () =>
             {
@@ -57,7 +91,7 @@ namespace FolderMorpher.Services
 
                 var currentBatch = new List<SearchResultItem>();
 
-                void Traverse(FileItemNode node)
+                foreach (var node in entries)
                 {
                     ct.ThrowIfCancellationRequested();
                     scannedCount++;
@@ -70,8 +104,8 @@ namespace FolderMorpher.Services
                             FullPath = node.FullPath,
                             DirectoryPath = Path.GetDirectoryName(node.FullPath) ?? string.Empty,
                             SizeBytes = node.SizeBytes,
-                            LastWriteTime = node.LastModified ?? DateTime.MinValue,
-                            CreationTime = node.CreationTime ?? node.LastModified ?? DateTime.MinValue,
+                            LastWriteTime = node.GetLastModified() ?? DateTime.MinValue,
+                            CreationTime = node.GetCreationTime() ?? node.GetLastModified() ?? DateTime.MinValue,
                             Extension = node.IsDirectory ? string.Empty : Path.GetExtension(node.Name).ToLowerInvariant(),
                             IsDirectory = node.IsDirectory,
                             MatchedReason = matchReason
@@ -96,15 +130,6 @@ namespace FolderMorpher.Services
                         }
                     }
 
-                    foreach (var child in node.Children)
-                    {
-                        Traverse(child);
-                    }
-                }
-
-                foreach (var root in rootNodes)
-                {
-                    Traverse(root);
                 }
 
                 if (currentBatch.Count > 0 && batchYield != null)
@@ -461,7 +486,7 @@ namespace FolderMorpher.Services
             }, ct);
         }
 
-        private static bool IsMatchBasic(FileItemNode node, SearchQuery query, out string reason, out bool needsDeepCheck)
+        private static bool IsMatchBasic(TreeCacheSearchEntry node, SearchQuery query, out string reason, out bool needsDeepCheck)
         {
             reason = string.Empty;
             needsDeepCheck = false;
@@ -480,7 +505,10 @@ namespace FolderMorpher.Services
 
             string name = node.Name;
             string fullPath = node.FullPath;
-            string ext = node.IsDirectory ? string.Empty : Path.GetExtension(name).ToLowerInvariant();
+            bool needsExtension = query.Extensions.Count > 0 || query.SearchContentMode ||
+                query.HasOfficeLinkOnly || !string.IsNullOrEmpty(query.OfficeLinkKeyword) ||
+                !string.IsNullOrEmpty(query.ContentKeyword);
+            string ext = node.IsDirectory || !needsExtension ? string.Empty : Path.GetExtension(name).ToLowerInvariant();
 
             if (query.Extensions.Count > 0)
             {
@@ -490,15 +518,13 @@ namespace FolderMorpher.Services
             if (query.MinSizeBytes.HasValue && node.SizeBytes < query.MinSizeBytes.Value) return false;
             if (query.MaxSizeBytes.HasValue && node.SizeBytes > query.MaxSizeBytes.Value) return false;
 
-            if (node.LastModified.HasValue)
+            if (query.MinModifiedUtc.HasValue || query.MaxModifiedUtc.HasValue)
             {
-                var utc = node.LastModified.Value.ToUniversalTime();
+                var modified = node.GetLastModified();
+                if (!modified.HasValue) return false;
+                var utc = modified.Value.ToUniversalTime();
                 if (query.MinModifiedUtc.HasValue && utc < query.MinModifiedUtc.Value) return false;
                 if (query.MaxModifiedUtc.HasValue && utc > query.MaxModifiedUtc.Value) return false;
-            }
-            else if (query.MinModifiedUtc.HasValue || query.MaxModifiedUtc.HasValue)
-            {
-                return false;
             }
 
             return MatchesSearchTerms(name, fullPath, ext, node.IsDirectory, query, out reason, out needsDeepCheck);
@@ -562,7 +588,10 @@ namespace FolderMorpher.Services
 
             string name = entry.Name;
             string fullPath = entry.FullPath;
-            string ext = isDir ? string.Empty : Path.GetExtension(name).ToLowerInvariant();
+            bool needsExtension = query.Extensions.Count > 0 || query.SearchContentMode ||
+                query.HasOfficeLinkOnly || !string.IsNullOrEmpty(query.OfficeLinkKeyword) ||
+                !string.IsNullOrEmpty(query.ContentKeyword);
+            string ext = isDir || !needsExtension ? string.Empty : Path.GetExtension(name).ToLowerInvariant();
 
             if (query.Extensions.Count > 0)
             {
@@ -576,9 +605,12 @@ namespace FolderMorpher.Services
                 if (query.MaxSizeBytes.HasValue && entry.Length > query.MaxSizeBytes.Value) return false;
             }
 
-            var utc = entry.LastWriteTime.ToUniversalTime();
-            if (query.MinModifiedUtc.HasValue && utc < query.MinModifiedUtc.Value) return false;
-            if (query.MaxModifiedUtc.HasValue && utc > query.MaxModifiedUtc.Value) return false;
+            if (query.MinModifiedUtc.HasValue || query.MaxModifiedUtc.HasValue)
+            {
+                var utc = entry.LastWriteTime.ToUniversalTime();
+                if (query.MinModifiedUtc.HasValue && utc < query.MinModifiedUtc.Value) return false;
+                if (query.MaxModifiedUtc.HasValue && utc > query.MaxModifiedUtc.Value) return false;
+            }
 
             return MatchesSearchTerms(name, fullPath, ext, isDir, query, out reason, out needsDeepCheck);
         }
