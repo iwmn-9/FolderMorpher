@@ -18,6 +18,7 @@ public sealed class AuditItemDto
     public DateTime LastWriteTime { get; set; }
     public DateTime LastAccessTime { get; set; }
     public int IssueType { get; set; }
+    public List<int> IssueTypes { get; set; } = new();
     public string Detail { get; set; } = string.Empty;
     public string? Sha256Hash { get; set; }
     public string DuplicateGroupId { get; set; } = string.Empty;
@@ -59,6 +60,7 @@ public sealed class AuditSummaryDto
     public long ExtractedArchiveBytes { get; set; }
     public int GraveyardTreeCount { get; set; }
     public long GraveyardTreeBytes { get; set; }
+    public long ReadyToCleanBytes { get; set; }
     public int PathTooLongCount { get; set; }
     public int InvalidCharCount { get; set; }
 }

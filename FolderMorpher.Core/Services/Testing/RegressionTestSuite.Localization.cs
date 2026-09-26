@@ -60,6 +60,9 @@ namespace FolderMorpher.Services.Testing
                     throw new InvalidOperationException($"JA IssueTypeDisplay mismatch: got '{auditItem.IssueTypeDisplay}'");
                 if (auditItem.DuplicateGroupBadge != "GRP-1 (原本候補)")
                     throw new InvalidOperationException($"JA DuplicateGroupBadge mismatch: got '{auditItem.DuplicateGroupBadge}'");
+                if (auditItem.ConfidenceDisplay != AuditItem.ConfidenceProtectedJa)
+                    throw new InvalidOperationException("Original candidate must display as protected in Japanese.");
+                auditItem.IsOriginalCandidate = false;
 
                 auditItem.WasteScore = 90;
                 if (auditItem.ConfidenceDisplay != AuditItem.ConfidenceRecommendedJa)
@@ -106,6 +109,8 @@ namespace FolderMorpher.Services.Testing
                     throw new InvalidOperationException($"EN IssueTypeDisplay mismatch: got '{auditItem.IssueTypeDisplay}'");
                 if (auditItem.DuplicateGroupBadge != "GRP-1 (Original)")
                     throw new InvalidOperationException($"EN DuplicateGroupBadge mismatch: got '{auditItem.DuplicateGroupBadge}'");
+                if (auditItem.ConfidenceDisplay != AuditItem.ConfidenceProtectedEn)
+                    throw new InvalidOperationException("Original candidate must display as protected in English.");
 
                 auditItem.IsOriginalCandidate = false;
                 if (auditItem.DuplicateGroupBadge != "GRP-1 (Duplicate)")

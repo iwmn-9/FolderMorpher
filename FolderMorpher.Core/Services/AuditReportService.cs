@@ -19,7 +19,8 @@ namespace FolderMorpher.Services
         public async Task<(AuditSummary Summary, List<AuditItem> Items)> RunAuditAsync(
             AuditOptions options,
             IProgress<AuditProgress>? progress,
-            CancellationToken ct)
+            CancellationToken ct,
+            IProgress<IReadOnlyList<AuditItem>>? candidateProgress = null)
         {
             var summary = new AuditSummary();
             var items = new List<AuditItem>();
@@ -185,7 +186,45 @@ namespace FolderMorpher.Services
                 }
             }
 
-            // 3. 重複ファイルチェック（Head-Tail クイックハッシュ ＋ 並列度2 フルSHA256）
+            // 3. Metadata-only candidates are known before expensive full hashes.
+            if (options.CheckVersionFamilies || options.CheckExtractedArchives || options.CheckGraveyardTrees)
+            {
+                progress?.Report(new AuditProgress
+                {
+                    CurrentStatus = "世代・旧版、展開済ZIP、墓場フォルダーを分析中...",
+                    ScannedFilesCount = summary.TotalFilesScanned,
+                    IssueCount = items.Count
+                });
+
+                var smartCandidates = HygieneCandidateEngine.DiscoverCandidates(
+                    scannedFiles, now, options.DormantYearsThreshold,
+                    options.CheckVersionFamilies, options.CheckExtractedArchives,
+                    options.CheckGraveyardTrees, options.TargetDirectory);
+
+                foreach (var cand in smartCandidates)
+                {
+                    if (AuditIgnoreService.Instance.IsIgnored(cand.FullPath, cand.Size, cand.LastWriteTime))
+                        continue;
+                    items.Add(cand);
+                    if (cand.IssueType == AuditIssueType.VersionFamily)
+                    {
+                        summary.VersionFamilyCount++;
+                        summary.VersionFamilyBytes += cand.Size;
+                    }
+                    else if (cand.IssueType == AuditIssueType.ExtractedArchive)
+                    {
+                        summary.ExtractedArchiveCount++;
+                        summary.ExtractedArchiveBytes += cand.Size;
+                    }
+                    else if (cand.IssueType == AuditIssueType.GraveyardTree)
+                    {
+                        summary.GraveyardTreeCount++;
+                        summary.GraveyardTreeBytes += cand.Size;
+                    }
+                }
+            }
+
+            // 4. 重複ファイルチェック（Head-Tail クイックハッシュ ＋ 並列度2 フルSHA256）
             if (options.CheckDuplicates)
             {
                 progress?.Report(new AuditProgress
@@ -200,6 +239,7 @@ namespace FolderMorpher.Services
                     .Where(f => f.Length >= options.MinFileSizeBytes)
                     .GroupBy(f => f.Length)
                     .Where(g => g.Count() > 1)
+                    .OrderByDescending(g => g.Key)
                     .ToList();
 
                 // Step 2: 1MB以上のファイルは Head-Tail ハッシュ (先頭4KB+末尾4KB) で高速ふるい落とし
@@ -271,6 +311,37 @@ namespace FolderMorpher.Services
                             fullHashCandidates.Add(qGroup);
                         }
                     }
+                }
+
+                // Large groups finish first, so a useful partial list appears before the whole audit completes.
+                fullHashCandidates = fullHashCandidates.OrderByDescending(group => group[0].Length).ToList();
+                Dictionary<string, List<AuditItem>>? reasonsByPath = null;
+                if (candidateProgress != null)
+                {
+                    var pendingPaths = fullHashCandidates.SelectMany(group => group)
+                        .Select(file => file.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    reasonsByPath = items.Where(item => pendingPaths.Contains(item.FullPath))
+                        .GroupBy(item => item.FullPath, StringComparer.OrdinalIgnoreCase)
+                        .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+                    var topPaths = new PriorityQueue<(string Path, long Size), long>();
+                    var selectedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var item in items)
+                    {
+                        if (pendingPaths.Contains(item.FullPath) || selectedPaths.Contains(item.FullPath)) continue;
+                        if (topPaths.Count == 300)
+                        {
+                            topPaths.TryPeek(out var smallest, out long smallestSize);
+                            if (item.Size <= smallestSize) continue;
+                            topPaths.Dequeue();
+                            selectedPaths.Remove(smallest.Path);
+                        }
+                        topPaths.Enqueue((item.FullPath, item.Size), item.Size);
+                        selectedPaths.Add(item.FullPath);
+                    }
+                    var readyWithoutHash = AuditCandidateComposer.CombineByPath(
+                            items.Where(item => selectedPaths.Contains(item.FullPath)))
+                        .OrderByDescending(item => item.Size).ToList();
+                    foreach (var batch in readyWithoutHash.Chunk(100)) candidateProgress.Report(batch);
                 }
 
                 // Step 3: フルSHA256による確定検証 (並列度2 & 帯域リミッター)
@@ -345,7 +416,7 @@ namespace FolderMorpher.Services
                                     : new ScoreFactorItem { NameJa = "SHA-256完全一致 (原本候補を除く)", NameEn = "SHA-256 exact duplicate (excluding original candidate)", Points = DuplicateCandidateScore }
                             };
 
-                            items.Add(new AuditItem
+                            var duplicateReason = new AuditItem
                             {
                                 FullPath = fi.FullPath,
                                 FileName = fi.Name,
@@ -363,8 +434,24 @@ namespace FolderMorpher.Services
                                 IsIgnored = AuditIgnoreService.Instance.IsIgnored(fi.FullPath, fi.Length, fi.LastWriteTime),
                                 WasteScore = isOriginal ? 0 : DuplicateCandidateScore,
                                 ScoreBreakdown = dupBreakdown
-                            });
+                            };
+                            items.Add(duplicateReason);
+                            if (reasonsByPath != null)
+                            {
+                                if (!reasonsByPath.TryGetValue(fi.FullPath, out var reasons))
+                                    reasonsByPath[fi.FullPath] = reasons = new List<AuditItem>();
+                                reasons.Add(duplicateReason);
+                            }
                         }
+                    }
+
+                    if (candidateProgress != null && reasonsByPath != null)
+                    {
+                        var completedReasons = group.SelectMany(file => reasonsByPath.TryGetValue(file.FullPath, out var reasons)
+                            ? reasons : Enumerable.Empty<AuditItem>());
+                        var completed = AuditCandidateComposer.CombineByPath(completedReasons)
+                            .OrderByDescending(item => item.Size).ToList();
+                        foreach (var batch in completed.Chunk(100)) candidateProgress.Report(batch);
                     }
 
                     processedCandidateGroups++;
@@ -380,59 +467,13 @@ namespace FolderMorpher.Services
                 }
             }
 
-            // 4. インテリジェント整理候補発見 (世代・旧版、展開済ZIP、墓場フォルダー)
-            if (options.CheckVersionFamilies || options.CheckExtractedArchives || options.CheckGraveyardTrees)
-            {
-                progress?.Report(new AuditProgress
-                {
-                    CurrentStatus = "世代・旧版、展開済ZIP、墓場フォルダーを分析中...",
-                    ScannedFilesCount = summary.TotalFilesScanned,
-                    IssueCount = items.Count
-                });
-
-                var smartCandidates = HygieneCandidateEngine.DiscoverCandidates(
-                    scannedFiles,
-                    now,
-                    options.DormantYearsThreshold,
-                    options.CheckVersionFamilies,
-                    options.CheckExtractedArchives,
-                    options.CheckGraveyardTrees,
-                    options.TargetDirectory);
-
-                var existingPaths = new HashSet<string>(items.Select(x => x.FullPath), StringComparer.OrdinalIgnoreCase);
-                foreach (var cand in smartCandidates)
-                {
-                    // 整理除外（保持マーク）済みで変更のないファイルは候補から除外
-                    if (AuditIgnoreService.Instance.IsIgnored(cand.FullPath, cand.Size, cand.LastWriteTime))
-                    {
-                        continue;
-                    }
-
-                    if (!existingPaths.Contains(cand.FullPath))
-                    {
-                        existingPaths.Add(cand.FullPath);
-                        items.Add(cand);
-
-                        if (cand.IssueType == AuditIssueType.VersionFamily)
-                        {
-                            summary.VersionFamilyCount++;
-                            summary.VersionFamilyBytes += cand.Size;
-                        }
-                        else if (cand.IssueType == AuditIssueType.ExtractedArchive)
-                        {
-                            summary.ExtractedArchiveCount++;
-                            summary.ExtractedArchiveBytes += cand.Size;
-                        }
-                        else if (cand.IssueType == AuditIssueType.GraveyardTree)
-                        {
-                            summary.GraveyardTreeCount++;
-                            summary.GraveyardTreeBytes += cand.Size;
-                        }
-                    }
-                }
-            }
-
-            // 重複ファイルをグループ順・原本優先でソートし、視認性と色分けの並びを完璧にする
+            // A file can have several independent reasons. Keep one candidate per physical path.
+            items = AuditCandidateComposer.CombineByPath(items);
+            summary.ReadyToCleanBytes = items
+                .Where(item => !item.IsOriginalCandidate && !item.IsIgnored &&
+                    (item.HasIssue(AuditIssueType.Duplicate) || item.HasIssue(AuditIssueType.VersionFamily) ||
+                     item.HasIssue(AuditIssueType.ExtractedArchive) || item.HasIssue(AuditIssueType.GraveyardTree)))
+                .Sum(item => item.Size);
             items = SortAuditItems(items, "Default", false);
 
             progress?.Report(new AuditProgress { CurrentStatus = "監査完了", ScannedFilesCount = summary.TotalFilesScanned, IssueCount = items.Count });
@@ -527,11 +568,11 @@ namespace FolderMorpher.Services
                               .ToList();
 
                 default:
-                    // デフォルト表示（重複グループ優先、グループ順、原本先頭）
+                    // The default report order is cleanup priority; protected originals come last.
                     return list
-                        .OrderBy(it => it.IssueType == AuditIssueType.Duplicate ? 0 : 1)
-                        .ThenBy(it => it.DuplicateGroupIndex > 0 ? it.DuplicateGroupIndex : int.MaxValue)
-                        .ThenByDescending(it => it.IsOriginalCandidate)
+                        .OrderByDescending(it => it.IsCleanable)
+                        .ThenByDescending(it => it.WasteScore)
+                        .ThenByDescending(it => it.Size)
                         .ThenBy(it => it.FileName, StringComparer.OrdinalIgnoreCase)
                         .ToList();
             }
@@ -611,7 +652,7 @@ namespace FolderMorpher.Services
         public void ExportAuditCsv(string filePath, IEnumerable<AuditItem> items)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("問題種別,ファイル名,容量,最終更新日時,最終アクセス日時,詳細,重複グループ,完全パス");
+            sb.AppendLine("問題種別,ファイル名,容量,最終更新日時,最終アクセス日時,詳細,重複グループ,完全パス,優先度点数,点数内訳");
 
             foreach (var item in items)
             {
@@ -622,7 +663,8 @@ namespace FolderMorpher.Services
                               $"\"{item.LastAccessTime:yyyy/MM/dd HH:mm:ss}\"," +
                               $"\"{EscapeCsv(item.Detail)}\"," +
                               $"\"{EscapeCsv(item.DuplicateGroupId)}\"," +
-                              $"\"{EscapeCsv(item.FullPath)}\"");
+                              $"\"{EscapeCsv(item.FullPath)}\"," +
+                              $"{item.WasteScore},\"{EscapeCsv(item.ScoreBreakdownSummary)}\"");
             }
 
             File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);

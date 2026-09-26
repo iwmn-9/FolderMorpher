@@ -31,6 +31,7 @@ namespace FolderMorpher.Services.Testing
             TestAuditSmartSelectAndSafePermanentDeletion();
             TestAuditHierarchicalSizeSortingWithDuplicateGroups();
             await TestHeadTailHashAndBandwidthLimiterAsync();
+            await TestCombinedAuditPriorityAndLargestFirstAsync();
             await TestDormantExclusionWithRecentAccessAsync();
             await TestFolderExclusionInAuditAsync();
             await TestHygieneCandidateDiscoveryAsync();
@@ -185,9 +186,12 @@ namespace FolderMorpher.Services.Testing
                 if (string.IsNullOrEmpty(AuditReportPalette.RowBackground(group1[0])) || AuditReportPalette.RowBackground(group1[0]) == "Transparent")
                     throw new InvalidOperationException("Duplicate item RowBackgroundHex should be non-transparent pastel color");
 
-                // 原本候補が先頭に並んでいるか
-                if (!group1[0].IsOriginalCandidate || group1[1].IsOriginalCandidate)
-                    throw new InvalidOperationException("Original candidate should be sorted first in each duplicate group");
+                // The copy ranks ahead for cleanup, while one protected original remains in the group.
+                if (group1.Count(item => item.IsOriginalCandidate) != 1 ||
+                    group1.Count(item => !item.IsOriginalCandidate) != 1 ||
+                    items.IndexOf(group1.Single(item => !item.IsOriginalCandidate)) >=
+                    items.IndexOf(group1.Single(item => item.IsOriginalCandidate)))
+                    throw new InvalidOperationException("Priority ordering or protected original grouping failed.");
 
                 // Excel出力の検証
                 string excelOut = Path.Combine(tempDir, "test_dup_report.xlsx");
@@ -678,6 +682,75 @@ namespace FolderMorpher.Services.Testing
                 {
                     LocalizationService.Instance.SetLanguage(origLang);
                 }
+            }
+            finally
+            {
+                try { Directory.Delete(testDir, true); } catch { }
+            }
+        }
+
+        private sealed class ImmediateAuditBatchRecorder : IProgress<IReadOnlyList<AuditItem>>
+        {
+            public List<List<AuditItem>> Batches { get; } = new();
+            public void Report(IReadOnlyList<AuditItem> value) => Batches.Add(value.ToList());
+        }
+
+        private static async Task TestCombinedAuditPriorityAndLargestFirstAsync()
+        {
+            string testDir = Path.Combine(Path.GetTempPath(), "FM_RegTest_AuditPriority_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(testDir);
+            try
+            {
+                var old = DateTime.Now.AddYears(-4);
+                foreach (var (prefix, size, seed) in new[] { ("large", 256 * 1024, 13), ("small", 128 * 1024, 29) })
+                {
+                    var content = new byte[size];
+                    new Random(seed).NextBytes(content);
+                    foreach (var name in new[] { $"original_{prefix}.dat", $"copy_{prefix}.dat" })
+                    {
+                        string path = Path.Combine(testDir, name);
+                        await File.WriteAllBytesAsync(path, content);
+                        File.SetLastWriteTime(path, old);
+                        File.SetLastAccessTime(path, old);
+                    }
+                }
+
+                var recorder = new ImmediateAuditBatchRecorder();
+                var (summary, items) = await new AuditReportService().RunAuditAsync(new AuditOptions
+                {
+                    TargetDirectory = testDir,
+                    CheckDuplicates = true,
+                    CheckDormant = true,
+                    CheckVersionFamilies = false,
+                    CheckExtractedArchives = false,
+                    CheckGraveyardTrees = false,
+                    CheckPathLimits = false
+                }, null, CancellationToken.None, recorder);
+
+                if (items.Count != 4 || items.Select(item => item.FullPath).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 4)
+                    throw new InvalidOperationException("An audit candidate must appear once per physical file.");
+                if (items[0].FileName != "copy_large.dat" || items[1].FileName != "copy_small.dat")
+                    throw new InvalidOperationException("Final audit candidates were not ranked by combined score and size.");
+                foreach (var copy in items.Where(item => item.FileName.StartsWith("copy_", StringComparison.Ordinal)))
+                {
+                    if (!copy.HasIssue(AuditIssueType.Duplicate) || !copy.HasIssue(AuditIssueType.Dormant) ||
+                        copy.WasteScore != 165 || copy.ScoreBreakdown.Sum(factor => factor.Points) != 165 || !copy.IsCleanable)
+                        throw new InvalidOperationException("Duplicate and dormant reasons did not add to 165 ranking points.");
+                    copy.IsChecked = true;
+                }
+                foreach (var original in items.Where(item => item.FileName.StartsWith("original_", StringComparison.Ordinal)))
+                {
+                    original.IsChecked = true;
+                    if (!original.IsOriginalCandidate || original.IsCleanable || original.IsChecked || original.WasteScore != 70)
+                        throw new InvalidOperationException("A dormant original candidate lost its deletion protection.");
+                }
+                var plans = AuditCleanupService.BuildPlan(items);
+                if (plans.Count != 2 || plans.Any(plan => plan.OriginalCandidatePath == null || plan.IsOriginalCandidate))
+                    throw new InvalidOperationException("Combined reasons broke duplicate deletion planning.");
+                if (summary.ReadyToCleanBytes != 384 * 1024 || summary.DuplicateWastedBytes != summary.ReadyToCleanBytes)
+                    throw new InvalidOperationException("Ready-to-clean bytes double-counted combined reasons.");
+                if (recorder.Batches.Count == 0 || recorder.Batches[0].Count == 0 || recorder.Batches[0][0].Size != 256 * 1024)
+                    throw new InvalidOperationException("Largest SHA-256 candidate group did not stream first.");
             }
             finally
             {

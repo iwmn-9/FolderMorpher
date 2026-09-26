@@ -1397,7 +1397,7 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTemplateColumn x:Name="ColAuditConfidence" Header="整理の目安" SortMemberPath="WasteScore" Width="205">
+                                <DataGridTemplateColumn x:Name="ColAuditConfidence" Header="整理優先度" SortMemberPath="WasteScore" Width="205">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0">

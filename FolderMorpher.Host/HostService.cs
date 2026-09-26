@@ -603,7 +603,11 @@ namespace FolderMorpher.Host
         // ==========================================
         // 7. Tab 6: Audit & Hygiene
         // ==========================================
-        public async Task<AuditReportDto> RunAuditScanAsync(AuditScanRequestDto request, IProgress<string>? progress, CancellationToken ct)
+        public Task<AuditReportDto> RunAuditScanAsync(AuditScanRequestDto request, IProgress<string>? progress, CancellationToken ct) =>
+            RunAuditScanCoreAsync(request, progress, null, ct);
+
+        private async Task<AuditReportDto> RunAuditScanCoreAsync(AuditScanRequestDto request, IProgress<string>? progress,
+            IProgress<IReadOnlyList<AuditItem>>? candidateProgress, CancellationToken ct)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var auditService = new AuditReportService();
@@ -622,10 +626,10 @@ namespace FolderMorpher.Host
                 ExcludeFolderPatterns = request.IgnoredPaths ?? new List<string>()
             };
             var auditProgress = progress != null 
-                ? new Progress<AuditProgress>(p => progress.Report(p.CurrentStatus))
+                ? new InlineProgress<AuditProgress>(p => progress.Report(p.CurrentStatus))
                 : null;
 
-            var (summary, items) = await auditService.RunAuditAsync(options, auditProgress, ct);
+            var (summary, items) = await auditService.RunAuditAsync(options, auditProgress, ct, candidateProgress);
             sw.Stop();
 
             _ = Task.Run(async () =>

@@ -60,6 +60,39 @@ public static class PresentationTestRunner
             throw new InvalidOperationException("Storage share/diff presentation changed.");
     }
 
+    public static void VerifyAuditProvisionalDisplay(AstraSize.MainWindow window)
+    {
+        var type = typeof(AstraSize.MainWindow);
+        var itemsField = type.GetField("_lastAuditItems", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Audit candidate state is missing.");
+        var runningField = type.GetField("_auditScanInProgress", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Audit scan state is missing.");
+        var apply = type.GetMethod("ApplyAuditFilters", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Audit filter entry point is missing.");
+        var originalItems = itemsField.GetValue(window);
+        var originalRunning = runningField.GetValue(window);
+        try
+        {
+            itemsField.SetValue(window, new List<AuditItem>
+            {
+                new() { FullPath = @"C:\audit\small.dat", FileName = "small.dat", Size = 1024, WasteScore = 165 },
+                new() { FullPath = @"C:\audit\large.dat", FileName = "large.dat", Size = 2048, WasteScore = 70 }
+            });
+            runningField.SetValue(window, true);
+            apply.Invoke(window, null);
+            if (window.AuditItemsDataGrid.ItemsSource is not List<AuditItem> rows || rows.Count != 2 ||
+                rows[0].FileName != "large.dat" ||
+                !(window.AuditTableTitleText.Text.Contains("暫定") || window.AuditTableTitleText.Text.Contains("provisional")))
+                throw new InvalidOperationException("Provisional audit candidates were not shown in size order.");
+        }
+        finally
+        {
+            itemsField.SetValue(window, originalItems);
+            runningField.SetValue(window, originalRunning);
+            apply.Invoke(window, null);
+        }
+    }
+
     public static void VerifyAuditAndSimulationPresentation()
     {
         var audit = new AuditItem { FileName = "sample.pdf", WasteScore = 80 };

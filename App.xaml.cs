@@ -179,6 +179,7 @@ namespace AstraSize
                             {
                                 searchWindow = new MainWindow();
                                 FolderMorpher.UI.PresentationTestRunner.VerifyRuntimeLocalization(searchWindow);
+                                FolderMorpher.UI.PresentationTestRunner.VerifyAuditProvisionalDisplay(searchWindow);
                                 FindControl<TextBox>(searchWindow, "SearchDirectTargetTextBox").Text = testRoot;
                                 FindControl<TextBox>(searchWindow, "SearchInputBox").Text = "ipc-search-match";
                                 FindControl<Button>(searchWindow, "SearchClearButton").RaiseEvent(new RoutedEventArgs(
@@ -371,14 +372,27 @@ namespace AstraSize
                             await host.ReleaseJobAsync(unreadJobId);
                             Console.WriteLine("[TEST-IPC] Search unread-file coverage: SUCCESS");
 
+                            var auditContent = new byte[128 * 1024];
+                            new Random(73).NextBytes(auditContent);
+                            var auditOriginalPath = Path.Combine(testRoot, "audit-original.dat");
+                            var auditCopyPath = Path.Combine(testRoot, "audit-copy.dat");
+                            await File.WriteAllBytesAsync(auditOriginalPath, auditContent);
+                            await File.WriteAllBytesAsync(auditCopyPath, auditContent);
+                            var auditOldDate = DateTime.Now.AddYears(-4);
+                            foreach (var path in new[] { auditOriginalPath, auditCopyPath })
+                            {
+                                File.SetLastWriteTime(path, auditOldDate);
+                                File.SetLastAccessTime(path, auditOldDate);
+                            }
+
                             var auditJobId = await host.StartJobAsync(new FolderMorpher.Contracts.HostJobRequestDto
                             {
                                 Kind = FolderMorpher.Contracts.HostJobKind.AuditScan,
                                 AuditRequest = new FolderMorpher.Contracts.AuditScanRequestDto
                                 {
                                     TargetPath = testRoot,
-                                    CheckDuplicates = false,
-                                    CheckDormant = false,
+                                    CheckDuplicates = true,
+                                    CheckDormant = true,
                                     CheckVersionFamilies = false,
                                     CheckExtractedArchives = false,
                                     CheckGraveyardTrees = false,
@@ -399,6 +413,15 @@ namespace AstraSize
                             var completedAuditReport = auditJob.AuditReport ?? throw new InvalidOperationException("Host audit job did not return its report.");
                             if (completedAuditReport.Summary.TotalFilesScanned < 1)
                                 throw new InvalidOperationException("Host audit job did not return its report.");
+                            var auditBatch = await host.GetAuditJobResultsAsync(auditJobId, 0, 256);
+                            var streamedCopy = auditBatch.Results.FirstOrDefault(item => item.FullPath == auditCopyPath);
+                            var finalCopy = completedAuditReport.Items.FirstOrDefault(item => item.FullPath == auditCopyPath);
+                            if (auditBatch.HadGap || streamedCopy == null || finalCopy == null ||
+                                finalCopy.WasteScore != 165 || finalCopy.ScoreBreakdown.Sum(factor => factor.Points) != 165 ||
+                                !finalCopy.IssueTypes.Contains(0) || // AuditIssueType.Duplicate
+                                !finalCopy.IssueTypes.Contains(1) || // AuditIssueType.Dormant
+                                completedAuditReport.Items.Count(item => item.FullPath == auditCopyPath) != 1)
+                                throw new InvalidOperationException("Combined audit score or progressive IPC delivery failed.");
                             var sortedAuditIds = await host.SortAuditIdsAsync(completedAuditReport.ReportId,
                                 completedAuditReport.Items.Select(item => item.AuditId).ToList(), "Size", true, testCts.Token);
                             if (sortedAuditIds.Count != completedAuditReport.Items.Count)

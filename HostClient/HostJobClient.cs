@@ -8,11 +8,13 @@ public static class HostJobClient
         HostJobRequestDto request,
         Action<HostJobStatusDto>? onProgress,
         CancellationToken ct,
-        Action<IReadOnlyList<SearchResultDto>>? onSearchBatch = null)
+        Action<IReadOnlyList<SearchResultDto>>? onSearchBatch = null,
+        Action<IReadOnlyList<AuditItemDto>>? onAuditBatch = null)
     {
         var service = await FolderMorpherHostClient.Instance.GetServiceAsync(ct);
         var jobId = await service.StartJobAsync(request);
         long searchSequence = 0;
+        long auditSequence = 0;
         try
         {
             while (true)
@@ -24,6 +26,12 @@ public static class HostJobClient
                     var batch = await service.GetSearchJobResultsAsync(jobId, searchSequence, 256);
                     searchSequence = batch.NextSequence;
                     if (batch.Results.Count > 0) onSearchBatch(batch.Results);
+                }
+                if (onAuditBatch != null && request.Kind == HostJobKind.AuditScan)
+                {
+                    var batch = await service.GetAuditJobResultsAsync(jobId, auditSequence, 256);
+                    auditSequence = batch.NextSequence;
+                    if (batch.Results.Count > 0) onAuditBatch(batch.Results);
                 }
                 var status = await service.GetJobStatusAsync(jobId);
                 ct.ThrowIfCancellationRequested();

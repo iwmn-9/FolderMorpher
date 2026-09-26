@@ -13,7 +13,7 @@ internal static class AuditDtoMapper
         FullPath = item.FullPath, FileName = item.FileName,
         DirectoryPath = item.DirectoryPath, Size = item.Size,
         LastWriteTime = item.LastWriteTime, LastAccessTime = item.LastAccessTime,
-        IssueType = (int)item.IssueType, Detail = item.Detail,
+        IssueType = (int)item.IssueType, IssueTypes = item.IssueTypes.Select(type => (int)type).ToList(), Detail = item.Detail,
         Sha256Hash = item.Sha256Hash, DuplicateGroupId = item.DuplicateGroupId,
         DuplicateGroupIndex = item.DuplicateGroupIndex,
         DuplicateGroupColorIndex = item.DuplicateGroupColorIndex,
@@ -33,7 +33,7 @@ internal static class AuditDtoMapper
             FullPath = dto.FullPath, FileName = dto.FileName,
             DirectoryPath = dto.DirectoryPath, Size = dto.Size,
             LastWriteTime = dto.LastWriteTime, LastAccessTime = dto.LastAccessTime,
-            IssueType = (AuditIssueType)dto.IssueType, Detail = dto.Detail,
+            IssueType = (AuditIssueType)dto.IssueType, IssueTypes = dto.IssueTypes.Select(type => (AuditIssueType)type).ToList(), Detail = dto.Detail,
             Sha256Hash = dto.Sha256Hash, DuplicateGroupId = dto.DuplicateGroupId,
             DuplicateGroupIndex = dto.DuplicateGroupIndex,
             DuplicateGroupColorIndex = dto.DuplicateGroupColorIndex,
@@ -67,6 +67,7 @@ internal static class AuditDtoMapper
         ExtractedArchiveBytes = dto.ExtractedArchiveBytes,
         GraveyardTreeCount = dto.GraveyardTreeCount,
         GraveyardTreeBytes = dto.GraveyardTreeBytes,
+        ReadyToCleanBytes = dto.ReadyToCleanBytes,
         PathTooLongCount = dto.PathTooLongCount,
         InvalidCharCount = dto.InvalidCharCount
     };
@@ -90,6 +91,7 @@ internal static class AuditDtoMapper
         ExtractedArchiveBytes = summary.ExtractedArchiveBytes,
         GraveyardTreeCount = summary.GraveyardTreeCount,
         GraveyardTreeBytes = summary.GraveyardTreeBytes,
+        ReadyToCleanBytes = summary.ReadyToCleanBytes,
         PathTooLongCount = summary.PathTooLongCount,
         InvalidCharCount = summary.InvalidCharCount
     };

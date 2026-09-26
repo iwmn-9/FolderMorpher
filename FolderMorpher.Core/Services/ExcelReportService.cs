@@ -128,8 +128,10 @@ namespace FolderMorpher.Services
             ws.Cell(row, 6).Value = "詳細";
             ws.Cell(row, 7).Value = "重複グループ";
             ws.Cell(row, 8).Value = "完全パス (クリックで開く)";
+            ws.Cell(row, 9).Value = "優先度点数";
+            ws.Cell(row, 10).Value = "点数内訳";
 
-            var header = ws.Range(row, 2, row, 8);
+            var header = ws.Range(row, 2, row, 10);
             header.Style.Font.Bold = true;
             header.Style.Font.FontColor = XLColor.White;
             header.Style.Fill.BackgroundColor = XLColor.FromHtml("#1E3A8A");
@@ -148,6 +150,8 @@ namespace FolderMorpher.Services
                 ws.Cell(row, 5).Value = item.LastWriteTime.ToString("yyyy/MM/dd HH:mm");
                 ws.Cell(row, 6).Value = item.Detail;
                 ws.Cell(row, 7).Value = item.DuplicateGroupBadge;
+                ws.Cell(row, 9).Value = item.WasteScore;
+                ws.Cell(row, 10).Value = item.ScoreBreakdownSummary;
 
                 // フルパスセル（ハイパーリンク化）
                 var pathCell = ws.Cell(row, 8);
@@ -168,7 +172,7 @@ namespace FolderMorpher.Services
                 // 重複グループごとの背景色ソフト塗り分け（隣接グループで被らない視認性カラー）
                 if (item.IssueType == AuditIssueType.Duplicate && item.DuplicateGroupIndex > 0)
                 {
-                    var rowRange = ws.Range(row, 2, row, 8);
+                    var rowRange = ws.Range(row, 2, row, 10);
                     rowRange.Style.Fill.BackgroundColor = XLColor.FromHtml(AuditReportPalette.RowBackground(item));
                 }
 
@@ -176,12 +180,12 @@ namespace FolderMorpher.Services
             }
 
             // テーブル書式設定 ＆ オートフィルター
-            var fullTable = ws.Range(2, 2, row - 1, 8);
+            var fullTable = ws.Range(2, 2, row - 1, 10);
             fullTable.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
             fullTable.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
             fullTable.SetAutoFilter();
 
-            ws.Columns(2, 8).AdjustToContents(3, 100);
+            ws.Columns(2, 10).AdjustToContents(3, 100);
         }
 
         private static void CreateMediaSheet(XLWorkbook wb, List<MediaItem> items)

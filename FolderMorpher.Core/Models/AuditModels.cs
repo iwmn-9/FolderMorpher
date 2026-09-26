@@ -30,7 +30,10 @@ namespace FolderMorpher.Models
         /// 整理（削除）可能かどうか。
         /// 墓場フォルダー（フォルダー全体の事故削除防止）および原本候補ファイルは安全のため削除対象外。
         /// </summary>
-        public bool IsCleanable => IssueType != AuditIssueType.GraveyardTree && !IsOriginalCandidate;
+        public bool IsCleanable => !HasIssue(AuditIssueType.GraveyardTree) && !IsOriginalCandidate;
+
+        public List<AuditIssueType> IssueTypes { get; set; } = new();
+        public bool HasIssue(AuditIssueType type) => IssueTypes.Count == 0 ? IssueType == type : IssueTypes.Contains(type);
 
         private bool _isChecked;
         public bool IsChecked
@@ -62,7 +65,7 @@ namespace FolderMorpher.Models
             get
             {
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                return IssueType switch
+                string Label(AuditIssueType type) => type switch
                 {
                     AuditIssueType.Duplicate => isJa ? "完全重複" : "Duplicate File",
                     AuditIssueType.Dormant => isJa ? "長期休眠" : "Dormant File",
@@ -73,6 +76,8 @@ namespace FolderMorpher.Models
                     AuditIssueType.InvalidChar => isJa ? "地雷文字" : "Invalid Characters",
                     _ => isJa ? "その他" : "Other"
                 };
+                IEnumerable<AuditIssueType> types = IssueTypes.Count == 0 ? new[] { IssueType } : IssueTypes;
+                return string.Join(isJa ? "・" : ", ", types.Select(Label));
             }
         }
         public string Detail { get; set; } = string.Empty;
@@ -110,12 +115,15 @@ namespace FolderMorpher.Models
         public const string ConfidenceReviewNeededEn = "Review Needed";
         public const string ConfidenceReferenceJa = "参考";
         public const string ConfidenceReferenceEn = "Reference";
+        public const string ConfidenceProtectedJa = "原本保護";
+        public const string ConfidenceProtectedEn = "Protected";
 
         public string ConfidenceDisplay
         {
             get
             {
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                if (IsOriginalCandidate) return isJa ? ConfidenceProtectedJa : ConfidenceProtectedEn;
                 if (WasteScore >= 80) return isJa ? ConfidenceRecommendedJa : ConfidenceRecommendedEn;
                 if (WasteScore >= 50) return isJa ? ConfidenceReviewNeededJa : ConfidenceReviewNeededEn;
                 return isJa ? ConfidenceReferenceJa : ConfidenceReferenceEn;
@@ -130,7 +138,7 @@ namespace FolderMorpher.Models
             get
             {
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                if (IssueType == AuditIssueType.Duplicate && !string.IsNullOrEmpty(DuplicateGroupId))
+                if (HasIssue(AuditIssueType.Duplicate) && !string.IsNullOrEmpty(DuplicateGroupId))
                 {
                     return IsOriginalCandidate 
                         ? $"{DuplicateGroupId} {(isJa ? "(原本候補)" : "(Original)")}" 
@@ -177,7 +185,7 @@ namespace FolderMorpher.Models
         public int InvalidCharCount { get; set; }
 
         // すぐ整理できそうな容量（重複 + 世代旧版 + 展開済ZIP + 墓場）
-        public long ReadyToCleanBytes => DuplicateWastedBytes + VersionFamilyBytes + ExtractedArchiveBytes + GraveyardTreeBytes;
+        public long ReadyToCleanBytes { get; set; }
         public string ReadyToCleanSizeFormatted => FormatHelper.FormatBytes(ReadyToCleanBytes, 2);
 
         public string DuplicateWastedSizeFormatted => FormatHelper.FormatBytes(DuplicateWastedBytes, 2);

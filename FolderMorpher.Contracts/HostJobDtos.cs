@@ -56,3 +56,10 @@ public sealed class SearchJobResultsDto
     public bool HadGap { get; set; }
     public List<SearchResultDto> Results { get; set; } = new();
 }
+
+public sealed class AuditJobResultsDto
+{
+    public long NextSequence { get; set; }
+    public bool HadGap { get; set; }
+    public List<AuditItemDto> Results { get; set; } = new();
+}

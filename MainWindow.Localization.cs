@@ -385,7 +385,7 @@ namespace AstraSize
             if (AuditBandwidthStandardItem != null) AuditBandwidthStandardItem.Content = Strings.AuditBandwidthStandard;
             if (AuditBandwidthUnlimitedItem != null) AuditBandwidthUnlimitedItem.Content = Strings.AuditBandwidthUnlimited;
 
-            if (ColAuditConfidence != null) ColAuditConfidence.Header = isJa ? "整理の目安" : "Clean Readiness";
+            if (ColAuditConfidence != null) ColAuditConfidence.Header = isJa ? "整理優先度" : "Cleanup Priority";
             ColAuditIssueType.Header = isJa ? "問題種別" : "Issue Type";
             ColAuditDupGroup.Header = isJa ? "整理グループ / 状況" : "Group / Status";
             ColAuditFileName.Header = isJa ? "ファイル名" : "File Name";

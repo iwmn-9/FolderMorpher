@@ -33,6 +33,7 @@ public partial class AuditItem
 
     public string ConfidenceBadgeBgHex => WasteScore switch
     {
+        _ when IsOriginalCandidate => "#F1F5F9",
         >= 80 => "#FEE2E2",
         >= 50 => "#FEF3C7",
         _ => "#F1F5F9"
@@ -40,6 +41,7 @@ public partial class AuditItem
 
     public string ConfidenceBadgeBorderHex => WasteScore switch
     {
+        _ when IsOriginalCandidate => "#CBD5E1",
         >= 80 => "#FCA5A5",
         >= 50 => "#FDE68A",
         _ => "#CBD5E1"
@@ -47,6 +49,7 @@ public partial class AuditItem
 
     public string ConfidenceBadgeFgHex => WasteScore switch
     {
+        _ when IsOriginalCandidate => "#475569",
         >= 80 => "#991B1B",
         >= 50 => "#92400E",
         _ => "#475569"

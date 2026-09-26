@@ -25,6 +25,8 @@ namespace AstraSize
     {
         #region Audit & Hygiene Tab
         private Guid _lastAuditReportId;
+        private long _auditScanGeneration;
+        private bool _auditScanInProgress;
         private long _auditPreviewGeneration;
         private void AuditBrowseButton_Click(object sender, RoutedEventArgs e)
         {
@@ -49,6 +51,25 @@ namespace AstraSize
 
             _auditCts?.Cancel();
             _auditCts = new CancellationTokenSource();
+            var generation = ++_auditScanGeneration;
+            _auditScanInProgress = true;
+            var auditToken = _auditCts.Token;
+            var partialByPath = new Dictionary<string, AuditItem>(StringComparer.OrdinalIgnoreCase);
+            _lastAuditReportId = Guid.Empty;
+            _lastAuditSummary = null;
+            _lastAuditItems = new List<AuditItem>();
+            _auditSortProperty = "Default";
+            _auditSortDescending = false;
+            AuditItemsDataGrid.CanUserSortColumns = false;
+            AuditDeleteSelectedButton.IsEnabled = false;
+            AuditExportExcelButton.IsEnabled = false;
+            AuditExportCsvButton.IsEnabled = false;
+            ApplyAuditFilters();
+            UpdateLiveSelectedReduction();
+            AuditKpiReadyToClean.Text = "—";
+            AuditKpiVersionFamily.Text = "—";
+            AuditKpiDupWasted.Text = "—";
+            AuditKpiDormantSize.Text = "—";
 
             GlobalProgressBar.Visibility = Visibility.Visible;
             GlobalProgressBar.IsIndeterminate = true;
@@ -82,12 +103,12 @@ namespace AstraSize
                 options.ExcludeFolderPatterns.AddRange(patterns);
             }
 
-            var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(_auditCts.Token);
-            var hostProgress = new Progress<string>(s =>
+            void ShowAuditProgress(string s)
             {
+                if (generation != _auditScanGeneration) return;
                 AuditStatusText.Text = s;
                 StatusTextBlock.Text = s;
-            });
+            }
 
             try
             {
@@ -113,13 +134,32 @@ namespace AstraSize
                     },
                     status =>
                     {
-                        if (!string.IsNullOrWhiteSpace(status.ProgressText)) ((IProgress<string>)hostProgress).Report(status.ProgressText);
+                        if (!string.IsNullOrWhiteSpace(status.ProgressText)) ShowAuditProgress(status.ProgressText);
                     },
-                    _auditCts.Token);
+                    auditToken,
+                    onAuditBatch: batch =>
+                    {
+                        if (generation != _auditScanGeneration) return;
+                        foreach (var dto in batch)
+                        {
+                            var candidate = FolderMorpher.HostClient.AuditDtoMapper.ToViewItem(dto);
+                            if (partialByPath.TryGetValue(candidate.FullPath, out var previous) && previous.IsChecked && candidate.IsCleanable)
+                                candidate.IsChecked = true;
+                            partialByPath[candidate.FullPath] = candidate;
+                        }
+                        _lastAuditItems = partialByPath.Values.ToList();
+                        ApplyAuditFilters();
+                        UpdateLiveSelectedReduction();
+                    });
+                if (generation != _auditScanGeneration) return;
                 var report = auditJob.AuditReport ?? throw new InvalidOperationException(UiText("監査結果がHostから返されませんでした。", "The host did not return an audit report."));
                 _lastAuditReportId = report.ReportId;
                 var summary = FolderMorpher.HostClient.AuditDtoMapper.ToViewSummary(report.Summary);
                 var items = report.Items.Select(FolderMorpher.HostClient.AuditDtoMapper.ToViewItem).ToList();
+                var checkedPaths = partialByPath.Values.Where(item => item.IsChecked)
+                    .Select(item => item.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                foreach (var item in items.Where(item => item.IsCleanable && checkedPaths.Contains(item.FullPath)))
+                    item.IsChecked = true;
                 _lastAuditSummary = summary;
                 _lastAuditItems = items;
                 _auditSortProperty = "Default";
@@ -151,23 +191,35 @@ namespace AstraSize
             }
             catch (OperationCanceledException)
             {
-                AuditStatusText.Text = UiText("監査を中止しました。", "Audit canceled.");
+                if (generation == _auditScanGeneration)
+                    AuditStatusText.Text = UiText("監査を中止しました。", "Audit canceled.");
             }
             catch (Exception ex)
             {
+                if (generation != _auditScanGeneration) return;
                 MessageBox.Show(UiText($"監査エラー: {ex.Message}", $"Audit failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 AuditStatusText.Text = UiText("エラー発生", "Error");
             }
             finally
             {
-                GlobalProgressBar.Visibility = Visibility.Collapsed;
-                UpdateIgnoredCountBadge();
+                if (generation == _auditScanGeneration)
+                {
+                    _auditScanInProgress = false;
+                    GlobalProgressBar.Visibility = Visibility.Collapsed;
+                    AuditItemsDataGrid.CanUserSortColumns = true;
+                    bool hasReport = _lastAuditReportId != Guid.Empty;
+                    AuditDeleteSelectedButton.IsEnabled = hasReport;
+                    AuditExportExcelButton.IsEnabled = hasReport;
+                    AuditExportCsvButton.IsEnabled = hasReport;
+                    ApplyAuditFilters();
+                    UpdateIgnoredCountBadge();
+                }
             }
         }
 
         private async void AuditExportExcelButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_lastAuditItems == null || _lastAuditItems.Count == 0)
+            if (_lastAuditReportId == Guid.Empty || _lastAuditItems == null || _lastAuditItems.Count == 0)
             {
                 MessageBox.Show(UiText("出力対象の監査結果がありません。先にスキャンを実行してください。", "No audit results to export. Run a scan first."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
@@ -201,7 +253,7 @@ namespace AstraSize
 
         private async void AuditExportCsvButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_lastAuditItems == null || _lastAuditItems.Count == 0)
+            if (_lastAuditReportId == Guid.Empty || _lastAuditItems == null || _lastAuditItems.Count == 0)
             {
                 MessageBox.Show(UiText("出力対象のデータがありません。", "No data to export."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
@@ -266,35 +318,37 @@ namespace AstraSize
 
             if (selectedTag == "ReadyToClean")
             {
-                filtered = filtered.Where(x => x.WasteScore >= 80 && !x.IsOriginalCandidate);
+                filtered = filtered.Where(x => x.WasteScore >= 80 && x.IsCleanable &&
+                    (x.HasIssue(AuditIssueType.Duplicate) || x.HasIssue(AuditIssueType.Dormant) ||
+                     x.HasIssue(AuditIssueType.VersionFamily) || x.HasIssue(AuditIssueType.ExtractedArchive)));
             }
             else if (selectedTag == "ReviewAdvised")
             {
-                filtered = filtered.Where(x => x.WasteScore >= 50 && x.WasteScore < 80);
+                filtered = filtered.Where(x => x.WasteScore >= 50 && x.WasteScore < 80 && x.IsCleanable);
             }
             else if (selectedTag == "VersionFamily")
             {
-                filtered = filtered.Where(x => x.IssueType == AuditIssueType.VersionFamily);
+                filtered = filtered.Where(x => x.HasIssue(AuditIssueType.VersionFamily));
             }
             else if (selectedTag == "ExtractedArchive")
             {
-                filtered = filtered.Where(x => x.IssueType == AuditIssueType.ExtractedArchive);
+                filtered = filtered.Where(x => x.HasIssue(AuditIssueType.ExtractedArchive));
             }
             else if (selectedTag == "GraveyardTree")
             {
-                filtered = filtered.Where(x => x.IssueType == AuditIssueType.GraveyardTree);
+                filtered = filtered.Where(x => x.HasIssue(AuditIssueType.GraveyardTree));
             }
             else if (selectedTag == "Duplicate")
             {
-                filtered = filtered.Where(x => x.IssueType == AuditIssueType.Duplicate);
+                filtered = filtered.Where(x => x.HasIssue(AuditIssueType.Duplicate));
             }
             else if (selectedTag == "Dormant")
             {
-                filtered = filtered.Where(x => x.IssueType == AuditIssueType.Dormant);
+                filtered = filtered.Where(x => x.HasIssue(AuditIssueType.Dormant));
             }
             else if (selectedTag == "PathLimit")
             {
-                filtered = filtered.Where(x => x.IssueType == AuditIssueType.PathTooLong || x.IssueType == AuditIssueType.InvalidChar);
+                filtered = filtered.Where(x => x.HasIssue(AuditIssueType.PathTooLong) || x.HasIssue(AuditIssueType.InvalidChar));
             }
 
             if (!string.IsNullOrEmpty(query))
@@ -311,10 +365,9 @@ namespace AstraSize
             if (_auditSortProperty == "Default" || string.IsNullOrEmpty(_auditSortProperty))
             {
                 // デフォルトは無駄度スコア降順 ➔ 容量降順（最も整理すべき重要候補が最上位に並ぶ）
-                resultList = resultList
-                    .OrderByDescending(x => x.WasteScore)
-                    .ThenByDescending(x => x.Size)
-                    .ToList();
+                resultList = _lastAuditReportId == Guid.Empty
+                    ? resultList.OrderByDescending(x => x.Size).ThenByDescending(x => x.WasteScore).ToList()
+                    : resultList.OrderByDescending(x => x.IsCleanable).ThenByDescending(x => x.WasteScore).ThenByDescending(x => x.Size).ToList();
             }
             else
             {
@@ -350,6 +403,13 @@ namespace AstraSize
             string baseTitle = isJa ? "検出された整理候補一覧" : "Detected Cleanup Candidates";
             if (_lastAuditItems.Count > 0)
             {
+                if (_lastAuditReportId == Guid.Empty)
+                {
+                    AuditTableTitleText.Text = isJa
+                        ? $"{baseTitle}（{(_auditScanInProgress ? "監査中" : "未完了")}・暫定 {resultList.Count:N0} 件）"
+                        : $"{baseTitle} ({(_auditScanInProgress ? "scanning" : "incomplete")}, {resultList.Count:N0} provisional)";
+                    return;
+                }
                 if (resultList.Count < totalMatched)
                 {
                     AuditTableTitleText.Text = isJa
@@ -435,7 +495,9 @@ namespace AstraSize
                         int rtcCount = 0;
                         foreach (var ai in visibleList)
                         {
-                            if (ai.WasteScore >= 80 && !ai.IsOriginalCandidate)
+                            if (ai.WasteScore >= 80 && ai.IsCleanable &&
+                                (ai.HasIssue(AuditIssueType.Duplicate) || ai.HasIssue(AuditIssueType.Dormant) ||
+                                 ai.HasIssue(AuditIssueType.VersionFamily) || ai.HasIssue(AuditIssueType.ExtractedArchive)))
                             {
                                 ai.IsChecked = true;
                                 rtcCount++;
@@ -449,7 +511,7 @@ namespace AstraSize
                         int vfCount = 0;
                         foreach (var ai in visibleList)
                         {
-                            if (ai.IssueType == AuditIssueType.VersionFamily)
+                            if (ai.HasIssue(AuditIssueType.VersionFamily))
                             {
                                 ai.IsChecked = true;
                                 vfCount++;
@@ -463,7 +525,7 @@ namespace AstraSize
                         int eaCount = 0;
                         foreach (var ai in visibleList)
                         {
-                            if (ai.IssueType == AuditIssueType.ExtractedArchive)
+                            if (ai.HasIssue(AuditIssueType.ExtractedArchive))
                             {
                                 ai.IsChecked = true;
                                 eaCount++;
@@ -477,7 +539,7 @@ namespace AstraSize
                         int dupCount = 0;
                         foreach (var ai in visibleList)
                         {
-                            if (ai.IssueType == AuditIssueType.Duplicate && !ai.IsOriginalCandidate)
+                            if (ai.HasIssue(AuditIssueType.Duplicate) && !ai.IsOriginalCandidate)
                             {
                                 ai.IsChecked = true;
                                 dupCount++;
@@ -492,7 +554,7 @@ namespace AstraSize
                         int d3Count = 0;
                         foreach (var ai in visibleList)
                         {
-                            if (ai.IssueType == AuditIssueType.Dormant && ai.LastWriteTime < threshold3Y)
+                            if (ai.HasIssue(AuditIssueType.Dormant) && ai.LastWriteTime < threshold3Y)
                             {
                                 ai.IsChecked = true;
                                 d3Count++;
@@ -507,7 +569,7 @@ namespace AstraSize
                         int d5Count = 0;
                         foreach (var ai in visibleList)
                         {
-                            if (ai.IssueType == AuditIssueType.Dormant && ai.LastWriteTime < threshold5Y)
+                            if (ai.HasIssue(AuditIssueType.Dormant) && ai.LastWriteTime < threshold5Y)
                             {
                                 ai.IsChecked = true;
                                 d5Count++;
@@ -587,6 +649,12 @@ namespace AstraSize
 
             long generation = Interlocked.Increment(ref _auditPreviewGeneration);
 
+            if (_lastAuditReportId == Guid.Empty)
+            {
+                int selected = _lastAuditItems.Count(item => item.IsChecked);
+                AuditLiveSelectedReductionText.Text = UiText($"監査完了後に確定（選択 {selected:N0} 件）", $"Calculated after audit ({selected:N0} selected)");
+                return;
+            }
             if (_lastAuditItems == null || _lastAuditItems.Count == 0)
             {
                 AuditLiveSelectedReductionText.Text = UiText("0 B (0 件)", "0 B (0 items)");
@@ -613,7 +681,7 @@ namespace AstraSize
 
         private async void AuditDeleteSelectedButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_lastAuditItems == null || _lastAuditItems.Count == 0)
+            if (_lastAuditReportId == Guid.Empty || _lastAuditItems == null || _lastAuditItems.Count == 0)
             {
                 MessageBox.Show(UiText("削除対象のファイルがありません。先に監査スキャンを実行してください。", "No files to delete. Run an audit first."), UiText("案内", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
@@ -740,24 +808,24 @@ namespace AstraSize
             if (_lastAuditItems == null || _lastAuditSummary == null) return;
 
             long dupWasted = _lastAuditItems
-                .Where(x => x.IssueType == AuditIssueType.Duplicate && !x.IsOriginalCandidate)
+                .Where(x => x.HasIssue(AuditIssueType.Duplicate) && !x.IsOriginalCandidate)
                 .Sum(x => x.Size);
-            int dupCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.Duplicate);
+            int dupCount = _lastAuditItems.Count(x => x.HasIssue(AuditIssueType.Duplicate) && !x.IsOriginalCandidate);
 
             long dormantSize = _lastAuditItems
-                .Where(x => x.IssueType == AuditIssueType.Dormant || x.IssueType == AuditIssueType.GraveyardTree)
+                .Where(x => x.HasIssue(AuditIssueType.Dormant))
                 .Sum(x => x.Size);
-            int dormantCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.Dormant || x.IssueType == AuditIssueType.GraveyardTree);
+            int dormantCount = _lastAuditItems.Count(x => x.HasIssue(AuditIssueType.Dormant));
 
             long versionFamilySize = _lastAuditItems
-                .Where(x => x.IssueType == AuditIssueType.VersionFamily)
+                .Where(x => x.HasIssue(AuditIssueType.VersionFamily))
                 .Sum(x => x.Size);
-            int versionFamilyCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.VersionFamily);
+            int versionFamilyCount = _lastAuditItems.Count(x => x.HasIssue(AuditIssueType.VersionFamily));
 
             long extractedArchiveSize = _lastAuditItems
-                .Where(x => x.IssueType == AuditIssueType.ExtractedArchive)
+                .Where(x => x.HasIssue(AuditIssueType.ExtractedArchive))
                 .Sum(x => x.Size);
-            int extractedArchiveCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.ExtractedArchive);
+            int extractedArchiveCount = _lastAuditItems.Count(x => x.HasIssue(AuditIssueType.ExtractedArchive));
 
             _lastAuditSummary.DuplicateWastedBytes = dupWasted;
             _lastAuditSummary.DuplicateCount = dupCount;
@@ -767,8 +835,15 @@ namespace AstraSize
             _lastAuditSummary.VersionFamilyCount = versionFamilyCount;
             _lastAuditSummary.ExtractedArchiveBytes = extractedArchiveSize;
             _lastAuditSummary.ExtractedArchiveCount = extractedArchiveCount;
-            _lastAuditSummary.PathTooLongCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.PathTooLong);
-            _lastAuditSummary.InvalidCharCount = _lastAuditItems.Count(x => x.IssueType == AuditIssueType.InvalidChar);
+            _lastAuditSummary.GraveyardTreeBytes = _lastAuditItems.Where(x => x.HasIssue(AuditIssueType.GraveyardTree)).Sum(x => x.Size);
+            _lastAuditSummary.GraveyardTreeCount = _lastAuditItems.Count(x => x.HasIssue(AuditIssueType.GraveyardTree));
+            _lastAuditSummary.PathTooLongCount = _lastAuditItems.Count(x => x.HasIssue(AuditIssueType.PathTooLong));
+            _lastAuditSummary.InvalidCharCount = _lastAuditItems.Count(x => x.HasIssue(AuditIssueType.InvalidChar));
+            _lastAuditSummary.ReadyToCleanBytes = _lastAuditItems
+                .Where(x => !x.IsOriginalCandidate && !x.IsIgnored && (x.HasIssue(AuditIssueType.Duplicate) ||
+                    x.HasIssue(AuditIssueType.VersionFamily) || x.HasIssue(AuditIssueType.ExtractedArchive) ||
+                    x.HasIssue(AuditIssueType.GraveyardTree)))
+                .Sum(x => x.Size);
 
             if (AuditKpiReadyToClean != null) AuditKpiReadyToClean.Text = _lastAuditSummary.ReadyToCleanSizeFormatted;
             if (AuditKpiVersionFamily != null) AuditKpiVersionFamily.Text = _lastAuditSummary.VersionFamilySizeFormatted;
@@ -802,8 +877,8 @@ namespace AstraSize
 
                 sb.AppendLine();
                 sb.AppendLine(isJa
-                    ? "この点数は整理候補の優先度で、削除してよい確率ではありません。"
-                    : "This score ranks cleanup candidates; it is not a probability that deletion is safe.");
+                    ? "複数の理由は加算するため100点を超えることがあります。点数は優先度で、削除してよい確率ではありません。"
+                    : "Independent reasons add up, so scores can exceed 100. This ranks candidates; it is not a deletion safety probability.");
                 if (!item.IsCleanable)
                 {
                     sb.AppendLine(isJa ? "この行は安全上、削除対象にできません。" : "This item is protected from deletion.");

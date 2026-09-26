@@ -27,6 +27,9 @@ public partial class HostService
         public readonly List<SearchResultDto> RecentSearchResults = new();
         public long SearchFirstSequence;
         public long SearchNextSequence;
+        public readonly List<AuditItemDto> RecentAuditResults = new();
+        public long AuditFirstSequence;
+        public long AuditNextSequence;
         public AuditReportDto? AuditReport;
         public SkeletonDeployResultDto? SkeletonResult;
         public string? PackageDirectory;
@@ -65,6 +68,38 @@ public partial class HostService
                     HadGap = afterSequence < SearchFirstSequence,
                     NextSequence = start + count,
                     Results = RecentSearchResults.GetRange(offset, count)
+                };
+            }
+        }
+
+        public void AppendAuditBatch(IReadOnlyList<AuditItem> batch)
+        {
+            var mapped = batch.Select(AuditDtoMapper.ToDto).ToList();
+            lock (Gate)
+            {
+                RecentAuditResults.AddRange(mapped);
+                AuditNextSequence += mapped.Count;
+                if (RecentAuditResults.Count > 2048)
+                {
+                    int discard = RecentAuditResults.Count - 2048;
+                    RecentAuditResults.RemoveRange(0, discard);
+                    AuditFirstSequence += discard;
+                }
+            }
+        }
+
+        public AuditJobResultsDto GetAuditResults(long afterSequence, int maxResults)
+        {
+            lock (Gate)
+            {
+                long start = Math.Clamp(afterSequence, AuditFirstSequence, AuditNextSequence);
+                int offset = checked((int)(start - AuditFirstSequence));
+                int count = Math.Min(Math.Clamp(maxResults, 1, 256), RecentAuditResults.Count - offset);
+                return new AuditJobResultsDto
+                {
+                    HadGap = afterSequence < AuditFirstSequence,
+                    NextSequence = start + count,
+                    Results = RecentAuditResults.GetRange(offset, count)
                 };
             }
         }
@@ -167,11 +202,12 @@ public partial class HostService
                     }
                     break;
                 case HostJobKind.AuditScan:
-                    var auditProgress = new Progress<string>(message =>
+                    var auditProgress = new InlineProgress<string>(message =>
                     {
                         lock (job.Gate) job.ProgressText = message;
                     });
-                    var report = await RunAuditScanAsync(request.AuditRequest!, auditProgress, job.Cancellation.Token);
+                    var auditBatches = new InlineProgress<IReadOnlyList<AuditItem>>(job.AppendAuditBatch);
+                    var report = await RunAuditScanCoreAsync(request.AuditRequest!, auditProgress, auditBatches, job.Cancellation.Token);
                     job.Cancellation.Token.ThrowIfCancellationRequested();
                     lock (job.Gate) job.AuditReport = report;
                     break;
@@ -226,6 +262,14 @@ public partial class HostService
         if (job.Kind is not (HostJobKind.Search or HostJobKind.CachedSearch))
             throw new InvalidOperationException("Job does not contain search results.");
         return Task.FromResult(job.GetSearchResults(afterSequence, maxResults));
+    }
+
+    public Task<AuditJobResultsDto> GetAuditJobResultsAsync(Guid jobId, long afterSequence, int maxResults)
+    {
+        if (!_jobs.TryGetValue(jobId, out var job)) throw new KeyNotFoundException("Host job not found.");
+        if (job.Kind != HostJobKind.AuditScan)
+            throw new InvalidOperationException("Job does not contain audit results.");
+        return Task.FromResult(job.GetAuditResults(afterSequence, maxResults));
     }
 
     public Task<bool> CancelJobAsync(Guid jobId)
