@@ -29,6 +29,8 @@ namespace FolderMorpher.Contracts
         Task<bool> HasCachedTreeAsync(string targetPath);
         Task SaveTreeCacheAsync(StorageNodeDto rootNode);
         Task<List<ScanSnapshotDto>> GetStorageHistoryAsync(string targetPath);
+        Task<List<StorageTopFileDto>> GetStorageTopFilesAsync(StorageNodeDto node, CancellationToken ct);
+        Task<StorageForecastDto> AnalyzeStorageHistoryAsync(List<ScanSnapshotDto> history, long thresholdBytes, CancellationToken ct);
 
         // ==========================================
         // 3. Tab 2: Search Studio
@@ -85,6 +87,11 @@ namespace FolderMorpher.Contracts
         // 7. Tab 6: Audit & Hygiene
         // ==========================================
         Task<AuditReportDto> RunAuditScanAsync(AuditScanRequestDto request, IProgress<string>? progress, CancellationToken ct);
+        Task<List<Guid>> SortAuditIdsAsync(Guid reportId, List<Guid> visibleIds, string sortProperty, bool descending, CancellationToken ct);
+        Task AddAuditIgnoreAsync(AuditItemDto item, CancellationToken ct);
+        Task<List<AuditIgnoreItemDto>> GetAuditIgnoresAsync();
+        Task ClearAuditIgnoresAsync();
+        Task<int> GetAuditIgnoreCountAsync();
         Task<AuditCleanupPreviewDto> PrepareAuditCleanupAsync(AuditCleanupPrepareRequestDto request, CancellationToken ct);
         Task<AuditCleanupResultDto> CommitAuditCleanupAsync(Guid planId, CancellationToken ct);
 

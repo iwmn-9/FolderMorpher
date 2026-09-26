@@ -74,10 +74,7 @@ namespace FolderMorpher.Services.Testing
             {
                 throw new InvalidOperationException($"TreeDiff 差分計算エラー: Sales の増分が不正です ({newSubA.DiffBytes})");
             }
-            if (!newSubA.HasDiff || string.IsNullOrEmpty(newSubA.DiffFormatted) || !newSubA.DiffFormatted.Contains("+50 MB ▲"))
-            {
-                throw new InvalidOperationException($"TreeDiff バッジエラー: Sales の増分バッジ表示が不正です ({newSubA.DiffFormatted})");
-            }
+            if (!newSubA.HasDiff) throw new InvalidOperationException("TreeDiff 増分判定が不正です。");
             if (newSubB.DiffBytes != 0 || newSubB.HasDiff)
             {
                 throw new InvalidOperationException("TreeDiff 差分誤爆エラー: 変化のない Dev に差分が検出されています。");
@@ -115,19 +112,14 @@ namespace FolderMorpher.Services.Testing
             var child = new FileItemNode(@"C:\Root\Sub", "Sub", 400, true) { Parent = parent, Level = 1 };
             parent.Children.Add(child);
 
-            // HasChildren, ExpandIcon, IconGlyph, FontWeight
+            // Facts and expansion state used by the cache.
             if (!parent.HasChildren) throw new InvalidOperationException("UI Binding Error: parent.HasChildren should be true");
-            if (parent.ExpandIcon != "▶") throw new InvalidOperationException($"UI Binding Error: parent.ExpandIcon was '{parent.ExpandIcon}', expected '▶'");
             parent.IsExpanded = true;
-            if (parent.ExpandIcon != "▼") throw new InvalidOperationException($"UI Binding Error: parent.ExpandIcon was '{parent.ExpandIcon}', expected '▼'");
-            if (parent.IconGlyph != "📁") throw new InvalidOperationException($"UI Binding Error: parent.IconGlyph was '{parent.IconGlyph}', expected '📁'");
-            if (parent.FontWeight != "Bold") throw new InvalidOperationException("UI Binding Error: parent.FontWeight should be Bold");
 
             // SharePercentage, IsDriveRoot, ShareFormatted
             child.Percentage = 40.0;
             if (Math.Abs(child.SharePercentage - 40.0) > 0.001) throw new InvalidOperationException("UI Binding Error: child.SharePercentage should be 40.0");
             if (child.IsDriveRoot) throw new InvalidOperationException("UI Binding Error: child.IsDriveRoot should be false");
-            if (child.ShareFormatted != "40.0%") throw new InvalidOperationException($"UI Binding Error: child.ShareFormatted was '{child.ShareFormatted}', expected '40.0%'");
 
             // 2. TreeCache の IsExpanded 永続化と復元の検証
             var historyService = new StorageHistoryService();

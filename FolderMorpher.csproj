@@ -18,16 +18,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ClosedXML" Version="0.105.1" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Compile Include="App.xaml.cs" />
     <Compile Include="Bootstrap.cs" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="FolderMorpher.Core\FolderMorpher.Core.csproj" />
     <ProjectReference Include="FolderMorpher.Contracts\FolderMorpher.Contracts.csproj" />
     <ProjectReference Include="FolderMorpher.Host\FolderMorpher.Host.csproj" />
     <ProjectReference Include="FolderMorpher.UI\FolderMorpher.UI.csproj" />

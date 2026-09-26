@@ -141,6 +141,7 @@ namespace AstraSize
                         Console.WriteLine($"[TEST-IPC] Host Status: IsRunning={status.IsRunning}, PID={status.ProcessId}, User={status.UserName}");
                         if (!pong || !status.IsRunning || status.ProcessId == Environment.ProcessId)
                             throw new InvalidOperationException("Host must respond from a separate process.");
+                        FolderMorpher.UI.PresentationTestRunner.VerifyStorageNodePresentation();
 
                         var testRoot = Path.Combine(Path.GetTempPath(), $"FolderMorpher_IpcTest_{Guid.NewGuid():N}");
                         Directory.CreateDirectory(testRoot);
@@ -155,6 +156,17 @@ namespace AstraSize
                                 throw new InvalidOperationException($"Storage DTO roundtrip failed: {scan.ErrorMessage}");
                             if (Math.Abs(scan.RootNode.Children[0].PercentageOfRoot - 100.0) > 0.01)
                                 throw new InvalidOperationException("Storage percentage was lost at the IPC boundary.");
+                            var topFiles = await host.GetStorageTopFilesAsync(scan.RootNode, testCts.Token);
+                            if (!topFiles.Any(file => file.FullPath == matchFile))
+                                throw new InvalidOperationException("Storage top files DTO roundtrip failed.");
+                            var forecast = await host.AnalyzeStorageHistoryAsync(new()
+                            {
+                                new() { Id = "history-1", Timestamp = DateTime.UtcNow.AddDays(-2), TotalBytes = 1024 },
+                                new() { Id = "history-2", Timestamp = DateTime.UtcNow.AddDays(-1), TotalBytes = 2048 },
+                                new() { Id = "history-3", Timestamp = DateTime.UtcNow, TotalBytes = 3072 }
+                            }, 4096, testCts.Token);
+                            if (forecast.TotalScans != 3 || forecast.LinearRegression is not { Slope: > 0 })
+                                throw new InvalidOperationException("Storage forecast DTO roundtrip failed.");
                             Console.WriteLine($"[TEST-IPC] StorageScan: {scan.TotalFiles} file(s)");
                             var sourceChildPath = Path.Combine(testRoot, "source-folder");
                             Directory.CreateDirectory(sourceChildPath);
@@ -245,6 +257,13 @@ namespace AstraSize
                             var completedAuditReport = auditJob.AuditReport ?? throw new InvalidOperationException("Host audit job did not return its report.");
                             if (completedAuditReport.Summary.TotalFilesScanned < 1)
                                 throw new InvalidOperationException("Host audit job did not return its report.");
+                            var sortedAuditIds = await host.SortAuditIdsAsync(completedAuditReport.ReportId,
+                                completedAuditReport.Items.Select(item => item.AuditId).ToList(), "Size", true, testCts.Token);
+                            if (sortedAuditIds.Count != completedAuditReport.Items.Count)
+                                throw new InvalidOperationException("Audit sort IDs were lost across IPC.");
+                            var ignoreCount = await host.GetAuditIgnoreCountAsync();
+                            if ((await host.GetAuditIgnoresAsync()).Count != ignoreCount)
+                                throw new InvalidOperationException("Audit ignore list/count DTO roundtrip failed.");
                             Console.WriteLine($"[TEST-IPC] Audit Job: {completedAuditReport.Summary.TotalFilesScanned} file(s)");
                             await host.ReleaseJobAsync(auditJobId);
 
@@ -400,7 +419,7 @@ namespace AstraSize
                 {
                     try
                     {
-                        bool allPassed = await FolderMorpher.Services.Testing.RegressionTestSuite.RunAllTestsAsync();
+                        bool allPassed = await FolderMorpher.Host.TestCommandRunner.RunRegressionAsync();
                         Console.Out.Flush();
                         Environment.Exit(allPassed ? 0 : 1);
                     }
@@ -420,12 +439,7 @@ namespace AstraSize
                 {
                     try
                     {
-                        Console.WriteLine($"[TEST-SCAN] Target: {testScanPath}");
-                        var scanService = new AstraSize.Services.DiskScanService();
-                        using var cts = new System.Threading.CancellationTokenSource();
-                        var (root, summary) = await scanService.ScanPathAsync(testScanPath, null, cts.Token);
-                        Console.WriteLine($"[TEST-SCAN] Mode: {summary.ScanMode}, TotalSize: {root.SizeBytes} bytes, Files: {summary.TotalFiles}, Folders: {summary.TotalFolders}, Time: {summary.ElapsedSeconds}s");
-                        Console.WriteLine("[TEST-SCAN] ALL PASSED");
+                        await FolderMorpher.Host.TestCommandRunner.RunScanAsync(testScanPath);
                         Environment.Exit(0);
                     }
                     catch (Exception ex)
@@ -443,55 +457,7 @@ namespace AstraSize
                 {
                     try
                     {
-                        Console.WriteLine($"[TEST] === FolderMorpher 自動統合テスト開始: {testSuiteDir} ===");
-
-                        // 1. Audit Test
-                        var auditService = new FolderMorpher.Services.AuditReportService();
-                        var opt = new FolderMorpher.Models.AuditOptions
-                        {
-                            TargetDirectory = testSuiteDir,
-                            CheckDuplicates = true,
-                            CheckDormant = true,
-                            DormantYearsThreshold = 3.0,
-                            CheckPathLimits = true,
-                            MinFileSizeBytes = 1000
-                        };
-                        using var cts = new System.Threading.CancellationTokenSource();
-                        var (summary, items) = await auditService.RunAuditAsync(opt, null, cts.Token);
-                        Console.WriteLine($"[TEST-AUDIT] 総ファイル: {summary.TotalFilesScanned}, 重複: {summary.DuplicateCount}, 休眠: {summary.DormantCount}, 禁則: {summary.InvalidCharCount}, 課題数: {items.Count}");
-
-                        // 2. CSV Export Test
-                        string csvOut = Path.Combine(testSuiteDir, "test_audit.csv");
-                        auditService.ExportAuditCsv(csvOut, items);
-                        Console.WriteLine($"[TEST-CSV] CSV出力: {(File.Exists(csvOut) ? "成功" : "失敗")}");
-
-                        // 3. GPO Script Test
-                        var linkFixService = new FolderMorpher.Services.LinkFixService();
-                        string gpoOut = Path.Combine(testSuiteDir, "test_gpo.ps1");
-                        linkFixService.GenerateGpoLogonScript(gpoOut, @"\\OldServer\Share", @"\\NewServer\Share");
-                        Console.WriteLine($"[TEST-GPO] GPOスクリプト出力: {(File.Exists(gpoOut) ? "成功" : "失敗")}");
-
-                        // 5. Media Optimizer Test
-                        var mediaService = new FolderMorpher.Services.MediaOptimizerService();
-                        var mediaOpt = new FolderMorpher.Models.MediaOptimizeOptions
-                        {
-                            TargetDirectory = testSuiteDir,
-                            MinImageSizeBytes = 10
-                        };
-                        var (images, videos) = await mediaService.ScanMediaAsync(mediaOpt, null, cts.Token);
-                        Console.WriteLine($"[TEST-MEDIA] 画像: {images.Count}, 動画: {videos.Count}, 聖域保護画像: {images.Count(i => i.IsExcluded)}");
-
-                        string videoBatOut = Path.Combine(testSuiteDir, "test_video_nightly.bat");
-                        mediaService.GenerateVideoCompressBatch(videoBatOut, videos);
-                        Console.WriteLine($"[TEST-VIDEO-BAT] 夜間動画バッチ出力: {(File.Exists(videoBatOut) ? "成功" : "失敗")}");
-
-                        // 6. Excel Report Test
-                        var excelService = new FolderMorpher.Services.ExcelReportService();
-                        string excelOut = Path.Combine(testSuiteDir, "test_report.xlsx");
-                        excelService.GenerateComprehensiveReport(excelOut, testSuiteDir, summary, items, null, images.Concat(videos).ToList());
-                        Console.WriteLine($"[TEST-EXCEL] Excelレポート出力: {(File.Exists(excelOut) ? "成功 (サイズ: " + new FileInfo(excelOut).Length + " bytes)" : "失敗")}");
-
-                        Console.WriteLine("[TEST] === 全テスト完了: ALL PASSED ===");
+                        await FolderMorpher.Host.TestCommandRunner.RunSuiteAsync(testSuiteDir);
                         Environment.Exit(0);
                     }
                     catch (Exception ex)

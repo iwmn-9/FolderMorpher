@@ -30,6 +30,14 @@ public sealed class AuditItemDto
     public List<AuditScoreFactorDto> ScoreBreakdown { get; set; } = new();
 }
 
+public sealed class AuditIgnoreItemDto
+{
+    public string FullPath { get; set; } = string.Empty;
+    public long FileSizeBytes { get; set; }
+    public long LastWriteTimeUtcTicks { get; set; }
+    public DateTime IgnoredAt { get; set; }
+}
+
 public sealed class ScanCoverageDto
 {
     public int TotalFoldersScanned { get; set; }

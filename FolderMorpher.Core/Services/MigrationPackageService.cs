@@ -304,7 +304,7 @@ namespace FolderMorpher.Services
             sb.AppendLine($"echo ==================================================================");
             sb.AppendLine($"echo   [FolderMorpher] {wave.WaveName}");
             sb.AppendLine($"echo   実行モード: {mode}{(dryRun ? " 【DRY-RUN (シミュレーション・書き込みなし)】" : "")}");
-            sb.AppendLine($"echo   想定容量  : {wave.TotalSizeFormatted} ({wave.TotalFileCountFormatted})");
+            sb.AppendLine($"echo   想定容量  : {FormatHelper.FormatBytes(wave.TotalSizeBytes, 2)} ({WaveDisplayFormat.FormatFileCount(wave.TotalFileCount)})");
             sb.AppendLine($"echo ==================================================================");
             sb.AppendLine("echo.");
             sb.AppendLine("echo 処理を開始するには何かキーを押してください。中断する場合は Ctrl+C を押してください。");
@@ -607,7 +607,7 @@ namespace FolderMorpher.Services
                 if (w.HasHighFileCountWarning) warn += "⚠️ 小ファイル過多(/MT:32推奨) ";
                 if (string.IsNullOrEmpty(warn)) warn = "―";
 
-                sb.AppendLine($"| Wave {w.WaveNumber} | {w.WaveName.Replace($"Wave {w.WaveNumber}:", "").Trim()} | {w.TotalSizeFormatted} | {w.TotalFileCountFormatted} | {w.FullCopyTimeFormatted} | {w.CutoverTimeFormatted} | {warn} |");
+                sb.AppendLine($"| Wave {w.WaveNumber} | {w.WaveName.Replace($"Wave {w.WaveNumber}:", "").Trim()} | {FormatHelper.FormatBytes(w.TotalSizeBytes, 2)} | {WaveDisplayFormat.FormatFileCount(w.TotalFileCount)} | {WaveDisplayFormat.FormatDuration(w.EstimatedFullCopyTime)} | {WaveDisplayFormat.FormatDuration(w.EstimatedCutoverTime)} | {warn} |");
             }
             sb.AppendLine();
             sb.AppendLine("---");

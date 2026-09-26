@@ -4,8 +4,8 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:local="clr-namespace:AstraSize.Views"
-             xmlns:models="clr-namespace:AstraSize.Models;assembly=FolderMorpher.Core"
-             xmlns:eff="clr-namespace:FolderMorpher.Models;assembly=FolderMorpher.Core"
+             xmlns:models="clr-namespace:AstraSize.Models"
+             xmlns:eff="clr-namespace:FolderMorpher.Models"
              mc:Ignorable="d" 
              d:DesignHeight="800" d:DesignWidth="1200">
     <Grid>

@@ -47,6 +47,7 @@ namespace AstraSize
         private readonly List<ScanSnapshot> _history;
         private long _targetThresholdBytes;
         private StorageForecastReport? _currentReport;
+        private long _forecastRevision;
         private List<HistoryRowItem> _rowItems = new();
 
         public HistoryWindow(string targetPath, List<ScanSnapshot> history)
@@ -73,7 +74,7 @@ namespace AstraSize
             }
             else
             {
-                RecalculateAndRender();
+                _ = RecalculateAndRenderAsync();
             }
         }
 
@@ -115,12 +116,24 @@ namespace AstraSize
             CloseButton.Content = Strings.Close;
         }
 
-        private void RecalculateAndRender()
+        private async Task RecalculateAndRenderAsync()
         {
             if (_history.Count == 0) return;
-
-            // 数理解析エンジンの実行
-            _currentReport = StorageForecastingService.Instance.Analyze(_history, _targetThresholdBytes);
+            var revision = ++_forecastRevision;
+            try
+            {
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var report = await host.AnalyzeStorageHistoryAsync(
+                    _history.Select(FolderMorpher.HostClient.HistoryDtoMapper.ToDto).ToList(),
+                    _targetThresholdBytes, CancellationToken.None);
+                if (revision != _forecastRevision) return;
+                _currentReport = FolderMorpher.HostClient.HistoryDtoMapper.ToView(report);
+            }
+            catch (Exception ex)
+            {
+                ForecastSummaryFooterText.Text = $"予測の計算に失敗しました: {ex.Message}";
+                return;
+            }
 
             // 行 ViewModel リストの生成
             BuildHistoryRows();
@@ -766,7 +779,7 @@ namespace AstraSize
             {
                 _targetThresholdBytes = bytes;
                 ThresholdInputTextBox.Text = FormatBytesToInputString(bytes);
-                RecalculateAndRender();
+                _ = RecalculateAndRenderAsync();
             }
         }
 

@@ -34,11 +34,11 @@ public partial class HostService
                     sheet.Cell(row, 1).Value = item.IsDirectory ? "フォルダ" : "ファイル";
                     sheet.Cell(row, 2).Value = item.Name;
                     sheet.Cell(row, 3).Value = item.SizeBytes;
-                    sheet.Cell(row, 4).Value = item.FormattedSize;
-                    sheet.Cell(row, 5).Value = item.FormattedDate;
+                    sheet.Cell(row, 4).Value = item.IsDirectory ? "-" : FormatHelper.FormatBytes(item.SizeBytes, 2);
+                    sheet.Cell(row, 5).Value = item.LastWriteTime != DateTime.MinValue ? item.LastWriteTime.ToString("yyyy/MM/dd HH:mm:ss") : "-";
                     sheet.Cell(row, 6).Value = item.Extension;
                     sheet.Cell(row, 7).Value = item.PathLength;
-                    sheet.Cell(row, 8).Value = item.DisplaySnippetOrReason;
+                    sheet.Cell(row, 8).Value = item.HasSnippet ? item.ContentSnippet : item.MatchedReason;
                     sheet.Cell(row, 9).Value = item.FullPath;
                     if (item.IsPathLengthRisk)
                     {
@@ -59,8 +59,10 @@ public partial class HostService
                     rows.Add(string.Join(',', new[]
                     {
                         item.IsDirectory ? "Folder" : "File", CsvCell(item.Name), item.SizeBytes.ToString(),
-                        CsvCell(item.FormattedSize), CsvCell(item.FormattedDate), CsvCell(item.Extension),
-                        item.PathLength.ToString(), CsvCell(item.DisplaySnippetOrReason), CsvCell(item.FullPath)
+                        CsvCell(item.IsDirectory ? "-" : FormatHelper.FormatBytes(item.SizeBytes, 2)),
+                        CsvCell(item.LastWriteTime != DateTime.MinValue ? item.LastWriteTime.ToString("yyyy/MM/dd HH:mm:ss") : "-"),
+                        CsvCell(item.Extension), item.PathLength.ToString(),
+                        CsvCell(item.HasSnippet ? item.ContentSnippet! : item.MatchedReason), CsvCell(item.FullPath)
                     }));
                 }
                 File.WriteAllLines(outputPath, rows, new UTF8Encoding(true));
@@ -89,8 +91,8 @@ public partial class HostService
                 var lines = new List<string> { "名前,パス,容量,全体占有率,ファイル数,フォルダ数,最終更新" };
                 lines.AddRange(rows.Select(row => string.Join(',', new[]
                 {
-                    CsvCell(row.Name), CsvCell(row.FullPath), CsvCell(row.FormattedSize),
-                    CsvCell(row.PercentageFormatted), CsvCell(row.FileCount.ToString()),
+                    CsvCell(row.Name), CsvCell(row.FullPath), CsvCell(FormatHelper.FormatBytes(row.Size)),
+                    CsvCell(row.IsRoot ? "―" : $"{row.Percentage:F1}%"), CsvCell(row.FileCount.ToString()),
                     CsvCell(row.FolderCount.ToString()), CsvCell(row.LastModified?.ToString("yyyy/MM/dd HH:mm") ?? "")
                 })));
                 File.WriteAllLines(outputPath, lines, new UTF8Encoding(true));

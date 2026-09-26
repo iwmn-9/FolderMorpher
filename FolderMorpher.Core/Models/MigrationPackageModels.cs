@@ -30,7 +30,7 @@ namespace FolderMorpher.Models
     /// <summary>
     /// 単一の移行波次（Wave）の計画データ
     /// </summary>
-    public class MigrationWavePlan
+    public partial class MigrationWavePlan
     {
         public int WaveNumber { get; set; } = 1;
         public string WaveName { get; set; } = string.Empty;
@@ -39,17 +39,6 @@ namespace FolderMorpher.Models
         public long TotalSizeBytes { get; set; }
         public long? TotalFileCount { get; set; }
 
-        public string TotalSizeFormatted => FormatHelper.FormatBytes(TotalSizeBytes, 2);
-        public string TotalFileCountFormatted
-        {
-            get
-            {
-                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                return TotalFileCount.HasValue
-                    ? (isJa ? $"{TotalFileCount.Value:N0} 件" : $"{TotalFileCount.Value:N0} files")
-                    : (isJa ? "未計測 (-)" : "Unmeasured (-)");
-            }
-        }
 
         /// <summary>
         /// 初回フル同期想定時間（転送レートに基づく）
@@ -61,8 +50,6 @@ namespace FolderMorpher.Models
         /// </summary>
         public TimeSpan EstimatedCutoverTime { get; set; }
 
-        public string FullCopyTimeFormatted => FormatTimeSpan(EstimatedFullCopyTime);
-        public string CutoverTimeFormatted => FormatTimeSpan(EstimatedCutoverTime);
 
         /// <summary>
         /// 実測ファイル数が10万件超（ランダムI/O過多警告）
@@ -79,22 +66,6 @@ namespace FolderMorpher.Models
         /// </summary>
         public List<string> MappedSourcePaths { get; set; } = new();
 
-        private static string FormatTimeSpan(TimeSpan ts)
-        {
-            if (ts.TotalDays >= 1.0)
-            {
-                return $"{(int)ts.TotalDays}d {ts.Hours}h {ts.Minutes}m";
-            }
-            if (ts.TotalHours >= 1.0)
-            {
-                return $"{(int)ts.TotalHours}h {ts.Minutes}m";
-            }
-            if (ts.TotalMinutes >= 1.0)
-            {
-                return $"{(int)ts.TotalMinutes}m {ts.Seconds}s";
-            }
-            return $"{Math.Max(1, (int)ts.TotalSeconds)}s";
-        }
     }
 
     /// <summary>

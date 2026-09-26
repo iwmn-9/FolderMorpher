@@ -4,42 +4,33 @@ using FolderMorpher.Services;
 
 namespace AstraSize.Models
 {
-    public class LargestFileInfo
+    public partial class LargestFileInfo
     {
         public string Name { get; set; } = string.Empty;
         public string FullPath { get; set; } = string.Empty;
         public long Size { get; set; }
-        public string FormattedSize => FileItemNode.FormatBytes(Size);
         public string Extension { get; set; } = string.Empty;
         public string Category { get; set; } = string.Empty;
 
-        private TablerBadgeInfo BadgeInfo => TablerBadgeHelper.GetBadge(string.IsNullOrEmpty(Extension) ? FullPath : Extension, false);
-        public string BadgeText => BadgeInfo.Text;
-        public string BadgeBackground => BadgeInfo.Background;
-        public string BadgeBorderBrush => BadgeInfo.BorderBrush;
-        public string BadgeForeground => BadgeInfo.Foreground;
     }
 
-    public class ExtensionStat
+    public partial class ExtensionStat
     {
         public string Extension { get; set; } = string.Empty;
         public long TotalSize { get; set; }
         public int FileCount { get; set; }
         public double Percentage { get; set; }
-        public string FormattedSize => FileItemNode.FormatBytes(TotalSize);
-        public string PercentageFormatted => $"{Percentage:F1}%";
     }
 
-    public class CleanupCandidate
+    public partial class CleanupCandidate
     {
         public string Name { get; set; } = string.Empty;
         public string FullPath { get; set; } = string.Empty;
         public long Size { get; set; }
-        public string FormattedSize => FileItemNode.FormatBytes(Size);
         public string Reason { get; set; } = string.Empty;
     }
 
-    public class ScanSummary
+    public partial class ScanSummary
     {
         public string TargetPath { get; set; } = string.Empty;
         public long TotalBytes { get; set; }
@@ -64,7 +55,5 @@ namespace AstraSize.Models
             }
         }
 
-        public string FormattedCleanupTotal => FileItemNode.FormatBytes(CleanupTotalBytes);
-        public string FormattedTotalSize => FileItemNode.FormatBytes(TotalBytes);
     }
 }

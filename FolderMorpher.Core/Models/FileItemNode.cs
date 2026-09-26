@@ -7,7 +7,7 @@ using FolderMorpher.Services;
 
 namespace AstraSize.Models
 {
-    public class FileItemNode : INotifyPropertyChanged
+    public partial class FileItemNode : INotifyPropertyChanged
     {
         public string Name { get; set; } = string.Empty;
         public string FullPath { get; set; } = string.Empty;
@@ -35,29 +35,16 @@ namespace AstraSize.Models
                 {
                     _diffBytes = value;
                     OnPropertyChanged(nameof(DiffBytes));
-                    OnPropertyChanged(nameof(DiffFormatted));
+                    OnPropertyChanged("DiffFormatted");
                     OnPropertyChanged(nameof(HasDiff));
-                    OnPropertyChanged(nameof(DiffBadgeBackground));
-                    OnPropertyChanged(nameof(DiffBadgeForeground));
+                    OnPropertyChanged("DiffBadgeBackground");
+                    OnPropertyChanged("DiffBadgeForeground");
                 }
             }
         }
 
         public bool HasDiff => DiffBytes.HasValue && DiffBytes.Value != 0;
 
-        public string? DiffFormatted
-        {
-            get
-            {
-                if (!DiffBytes.HasValue || DiffBytes.Value == 0) return null;
-                if (DiffBytes.Value > 0)
-                    return $"+{FormatBytes(DiffBytes.Value)} ▲";
-                return $"-{FormatBytes(Math.Abs(DiffBytes.Value))} ▼";
-            }
-        }
-
-        public string DiffBadgeBackground => (DiffBytes.HasValue && DiffBytes.Value > 0) ? "#FEE2E2" : "#E0F2FE";
-        public string DiffBadgeForeground => (DiffBytes.HasValue && DiffBytes.Value > 0) ? "#DC2626" : "#0284C7";
 
         public FileItemNode()
         {
@@ -80,30 +67,6 @@ namespace AstraSize.Models
 
         public bool HasChildren => CanExpand;
 
-        public string ExpandGlyph
-        {
-            get => !CanExpand ? "" : IsExpanded ? "▼" : "▶";
-            set { }
-        }
-
-        public string ExpandIcon => ExpandGlyph;
-
-        public string IconGlyph => IsDirectory ? "📁" : "📄";
-
-        private TablerBadgeInfo BadgeInfo => TablerBadgeHelper.GetBadge(FullPath, IsDirectory);
-        public string BadgeText => BadgeInfo.Text;
-        public string BadgeBackground => BadgeInfo.Background;
-        public string BadgeBorderBrush => BadgeInfo.BorderBrush;
-        public string BadgeForeground => BadgeInfo.Foreground;
-
-        public string FontWeight => IsDirectory ? "Bold" : "Normal";
-
-        public string IndentMargin
-        {
-            get => $"{Level * 16},0,0,0";
-            set { }
-        }
-
         private double _percentage;
         public double Percentage
         {
@@ -114,17 +77,16 @@ namespace AstraSize.Models
                 {
                     _percentage = value;
                     OnPropertyChanged(nameof(Percentage));
-                    OnPropertyChanged(nameof(PercentageFormatted));
-                    OnPropertyChanged(nameof(FormattedPercentage));
+                    OnPropertyChanged("PercentageFormatted");
+                    OnPropertyChanged("FormattedPercentage");
                     OnPropertyChanged(nameof(PercentageOfParent));
                     OnPropertyChanged(nameof(SharePercentage));
-                    OnPropertyChanged(nameof(ShareFormatted));
+                    OnPropertyChanged("ShareFormatted");
                 }
             }
         }
 
         public bool IsRoot => Parent == null;
-        public string PercentageDisplay => IsRoot ? "―" : $"{Percentage:F1}%";
 
         public double PercentageOfParent
         {
@@ -140,44 +102,6 @@ namespace AstraSize.Models
 
         public bool IsDriveRoot => IsRoot;
 
-        public string ShareFormatted => PercentageFormatted;
-
-        public string FormattedSize
-        {
-            get => FormatBytes(Size);
-            set { }
-        }
-
-        public string PercentageFormatted
-        {
-            get => IsRoot ? "―" : $"{Percentage:F1}%";
-            set { }
-        }
-
-        public string FormattedPercentage
-        {
-            get => IsRoot ? "―" : $"{Percentage:0.#}%";
-            set { }
-        }
-
-        public string FormattedFileCount
-        {
-            get => $"{FileCount:N0}";
-            set { }
-        }
-
-        public string FormattedFolderCount
-        {
-            get => $"{FolderCount:N0}";
-            set { }
-        }
-
-        public string FormattedLastModified
-        {
-            get => LastModified?.ToString("yyyy/MM/dd HH:mm") ?? "-";
-            set { }
-        }
-
         private bool _isExpanded;
         public bool IsExpanded
         {
@@ -188,7 +112,7 @@ namespace AstraSize.Models
                 {
                     _isExpanded = value;
                     OnPropertyChanged(nameof(IsExpanded));
-                    OnPropertyChanged(nameof(ExpandGlyph));
+                    OnPropertyChanged("ExpandGlyph");
                 }
             }
         }
@@ -251,24 +175,4 @@ namespace AstraSize.Models
         protected void OnPropertyChanged(string prop) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(prop));
     }
 
-    public class FolderChildShareItem
-    {
-        public FileItemNode OriginalNode { get; set; } = null!;
-        public string Name { get; set; } = string.Empty;
-        public string FullPath { get; set; } = string.Empty;
-        public long Size { get; set; }
-        public string FormattedSize => FileItemNode.FormatBytes(Size);
-        public bool IsDirectory { get; set; }
-        public string IconGlyph => IsDirectory ? "📁" : "📄";
-
-        private TablerBadgeInfo BadgeInfo => TablerBadgeHelper.GetBadge(FullPath, IsDirectory);
-        public string BadgeText => BadgeInfo.Text;
-        public string BadgeBackground => BadgeInfo.Background;
-        public string BadgeBorderBrush => BadgeInfo.BorderBrush;
-        public string BadgeForeground => BadgeInfo.Foreground;
-        public double RelativeSharePercentage { get; set; }
-        public string RelativeShareFormatted => $"{RelativeSharePercentage:F1}%";
-        public int FileCount { get; set; }
-        public int FolderCount { get; set; }
-    }
 }

@@ -336,7 +336,7 @@ namespace FolderMorpher.Services
                 string dest = Path.Combine(v.DirectoryPath, Path.GetFileNameWithoutExtension(v.FileName) + "_compressed.mp4");
                 string destEscaped = ScriptEscaper.EscapeBatPath(dest);
 
-                sb.AppendLine($"echo 処理中: \"{v.FileName.Replace("%", "%%").Replace("\"", "")}\" ({v.OriginalSizeFormatted})...");
+                sb.AppendLine($"echo 処理中: \"{v.FileName.Replace("%", "%%").Replace("\"", "")}\" ({FormatHelper.FormatBytes(v.OriginalSizeBytes, 2)})...");
                 // NVIDIA NVENC を優先し、不可なら CPU libx265 CRF 26 で圧縮
                 sb.AppendLine($"ffmpeg -hide_banner -y -i {origEscaped} -c:v hevc_nvenc -preset p5 -cq 26 -c:a aac -b:a 128k {destEscaped} 2>nul || " +
                               $"ffmpeg -hide_banner -y -i {origEscaped} -c:v libx265 -crf 26 -preset fast -c:a aac -b:a 128k {destEscaped}");

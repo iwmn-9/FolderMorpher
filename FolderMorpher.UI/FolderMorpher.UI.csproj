@@ -3,6 +3,7 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <OutputType>Library</OutputType>
     <UseWPF>true</UseWPF>
+    <DefineConstants>$(DefineConstants);FOLDERMORPHER_UI</DefineConstants>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
@@ -14,6 +15,18 @@
   <ItemGroup>
     <Compile Include="ClientModeState.cs" />
     <Compile Include="SnapshotRunner.cs" />
+    <Compile Include="PresentationTestRunner.cs" />
+    <Compile Include="Models\**\*.cs" />
+    <Compile Include="..\FolderMorpher.Core\Models\*.cs" Exclude="..\FolderMorpher.Core\Models\ScanTabModel.cs" Link="Models\%(Filename)%(Extension)" />
+    <Compile Include="..\FolderMorpher.Core\Services\AppSettingsService.cs" Link="Services\AppSettingsService.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\AppStrings.cs" Link="Services\AppStrings.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\FormatHelper.cs" Link="Services\FormatHelper.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\LocalizationService.cs" Link="Services\LocalizationService.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\PathCanonicalizer.cs" Link="Services\PathCanonicalizer.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\SearchQueryParser.cs" Link="Services\SearchQueryParser.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\ShellHelper.cs" Link="Services\ShellHelper.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\TablerBadgeHelper.cs" Link="Services\TablerBadgeHelper.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\WaveDisplayFormat.cs" Link="Services\WaveDisplayFormat.cs" />
     <Page Include="..\MainWindow.xaml" Link="MainWindow.xaml" />
     <Page Include="..\HistoryWindow.xaml" Link="HistoryWindow.xaml" />
     <Page Include="..\Views\**\*.xaml" Link="Views\%(RecursiveDir)%(Filename)%(Extension)" />
@@ -30,6 +43,5 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FolderMorpher.Contracts\FolderMorpher.Contracts.csproj" />
-    <ProjectReference Include="..\FolderMorpher.Core\FolderMorpher.Core.csproj" />
   </ItemGroup>
 </Project>

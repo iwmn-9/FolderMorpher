@@ -14,7 +14,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using AstraSize.Models;
-using AstraSize.Services;
 using FolderMorpher.Models;
 using FolderMorpher.Services;
 using Microsoft.Win32;
@@ -36,6 +35,7 @@ namespace AstraSize
         private DispatcherTimer? _auditFilterDebounceTimer;
         private string _auditSortProperty = "Default";
         private bool _auditSortDescending = false;
+        private long _auditFilterRevision;
         private MediaOptimizeSummary? _lastMediaSummary;
         private List<MediaItem> _lastMediaImages = new();
         private List<MediaItem> _lastMediaVideos = new();

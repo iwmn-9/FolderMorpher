@@ -4,7 +4,7 @@ using FolderMorpher.Services;
 
 namespace FolderMorpher.Models
 {
-    public class MediaItem
+    public partial class MediaItem
     {
         public string FullPath { get; set; } = string.Empty;
         public string FileName { get; set; } = string.Empty;
@@ -16,11 +16,8 @@ namespace FolderMorpher.Models
             get => VersionStamp.Length;
             set => VersionStamp = new FileVersionStamp(value, VersionStamp.LastWriteTimeUtc);
         }
-        public string OriginalSizeFormatted => FormatHelper.FormatBytes(OriginalSizeBytes, 2);
         public long OptimizedSizeBytes { get; set; }
-        public string OptimizedSizeFormatted => OptimizedSizeBytes > 0 ? FormatHelper.FormatBytes(OptimizedSizeBytes, 2) : "―";
         public long SavedBytes => OriginalSizeBytes > OptimizedSizeBytes ? OriginalSizeBytes - OptimizedSizeBytes : 0;
-        public string SavedSizeFormatted => SavedBytes > 0 ? FormatHelper.FormatBytes(SavedBytes, 2) : "―";
         public double ReductionPercent => OriginalSizeBytes > 0 && SavedBytes > 0 ? (double)SavedBytes / OriginalSizeBytes * 100.0 : 0;
 
         public int Width { get; set; }
@@ -51,7 +48,7 @@ namespace FolderMorpher.Models
         public string? BackupDirectory { get; set; } = null; // nullなら直接上書き置換
     }
 
-    public class MediaOptimizeSummary
+    public partial class MediaOptimizeSummary
     {
         public int TotalImagesScanned { get; set; }
         public int TotalVideosScanned { get; set; }
@@ -59,6 +56,5 @@ namespace FolderMorpher.Models
         public long TotalOriginalBytes { get; set; }
         public long TotalOptimizedBytes { get; set; }
         public long TotalSavedBytes => TotalOriginalBytes > TotalOptimizedBytes ? TotalOriginalBytes - TotalOptimizedBytes : 0;
-        public string TotalSavedSizeFormatted => FormatHelper.FormatBytes(TotalSavedBytes, 2);
     }
 }

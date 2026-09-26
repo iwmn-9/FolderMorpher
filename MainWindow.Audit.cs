@@ -15,7 +15,6 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using AstraSize.Models;
-using AstraSize.Services;
 using FolderMorpher.Models;
 using FolderMorpher.Services;
 using Microsoft.Win32;
@@ -253,8 +252,9 @@ namespace AstraSize
             }
         }
 
-        private void ApplyAuditFilters()
+        private async void ApplyAuditFilters()
         {
+            var revision = ++_auditFilterRevision;
             if (AuditCategoryFilterComboBox == null || AuditSearchFilterTextBox == null || AuditItemsDataGrid == null)
                 return;
 
@@ -318,7 +318,21 @@ namespace AstraSize
             }
             else
             {
-                resultList = AuditReportService.SortAuditItems(resultList, _auditSortProperty, _auditSortDescending);
+                try
+                {
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    var sortedIds = await host.SortAuditIdsAsync(_lastAuditReportId,
+                        resultList.Select(item => item.AuditId).ToList(),
+                        _auditSortProperty, _auditSortDescending, CancellationToken.None);
+                    if (revision != _auditFilterRevision) return;
+                    var byId = resultList.ToDictionary(item => item.AuditId);
+                    resultList = sortedIds.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Failed to sort audit items: {ex}");
+                    return;
+                }
             }
 
             int totalMatched = resultList.Count;
@@ -793,11 +807,20 @@ namespace AstraSize
             }
         }
 
-        private void AuditIgnoreFile_Click(object sender, RoutedEventArgs e)
+        private async void AuditIgnoreFile_Click(object sender, RoutedEventArgs e)
         {
             if (AuditItemsDataGrid?.SelectedItem is AuditItem item)
             {
-                AuditIgnoreService.Instance.AddIgnore(item);
+                try
+                {
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.AddAuditIgnoreAsync(FolderMorpher.HostClient.AuditDtoMapper.ToDto(item), CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"除外登録に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
                 _lastAuditItems.Remove(item);
                 UpdateAuditKpiAfterDeletion();
                 ApplyAuditFilters();
@@ -810,9 +833,19 @@ namespace AstraSize
             }
         }
 
-        private void AuditIgnoredListButton_Click(object sender, RoutedEventArgs e)
+        private async void AuditIgnoredListButton_Click(object sender, RoutedEventArgs e)
         {
-            var ignoredItems = AuditIgnoreService.Instance.GetAllItems();
+            List<FolderMorpher.Contracts.AuditIgnoreItemDto> ignoredItems;
+            try
+            {
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                ignoredItems = await host.GetAuditIgnoresAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"除外リストを取得できませんでした: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
 
             if (ignoredItems.Count == 0)
@@ -842,7 +875,16 @@ namespace AstraSize
             var res = MessageBox.Show(sb.ToString(), isJa ? "整理除外リストの管理" : "Manage Ignored List", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (res == MessageBoxResult.Yes)
             {
-                AuditIgnoreService.Instance.ClearAll();
+                try
+                {
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.ClearAuditIgnoresAsync();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"除外リストをリセットできませんでした: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
                 UpdateIgnoredCountBadge();
                 ShowToast(isJa ? "除外リストをリセットしました（次回走査時に再評価されます）" : "Ignored list cleared");
             }
@@ -870,10 +912,20 @@ namespace AstraSize
             }
         }
 
-        private void UpdateIgnoredCountBadge()
+        private async void UpdateIgnoredCountBadge()
         {
             if (AuditIgnoredListButton == null) return;
-            int count = AuditIgnoreService.Instance.GetIgnoredCount();
+            int count;
+            try
+            {
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                count = await host.GetAuditIgnoreCountAsync();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to count audit ignores: {ex}");
+                return;
+            }
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             AuditIgnoredListButton.Content = isJa ? $"🛡️ 除外リスト ({count}件)" : $"🛡️ Ignored List ({count})";
         }

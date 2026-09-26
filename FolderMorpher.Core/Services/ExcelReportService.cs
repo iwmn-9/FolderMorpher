@@ -67,7 +67,7 @@ namespace FolderMorpher.Services
             DrawKpiCard(ws, "H5", "J6", "休眠ファイル容量 (3年超)", audit?.DormantSizeFormatted ?? "0 B", "#D97706");
 
             // KPIカード 4: 写真軽量化見込み
-            DrawKpiCard(ws, "K5", "M6", "写真軽量化による削減見込み", media?.TotalSavedSizeFormatted ?? "0 B", "#059669");
+            DrawKpiCard(ws, "K5", "M6", "写真軽量化による削減見込み", media == null ? "0 B" : FormatHelper.FormatBytes(media.TotalSavedBytes, 2), "#059669");
 
             // 課題サマリーテーブル
             ws.Cell("B9").Value = "【課題別 検出件数サマリー】";
@@ -208,9 +208,9 @@ namespace FolderMorpher.Services
             {
                 ws.Cell(row, 2).Value = item.IsVideo ? "動画" : "画像";
                 ws.Cell(row, 3).Value = item.FileName;
-                ws.Cell(row, 4).Value = item.OriginalSizeFormatted;
-                ws.Cell(row, 5).Value = item.OptimizedSizeFormatted;
-                ws.Cell(row, 6).Value = item.SavedSizeFormatted;
+                ws.Cell(row, 4).Value = FormatHelper.FormatBytes(item.OriginalSizeBytes, 2);
+                ws.Cell(row, 5).Value = item.OptimizedSizeBytes > 0 ? FormatHelper.FormatBytes(item.OptimizedSizeBytes, 2) : "―";
+                ws.Cell(row, 6).Value = item.SavedBytes > 0 ? FormatHelper.FormatBytes(item.SavedBytes, 2) : "―";
                 ws.Cell(row, 7).Value = item.Status;
 
                 var pathCell = ws.Cell(row, 8);
@@ -445,14 +445,14 @@ namespace FolderMorpher.Services
                 }
                 catch { }
 
-                ws.Cell(row, 4).Value = item.FormattedSize;
+                ws.Cell(row, 4).Value = FormatHelper.FormatBytes(item.Size);
                 ws.Cell(row, 4).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
                 ws.Cell(row, 5).Value = item.Size;
                 ws.Cell(row, 5).Style.NumberFormat.Format = "#,##0";
                 ws.Cell(row, 5).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
-                ws.Cell(row, 6).Value = item.PercentageFormatted;
+                ws.Cell(row, 6).Value = item.IsRoot ? "―" : $"{item.Percentage:F1}%";
                 ws.Cell(row, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
                 ws.Cell(row, 7).Value = item.FileCount;
@@ -720,7 +720,7 @@ namespace FolderMorpher.Services
                 ws1.Cell(r1, 4).Value = w.TargetNodes.Count;
                 ws1.Cell(r1, 4).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
-                ws1.Cell(r1, 5).Value = w.TotalSizeFormatted;
+                ws1.Cell(r1, 5).Value = FormatHelper.FormatBytes(w.TotalSizeBytes, 2);
                 ws1.Cell(r1, 5).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
                 if (w.TotalFileCount.HasValue)
@@ -734,10 +734,10 @@ namespace FolderMorpher.Services
                 }
                 ws1.Cell(r1, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
-                ws1.Cell(r1, 7).Value = w.FullCopyTimeFormatted;
+                ws1.Cell(r1, 7).Value = WaveDisplayFormat.FormatDuration(w.EstimatedFullCopyTime);
                 ws1.Cell(r1, 7).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-                ws1.Cell(r1, 8).Value = w.CutoverTimeFormatted;
+                ws1.Cell(r1, 8).Value = WaveDisplayFormat.FormatDuration(w.EstimatedCutoverTime);
                 ws1.Cell(r1, 8).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
                 string warn = "";

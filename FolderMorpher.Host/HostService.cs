@@ -175,6 +175,22 @@ namespace FolderMorpher.Host
             }).ToList();
         }
 
+        public Task<List<StorageTopFileDto>> GetStorageTopFilesAsync(StorageNodeDto node, CancellationToken ct)
+        {
+            return Task.Run(() =>
+            {
+                var (topFiles, _) = DiskScanService.GetInsightsForNode(StorageDtoMapper.ToCore(node));
+                return topFiles.Select(StorageDtoMapper.ToDto).ToList();
+            }, ct);
+        }
+
+        public Task<StorageForecastDto> AnalyzeStorageHistoryAsync(
+            List<ScanSnapshotDto> history, long thresholdBytes, CancellationToken ct)
+        {
+            return Task.Run(() => ForecastDtoMapper.ToDto(
+                StorageForecastingService.Instance.Analyze(history.Select(ForecastDtoMapper.ToCore).ToList(), thresholdBytes)), ct);
+        }
+
         private void RememberScanRoot(FileItemNode root)
         {
             var key = PathCanonicalizer.Normalize(root.FullPath);
@@ -560,6 +576,36 @@ namespace FolderMorpher.Host
                 Elapsed = sw.Elapsed
             };
         }
+
+        public Task<List<Guid>> SortAuditIdsAsync(Guid reportId, List<Guid> visibleIds,
+            string sortProperty, bool descending, CancellationToken ct)
+        {
+            return Task.Run(() =>
+            {
+                if (!_auditReports.TryGetValue(reportId, out var snapshot))
+                    throw new InvalidOperationException("Audit report expired. Run the audit again.");
+                var selected = visibleIds.ToHashSet();
+                var items = snapshot.Items.Where(item => selected.Contains(item.AuditId));
+                return AuditReportService.SortAuditItems(items, sortProperty, descending)
+                    .Select(item => item.AuditId).ToList();
+            }, ct);
+        }
+
+        public Task AddAuditIgnoreAsync(AuditItemDto item, CancellationToken ct) =>
+            Task.Run(() => AuditIgnoreService.Instance.AddIgnore(AuditDtoMapper.ToCore(item)), ct);
+
+        public Task<List<AuditIgnoreItemDto>> GetAuditIgnoresAsync() => Task.FromResult(
+            AuditIgnoreService.Instance.GetAllItems().Select(item => new AuditIgnoreItemDto
+            {
+                FullPath = item.FullPath,
+                FileSizeBytes = item.FileSizeBytes,
+                LastWriteTimeUtcTicks = item.LastWriteTimeUtcTicks,
+                IgnoredAt = item.IgnoredAt
+            }).ToList());
+
+        public Task ClearAuditIgnoresAsync() => Task.Run(() => AuditIgnoreService.Instance.ClearAll());
+
+        public Task<int> GetAuditIgnoreCountAsync() => Task.FromResult(AuditIgnoreService.Instance.GetIgnoredCount());
 
         public Task<AuditCleanupPreviewDto> PrepareAuditCleanupAsync(AuditCleanupPrepareRequestDto request, CancellationToken ct)
         {

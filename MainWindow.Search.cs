@@ -12,7 +12,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using AstraSize.Models;
-using AstraSize.Services;
 using FolderMorpher.Models;
 using FolderMorpher.Services;
 using Microsoft.Win32;

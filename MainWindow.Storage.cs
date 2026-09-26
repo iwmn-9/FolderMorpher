@@ -15,7 +15,6 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using AstraSize.Models;
-using AstraSize.Services;
 using FolderMorpher.Models;
 using FolderMorpher.Services;
 using Microsoft.Win32;
@@ -427,7 +426,7 @@ namespace AstraSize
             }
         }
 
-        private void UpdateDynamicInsightsForNode(FileItemNode node)
+        private async void UpdateDynamicInsightsForNode(FileItemNode node)
         {
             if (InsightsTargetScopeTextBlock == null || TopFilesDataGrid == null || FolderChildSharesDataGrid == null) return;
             InsightsTargetScopeTextBlock.Text = $"スコープ: {node.Name}";
@@ -458,20 +457,22 @@ namespace AstraSize
             }
             else
             {
-                // バックグラウンドで非同期計算（UIスレッドを1ミリ秒も止めない）
-                _ = Task.Run(() =>
+                try
                 {
-                    var (computedTop, _) = DiskScanService.GetInsightsForNode(node);
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    var dto = FolderMorpher.HostClient.StorageNodeMapper.ToTreeDto(node);
+                    var result = await host.GetStorageTopFilesAsync(dto, CancellationToken.None);
+                    var computedTop = result.Select(FolderMorpher.HostClient.StorageNodeMapper.ToViewFile).ToList();
                     node.CachedTopFiles = computedTop;
-                    Dispatcher.InvokeAsync(() =>
+                    if (FileTreeDataGrid.SelectedItem == node || _currentTab?.RootNode == node)
                     {
-                        // ユーザーが別のノードへ切り替えていないか確認して反映
-                        if (FileTreeDataGrid.SelectedItem == node || _currentTab?.RootNode == node)
-                        {
-                            TopFilesDataGrid.ItemsSource = computedTop;
-                        }
-                    });
-                });
+                        TopFilesDataGrid.ItemsSource = computedTop;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Failed to load storage insights for {node.FullPath}: {ex}");
+                }
             }
         }
 
