@@ -2,8 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace FolderMorpher.Services
 {
@@ -11,8 +9,8 @@ namespace FolderMorpher.Services
     /// UNC Root または ボリューム単位の I/O ガバナー
     /// 
     /// 【設計意図 - ADR 91】
-    /// スロット枠（GlobalSlotGate: 合計最大4スロット）による合算同時I/O統制と、
-    /// 列挙（軽量 5〜15ms）と本文読込（重量 50〜200ms）それぞれのレイテンシ適応学習の完全分離を実現。
+    /// 列挙（軽量 5〜15ms）と本文読込（重量 50〜200ms）の並列枠と
+    /// レイテンシ適応学習を共有先ごとに分離する。
     /// 本文走査の所要時間で列挙側のベースラインが異常判定・汚染される現象（崖落ち固着）を根本解決する。
     /// </summary>
     public sealed class SharedVolumeGovernor
@@ -31,23 +29,11 @@ namespace FolderMorpher.Services
         /// </summary>
         public AdaptiveConcurrencyController ContentController { get; } = new(min: 2, defaultVal: 4, max: 12);
 
-        /// <summary>
-        /// 後方互換性プロパティ（ADR 91互換）。
-        /// </summary>
-        public SemaphoreSlim GlobalSlotGate { get; } = new(AdaptiveConcurrencyController.MaxConcurrency, AdaptiveConcurrencyController.MaxConcurrency);
-
         public SharedVolumeGovernor(string rootKey)
         {
             RootKey = rootKey;
         }
 
-        /// <summary>
-        /// 後方互換性メソッド: 本文コントローラーのスロットリースを獲得します。
-        /// </summary>
-        public async Task<IDisposable> AcquireSlotAsync(CancellationToken ct)
-        {
-            return await ContentController.AcquireAsync(ct).ConfigureAwait(false);
-        }
     }
 
     /// <summary>

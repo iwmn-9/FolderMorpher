@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using FolderMorpher.Contracts;
+using FolderMorpher.Models;
 
 namespace FolderMorpher.Host;
 
@@ -19,14 +20,54 @@ public partial class HostService
         public string ProgressText = string.Empty;
         public int HitCount;
         public long TotalHitBytes;
+        public int AccessDeniedFolders;
+        public int UnreadFiles;
         public string? Error;
         public List<SearchResultDto>? SearchResults;
+        public readonly List<SearchResultDto> RecentSearchResults = new();
+        public long SearchFirstSequence;
+        public long SearchNextSequence;
         public AuditReportDto? AuditReport;
         public SkeletonDeployResultDto? SkeletonResult;
         public string? PackageDirectory;
         public EffectiveAccessReportDto? EffectiveAccessReport;
 
         public HostJob(HostJobKind kind) => Kind = kind;
+
+        public void AppendSearchBatch(IReadOnlyList<SearchResultItem> batch)
+        {
+            var mapped = batch.Select(SearchDtoMapper.ToDto).ToList();
+            lock (Gate)
+            {
+                foreach (var item in mapped)
+                {
+                    RecentSearchResults.Add(item);
+                    SearchNextSequence++;
+                }
+                if (RecentSearchResults.Count > 2048)
+                {
+                    int discard = RecentSearchResults.Count - 2048;
+                    RecentSearchResults.RemoveRange(0, discard);
+                    SearchFirstSequence += discard;
+                }
+            }
+        }
+
+        public SearchJobResultsDto GetSearchResults(long afterSequence, int maxResults)
+        {
+            lock (Gate)
+            {
+                long start = Math.Clamp(afterSequence, SearchFirstSequence, SearchNextSequence);
+                int offset = checked((int)(start - SearchFirstSequence));
+                int count = Math.Min(Math.Clamp(maxResults, 1, 256), RecentSearchResults.Count - offset);
+                return new SearchJobResultsDto
+                {
+                    HadGap = afterSequence < SearchFirstSequence,
+                    NextSequence = start + count,
+                    Results = RecentSearchResults.GetRange(offset, count)
+                };
+            }
+        }
 
         public HostJobStatusDto Snapshot()
         {
@@ -40,6 +81,8 @@ public partial class HostService
                     ProgressText = ProgressText,
                     HitCount = HitCount,
                     TotalHitBytes = TotalHitBytes,
+                    AccessDeniedFolders = AccessDeniedFolders,
+                    UnreadFiles = UnreadFiles,
                     Error = Error,
                     SearchResults = State == HostJobState.Completed ? SearchResults : null,
                     AuditReport = State == HostJobState.Completed ? AuditReport : null,
@@ -100,20 +143,28 @@ public partial class HostService
             {
                 case HostJobKind.Search:
                 case HostJobKind.CachedSearch:
-                    var searchProgress = new Progress<SearchProgressDto>(report =>
+                    var searchProgress = new InlineProgress<SearchProgressDto>(report =>
                     {
                         lock (job.Gate)
                         {
                             job.ProgressText = report.CurrentPath;
                             job.HitCount = report.HitCount;
                             job.TotalHitBytes = report.TotalHitBytes;
+                            job.AccessDeniedFolders = report.AccessDeniedFolders;
+                            job.UnreadFiles = report.UnreadFiles;
                         }
                     });
+                    var searchBatches = new InlineProgress<IReadOnlyList<SearchResultItem>>(job.AppendSearchBatch);
                     var results = job.Kind == HostJobKind.CachedSearch
-                        ? await SearchInMemoryAsync(request.TargetPath, request.SearchQuery!, searchProgress, job.Cancellation.Token)
-                        : await SearchAsync(request.TargetPath, request.SearchQuery!, searchProgress, job.Cancellation.Token);
+                        ? await SearchInMemoryWithBatchesAsync(request.TargetPath, request.SearchQuery!, searchProgress, searchBatches, job.Cancellation.Token)
+                        : await SearchWithBatchesAsync(request.TargetPath, request.SearchQuery!, searchProgress, searchBatches, job.Cancellation.Token);
                     job.Cancellation.Token.ThrowIfCancellationRequested();
-                    lock (job.Gate) job.SearchResults = results;
+                    lock (job.Gate)
+                    {
+                        job.SearchResults = results;
+                        job.HitCount = results.Count;
+                        job.TotalHitBytes = results.Sum(item => item.SizeBytes);
+                    }
                     break;
                 case HostJobKind.AuditScan:
                     var auditProgress = new Progress<string>(message =>
@@ -169,6 +220,14 @@ public partial class HostService
         return Task.FromResult(job.Snapshot());
     }
 
+    public Task<SearchJobResultsDto> GetSearchJobResultsAsync(Guid jobId, long afterSequence, int maxResults)
+    {
+        if (!_jobs.TryGetValue(jobId, out var job)) throw new KeyNotFoundException("Host job not found.");
+        if (job.Kind is not (HostJobKind.Search or HostJobKind.CachedSearch))
+            throw new InvalidOperationException("Job does not contain search results.");
+        return Task.FromResult(job.GetSearchResults(afterSequence, maxResults));
+    }
+
     public Task<bool> CancelJobAsync(Guid jobId)
     {
         if (!_jobs.TryGetValue(jobId, out var job)) return Task.FromResult(false);
@@ -190,5 +249,10 @@ public partial class HostService
             removed.Cancellation.Dispose();
             return Task.FromResult(true);
         }
+    }
+
+    private sealed class InlineProgress<T>(Action<T> callback) : IProgress<T>
+    {
+        public void Report(T value) => callback(value);
     }
 }

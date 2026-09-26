@@ -40,10 +40,19 @@ public sealed class HostJobStatusDto
     public string ProgressText { get; set; } = string.Empty;
     public int HitCount { get; set; }
     public long TotalHitBytes { get; set; }
+    public int AccessDeniedFolders { get; set; }
+    public int UnreadFiles { get; set; }
     public string? Error { get; set; }
     public List<SearchResultDto>? SearchResults { get; set; }
     public AuditReportDto? AuditReport { get; set; }
     public SkeletonDeployResultDto? SkeletonResult { get; set; }
     public string? PackageDirectory { get; set; }
     public EffectiveAccessReportDto? EffectiveAccessReport { get; set; }
+}
+
+public sealed class SearchJobResultsDto
+{
+    public long NextSequence { get; set; }
+    public bool HadGap { get; set; }
+    public List<SearchResultDto> Results { get; set; } = new();
 }

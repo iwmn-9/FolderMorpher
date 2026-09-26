@@ -289,24 +289,32 @@ namespace FolderMorpher.Host
         // ==========================================
         // 3. Tab 2: Search Studio
         // ==========================================
-        public async Task<List<SearchResultDto>> SearchAsync(string targetFolder, SearchQueryDto query, IProgress<SearchProgressDto>? progress, CancellationToken ct)
+        public Task<List<SearchResultDto>> SearchAsync(string targetFolder, SearchQueryDto query, IProgress<SearchProgressDto>? progress, CancellationToken ct)
+            => SearchWithBatchesAsync(targetFolder, query, progress, null, ct);
+
+        private async Task<List<SearchResultDto>> SearchWithBatchesAsync(string targetFolder, SearchQueryDto query,
+            IProgress<SearchProgressDto>? progress, IProgress<IReadOnlyList<SearchResultItem>>? batches, CancellationToken ct)
         {
             IProgress<SearchProgressReport>? coreProgress = progress == null ? null
-                : new Progress<SearchProgressReport>(report => progress.Report(SearchDtoMapper.ToDto(report)));
-            var results = await _searchEngine.SearchDirectFolderAsync(targetFolder, SearchDtoMapper.ToCore(query), null, coreProgress, ct);
+                : new InlineProgress<SearchProgressReport>(report => progress.Report(SearchDtoMapper.ToDto(report)));
+            var results = await _searchEngine.SearchDirectFolderAsync(targetFolder, SearchDtoMapper.ToCore(query), batches, coreProgress, ct);
             return results.Select(SearchDtoMapper.ToDto).ToList();
         }
 
-        public async Task<List<SearchResultDto>> SearchInMemoryAsync(string targetPath, SearchQueryDto query, IProgress<SearchProgressDto>? progress, CancellationToken ct)
+        public Task<List<SearchResultDto>> SearchInMemoryAsync(string targetPath, SearchQueryDto query, IProgress<SearchProgressDto>? progress, CancellationToken ct)
+            => SearchInMemoryWithBatchesAsync(targetPath, query, progress, null, ct);
+
+        private async Task<List<SearchResultDto>> SearchInMemoryWithBatchesAsync(string targetPath, SearchQueryDto query,
+            IProgress<SearchProgressDto>? progress, IProgress<IReadOnlyList<SearchResultItem>>? batches, CancellationToken ct)
         {
             IProgress<SearchProgressReport>? coreProgress = progress == null ? null
-                : new Progress<SearchProgressReport>(report => progress.Report(SearchDtoMapper.ToDto(report)));
+                : new InlineProgress<SearchProgressReport>(report => progress.Report(SearchDtoMapper.ToDto(report)));
             var coreQuery = SearchDtoMapper.ToCore(query);
             var liveRoot = FindLiveScanNode(targetPath);
             List<SearchResultItem> results;
             if (liveRoot != null)
             {
-                results = await _searchEngine.SearchInMemoryAsync(new[] { liveRoot }, coreQuery, coreProgress, ct);
+                results = await _searchEngine.SearchInMemoryAsync(new[] { liveRoot }, coreQuery, coreProgress, ct, batches);
             }
             else
             {
@@ -315,8 +323,8 @@ namespace FolderMorpher.Host
                 if (cachedRoot == null) return new List<SearchResultDto>();
                 results = await _treeCache.HasRootAsync(targetPath)
                     ? await _searchEngine.SearchCachedEntriesAsync(
-                        _treeCache.EnumerateSearchEntries(targetPath, ct), coreQuery, coreProgress, ct)
-                    : await _searchEngine.SearchInMemoryAsync(new[] { cachedRoot }, coreQuery, coreProgress, ct);
+                        _treeCache.EnumerateSearchEntries(targetPath, ct), coreQuery, coreProgress, ct, batches)
+                    : await _searchEngine.SearchInMemoryAsync(new[] { cachedRoot }, coreQuery, coreProgress, ct, batches);
             }
             return results.Select(SearchDtoMapper.ToDto).ToList();
         }

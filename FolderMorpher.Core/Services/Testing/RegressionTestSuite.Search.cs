@@ -1540,8 +1540,8 @@ namespace FolderMorpher.Services.Testing
                 // 【ADR 91】列挙用と本文読込用のコントローラーが分離され、学習汚染が発生しないことの検証
                 if (ReferenceEquals(g1.EnumerationController, g1.ContentController))
                     throw new Exception("ADR 91 failed: EnumerationController and ContentController must be separate instances.");
-                if (g1.GlobalSlotGate.CurrentCount != AdaptiveConcurrencyController.MaxConcurrency)
-                    throw new Exception($"ADR 91 failed: GlobalSlotGate initial count should be {AdaptiveConcurrencyController.MaxConcurrency}, got {g1.GlobalSlotGate.CurrentCount}");
+                if (g1.EnumerationController.MaxConcurrencyLimit != 2 || g1.ContentController.MaxConcurrencyLimit != 12)
+                    throw new Exception("Shared I/O controller limits no longer match the enumeration/content budgets.");
 
                 var uncG1 = SharedIoGovernor.GetGovernor(@"\\file-server01\ShareA\SubDir1\Doc.txt");
                 var uncG2 = SharedIoGovernor.GetGovernor(@"\\FILE-SERVER01\shareA\SubDir2\Other.xlsx");

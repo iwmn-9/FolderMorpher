@@ -455,6 +455,11 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException($"解決モード誤り: 期待値=DirectAclOnly, 実際={resMode}");
                 }
+                // 同じ短縮名でも別ドメインの主体を現在のログオンユーザーとして扱わない。
+                var foreignAccount = $"FolderMorpherUnrelatedDomain\\{Environment.UserName}";
+                var (foreignGroups, foreignMode, _) = await effService.ResolveMembershipsAsync(foreignAccount);
+                if (foreignGroups.Count != 0 || foreignMode != EffectiveAccessResolutionMode.DirectAclOnly)
+                    throw new InvalidOperationException("別ドメインの同名ユーザーへログオンユーザーの所属が混入しました。");
 
                 // 検証 5: Windows Canonical DACL 順序評価（子の明示Allowが親の継承Denyより優先されること）
                 string parentFolder = Path.Combine(tempDir, "05_ParentDeny");

@@ -183,7 +183,6 @@ namespace FolderMorpher.Services
 
             bool rootOk;
             EnumerationFailureKind rootFailureKind = EnumerationFailureKind.None;
-            using (var rootSlot = await governor.AcquireSlotAsync(ct))
             using (var rootLease = await controller.AcquireAsync(ct))
             {
                 var rootSw = Stopwatch.StartNew();
@@ -329,7 +328,6 @@ namespace FolderMorpher.Services
 
                             bool ok;
                             EnumerationFailureKind failureKind = EnumerationFailureKind.None;
-                            using (var slot = await governor.AcquireSlotAsync(ct))
                             using (var lease = await controller.AcquireAsync(ct))
                             {
                                 var sw = Stopwatch.StartNew();

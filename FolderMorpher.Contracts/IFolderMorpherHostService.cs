@@ -22,6 +22,7 @@ namespace FolderMorpher.Contracts
         Task SetLanguageAsync(string language);
         Task<Guid> StartJobAsync(HostJobRequestDto request);
         Task<HostJobStatusDto> GetJobStatusAsync(Guid jobId);
+        Task<SearchJobResultsDto> GetSearchJobResultsAsync(Guid jobId, long afterSequence, int maxResults);
         Task<bool> CancelJobAsync(Guid jobId);
         Task<bool> ReleaseJobAsync(Guid jobId);
 

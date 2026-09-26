@@ -162,7 +162,10 @@ namespace AstraSize.Services
                     }
                 }
 
-                var controller = new AdaptiveConcurrencyController();
+                // Network scans share the same per-share enumeration budget as search.
+                var controller = PathCanonicalizer.IsNetworkPath(targetPath)
+                    ? SharedIoGovernor.GetGovernor(targetPath).EnumerationController
+                    : new AdaptiveConcurrencyController();
                 int maxWorkers = AdaptiveConcurrencyController.MaxConcurrency;
 
                 DateTime rootLastModified = DateTime.MinValue;

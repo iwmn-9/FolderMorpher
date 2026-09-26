@@ -465,7 +465,6 @@ namespace FolderMorpher.Services
                     completedMiss = true;
                 }
             }
-            catch { }
             finally
             {
                 if (buffer != null) ArrayPool<char>.Shared.Return(buffer, clearArray: true);
@@ -732,7 +731,11 @@ namespace FolderMorpher.Services
                     }
                 }
             }
-            catch { }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                throw new InvalidDataException($"Could not inspect Office content: {filePath}", ex);
+            }
             return false;
         }
 

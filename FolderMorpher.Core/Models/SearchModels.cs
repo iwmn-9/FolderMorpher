@@ -190,6 +190,8 @@ namespace FolderMorpher.Models
     {
         public int HitCount { get; set; }
         public int ScannedCount { get; set; }
+        public int AccessDeniedFolders { get; set; }
+        public int UnreadFiles { get; set; }
         public long TotalHitBytes { get; set; }
         public string CurrentPath { get; set; } = string.Empty;
         public TimeSpan Elapsed { get; set; }

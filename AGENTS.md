@@ -77,7 +77,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 | **変化点差分モーダル** | `DiffModalOverlay` | `MainWindow.Simulation.cs` | `SimModels.cs` | 移行前後（Before/After）の変化点（新規・移動・統合・ACL差分）の一覧レビューとExcel出力 |
 | **移行パッケージ生成モーダル** | `MigrationPackageOverlay` | `MainWindow.Simulation.cs` | `MigrationPackageService.cs`<br>`MigrationPackageModels.cs`<br>`ExcelReportService.cs` | ベンダー標準移行工程（事前フル同期、中間差分、本番切替）の一括静的生成、波次（Wave）自動分割・容量バジェット算定、動的転送レート・差分率による所要時間算出、容量二重加算防止、実測ファイル数引き継ぎ、安全停止手順書ガイド、週末枠オーバー警告、Migration_Runbook.xlsx（WBS/進捗台帳・マッピング・除外一覧） |
 
-**検索の現行入口**: `MainWindow.Search.cs` → `FolderMorpherHostClient` → `HostService.Search.cs` → `SearchEngineService`。直接走査は `SafeFileEnumerator.EnumerateFileEntriesParallelAsync(..., collectResults: false)` のコールバックで逐次処理する。ファイル名・パス・本文条件の共通判定は `SearchEngineService.MatchesSearchTerms` が正本。`TreeCachePruningIndex` はフォルダー時刻だけでは検索の完全性を保証できないため、通常画面の直接走査では構築しない。
+**検索の現行入口**: `MainWindow.Search.cs` → `HostJobClient` → `HostService.Jobs.cs` / `HostService.cs` → `SearchEngineService`。直接走査は `SafeFileEnumerator.EnumerateFileEntriesParallelAsync(..., collectResults: false)` のコールバックで逐次処理する。ファイル名・パス・本文条件の共通判定は `SearchEngineService.MatchesSearchTerms` が正本。`TreeCachePruningIndex` はフォルダー時刻だけでは検索の完全性を保証できないため、通常画面の直接走査では構築しない。
 
 GUIは `SearchQuery.HasDeepFileIoRequirement` を正本としてLive本文・Officeリンク検索を起動する。`content:` 指定だけでも、対象ツリーがキャッシュ済みなら空結果で終わらせず原本を検索する。本文速度の比較はFolderMorpherのHost経由で同じ検索経路を使い、Cドライブ全体の実在する本文語で測る。Cドライブの結果からUNC固有のSMB効果を断定しない。
 
@@ -89,7 +89,9 @@ GUIは `SearchQuery.HasDeepFileIoRequirement` を正本としてLive本文・Off
 
 スキャンツリーがHostメモリにない場合のキャッシュ検索は、TreeCacheを全ツリーへ復元せず `SqliteTreeCacheService.EnumerateSearchEntries` から逐次照合する。再スキャンの前回差分も旧ツリーを復元せずDB行を逐次読む。どちらもローカルDBだけを読むのでUNCへの追加I/Oは発生しない。
 
-GUIの検索実行はLiveとキャッシュの双方をHost Jobとして所有し、停止・クリア・入力変更で旧Jobへキャンセルを伝える。空の検索条件では自動検索を起動しない。Host Jobのキャンセルは `HostJobClient` と `HostService.Jobs.cs` が正本で、GUIは世代番号で遅延応答を破棄する。
+GUIの検索実行はLiveとキャッシュの双方をHost Jobとして所有し、停止・クリア・入力変更で旧Jobへキャンセルを伝える。空の検索条件では自動検索を起動しない。Host Jobのキャンセルは `HostJobClient` と `HostService.Jobs.cs` が正本で、GUIは世代番号で遅延応答を破棄する。検索ヒットは `GetSearchJobResultsAsync` の連番カーソルで途中表示し、Hostの途中送信用リングは最大2048件、完了時の `SearchResults` が最終正本。GUIの件数はキャッシュ先行結果とLive結果の重複除去後に数え、Jobごとの進捗件数で上書きしない。列挙不能フォルダーと例外で読めなかった本文ファイルを最終状態に表示する（すべての抽出器内部の失敗を検出できるわけではない）。
+
+UNC/ネットワークドライブの容量スキャンは検索列挙と `SharedIoGovernor.EnumerationController` を共有し、同一共有先の列挙枠を合計2にする。`SafeFileEnumerator` の列挙と巨大ファイル再検査は各コントローラーのリースを1回だけ取得する。権限逆引きの現在ユーザー判定は修飾名の短縮名一致を禁じ、SID一致または完全修飾名一致に限定する（ADR 112）。
 
 PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数を保つ（ADR 107）。P/Invoke宣言を変更する時はMicrosoftのシグネチャと照合し、検索回帰でプロセス終了時のCOM最終化も確認する。
 
@@ -102,13 +104,13 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの設計判断記録（ADR 1〜109）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの設計判断記録（ADR 1〜112）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 
 #### 主要な中核原則サマリー（詳細は `.agents/ADR.md` 参照）
 
-設計判断（ADR 1〜105）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
+設計判断（ADR 1〜112）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
 
 1. **全体占有率メーター & 2連カード（Storage / ADR 61）**:
    - 親フォルダーに対する直下シェア（右ペイン「選択フォルダーの内訳」）と、スキャン対象ルート総容量に対する全体占有率を二重加算防止のため厳格分離。ルート行は `―`（ハイフン）表示。メトリクスカードは「スキャン対象 容量」「前回差分推移」の2連カード化。
@@ -126,7 +128,7 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
    - フォルダー単位RPCの完全根絶（ゼロI/O化）: 列挙タイムスタンプを子ノード生成時に直結。
    - `SharedIoGovernor`: ディレクトリ列挙専用コントローラー（安全な2並列固定・上限2）と本文読み込み専用コントローラー（AIMD: 4 ➔ 最大12並列）を完全分離。
    - 純粋I/O時間計測（CPU展開・パース時間を除外した真のネットワーク遅延）と、再昇格可能な AIMD（不可逆崖落ち永久固定の撤廃）により、サーバーを保護しつつ SMB スループットを最大化。重複 RPC（事前の `File.Exists`、既知サイズの `FileInfo.Length`）を全廃。
-6. **検索スタジオのアーキテクチャ（Search Studio / ADR 87, 90, 93, 94, 95, 96, 97, 99, 108〜111）**:
+6. **検索スタジオのアーキテクチャ（Search Studio / ADR 87, 90, 93, 94, 95, 96, 97, 99, 108〜112）**:
    - **非管理者権限が通常経路の前提**: 管理者権限が必要なUSN変更ジャーナル等に基本検索や検索結果の完全性を依存させない。ローカル・UNCの双方で一般ユーザー権限による検索を維持する（ADR 108）。
    - **索引なしの非一致証明を先行調査**: 永続CプランIndexは保留。追加I/Oも含めて効果を測り、確実に不一致と言えない場合は通常の本文検査へ進める（ADR 109）。
    - **検索専用ローカルDBの完全撤去**: Host内の現行スキャンツリーはメモリ照合、永続TreeCacheは行単位で逐次照合、未スキャンUNCはストリーミングLive直接走査とする。条件判定は `SearchEngineService` に集約する。

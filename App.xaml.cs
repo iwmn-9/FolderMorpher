@@ -287,6 +287,13 @@ namespace AstraSize
                             } while (searchJob.State == FolderMorpher.Contracts.HostJobState.Running);
                             if (searchJob.SearchResults?.Any(item => string.Equals(item.FullPath, matchFile, StringComparison.OrdinalIgnoreCase)) != true)
                                 throw new InvalidOperationException("Host job result did not survive the RPC roundtrip.");
+                            var liveBatch = await host.GetSearchJobResultsAsync(searchJobId, 0, 256);
+                            if (liveBatch.Results.Count == 0 ||
+                                !liveBatch.Results.Any(item => string.Equals(item.FullPath, matchFile, StringComparison.OrdinalIgnoreCase)))
+                                throw new InvalidOperationException("Live search hits did not cross IPC before final result delivery.");
+                            var liveTail = await host.GetSearchJobResultsAsync(searchJobId, liveBatch.NextSequence, 256);
+                            if (liveTail.Results.Count != 0 || liveTail.HadGap)
+                                throw new InvalidOperationException("Search result cursor repeated or lost a batch.");
                             Console.WriteLine($"[TEST-IPC] Host Job: {searchJob.SearchResults.Count} search result(s)");
                             await host.ReleaseJobAsync(searchJobId);
 
@@ -307,8 +314,62 @@ namespace AstraSize
                             } while (cachedJob.State == FolderMorpher.Contracts.HostJobState.Running);
                             if (cachedJob.SearchResults?.Any(item => string.Equals(item.FullPath, matchFile, StringComparison.OrdinalIgnoreCase)) != true)
                                 throw new InvalidOperationException("Cached Host search job lost its results.");
+                            var cachedBatch = await host.GetSearchJobResultsAsync(cachedJobId, 0, 256);
+                            if (!cachedBatch.Results.Any(item => string.Equals(item.FullPath, matchFile, StringComparison.OrdinalIgnoreCase)))
+                                throw new InvalidOperationException("Cached name hits did not cross the batch IPC route.");
                             await host.ReleaseJobAsync(cachedJobId);
                             Console.WriteLine("[TEST-IPC] Cached Search Job: SUCCESS");
+
+                            MainWindow? countWindow = null;
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                countWindow = new MainWindow();
+                                FindControl<TextBox>(countWindow, "SearchDirectTargetTextBox").Text = testRoot;
+                                FindControl<TextBox>(countWindow, "SearchInputBox").Text = "ipc-search-match";
+                                FindControl<CheckBox>(countWindow, "SearchContentCheckBox").IsChecked = true;
+                                FindControl<Button>(countWindow, "SearchExecuteButton").RaiseEvent(new RoutedEventArgs(
+                                    System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                            });
+                            while (await Dispatcher.InvokeAsync(() =>
+                                FindControl<Button>(countWindow!, "SearchCancelButton").Visibility == Visibility.Visible))
+                                await Task.Delay(50, testCts.Token);
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                var countText = FindControl<TextBlock>(countWindow!, "SearchKpiHitCountText").Text;
+                                var visibleCount = countWindow!.SearchResults.Count;
+                                if (visibleCount < 1 ||
+                                    !countWindow.SearchResults.Any(item => string.Equals(item.FullPath, matchFile, StringComparison.OrdinalIgnoreCase)) ||
+                                    !countText.StartsWith($"{visibleCount:N0}", StringComparison.Ordinal))
+                                    throw new InvalidOperationException($"Cached name hit disappeared from live search count: {countText}.");
+                                countWindow.Close();
+                            });
+                            Console.WriteLine("[TEST-IPC] Cached name + live search UI count: SUCCESS");
+
+                            var unreadOfficePath = Path.Combine(testRoot, "unread-search-test.docx");
+                            await File.WriteAllTextAsync(unreadOfficePath, "not a ZIP document", testCts.Token);
+                            var unreadJobId = await host.StartJobAsync(new FolderMorpher.Contracts.HostJobRequestDto
+                            {
+                                Kind = FolderMorpher.Contracts.HostJobKind.Search,
+                                TargetPath = testRoot,
+                                SearchQuery = new FolderMorpher.Contracts.SearchQueryDto
+                                {
+                                    RawQuery = "content:unread-token",
+                                    ContentKeyword = "unread-token"
+                                }
+                            });
+                            FolderMorpher.Contracts.HostJobStatusDto unreadJob;
+                            do
+                            {
+                                unreadJob = await host.GetJobStatusAsync(unreadJobId);
+                                if (unreadJob.State == FolderMorpher.Contracts.HostJobState.Failed)
+                                    throw new InvalidOperationException($"Unread-file search job failed: {unreadJob.Error}");
+                                if (unreadJob.State == FolderMorpher.Contracts.HostJobState.Running)
+                                    await Task.Delay(50, testCts.Token);
+                            } while (unreadJob.State == FolderMorpher.Contracts.HostJobState.Running);
+                            if (unreadJob.UnreadFiles < 1)
+                                throw new InvalidOperationException("Unread Office file was incorrectly reported as a complete non-match.");
+                            await host.ReleaseJobAsync(unreadJobId);
+                            Console.WriteLine("[TEST-IPC] Search unread-file coverage: SUCCESS");
 
                             var auditJobId = await host.StartJobAsync(new FolderMorpher.Contracts.HostJobRequestDto
                             {

@@ -25,6 +25,7 @@ namespace AstraSize
         private readonly ObservableCollection<SearchResultItem> _searchResults = new();
         public ObservableCollection<SearchResultItem> SearchResults => _searchResults;
         private List<SearchResultItem> _allSearchResults = new();
+        private readonly Dictionary<string, SearchResultItem> _searchResultsByPath = new(StringComparer.OrdinalIgnoreCase);
 
         private string _selectedSortType = "Relevance";
 
@@ -127,6 +128,7 @@ namespace AstraSize
         {
             _searchResults.Clear();
             _allSearchResults.Clear();
+            _searchResultsByPath.Clear();
             _selectedSortType = "Relevance";
             if (SearchSortComboBox != null) SearchSortComboBox.SelectedIndex = 0;
             UpdateSearchKpi(0, 0, TimeSpan.Zero);
@@ -153,10 +155,11 @@ namespace AstraSize
             }
         }
 
-        private static async Task<List<FolderMorpher.Contracts.SearchResultDto>> RunSearchJobAsync(
+        private static async Task<(List<FolderMorpher.Contracts.SearchResultDto> Results, int DeniedFolders, int UnreadFiles)> RunSearchJobAsync(
             string targetFolder,
             SearchQuery query,
             IProgress<FolderMorpher.Contracts.SearchProgressDto> progress,
+            Action<IReadOnlyList<FolderMorpher.Contracts.SearchResultDto>> onSearchBatch,
             bool cached,
             CancellationToken ct)
         {
@@ -173,11 +176,15 @@ namespace AstraSize
                     CurrentPath = job.ProgressText,
                     HitCount = job.HitCount,
                     TotalHitBytes = job.TotalHitBytes,
+                    AccessDeniedFolders = job.AccessDeniedFolders,
+                    UnreadFiles = job.UnreadFiles,
                     Elapsed = started.Elapsed,
                     IsCompleted = job.State == FolderMorpher.Contracts.HostJobState.Completed
                 }),
-                ct);
-            return status.SearchResults ?? throw new InvalidOperationException("検索結果がHostから返されませんでした。");
+                ct,
+                onSearchBatch);
+            return (status.SearchResults ?? throw new InvalidOperationException("検索結果がHostから返されませんでした。"),
+                status.AccessDeniedFolders, status.UnreadFiles);
         }
 
         #endregion
@@ -248,11 +255,13 @@ namespace AstraSize
             long currentGen = Interlocked.Increment(ref _searchGeneration);
 
             SetSearchLoadingState(true);
+            var searchTotalSw = Stopwatch.StartNew();
 
             var progress = new Progress<FolderMorpher.Contracts.SearchProgressDto>(r =>
             {
                 if (currentGen != Volatile.Read(ref _searchGeneration)) return;
-                UpdateSearchKpi(r.HitCount, r.TotalHitBytes, r.Elapsed);
+                // Host progress is per job. Cached name hits from the preceding job remain visible.
+                if (SearchKpiElapsedText != null) SearchKpiElapsedText.Text = $"{searchTotalSw.Elapsed.TotalSeconds:F2}s";
                 if (SearchStatusText != null && !string.IsNullOrEmpty(r.CurrentPath))
                 {
                     SearchStatusText.Text = r.CurrentPath;
@@ -260,22 +269,15 @@ namespace AstraSize
             });
 
             var lastBatchUpdate = Stopwatch.StartNew();
-            var searchTotalSw = Stopwatch.StartNew();
-            var batchYield = new Progress<IReadOnlyList<SearchResultItem>>(items =>
+            void ReceiveBatch(IReadOnlyList<FolderMorpher.Contracts.SearchResultDto> items)
             {
                 if (currentGen != Volatile.Read(ref _searchGeneration)) return;
 
-                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                var existingMap = new Dictionary<string, SearchResultItem>(_allSearchResults.Count, StringComparer.OrdinalIgnoreCase);
-                foreach (var existing in _allSearchResults)
-                {
-                    existingMap[existing.FullPath] = existing;
-                }
-
                 bool addedOrUpdated = false;
-                foreach (var item in items)
+                foreach (var dto in items)
                 {
-                    if (existingMap.TryGetValue(item.FullPath, out var existing))
+                    var item = FolderMorpher.HostClient.SearchDtoMapper.ToViewItem(dto);
+                    if (_searchResultsByPath.TryGetValue(item.FullPath, out var existing))
                     {
                         if (string.IsNullOrEmpty(existing.ContentSnippet) && !string.IsNullOrEmpty(item.ContentSnippet))
                         {
@@ -286,7 +288,7 @@ namespace AstraSize
                     }
                     else
                     {
-                        existingMap[item.FullPath] = item;
+                        _searchResultsByPath[item.FullPath] = item;
                         _allSearchResults.Add(item);
                         addedOrUpdated = true;
                     }
@@ -300,17 +302,16 @@ namespace AstraSize
                     UpdateSearchKpi(_searchResults.Count, totalBytes, searchTotalSw.Elapsed);
                     if (SearchStatusText != null && query.HasDeepFileIoRequirement)
                     {
-                        SearchStatusText.Text = isJa
-                            ? $"🔍 ヒット検出中: {_searchResults.Count:N0} 件 ―― 📄 本文を走査中..."
-                            : $"🔍 Discovering matches: {_searchResults.Count:N0} hits ―― 📄 Scanning content...";
+                        SearchStatusText.Text = Strings.SearchPartialHits(_searchResults.Count);
                     }
                 }
-            });
+            }
 
             try
             {
                 _searchResults.Clear();
                 _allSearchResults.Clear();
+                _searchResultsByPath.Clear();
 
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                 var sw = Stopwatch.StartNew();
@@ -342,12 +343,12 @@ namespace AstraSize
                         nameOnlyQuery.SearchContentMode = false;
                         nameOnlyQuery.ContentKeyword = string.Empty;
 
-                        treeResults = (await RunSearchJobAsync(targetFolder, nameOnlyQuery, progress, cached: true, ct))
+                        var cachedOutcome = await RunSearchJobAsync(targetFolder, nameOnlyQuery, progress, ReceiveBatch, cached: true, ct);
+                        treeResults = cachedOutcome.Results
                             .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                         if (currentGen == Volatile.Read(ref _searchGeneration))
                         {
-                            _allSearchResults = treeResults.ToList();
-                            ApplyFilterAndSort();
+                            SetSearchResults(treeResults);
                             long totalBytes = _searchResults.Sum(h => h.SizeBytes);
                             UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
 
@@ -363,7 +364,8 @@ namespace AstraSize
                     if (query.HasDeepFileIoRequirement && hasTarget)
                     {
                         // Step 2: 本文・Officeリンク条件は、キャッシュがあっても原本をLive走査する。
-                        var liveHits = (await RunSearchJobAsync(targetFolder, query, progress, cached: false, ct))
+                        var liveOutcome = await RunSearchJobAsync(targetFolder, query, progress, ReceiveBatch, cached: false, ct);
+                        var liveHits = liveOutcome.Results
                             .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                         if (currentGen == Volatile.Read(ref _searchGeneration))
                         {
@@ -385,16 +387,15 @@ namespace AstraSize
                                 }
                             }
 
-                            _allSearchResults = mergedMap.Values.ToList();
-                            ApplyFilterAndSort();
+                            SetSearchResults(mergedMap.Values);
                             long totalBytes = _searchResults.Sum(h => h.SizeBytes);
                             UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
 
                             if (SearchStatusText != null)
                             {
                                 SearchStatusText.Text = isJa
-                                    ? $"🔍 全文走査完了: {_allSearchResults.Count:N0} 件ヒット ({sw.ElapsedMilliseconds} ms)"
-                                    : $"🔍 Full content scan complete: {_allSearchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms)";
+                                    ? $"🔍 全文走査完了: {_allSearchResults.Count:N0} 件ヒット ({sw.ElapsedMilliseconds} ms){FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles)}"
+                                    : $"🔍 Full content scan complete: {_allSearchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms){FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles)}";
                             }
                         }
                     }
@@ -418,20 +419,20 @@ namespace AstraSize
                             : (query.HasDeepFileIoRequirement ? "🔍 Live scanning (instant name hits & content search)..." : "🔍 Running live direct search...");
                     }
 
-                    var results = (await RunSearchJobAsync(targetFolder, query, progress, cached: false, ct))
+                    var liveOutcome = await RunSearchJobAsync(targetFolder, query, progress, ReceiveBatch, cached: false, ct);
+                    var results = liveOutcome.Results
                         .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                     if (currentGen == Volatile.Read(ref _searchGeneration))
                     {
-                        _allSearchResults = results;
-                        ApplyFilterAndSort();
+                        SetSearchResults(results);
                         long totalBytes = _searchResults.Sum(h => h.SizeBytes);
                         UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
 
                         if (SearchStatusText != null)
                         {
                             SearchStatusText.Text = isJa
-                                ? $"🔍 ライブ走査完了: {_searchResults.Count:N0} 件ヒット ({sw.ElapsedMilliseconds} ms)"
-                                : $"🔍 Live direct search complete: {_searchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms)";
+                                ? $"🔍 ライブ走査完了: {_searchResults.Count:N0} 件ヒット ({sw.ElapsedMilliseconds} ms){FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles)}"
+                                : $"🔍 Live direct search complete: {_searchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms){FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles)}";
                         }
                     }
                 }
@@ -461,6 +462,7 @@ namespace AstraSize
                 if (currentGen == Volatile.Read(ref _searchGeneration))
                 {
                     SetSearchLoadingState(false);
+                    Interlocked.Increment(ref _searchGeneration); // Ignore queued progress after the final result is rendered.
                 }
                 if (ReferenceEquals(_searchCts, searchCts)) _searchCts = null;
                 searchCts.Dispose();
@@ -557,6 +559,12 @@ namespace AstraSize
             {
                 SearchKpiElapsedText.Text = $"{elapsed.TotalSeconds:F2}s";
             }
+        }
+
+        private static string FormatSearchCoverage(int deniedFolders, int unreadFiles)
+        {
+            if (deniedFolders == 0 && unreadFiles == 0) return string.Empty;
+            return Strings.SearchUnverifiedTargets(deniedFolders, unreadFiles);
         }
 
         #endregion
@@ -891,6 +899,25 @@ namespace AstraSize
                 _selectedSortType = tag;
                 ApplyFilterAndSort();
             }
+        }
+
+        private void SetSearchResults(IEnumerable<SearchResultItem> items)
+        {
+            _allSearchResults = new List<SearchResultItem>();
+            _searchResultsByPath.Clear();
+            foreach (var item in items)
+            {
+                if (_searchResultsByPath.TryAdd(item.FullPath, item))
+                    _allSearchResults.Add(item);
+                else if (string.IsNullOrEmpty(_searchResultsByPath[item.FullPath].ContentSnippet) &&
+                         !string.IsNullOrEmpty(item.ContentSnippet))
+                {
+                    var old = _searchResultsByPath[item.FullPath];
+                    old.ContentSnippet = item.ContentSnippet;
+                    old.MatchedReason = item.MatchedReason;
+                }
+            }
+            ApplyFilterAndSort();
         }
 
         private void ApplyFilterAndSort()

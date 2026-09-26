@@ -43,14 +43,31 @@ namespace FolderMorpher.Services
             {
                 var memberships = new List<PrincipalGroupMembership>();
                 var cleanAccount = accountName.Contains('\\') ? accountName.Split('\\')[1] : accountName;
+                bool isQualifiedAccount = accountName.Contains('\\') || accountName.Contains('@') ||
+                    accountName.StartsWith("S-1-", StringComparison.OrdinalIgnoreCase);
+                using var currentIdentity = WindowsIdentity.GetCurrent();
+                SecurityIdentifier? requestedSid = null;
+                if (isQualifiedAccount)
+                {
+                    try
+                    {
+                        requestedSid = accountName.StartsWith("S-1-", StringComparison.OrdinalIgnoreCase)
+                            ? new SecurityIdentifier(accountName)
+                            : (SecurityIdentifier)new NTAccount(accountName).Translate(typeof(SecurityIdentifier));
+                    }
+                    catch
+                    {
+                        // A qualified identity that cannot be resolved must not be mapped by its short name.
+                    }
+                }
+                bool isCurrentLogonUser = isQualifiedAccount
+                    ? (requestedSid != null && currentIdentity.User != null && requestedSid.Equals(currentIdentity.User)) ||
+                      string.Equals(accountName, currentIdentity.Name, StringComparison.OrdinalIgnoreCase)
+                    : string.Equals(accountName, Environment.UserName, StringComparison.OrdinalIgnoreCase);
+                if (isCurrentLogonUser && requestedSid == null) requestedSid = currentIdentity.User;
 
-                bool isCurrentLogonUser =
-                    string.Equals(accountName, Environment.UserName, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(accountName, $"{Environment.UserDomainName}\\{Environment.UserName}", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(accountName, WindowsIdentity.GetCurrent().Name, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(cleanAccount, Environment.UserName, StringComparison.OrdinalIgnoreCase);
-
-                if (_adService.IsDomainJoined && !string.IsNullOrWhiteSpace(_adService.CurrentDomainName))
+                if (_adService.IsDomainJoined && !string.IsNullOrWhiteSpace(_adService.CurrentDomainName) &&
+                    (!isQualifiedAccount || requestedSid != null))
                 {
                     try
                     {
@@ -60,11 +77,23 @@ namespace FolderMorpher.Services
                         using var searcher = new DirectorySearcher(entry)
                         {
                             PageSize = 500,
-                            Filter = $"(|(&(objectCategory=person)(sAMAccountName={cleanAccount}))(&(objectCategory=group)(sAMAccountName={cleanAccount})))"
+                            Filter = $"(|(&(objectCategory=person)(sAMAccountName={EscapeLdapFilterValue(cleanAccount)}))(&(objectCategory=group)(sAMAccountName={EscapeLdapFilterValue(cleanAccount)})))"
                         };
                         searcher.PropertiesToLoad.AddRange(new[] { "distinguishedName", "memberOf", "objectSid", "sAMAccountName", "displayName", "objectClass", "primaryGroupID" });
 
                         var targetResult = searcher.FindOne();
+                        if (targetResult != null && requestedSid != null)
+                        {
+                            try
+                            {
+                                var foundSid = new SecurityIdentifier((byte[])targetResult.Properties["objectSid"][0], 0);
+                                if (!requestedSid.Equals(foundSid)) targetResult = null;
+                            }
+                            catch
+                            {
+                                targetResult = null;
+                            }
+                        }
                         if (targetResult != null)
                         {
                             var targetDn = targetResult.Properties["distinguishedName"][0]?.ToString();
@@ -172,7 +201,7 @@ namespace FolderMorpher.Services
                                 using var groupSearcher = new DirectorySearcher(entry)
                                 {
                                     PageSize = 500,
-                                    Filter = $"(member:1.2.840.113556.1.4.1941:={targetDn})"
+                                    Filter = $"(member:1.2.840.113556.1.4.1941:={EscapeLdapFilterValue(targetDn)})"
                                 };
                                 groupSearcher.PropertiesToLoad.AddRange(new[] { "sAMAccountName", "displayName", "distinguishedName", "objectSid" });
 
@@ -279,6 +308,13 @@ namespace FolderMorpher.Services
                 );
             });
         }
+
+        private static string EscapeLdapFilterValue(string value) => value
+            .Replace("\\", @"\5c", StringComparison.Ordinal)
+            .Replace("*", @"\2a", StringComparison.Ordinal)
+            .Replace("(", @"\28", StringComparison.Ordinal)
+            .Replace(")", @"\29", StringComparison.Ordinal)
+            .Replace("\0", @"\00", StringComparison.Ordinal);
 
         public async Task<List<PrincipalGroupMembership>> GetGroupMembershipsAsync(string accountName)
         {

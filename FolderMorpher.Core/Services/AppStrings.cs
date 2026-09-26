@@ -449,6 +449,12 @@ namespace FolderMorpher.Services
         public static string SearchIncludeFoldersCheck => IsJa ? "📁 フォルダも含める" : "📁 Include Folders";
         public static string SearchContentCheck => IsJa ? "📄 本文も検索" : "📄 Search Content";
         public static string SearchTargetFolder => IsJa ? "対象フォルダー:" : "Target Folder:";
+        public static string SearchPartialHits(int count) => IsJa
+            ? $"🔍 ヒット検出中: {count:N0} 件 ―― 📄 本文を走査中（途中結果）"
+            : $"🔍 Discovering matches: {count:N0} hits ―― 📄 Scanning content (partial)";
+        public static string SearchUnverifiedTargets(int deniedFolders, int unreadFiles) => IsJa
+            ? $" ⚠️ 確認できなかった対象: フォルダー {deniedFolders:N0}、ファイル {unreadFiles:N0}"
+            : $" ⚠️ Could not inspect: {deniedFolders:N0} folders, {unreadFiles:N0} files";
         public static string SearchQuickPresets => IsJa ? "クイック検索:" : "Quick Presets:";
         public static string SearchChipLargeText => IsJa ? "🐘 1GB超 (size:>1GB)" : "🐘 >1GB (size:>1GB)";
         public static string SearchChipDormantText => IsJa ? "💤 3年休眠 (dormant:3y)" : "💤 Dormant 3Y (dormant:3y)";

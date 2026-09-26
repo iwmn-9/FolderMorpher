@@ -7,16 +7,24 @@ public static class HostJobClient
     public static async Task<HostJobStatusDto> RunAsync(
         HostJobRequestDto request,
         Action<HostJobStatusDto>? onProgress,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action<IReadOnlyList<SearchResultDto>>? onSearchBatch = null)
     {
         var service = await FolderMorpherHostClient.Instance.GetServiceAsync(ct);
         var jobId = await service.StartJobAsync(request);
+        long searchSequence = 0;
         try
         {
             while (true)
             {
                 ct.ThrowIfCancellationRequested();
                 service = await FolderMorpherHostClient.Instance.GetServiceAsync(ct);
+                if (onSearchBatch != null && request.Kind is (HostJobKind.Search or HostJobKind.CachedSearch))
+                {
+                    var batch = await service.GetSearchJobResultsAsync(jobId, searchSequence, 256);
+                    searchSequence = batch.NextSequence;
+                    if (batch.Results.Count > 0) onSearchBatch(batch.Results);
+                }
                 var status = await service.GetJobStatusAsync(jobId);
                 ct.ThrowIfCancellationRequested();
                 onProgress?.Invoke(status);

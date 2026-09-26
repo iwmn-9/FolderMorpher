@@ -187,6 +187,7 @@ namespace FolderMorpher.Services
                 var batchLock = new object();
                 int scannedCount = 0;
                 int hitCount = 0;
+                int unreadFiles = 0;
                 long totalHitBytes = 0;
                 long lastReportMs = 0;
 
@@ -258,6 +259,7 @@ namespace FolderMorpher.Services
                             }
                             catch (Exception ex)
                             {
+                                Interlocked.Increment(ref unreadFiles);
                                 isError = ex is System.Net.Sockets.SocketException ||
                                           (ex is IOException ioEx && (ioEx.HResult == unchecked((int)0x8007003B) || ioEx.HResult == unchecked((int)0x80070040) || ioEx.HResult == unchecked((int)0x80070036)));
                             }
@@ -344,6 +346,7 @@ namespace FolderMorpher.Services
                 }
 
                 bool includeDirs = query.IncludeFolders || (query.IsDirectoryOnly == true);
+                var coverage = new ScanCoverage();
 
                 // ★ ADR 94: Server Search Accelerator（サーバー側インデックス拝借 ＆ 候補ピンポイント原本確認）
                 // Windows Server (WSP) または WSP 互換 NAS (Synology等) がインデックスを公開していれば、
@@ -395,7 +398,7 @@ namespace FolderMorpher.Services
                     await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
                         targetFolder,
                         "*.*",
-                        coverage: null,
+                        coverage: coverage,
                         onProgress: null,
                         ct: ct,
                         includeDirectories: includeDirs,
@@ -424,7 +427,6 @@ namespace FolderMorpher.Services
                     foreach (var dItem in deferredLargeFiles)
                     {
                         if (ct.IsCancellationRequested) break;
-                        using var slot = await governor.AcquireSlotAsync(ct);
                         using var lease = await controller.AcquireAsync(ct);
                         var fileSw = Stopwatch.StartNew();
                         bool isError = false;
@@ -438,6 +440,7 @@ namespace FolderMorpher.Services
                         }
                         catch (Exception ex)
                         {
+                            Interlocked.Increment(ref unreadFiles);
                             isError = ex is System.Net.Sockets.SocketException ||
                                       (ex is IOException ioEx && (ioEx.HResult == unchecked((int)0x8007003B) || ioEx.HResult == unchecked((int)0x80070040) || ioEx.HResult == unchecked((int)0x80070036)));
                         }
@@ -463,6 +466,8 @@ namespace FolderMorpher.Services
                 {
                     HitCount = results.Count,
                     ScannedCount = scannedCount,
+                    AccessDeniedFolders = coverage.AccessDeniedFolders,
+                    UnreadFiles = Volatile.Read(ref unreadFiles),
                     TotalHitBytes = results.Sum(r => r.SizeBytes),
                     Elapsed = sw.Elapsed,
                     IsCompleted = true
