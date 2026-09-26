@@ -156,6 +156,11 @@ namespace AstraSize
         {
             try
             {
+                await AppSettingsService.Instance.LoadAsync();
+                LocalizationService.Instance.SetLanguage(
+                    AppSettingsService.Instance.Current.Language == "en" ? AppLanguage.English : AppLanguage.Japanese);
+                var settingsHost = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                await settingsHost.SetLanguageAsync(AppSettingsService.Instance.Current.Language);
                 InitializeStorageTabs();
                 if (!ClientModeState.IsClientMode)
                 {
@@ -172,10 +177,21 @@ namespace AstraSize
             }
         }
 
-        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        private bool _settingsFlushedOnClose;
+
+        protected override async void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
+            if (_settingsFlushedOnClose)
+            {
+                base.OnClosing(e);
+                return;
+            }
+            e.Cancel = true;
             SaveStorageTabSession();
-            base.OnClosing(e);
+            try { await AppSettingsService.Instance.FlushAsync(); }
+            catch (Exception ex) { Debug.WriteLine($"Settings flush failed: {ex}"); }
+            _settingsFlushedOnClose = true;
+            Close();
         }
 
         #region Toast Notification Helper
@@ -332,7 +348,7 @@ namespace AstraSize
             SettingsReadPathTextBox.Text = settings.CacheReadPath;
             SettingsFallbackCheckBox.IsChecked = settings.FallbackToLocalOnReadError;
 
-            switch (settings.WriteMode)
+            switch ((CacheWriteMode)settings.WriteMode)
             {
                 case CacheWriteMode.SameAsRead:
                     SettingsWriteModeSameRadio.IsChecked = true;
@@ -408,16 +424,16 @@ namespace AstraSize
 
             if (SettingsWriteModeSameRadio.IsChecked == true)
             {
-                settings.WriteMode = CacheWriteMode.SameAsRead;
+                settings.WriteMode = (int)CacheWriteMode.SameAsRead;
             }
             else if (SettingsWriteModeCustomRadio.IsChecked == true)
             {
-                settings.WriteMode = CacheWriteMode.Custom;
+                settings.WriteMode = (int)CacheWriteMode.Custom;
                 settings.CacheWriteCustomPath = SettingsCustomPathTextBox.Text.Trim();
             }
             else
             {
-                settings.WriteMode = CacheWriteMode.Local;
+                settings.WriteMode = (int)CacheWriteMode.Local;
             }
 
             AppSettingsService.Instance.Save();

@@ -16,6 +16,9 @@ namespace FolderMorpher.Contracts
         // ==========================================
         Task<HostStatusDto> GetStatusAsync();
         Task<bool> PingAsync();
+        Task<AppSettingsDto> GetAppSettingsAsync();
+        Task SaveAppSettingsAsync(AppSettingsDto settings);
+        Task SetLanguageAsync(string language);
         Task<Guid> StartJobAsync(HostJobRequestDto request);
         Task<HostJobStatusDto> GetJobStatusAsync(Guid jobId);
         Task<bool> CancelJobAsync(Guid jobId);

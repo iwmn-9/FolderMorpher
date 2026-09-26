@@ -18,7 +18,7 @@
     <Compile Include="PresentationTestRunner.cs" />
     <Compile Include="Models\**\*.cs" />
     <Compile Include="..\FolderMorpher.Core\Models\*.cs" Exclude="..\FolderMorpher.Core\Models\ScanTabModel.cs" Link="Models\%(Filename)%(Extension)" />
-    <Compile Include="..\FolderMorpher.Core\Services\AppSettingsService.cs" Link="Services\AppSettingsService.cs" />
+    <Compile Include="Services\AppSettingsService.cs" />
     <Compile Include="..\FolderMorpher.Core\Services\AppStrings.cs" Link="Services\AppStrings.cs" />
     <Compile Include="..\FolderMorpher.Core\Services\FormatHelper.cs" Link="Services\FormatHelper.cs" />
     <Compile Include="..\FolderMorpher.Core\Services\LocalizationService.cs" Link="Services\LocalizationService.cs" />

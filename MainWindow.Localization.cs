@@ -24,9 +24,18 @@ namespace AstraSize
     public partial class MainWindow : Window
     {
         #region Localization (i18n)
-        private void LanguageToggleButton_Click(object sender, RoutedEventArgs e)
+        private async void LanguageToggleButton_Click(object sender, RoutedEventArgs e)
         {
             LocalizationService.Instance.ToggleLanguage();
+            var language = LocalizationService.Instance.CurrentLanguage == AppLanguage.English ? "en" : "ja";
+            AppSettingsService.Instance.Current.Language = language;
+            AppSettingsService.Instance.Save();
+            try
+            {
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                await host.SetLanguageAsync(language);
+            }
+            catch (Exception ex) { Debug.WriteLine($"Host language update failed: {ex}"); }
         }
 
         private void ApplyClientModeLayout()

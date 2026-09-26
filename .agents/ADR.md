@@ -941,26 +941,18 @@
 
 ---
 
-### ADR 101: Core / Host / GUI 3層完全分離アーキテクチャ（Application Boundary の再構築）
+### ADR 101: GUI と業務処理のプロセス境界
 
-- **背景**:
-  - 今後の常駐 Index 更新、関連ファイル機能、閉じた環境のファイル空間管理を見据え、従来の WPF GUI 一体型モノリスから「常駐 Host / Core」と「WPF GUI」を完全に分離。
-  - 「WPF GUI には業務ロジック・ファイル処理・検索処理・ACL処理・DB所有などを持たせず、表示とユーザー操作だけを担当させる」ことを絶対条件とし、中途半端な段階移行を残さない完全分離を断行。
-- **決定**:
-  - **依存方向の厳格固定**: `GUI -> Host -> Core`。逆方向の参照を完全禁止。
-  - **1. `FolderMorpher.Core` (`net8.0-windows`, `UseWPF=false`)**:
-    - Window / Control / MessageBox / Dispatcher / WPF Binding / UI 依存を完全排除。ヘッドレスで全機能が自律動作する純粋なクラスライブラリ。
-    - `MediaOptimizerService`: WPF (WIC) 依存を `System.Drawing.Common` (GDI+) に置換。PNG 透過アルファチャンネル 100% 保持、Exif/PropertyItems 完全保持、JPEG 品質圧縮、安全アトミック置換を Class Library 内で完全実現。
-    - `FileItemNode` / `SimModels`: `FontWeight`, `Thickness`, `Visibility` などの WPF 専用型プロパティを排除・文字列化。
-  - **2. `FolderMorpher.Host.exe` (`OutputType=WinExe`, ユーザーログオン常駐プロセス)**:
-    - ユーザーログオン時にバックグラウンド起動（Mutex による単一インスタンス保証、トレイ/UI なしの軽量デーモン）。
-    - Core サービスの実行ホストであり、SQLite DB (`tree_cache.db`)、インデックス、キャッシュの排他的所有者。
-    - Named Pipe (`FolderMorpher_IPC_{UserName}`) および `StreamJsonRpc` (v2.25.29) による高スループット非同期 RPC サーバー (`IFolderMorpherHostService`) を提供。
-  - **3. `FolderMorpher.exe` (WPF GUI)**:
-    - 業務ロジック・ファイル I/O・直接走査・ACL 変更・DB 直接アクセスを全廃し、View / ユーザー入力 / 表示だけに特化。
-    - `FolderMorpherHostClient`: Host 未起動時の自動自己起動（フォールバック起動）および自動接続自己治癒を備えた IPC クライアント。
-    - 全スタジオ（Tab 1: Storage, Tab 2: Search, Tab 3: Live ACL, Tab 4: Simulation, Tab 5: LinkFix, Tab 6: Audit, Tab 7: Media）の実行処理をすべて `HostClient` 経由の RPC 呼び出しへ一本化。
-- **検証**:
-  - `FolderMorpher.Core`: 全 8 大ドメイン包括自動回帰テストが 8/8 ALL PASSED。
-  - `FolderMorpher.Host`: Named Pipe リスナーが正常起動し、0 警告・0 エラーでビルド。
-  - `FolderMorpher` (GUI): `--test-ipc` による Ping / HostStatus 取得が Named Pipe 経由で 100% 成功。全ソリューションが 0 警告・0 エラーでビルド。
+- **決定の核**: GUIは表示と入力を担当し、走査・検索・ACL・監査・移行・DB操作をHost経由でCoreへ送る。CoreはWPF型に依存しない。変更系はPlan Firstを維持する。
+- **更新**: 当初の別 `Host.exe` 配布案とCore内Contracts案はADR 102で撤回。過去案を現行構成として実装しない。
+
+---
+
+### ADR 102: 1 EXE・2プロセスモードとContracts境界
+
+- **要求**: 配布は `FolderMorpher.exe` 1ファイル。通常起動はGUI、`--host` は同じバイナリのHostプロセス。旧別Host EXE案を廃止。
+- **ソース依存**: `FolderMorpher.UI -> FolderMorpher.Contracts <- FolderMorpher.Host -> FolderMorpher.Core`。ルート実行プロジェクトがUIとHostを参照し、起動引数で実行モードを分ける。UIにCoreのProjectReferenceはない。共有事実モデルは同一ソースを両アセンブリでコンパイルし、移した表示プロパティはUIのpartial classに置く。
+- **IPC**: `IFolderMorpherHostService` と機能別DTOはContractsの正本。親参照のあるツリーをそのままシリアライズしない。Named PipeはSID・セッションごとの名前と `CurrentUserOnly` で閉じる。Host未起動ならクライアントが同じEXEを `--host` で起動する。
+- **処理所有権**: 検索・監査・スケルトン展開・移行パッケージ・実効権限監査はHost Job APIで開始・状態取得・中止・解放する。GUIを閉じてもHostが所有する。設定JSON、キャッシュ、エクスポートもHostが扱う。フォルダー作成とACL変更はHostで計画とコミットを分ける。
+- **確認済みの限界**: 一部旧Coreモデルには表示ラベル・色が残り、レポート生成も表示用文字列を使う。UIはCoreモデルと検索構文解析のソースを共有コンパイルするため、論理上の全モデル依存までContractsへ移した状態ではない。これを解消する時はレポートの文言正本とUI表示を整理し、現行の出力意味論を保つ。
+- **検証**: Releaseビルド0警告0エラー、Core回帰8/8、publishした単一EXEの `--test-ipc` で別PIDのHostを起動し、実際のDTO往復を確認する。8/8は網羅率ではない。

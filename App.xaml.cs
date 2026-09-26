@@ -141,6 +141,10 @@ namespace AstraSize
                         Console.WriteLine($"[TEST-IPC] Host Status: IsRunning={status.IsRunning}, PID={status.ProcessId}, User={status.UserName}");
                         if (!pong || !status.IsRunning || status.ProcessId == Environment.ProcessId)
                             throw new InvalidOperationException("Host must respond from a separate process.");
+                        var settings = await host.GetAppSettingsAsync();
+                        if (settings.StorageTabPaths == null || settings.Language is not ("ja" or "en"))
+                            throw new InvalidOperationException("Settings DTO roundtrip failed.");
+                        await host.SetLanguageAsync(settings.Language);
                         FolderMorpher.UI.PresentationTestRunner.VerifyStorageNodePresentation();
 
                         var testRoot = Path.Combine(Path.GetTempPath(), $"FolderMorpher_IpcTest_{Guid.NewGuid():N}");

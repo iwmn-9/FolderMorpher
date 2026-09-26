@@ -46,20 +46,12 @@
 - **アプリケーション名**: `FolderMorpher` (旧 AstraSize)
 - **種別**: Windows デスクトップ向け 大容量ファイルサーバー監視 & NTFSアクセス権移行・シミュレーションスタジオ
 - **フレームワーク**: .NET 8.0, C# 12
-- **3層アーキテクチャ境界 (ADR 101: 依存方向 `GUI -> Host -> Core`)**:
-  1. **`FolderMorpher.Core`**:
-     - `net8.0-windows`, `UseWPF=false`
-     - Window/Control/Dispatcher/WPF依存ゼロの純粋ヘッドレス・クラスライブラリ。
-     - 検索、ファイル走査、MFT、ACL/Effective Access、監査、移行、リンク修復、画像最適化（GDI+）、共通モデル・契約（Contracts）を保持。
-  2. **`FolderMorpher.Host.exe`**:
-     - `net8.0-windows`, `OutputType=WinExe`, `UseWPF=false`
-     - ユーザーログオン常駐プロセス（Mutex単一インスタンス保証、トレイ/UIなし）。
-     - SQLite DB (`tree_cache.db`)、インデックス、キャッシュの排他的所有者。
-     - Named Pipe (`FolderMorpher_IPC_{UserName}`) と `StreamJsonRpc` (v2.25.29) による高スループット非同期 RPC サーバー (`IFolderMorpherHostService`)。
-  3. **`FolderMorpher.exe` (WPF GUI)**:
-     - `net8.0-windows`, `UseWPF=true`
-     - 業務ロジック・直接走査・ファイルI/O・ACL変更・DB直接アクセスを持たず、View・操作・表示のみを担当。
-     - `FolderMorpherHostClient`: Host 未起動時の自動自己起動（フォールバック）および自動再接続自己治癒を備えた IPC クライアント。
+- **実行境界 (ADR 101・102)**: 配布は `FolderMorpher.exe` 1本。通常起動はGUI、`--host` は同じEXEの別Hostプロセス。ソース依存は `UI -> Contracts <- Host -> Core`。起動分岐はルート `App.xaml.cs`。
+  1. **`FolderMorpher.Contracts`**: Core/WPF非依存のRPC契約とDTO。循環参照する画面モデルをそのままパイプへ渡さない。
+  2. **`FolderMorpher.Core`**: `UseWPF=false` のヘッドレス・クラスライブラリ。走査、検索、ACL、監査、移行などの実処理を持つ。レポート出力向け文言と旧モデルの表示プロパティは一部残るため、変更時は画面表示と区別する。
+  3. **`FolderMorpher.Host`**: `UseWPF=false` のライブラリ。`FolderMorpher.exe --host` で起動し、Coreサービス、SQLite、設定、ジョブを所有する。Named PipeはユーザーSIDとセッションを識別し、`PipeOptions.CurrentUserOnly` を使用。
+  4. **`FolderMorpher.UI`**: WPF画面、画面用モデル、DTO変換、IPCクライアントを持ち、プロジェクト参照はContractsのみ。Coreモデルの事実部分は同一ソースをUIでもコンパイルし、分離済みの表示部分はUI partial classで足す。共有ソースの検索構文解析は残存する。
+     - `FolderMorpherHostClient` はHost未起動時に同じEXEを `--host` で起動し、切断時に再接続する。
 - **ビルド形態**: `Release win-x64` の **自己完結型（Self-Contained）単一実行可能ファイル (`FolderMorpher.exe`)**
   - ネイティブWPFエンジンDLLおよび SQLite ネイティブDLLはEXE内部にバンドルされる。
   - `-p:EnableCompressionInSingleFile=true` による Deflate 圧縮を標準採用。
@@ -68,7 +60,7 @@
 
 ## 2. システム鳥瞰マップ（機能とソースコードの対応表）
 
-UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class 分割）および独立コンポーネント `Views/LiveAclStudio.xaml` / `LiveAclStudio.xaml.cs` で構成され、全機能の実行処理は `HostClient/FolderMorpherHostClient.cs` を介して `FolderMorpher.Host`（RPC 経由）に委譲される。内部ロジックは `FolderMorpher.Core` に完全に分離されている。
+UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class 分割）と `Views/LiveAclStudio.xaml` / `LiveAclStudio.xaml.cs`。業務処理は `HostClient/FolderMorpherHostClient.cs` からDTOでHostへ委譲する。UI固有の表示処理は `FolderMorpher.UI/Models`、設定の永続化はHostが所有する。
 
 | 機能領域 / タブ | XAML (MainWindow / View) | C# コードビハインド | 関連 Service / Model | 責務と概要 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -84,7 +76,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 | **変化点差分モーダル** | `DiffModalOverlay` | `MainWindow.Simulation.cs` | `SimModels.cs` | 移行前後（Before/After）の変化点（新規・移動・統合・ACL差分）の一覧レビューとExcel出力 |
 | **移行パッケージ生成モーダル** | `MigrationPackageOverlay` | `MainWindow.Simulation.cs` | `MigrationPackageService.cs`<br>`MigrationPackageModels.cs`<br>`ExcelReportService.cs` | ベンダー標準移行工程（事前フル同期、中間差分、本番切替）の一括静的生成、波次（Wave）自動分割・容量バジェット算定、動的転送レート・差分率による所要時間算出、容量二重加算防止、実測ファイル数引き継ぎ、安全停止手順書ガイド、週末枠オーバー警告、Migration_Runbook.xlsx（WBS/進捗台帳・マッピング・除外一覧） |
 
-**検索の現行入口**: `MainWindow.Search.cs` → `SearchEngineService`。直接走査は `SafeFileEnumerator.EnumerateFileEntriesParallelAsync(..., collectResults: false)` のコールバックで逐次処理する。ファイル名・パス・本文条件の共通判定は `SearchEngineService.MatchesSearchTerms` が正本。`TreeCachePruningIndex` はフォルダー時刻だけでは検索の完全性を保証できないため、通常画面の直接走査では構築しない。
+**検索の現行入口**: `MainWindow.Search.cs` → `FolderMorpherHostClient` → `HostService.Search.cs` → `SearchEngineService`。直接走査は `SafeFileEnumerator.EnumerateFileEntriesParallelAsync(..., collectResults: false)` のコールバックで逐次処理する。ファイル名・パス・本文条件の共通判定は `SearchEngineService.MatchesSearchTerms` が正本。`TreeCachePruningIndex` はフォルダー時刻だけでは検索の完全性を保証できないため、通常画面の直接走査では構築しない。
 
 **旧方式**: 検索専用 FTS5 と Watcher は ADR 87 で通常画面から退役し、ADR 100 で旧サービスと専用テストも撤去した。`Microsoft.Data.Sqlite` は現行の `SqliteTreeCacheService` で引き続き使用する。
 
@@ -95,13 +87,13 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの設計判断記録（ADR 1〜100）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの設計判断記録（ADR 1〜102）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 
 #### 主要な中核原則サマリー（詳細は `.agents/ADR.md` 参照）
 
-設計判断（ADR 1〜100）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
+設計判断（ADR 1〜102）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
 
 1. **全体占有率メーター & 2連カード（Storage / ADR 61）**:
    - 親フォルダーに対する直下シェア（右ペイン「選択フォルダーの内訳」）と、スキャン対象ルート総容量に対する全体占有率を二重加算防止のため厳格分離。ルート行は `―`（ハイフン）表示。メトリクスカードは「スキャン対象 容量」「前回差分推移」の2連カード化。
@@ -149,10 +141,10 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 ### 配布用単一EXEの生成（Release self-contained・圧縮約75.5MB）
 ```powershell
 $env:PATH = "C:\Users\iwakura\.dotnet;" + $env:PATH
-& "$HOME\.dotnet\dotnet.exe" publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o ./publish
+& "$HOME\.dotnet\dotnet.exe" publish ./FolderMorpher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -o ./publish-single
 # Google Drive同期時は社内互換のため2つとも配置すること
-Copy-Item ./publish/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderMorpher.exe" -Force
-Copy-Item ./publish/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderCleaner.exe" -Force
+Copy-Item ./publish-single/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderMorpher.exe" -Force
+Copy-Item ./publish-single/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderCleaner.exe" -Force
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
@@ -160,6 +152,9 @@ Copy-Item ./publish/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\Folde
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```
+
+### 単一EXEのIPC統合試験
+配布物を生成後、`publish-single/FolderMorpher.exe --test-ipc` を実行する。別PIDの `--host` を起動し、Named PipeでStorage/Search/ACL/Audit/移行/設定のDTOを往復させる。Hostの既存常駐プロセスがある場合はテスト対象EXEと同じビルドか確認する。
 
 ### 自動統合テスト（ヘッドレス実行）
 ```powershell
