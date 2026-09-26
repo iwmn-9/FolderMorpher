@@ -288,7 +288,9 @@ namespace FolderMorpher.Services
         /// <summary>
         /// テキストファイルをストリーム走査し、ORグループ群（各グループ内のいずれかに一致、全グループを満たす）の包含判定とスニペット抽出を高速実行。
         /// </summary>
-        public static async Task<string?> SearchTextContentAsync(string filePath, IReadOnlyList<List<string>> requiredGroups, CancellationToken ct)
+        public static async Task<string?> SearchTextContentAsync(
+            string filePath, IReadOnlyList<List<string>> requiredGroups, CancellationToken ct,
+            AdaptiveTextReadController? readController = null, long knownSize = -1)
         {
             if (requiredGroups.Count == 0) return null;
 
@@ -306,7 +308,9 @@ namespace FolderMorpher.Services
                 if (ac == null) return null;
             }
 
-            return await SearchTextContentWithBufferAsync(filePath, singleKw, ac, patternToGroup, requiredGroups.Count, ct);
+            return await SearchTextContentWithBufferAsync(
+                filePath, singleKw, ac, patternToGroup, requiredGroups.Count, ct,
+                readController: readController, knownSize: knownSize);
         }
 
         /// <summary>
@@ -321,20 +325,31 @@ namespace FolderMorpher.Services
             List<int>? patternToGroup,
             int totalGroups,
             CancellationToken ct,
-            Action<double>? reportIoElapsed = null)
+            Action<double>? reportIoElapsed = null,
+            AdaptiveTextReadController? readController = null,
+            long knownSize = -1)
         {
             if (string.IsNullOrEmpty(filePath)) return null;
 
             char[]? buffer = null;
+            byte[]? head = null;
+            int readBufferSize = readController?.SelectBufferSize(knownSize) ?? AdaptiveTextReadController.DefaultBufferSize;
+            double[]? readLatencies = knownSize >= 8L * 1024 * 1024 && readController != null ? new double[64] : null;
+            int latencyCount = 0;
+            long totalCharsRead = 0;
+            double totalReadMs = 0;
+            bool completedMiss = false;
             try
             {
                 var ioSw = Stopwatch.StartNew();
-                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan | FileOptions.Asynchronous);
+                using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite,
+                    readBufferSize, FileOptions.SequentialScan | FileOptions.Asynchronous);
                 if (fs.Length == 0) return null;
 
                 // 先頭バイトでバイナリ早期脱落判定（3GiB超での負数オーバーフロー防止）
-                byte[] head = new byte[(int)Math.Min(1024L, Math.Max(0L, fs.Length))];
-                int bytesRead = await fs.ReadAsync(head.AsMemory(0, head.Length), ct);
+                int headLength = (int)Math.Min(1024L, fs.Length);
+                head = ArrayPool<byte>.Shared.Rent(headLength);
+                int bytesRead = await fs.ReadAsync(head.AsMemory(0, headLength), ct);
                 fs.Position = 0;
                 ioSw.Stop();
                 reportIoElapsed?.Invoke(ioSw.Elapsed.TotalMilliseconds);
@@ -370,7 +385,15 @@ namespace FolderMorpher.Services
                 {
                     while (true)
                     {
+                        long readStart = readLatencies == null ? 0 : Stopwatch.GetTimestamp();
                         int charsRead = await reader.ReadBlockAsync(buffer.AsMemory(overlapChars, BufferSize - overlapChars), ct);
+                        if (readLatencies != null && charsRead > 0)
+                        {
+                            double elapsedMs = Stopwatch.GetElapsedTime(readStart).TotalMilliseconds;
+                            readLatencies[latencyCount++ % readLatencies.Length] = elapsedMs;
+                            totalCharsRead += charsRead;
+                            totalReadMs += elapsedMs;
+                        }
                         int totalChars = overlapChars + charsRead;
                         if (totalChars == 0) break;
 
@@ -387,6 +410,7 @@ namespace FolderMorpher.Services
                         overlapChars = Math.Min(totalChars, maxOverlap);
                         Array.Copy(buffer, totalChars - overlapChars, buffer, 0, overlapChars);
                     }
+                    completedMiss = true;
                     return null;
                 }
 
@@ -398,7 +422,15 @@ namespace FolderMorpher.Services
 
                     while (true)
                     {
+                        long readStart = readLatencies == null ? 0 : Stopwatch.GetTimestamp();
                         int charsRead = await reader.ReadBlockAsync(buffer.AsMemory(overlapChars, BufferSize - overlapChars), ct);
+                        if (readLatencies != null && charsRead > 0)
+                        {
+                            double elapsedMs = Stopwatch.GetElapsedTime(readStart).TotalMilliseconds;
+                            readLatencies[latencyCount++ % readLatencies.Length] = elapsedMs;
+                            totalCharsRead += charsRead;
+                            totalReadMs += elapsedMs;
+                        }
                         int totalChars = overlapChars + charsRead;
                         if (totalChars == 0) break;
 
@@ -430,12 +462,21 @@ namespace FolderMorpher.Services
                         overlapChars = Math.Min(totalChars, maxOverlap);
                         Array.Copy(buffer, totalChars - overlapChars, buffer, 0, overlapChars);
                     }
+                    completedMiss = true;
                 }
             }
             catch { }
             finally
             {
                 if (buffer != null) ArrayPool<char>.Shared.Return(buffer, clearArray: true);
+                if (head != null) ArrayPool<byte>.Shared.Return(head, clearArray: true);
+                if (completedMiss && readLatencies != null && latencyCount > 0)
+                {
+                    int count = Math.Min(latencyCount, readLatencies.Length);
+                    Array.Sort(readLatencies, 0, count);
+                    double p95Ms = readLatencies[(int)Math.Ceiling(count * 0.95) - 1];
+                    readController!.ReportCompletedMiss(readBufferSize, knownSize, totalCharsRead, totalReadMs, p95Ms);
+                }
             }
             return null;
         }
@@ -649,11 +690,10 @@ namespace FolderMorpher.Services
                     }
                 }
 
-                // Word (.docx), PowerPoint (.pptx), または sharedStrings だけでは不足していた Excel シートの探索
-                foreach (var entry in zip.Entries)
+                // 主本文のEntryを先に読む。残りも必ず走査するので非一致の網羅性は変えない。
+                foreach (var entry in EnumerateOfficeTextEntries(zip, ext))
                 {
                     string entryName = entry.FullName;
-                    if (!IsSearchableOfficeTextEntry(entryName, includeRelations: true)) continue;
 
                     // ★ 二重読みの完全排除：sharedStrings.xml を既に検査済みならスキップ！
                     if (hasScannedSharedStrings && entryName.Contains("sharedstrings", StringComparison.OrdinalIgnoreCase)) continue;
@@ -694,6 +734,27 @@ namespace FolderMorpher.Services
             }
             catch { }
             return false;
+        }
+
+        private static IEnumerable<ZipArchiveEntry> EnumerateOfficeTextEntries(ZipArchive zip, string ext)
+        {
+            for (int pass = 0; pass < 2; pass++)
+            {
+                foreach (var entry in zip.Entries)
+                {
+                    if (!IsSearchableOfficeTextEntry(entry.FullName, includeRelations: true)) continue;
+                    bool isPrimary = ext switch
+                    {
+                        ".docx" => entry.FullName.Equals("word/document.xml", StringComparison.OrdinalIgnoreCase),
+                        ".pptx" => entry.FullName.StartsWith("ppt/slides/slide", StringComparison.OrdinalIgnoreCase) &&
+                                   entry.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase),
+                        ".xlsx" or ".xlsm" => entry.FullName.StartsWith("xl/worksheets/sheet", StringComparison.OrdinalIgnoreCase) &&
+                                                 entry.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase),
+                        _ => false
+                    };
+                    if (isPrimary == (pass == 0)) yield return entry;
+                }
+            }
         }
 
         private static bool IsSearchableOfficeTextEntry(string entryName, bool includeRelations)

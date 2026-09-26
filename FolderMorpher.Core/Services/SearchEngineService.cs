@@ -221,7 +221,7 @@ namespace FolderMorpher.Services
                 int deepProcessed = 0;
                 var deferredLargeFiles = new System.Collections.Concurrent.ConcurrentBag<SearchResultItem>();
 
-                var sharedContext = CreateSearchContext(query);
+                var sharedContext = CreateSearchContext(query, targetFolder);
 
                 var consumerTasks = Enumerable.Range(0, workerCount).Select(async _ =>
                 {
@@ -786,7 +786,7 @@ namespace FolderMorpher.Services
                 }
             }
 
-            var sharedContext = CreateSearchContext(query);
+            var sharedContext = CreateSearchContext(query, firstPath);
 
             await Parallel.ForEachAsync(validFiles, po, async (item, token) =>
             {
@@ -901,10 +901,12 @@ namespace FolderMorpher.Services
             public string? SingleKeyword { get; }
             public AhoCorasickSearcher? Ac { get; }
             public List<int>? PatternToGroup { get; }
+            public AdaptiveTextReadController ReadController { get; }
 
-            public QuerySearchContext(IReadOnlyList<List<string>> groups)
+            public QuerySearchContext(IReadOnlyList<List<string>> groups, bool isNetworkPath)
             {
                 Groups = groups;
+                ReadController = new AdaptiveTextReadController(isNetworkPath);
                 if (groups.Count == 1 && groups[0].Count == 1)
                 {
                     SingleKeyword = groups[0][0];
@@ -917,7 +919,7 @@ namespace FolderMorpher.Services
             }
         }
 
-        private static QuerySearchContext CreateSearchContext(SearchQuery query)
+        private static QuerySearchContext CreateSearchContext(SearchQuery query, string? targetPath)
         {
             var groups = new List<List<string>>();
             if (!string.IsNullOrEmpty(query.ContentKeyword))
@@ -938,7 +940,7 @@ namespace FolderMorpher.Services
                     }
                 }
             }
-            return new QuerySearchContext(groups);
+            return new QuerySearchContext(groups, PathCanonicalizer.IsNetworkPath(targetPath));
         }
 
         /// <summary>
@@ -1010,8 +1012,6 @@ namespace FolderMorpher.Services
             }
             else if (requiredGroups.Count > 0)
             {
-                string reqDesc = string.Join(" AND ", requiredGroups.Select(g => g.Count > 1 ? "(" + string.Join(" OR ", g) + ")" : (g.Count > 0 ? g[0] : "")));
-
                 // 1. Office (OpenXML: .xlsx, .xlsm, .docx, .pptx)
                 if (OfficeExtensions.Contains(ext))
                 {
@@ -1019,8 +1019,8 @@ namespace FolderMorpher.Services
                     {
                         item.ContentSnippet = snippet;
                         item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
-                            ? $"Name + Content: \"{reqDesc}\""
-                            : $"Content: \"{reqDesc}\"";
+                            ? $"Name + Content: \"{FormatRequiredGroups(requiredGroups)}\""
+                            : $"Content: \"{FormatRequiredGroups(requiredGroups)}\"";
                         return (true, false);
                     }
                 }
@@ -1046,8 +1046,8 @@ namespace FolderMorpher.Services
                     {
                         item.ContentSnippet = snippet;
                         item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
-                            ? $"Name + PDF Content: \"{reqDesc}\""
-                            : $"PDF Content: \"{reqDesc}\"";
+                            ? $"Name + PDF Content: \"{FormatRequiredGroups(requiredGroups)}\""
+                            : $"PDF Content: \"{FormatRequiredGroups(requiredGroups)}\"";
                         return (true, false);
                     }
                 }
@@ -1063,8 +1063,8 @@ namespace FolderMorpher.Services
                         {
                             item.ContentSnippet = probeSnippet;
                             item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
-                                ? $"Name + Content (Probe): \"{reqDesc}\""
-                                : $"Content (Probe): \"{reqDesc}\"";
+                                ? $"Name + Content (Probe): \"{FormatRequiredGroups(requiredGroups)}\""
+                                : $"Content (Probe): \"{FormatRequiredGroups(requiredGroups)}\"";
                             return (true, false);
                         }
 
@@ -1086,12 +1086,15 @@ namespace FolderMorpher.Services
                             sharedContext.PatternToGroup,
                             sharedContext.Groups.Count,
                             token,
-                            reportIoElapsed);
+                            reportIoElapsed,
+                            sharedContext.ReadController,
+                            item.SizeBytes);
                     }
                     else
                     {
                         var textIoSw = Stopwatch.StartNew();
-                        snippet = await ContentExtractionService.SearchTextContentAsync(item.FullPath, requiredGroups, token);
+                        snippet = await ContentExtractionService.SearchTextContentAsync(
+                            item.FullPath, requiredGroups, token, sharedContext?.ReadController, item.SizeBytes);
                         textIoSw.Stop();
                         reportIoElapsed?.Invoke(textIoSw.Elapsed.TotalMilliseconds);
                     }
@@ -1100,8 +1103,8 @@ namespace FolderMorpher.Services
                     {
                         item.ContentSnippet = snippet;
                         item.MatchedReason = (query.KeywordGroups.Count > requiredGroups.Count || query.Keywords.Count > requiredGroups.Count)
-                            ? $"Name + Content: \"{reqDesc}\""
-                            : $"Content: \"{reqDesc}\"";
+                            ? $"Name + Content: \"{FormatRequiredGroups(requiredGroups)}\""
+                            : $"Content: \"{FormatRequiredGroups(requiredGroups)}\"";
                         return (true, false);
                     }
                 }
@@ -1120,6 +1123,10 @@ namespace FolderMorpher.Services
 
             return (false, false);
         }
+
+        private static string FormatRequiredGroups(IReadOnlyList<List<string>> requiredGroups) =>
+            string.Join(" AND ", requiredGroups.Select(g =>
+                g.Count > 1 ? "(" + string.Join(" OR ", g) + ")" : (g.Count > 0 ? g[0] : "")));
 
         private static bool SearchPdfContentMultiple(string filePath, IReadOnlyList<List<string>> requiredGroups, out string snippet)
         {

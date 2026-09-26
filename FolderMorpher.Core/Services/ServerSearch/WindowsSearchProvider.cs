@@ -133,6 +133,9 @@ namespace FolderMorpher.Services.ServerSearch
             if (!OperatingSystem.IsWindows() || !IsProviderInstalled()) return null;
 
             string normalizedPath = PathCanonicalizer.Normalize(targetPath);
+            // 存在しないUNCへSearch.CollatorDSOを接続すると、一部環境では後続のCOM最終化で
+            // プロセスが落ちる。任意の候補加速なので、到達不能時は直接走査へ戻す。
+            if (!Directory.Exists(normalizedPath)) return null;
             string? sql = BuildSearchSql(normalizedPath, query);
             if (string.IsNullOrEmpty(sql)) return null;
 

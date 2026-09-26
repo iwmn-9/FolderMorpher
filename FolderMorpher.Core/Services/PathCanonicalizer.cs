@@ -92,7 +92,18 @@ namespace FolderMorpher.Services
         {
             if (string.IsNullOrWhiteSpace(path)) return false;
             string norm = Normalize(path);
-            return norm.StartsWith(@"\\");
+            if (norm.StartsWith(@"\\")) return true;
+
+            // WNetGetConnection が失敗しても、ドライブ種別が分かればUNC用のI/O上限を守る。
+            try
+            {
+                string? root = Path.GetPathRoot(path);
+                return !string.IsNullOrEmpty(root) && new DriveInfo(root).DriveType == DriveType.Network;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>

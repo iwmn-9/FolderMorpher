@@ -1774,6 +1774,9 @@ namespace FolderMorpher.Services.Testing
                 var dummyResult = await provider.QueryCandidatesAsync(@"\\non-existent-server-9999\fake-share", qDummy, CancellationToken.None);
                 if (dummyResult != null)
                     throw new Exception("ADR 94 failed: QueryCandidatesAsync should return null for non-existent server to trigger fallback.");
+                // 失敗したOLE DB接続のCOM最終化でプロセスが落ちないことも確認する。
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
 
                 // D. ServerSearchAccelerator コーディネーター＆モックプロバイダー登録動作検証
                 var accelerator = new FolderMorpher.Services.ServerSearch.ServerSearchAccelerator();
@@ -1846,6 +1849,28 @@ namespace FolderMorpher.Services.Testing
                     using var memStream = ContentExtractionService.OpenBufferedReadStream(boundaryFile);
                     if (memStream is not MemoryStream)
                         throw new Exception("ADR 95 failed: OpenBufferedReadStream should buffer files under 20MB in memory.");
+
+                    // E. 長い非一致走査後にRead幅を上げても、後方の本文ヒットを失わない。
+                    string largeFile = Path.Combine(tempDir, "adaptive_read.txt");
+                    byte[] fill = new byte[1024 * 1024];
+                    Array.Fill(fill, (byte)'Q');
+                    using (var output = File.Create(largeFile))
+                    {
+                        for (int i = 0; i < 18; i++) output.Write(fill);
+                    }
+                    var readController = new AdaptiveTextReadController(isNetworkPath: false);
+                    long largeSize = new FileInfo(largeFile).Length;
+                    var missing = await ContentExtractionService.SearchTextContentWithBufferAsync(
+                        largeFile, "TARGET_ADAPTIVE", null, null, 1, CancellationToken.None,
+                        readController: readController, knownSize: largeSize);
+                    if (missing != null || readController.SelectBufferSize(largeSize) <= AdaptiveTextReadController.DefaultBufferSize)
+                        throw new Exception("Adaptive text read did not promote after a complete large-file miss.");
+                    File.AppendAllText(largeFile, "TARGET_ADAPTIVE", Encoding.UTF8);
+                    var foundAfterPromotion = await ContentExtractionService.SearchTextContentWithBufferAsync(
+                        largeFile, "TARGET_ADAPTIVE", null, null, 1, CancellationToken.None,
+                        readController: readController, knownSize: new FileInfo(largeFile).Length);
+                    if (foundAfterPromotion?.Contains("TARGET_ADAPTIVE") != true)
+                        throw new Exception("Adaptive text read missed a keyword after buffer promotion.");
                 }
                 finally
                 {
