@@ -79,6 +79,10 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 
 **検索の現行入口**: `MainWindow.Search.cs` → `FolderMorpherHostClient` → `HostService.Search.cs` → `SearchEngineService`。直接走査は `SafeFileEnumerator.EnumerateFileEntriesParallelAsync(..., collectResults: false)` のコールバックで逐次処理する。ファイル名・パス・本文条件の共通判定は `SearchEngineService.MatchesSearchTerms` が正本。`TreeCachePruningIndex` はフォルダー時刻だけでは検索の完全性を保証できないため、通常画面の直接走査では構築しない。
 
+GUIは `SearchQuery.HasDeepFileIoRequirement` を正本としてLive本文・Officeリンク検索を起動する。`content:` 指定だけでも、対象ツリーがキャッシュ済みなら空結果で終わらせず原本を検索する。本文速度の比較はFolderMorpherのHost経由で同じ検索経路を使い、Cドライブ全体の実在する本文語で測る。Cドライブの結果からUNC固有のSMB効果を断定しない。
+
+テキスト本文走査の64KB文字バッファはプールで再利用し、返却時にクリアする。単一語はバッファ上で直接照合し、ヒット時だけスニペット用文字列を作る。ファイルごとの先頭NUL判定は厳密な非一致証明ではないため、索引なし枝刈りとして一般化しない（ADR 109）。
+
 スキャンツリーがHostメモリにない場合のキャッシュ検索は、TreeCacheを全ツリーへ復元せず `SqliteTreeCacheService.EnumerateSearchEntries` から逐次照合する。再スキャンの前回差分も旧ツリーを復元せずDB行を逐次読む。どちらもローカルDBだけを読むのでUNCへの追加I/Oは発生しない。
 
 GUIの検索実行はLiveとキャッシュの双方をHost Jobとして所有し、停止・クリア・入力変更で旧Jobへキャンセルを伝える。空の検索条件では自動検索を起動しない。Host Jobのキャンセルは `HostJobClient` と `HostService.Jobs.cs` が正本で、GUIは世代番号で遅延応答を破棄する。
@@ -94,7 +98,7 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの設計判断記録（ADR 1〜105）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの設計判断記録（ADR 1〜109）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 
@@ -158,7 +162,7 @@ Copy-Item ./publish-single/FolderMorpher.exe "G:\マイドライブ\FolderMorphe
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
-バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 8/8 ALL PASSED（8ドメイン通過）であることを確認すること。8/8 は網羅率を意味しない。検索テストは `RegressionTestSuite.Search.cs`（構文・現行経路）、`.Search.CurrentRoutes.cs`（名前・本文の意味論）、`.Search.Infrastructure.cs`（照合・列挙）、`.Search.ServerContent.cs`（WSP・抽出）に分ける。
+バグ修正やリファクタリング後は、必ず以下の回帰テストを実行して 8/8 ALL PASSED（8ドメイン通過）であることを確認すること。8/8 は網羅率を意味しない。検索テストの現行ソースは `FolderMorpher.Core/Services/Testing/RegressionTestSuite.Search.cs`。
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" run --no-build -- --test-regression
 ```

@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -324,6 +325,7 @@ namespace FolderMorpher.Services
         {
             if (string.IsNullOrEmpty(filePath)) return null;
 
+            char[]? buffer = null;
             try
             {
                 var ioSw = Stopwatch.StartNew();
@@ -360,7 +362,7 @@ namespace FolderMorpher.Services
                 // ★ ADR 97: クエリ内の最長キーワード長に応じた動的オーバーラップ幅（長大キーワードの境界またぎ漏れ根絶）
                 int maxKeywordLen = Math.Max(singleKeyword?.Length ?? 0, (ac?.Patterns.Count > 0 ? ac.Patterns.Max(p => p.Length) : 0));
                 int maxOverlap = Math.Clamp(Math.Max(1024, maxKeywordLen * 2), 1024, 16384);
-                char[] buffer = new char[BufferSize];
+                buffer = ArrayPool<char>.Shared.Rent(BufferSize);
                 int overlapChars = 0;
 
                 // 単一キーワードの JIT/AVX2 高速パス
@@ -372,10 +374,10 @@ namespace FolderMorpher.Services
                         int totalChars = overlapChars + charsRead;
                         if (totalChars == 0) break;
 
-                        string chunkText = new string(buffer, 0, totalChars);
-                        int idx = chunkText.IndexOf(singleKeyword, StringComparison.OrdinalIgnoreCase);
+                        int idx = MemoryExtensions.IndexOf((ReadOnlySpan<char>)buffer.AsSpan(0, totalChars), singleKeyword.AsSpan(), StringComparison.OrdinalIgnoreCase);
                         if (idx >= 0)
                         {
+                            string chunkText = new string(buffer, 0, totalChars);
                             return ExtractSnippet(chunkText, idx, singleKeyword.Length);
                         }
 
@@ -431,6 +433,10 @@ namespace FolderMorpher.Services
                 }
             }
             catch { }
+            finally
+            {
+                if (buffer != null) ArrayPool<char>.Shared.Return(buffer, clearArray: true);
+            }
             return null;
         }
 

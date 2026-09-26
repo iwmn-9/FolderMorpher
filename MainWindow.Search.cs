@@ -298,7 +298,7 @@ namespace AstraSize
                     ApplyFilterAndSort();
                     long totalBytes = _searchResults.Sum(h => h.SizeBytes);
                     UpdateSearchKpi(_searchResults.Count, totalBytes, searchTotalSw.Elapsed);
-                    if (SearchStatusText != null && query.SearchContentMode)
+                    if (SearchStatusText != null && query.HasDeepFileIoRequirement)
                     {
                         SearchStatusText.Text = isJa
                             ? $"🔍 ヒット検出中: {_searchResults.Count:N0} 件 ―― 📄 本文を走査中..."
@@ -334,7 +334,9 @@ namespace AstraSize
                     // 🚀 ルート1: スキャン済みツリー対象 (0秒インメモリ検索 ＋ 本文ストリーミング)
                     // Step 1: まずツリーからファイル名・属性一致を超高速（0秒インメモリ）で先行表示！
                     var treeResults = new List<SearchResultItem>();
-                    if (string.IsNullOrEmpty(query.ContentKeyword))
+                    if (string.IsNullOrEmpty(query.ContentKeyword) &&
+                        !query.HasOfficeLinkOnly &&
+                        string.IsNullOrEmpty(query.OfficeLinkKeyword))
                     {
                         var nameOnlyQuery = query.Clone();
                         nameOnlyQuery.SearchContentMode = false;
@@ -349,7 +351,7 @@ namespace AstraSize
                             long totalBytes = _searchResults.Sum(h => h.SizeBytes);
                             UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
 
-                            if (query.SearchContentMode && SearchStatusText != null)
+                            if (query.HasDeepFileIoRequirement && SearchStatusText != null)
                             {
                                 SearchStatusText.Text = isJa
                                     ? $"⚡ ツリーから即時表示: {_searchResults.Count:N0} 件 ({sw.ElapsedMilliseconds} ms) ―― 📄 本文を走査中..."
@@ -358,9 +360,9 @@ namespace AstraSize
                         }
                     }
 
-                    if (query.SearchContentMode && hasTarget)
+                    if (query.HasDeepFileIoRequirement && hasTarget)
                     {
-                        // Step 2: 本文検索がONの場合は、ライブ直接走査をバックグラウンド実行して本文ヒットを合流！
+                        // Step 2: 本文・Officeリンク条件は、キャッシュがあっても原本をLive走査する。
                         var liveHits = (await RunSearchJobAsync(targetFolder, query, progress, cached: false, ct))
                             .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                         if (currentGen == Volatile.Read(ref _searchGeneration))
@@ -396,7 +398,7 @@ namespace AstraSize
                             }
                         }
                     }
-                    else if (!query.SearchContentMode && currentGen == Volatile.Read(ref _searchGeneration))
+                    else if (!query.HasDeepFileIoRequirement && currentGen == Volatile.Read(ref _searchGeneration))
                     {
                         if (SearchStatusText != null)
                         {
@@ -412,8 +414,8 @@ namespace AstraSize
                     if (SearchStatusText != null && currentGen == Volatile.Read(ref _searchGeneration))
                     {
                         SearchStatusText.Text = isJa
-                            ? (query.SearchContentMode ? "🔍 ライブ走査中 (ファイル名即時表示 ＆ 本文検索)..." : "🔍 ライブ走査を実行中...")
-                            : (query.SearchContentMode ? "🔍 Live scanning (instant name hits & content search)..." : "🔍 Running live direct search...");
+                            ? (query.HasDeepFileIoRequirement ? "🔍 ライブ走査中 (ファイル名即時表示 ＆ 本文検索)..." : "🔍 ライブ走査を実行中...")
+                            : (query.HasDeepFileIoRequirement ? "🔍 Live scanning (instant name hits & content search)..." : "🔍 Running live direct search...");
                     }
 
                     var results = (await RunSearchJobAsync(targetFolder, query, progress, cached: false, ct))
