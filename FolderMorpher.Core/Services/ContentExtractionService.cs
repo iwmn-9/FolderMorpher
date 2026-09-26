@@ -90,17 +90,7 @@ namespace FolderMorpher.Services
 
                 foreach (var entry in zip.Entries)
                 {
-                    string name = entry.FullName.ToLowerInvariant();
-                    if (!name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) continue;
-
-                    // 対象となるXMLパーツのみに絞り込む（Excel: sharedStrings, sheet / Word: document / PPT: slide）
-                    if (!name.Contains("sharedstrings") &&
-                        !name.Contains("sheet") &&
-                        !name.Contains("document") &&
-                        !name.Contains("slide"))
-                    {
-                        continue;
-                    }
+                    if (!IsSearchableOfficeTextEntry(entry.FullName, includeRelations: false)) continue;
 
                     using var stream = entry.Open();
                     using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 65536);
@@ -656,20 +646,11 @@ namespace FolderMorpher.Services
                 // Word (.docx), PowerPoint (.pptx), または sharedStrings だけでは不足していた Excel シートの探索
                 foreach (var entry in zip.Entries)
                 {
-                    string entryName = entry.FullName.ToLowerInvariant();
-                    if (!entryName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) && !entryName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase)) continue;
+                    string entryName = entry.FullName;
+                    if (!IsSearchableOfficeTextEntry(entryName, includeRelations: true)) continue;
 
                     // ★ 二重読みの完全排除：sharedStrings.xml を既に検査済みならスキップ！
-                    if (hasScannedSharedStrings && entryName.Contains("sharedstrings")) continue;
-
-                    if (!entryName.Contains("sheet") &&
-                        !entryName.Contains("document") &&
-                        !entryName.Contains("slide") &&
-                        !entryName.Contains("comment") &&
-                        !entryName.Contains("footnote"))
-                    {
-                        continue;
-                    }
+                    if (hasScannedSharedStrings && entryName.Contains("sharedstrings", StringComparison.OrdinalIgnoreCase)) continue;
 
                     using var eStream = entry.Open();
                     using var reader = new StreamReader(eStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 65536);
@@ -707,6 +688,25 @@ namespace FolderMorpher.Services
             }
             catch { }
             return false;
+        }
+
+        private static bool IsSearchableOfficeTextEntry(string entryName, bool includeRelations)
+        {
+            if (!entryName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) &&
+                !(includeRelations && entryName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase)))
+            {
+                return false;
+            }
+
+            return entryName.Contains("sharedstrings", StringComparison.OrdinalIgnoreCase) ||
+                   entryName.Contains("sheet", StringComparison.OrdinalIgnoreCase) ||
+                   entryName.Contains("document", StringComparison.OrdinalIgnoreCase) ||
+                   entryName.Contains("slide", StringComparison.OrdinalIgnoreCase) ||
+                   entryName.Contains("comment", StringComparison.OrdinalIgnoreCase) ||
+                   entryName.Contains("footnote", StringComparison.OrdinalIgnoreCase) ||
+                   entryName.Contains("endnote", StringComparison.OrdinalIgnoreCase) ||
+                   entryName.Contains("header", StringComparison.OrdinalIgnoreCase) ||
+                   entryName.Contains("footer", StringComparison.OrdinalIgnoreCase);
         }
 
         #endregion

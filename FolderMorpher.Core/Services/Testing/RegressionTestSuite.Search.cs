@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -1890,6 +1891,35 @@ namespace FolderMorpher.Services.Testing
 
                     if (hit == null || !hit.Contains("CONFIDENTIAL"))
                         throw new Exception("ADR 97 failed: SearchTextContentWithBufferAsync failed to match BOM-less UTF-16 text.");
+
+                    // Wordの本文以外にも検索可能な文字がある。部分読みの対象から落とさない。
+                    string officePath = Path.Combine(tempDir, "header_footer_endnote.docx");
+                    using (var archive = new ZipArchive(File.Create(officePath), ZipArchiveMode.Create))
+                    {
+                        foreach (var (entryName, value) in new[]
+                        {
+                            ("word/document.xml", "本文"),
+                            ("word/header1.xml", "HEADER_ONLY_TOKEN"),
+                            ("word/footer1.xml", "FOOTER_ONLY_TOKEN"),
+                            ("word/endnotes.xml", "ENDNOTE_ONLY_TOKEN")
+                        })
+                        {
+                            using var writer = new StreamWriter(archive.CreateEntry(entryName).Open(), new UTF8Encoding(false));
+                            writer.Write($"<w:p><w:t>{value}</w:t></w:p>");
+                        }
+                    }
+
+                    var officeGroups = new List<List<string>>
+                    {
+                        new() { "HEADER_ONLY_TOKEN" },
+                        new() { "FOOTER_ONLY_TOKEN" },
+                        new() { "ENDNOTE_ONLY_TOKEN" }
+                    };
+                    if (!ContentExtractionService.SearchOfficeContent(officePath, officeGroups, out _))
+                        throw new Exception("Office content search missed text in a Word header, footer, or endnote.");
+                    string? extractedOfficeText = ContentExtractionService.ExtractOfficeText(officePath);
+                    if (extractedOfficeText == null || officeGroups.Any(group => !extractedOfficeText.Contains(group[0], StringComparison.Ordinal)))
+                        throw new Exception("Office text extraction and live content search disagree about Word text parts.");
 
                     // C. 3GiB ファイルシミュレーション（境界計算・キャストの負数オーバーフロー防止）
                     long hugeFileSimulatedLen = 3L * 1024 * 1024 * 1024; // 3 GiB

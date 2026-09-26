@@ -249,14 +249,11 @@ namespace FolderMorpher.Services
             catch { }
             finally
             {
-                if (comObj != null)
-                {
-                    try { Marshal.ReleaseComObject(comObj); } catch { }
-                }
                 if (pUnk != IntPtr.Zero)
                 {
                     try { Marshal.Release(pUnk); } catch { }
                 }
+                GC.KeepAlive(comObj);
             }
 
             // 2. Pure C# Fallback
@@ -381,14 +378,11 @@ namespace FolderMorpher.Services
             }
             finally
             {
-                if (comObj != null)
-                {
-                    try { Marshal.ReleaseComObject(comObj); } catch { }
-                }
                 if (pUnk != IntPtr.Zero)
                 {
                     try { Marshal.Release(pUnk); } catch { }
                 }
+                GC.KeepAlive(comObj);
             }
         }
 
@@ -555,14 +549,11 @@ namespace FolderMorpher.Services
             }
             finally
             {
-                if (comObj != null)
-                {
-                    try { Marshal.ReleaseComObject(comObj); } catch { }
-                }
                 if (pUnk != IntPtr.Zero)
                 {
                     try { Marshal.Release(pUnk); } catch { }
                 }
+                GC.KeepAlive(comObj);
             }
         }
 

@@ -390,19 +390,6 @@ namespace FolderMorpher.Services
                     }
                 }
 
-                // ★ ADR 93: TreeCache-First 差分枝刈り走査 ＋ 局所性Live走査
-                // サーバー候補の投入後も、全階層の網羅的走査を確実に実行（False Negative ゼロ保証）
-                TreeCachePruningIndex? pruningIndex = null;
-                try
-                {
-                    var cachedTree = await AstraSize.Services.StorageHistoryService.Instance.LoadTreeCacheAsync(targetFolder);
-                    if (cachedTree != null)
-                    {
-                        pruningIndex = new TreeCachePruningIndex(cachedTree);
-                    }
-                }
-                catch { }
-
                 try
                 {
                     await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
@@ -421,7 +408,6 @@ namespace FolderMorpher.Services
                             }
                             HandleEntry(entry);
                         },
-                        pruningIndex: pruningIndex,
                         collectResults: false);
                 }
                 finally

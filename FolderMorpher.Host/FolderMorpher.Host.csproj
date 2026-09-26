@@ -8,7 +8,7 @@
     <UseWPF>false</UseWPF>
     <AssemblyName>FolderMorpher.Host</AssemblyName>
     <RootNamespace>FolderMorpher.Host</RootNamespace>
-    <Version>2.2.27</Version>
+    <Version>2.2.28</Version>
     <CodePage>65001</CodePage>
   </PropertyGroup>
 
