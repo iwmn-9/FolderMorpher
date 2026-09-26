@@ -33,6 +33,7 @@ namespace FolderMorpher.Contracts
         Task<StorageScanResultDto> ScanStorageAsync(StorageScanRequestDto request, IProgress<StorageScanProgressDto>? progress, CancellationToken ct);
         Task<StorageNodeDto?> LoadCachedTreeAsync(string targetPath);
         Task<List<StorageNodeDto>> GetStorageChildrenAsync(string rootPath, string folderPath);
+        Task<List<string>> BrowseChildFoldersAsync(string folderPath);
         Task<bool> HasCachedTreeAsync(string targetPath);
         Task SaveTreeCacheAsync(StorageNodeDto rootNode);
         Task<List<ScanSnapshotDto>> GetStorageHistoryAsync(string targetPath);

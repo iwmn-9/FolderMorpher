@@ -285,7 +285,7 @@ namespace AstraSize.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(UiText($"ツリー読み込みエラー:\n{ex.Message}", $"Could not load folder tree:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"ツリー読み込みエラー:\n{ex.Message}", $"Could not load folder tree:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -428,7 +428,7 @@ namespace AstraSize.Views
             {
                 var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
                 var plan = await host.PrepareFolderCreationAsync(_targetParentFolderForNewFolder, folderName, CancellationToken.None);
-                if (MessageBox.Show(UiText($"次のフォルダーを作成しますか？\n{plan.FullPath}", $"Create this folder?\n{plan.FullPath}"), UiText("作成内容の確認", "Confirm folder creation"),
+                if (AppDialog.Show(UiText($"次のフォルダーを作成しますか？\n{plan.FullPath}", $"Create this folder?\n{plan.FullPath}"), UiText("作成内容の確認", "Confirm folder creation"),
                         MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                     return;
                 var newPath = await host.CommitFolderCreationAsync(plan.PlanId, CancellationToken.None);
@@ -531,7 +531,7 @@ namespace AstraSize.Views
 
             if (_liveAclPanels.Count >= 6)
             {
-                MessageBox.Show(UiText("同時に開けるパネルは最大6つまでです。\n不要なパネルを閉じてから追加してください。", "Up to six panels can be open at once.\nClose an unused panel first."), UiText("パネル上限", "Panel limit"), MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(UiText("同時に開けるパネルは最大6つまでです。\n不要なパネルを閉じてから追加してください。", "Up to six panels can be open at once.\nClose an unused panel first."), UiText("パネル上限", "Panel limit"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -575,7 +575,7 @@ namespace AstraSize.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(UiText($"権限読み込みエラー:\n{ex.Message}", $"Could not load permissions:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"権限読み込みエラー:\n{ex.Message}", $"Could not load permissions:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -585,7 +585,7 @@ namespace AstraSize.Views
             {
                 if (panel.HasChanges)
                 {
-                    var res = MessageBox.Show(UiText($"「{panel.FolderName}」には未適用の変更があります。閉じてもよろしいですか？", $"{panel.FolderName} has unapplied changes. Close it?"), UiText("未適用変更の確認", "Unapplied changes"), MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    var res = AppDialog.Show(UiText($"「{panel.FolderName}」には未適用の変更があります。閉じてもよろしいですか？", $"{panel.FolderName} has unapplied changes. Close it?"), UiText("未適用変更の確認", "Unapplied changes"), MessageBoxButton.YesNo, MessageBoxImage.Question);
                     if (res != MessageBoxResult.Yes) return;
                 }
                 _liveAclPanels.Remove(panel);
@@ -600,7 +600,7 @@ namespace AstraSize.Views
             bool hasAnyChanges = _liveAclPanels.Any(p => p.HasChanges);
             if (hasAnyChanges)
             {
-                var res = MessageBox.Show(UiText("未適用の変更があるパネルが含まれています。すべて閉じてもよろしいですか？", "Some panels have unapplied changes. Close them all?"), UiText("全パネル閉じる確認", "Close all panels"), MessageBoxButton.YesNo, MessageBoxImage.Question);
+                var res = AppDialog.Show(UiText("未適用の変更があるパネルが含まれています。すべて閉じてもよろしいですか？", "Some panels have unapplied changes. Close them all?"), UiText("全パネル閉じる確認", "Close all panels"), MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (res != MessageBoxResult.Yes) return;
             }
             _liveAclPanels.Clear();
@@ -635,7 +635,7 @@ namespace AstraSize.Views
             }
 
             try { await ShowDiffModalAsync(panel); }
-            catch (Exception ex) { MessageBox.Show(UiText($"差分確認エラー:\n{ex.Message}", $"Could not preview changes:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error); }
+            catch (Exception ex) { AppDialog.Show(UiText($"差分確認エラー:\n{ex.Message}", $"Could not preview changes:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error); }
         }
 
         private async Task ShowDiffModalAsync(LiveAclPanelModel panel)
@@ -729,7 +729,7 @@ namespace AstraSize.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(UiText($"ACLの再確認に失敗しました:\n{ex.Message}", $"Could not recheck ACL:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"ACLの再確認に失敗しました:\n{ex.Message}", $"Could not recheck ACL:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
             bool hasConflict = !string.IsNullOrEmpty(panel.OriginalSddl) &&
@@ -739,7 +739,7 @@ namespace AstraSize.Views
             bool forceApply = false;
             if (hasConflict)
             {
-                var conflictRes = MessageBox.Show(
+                var conflictRes = AppDialog.Show(
                     UiText("⚠️ 外部ACL変更の競合が検知されています。\n\n外部の変更を上書きして適用を強制続行しますか？", "⚠️ An external ACL change was detected.\n\nOverride that change and force application?"),
                     UiText("外部ACL競合", "External ACL conflict"),
                     MessageBoxButton.YesNo,
@@ -759,7 +759,7 @@ namespace AstraSize.Views
                 if (result.WasConflict)
                 {
                     panel.StatusMessage = UiText("外部競合", "External conflict");
-                    var reload = MessageBox.Show(
+                    var reload = AppDialog.Show(
                         UiText("適用直前に外部変更（競合）が検出されました。最新のACLを再読込しますか？", "An external ACL change occurred just before applying. Reload the current ACL?"),
                         UiText("外部ACL競合", "External ACL conflict"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
                     if (reload == MessageBoxResult.Yes) ApplyFolderState(panel, result.CurrentState);
@@ -782,7 +782,7 @@ namespace AstraSize.Views
             catch (Exception ex)
             {
                 panel.StatusMessage = UiText("適用失敗", "Apply failed");
-                MessageBox.Show(UiText($"適用エラー:\n{ex.Message}", $"Could not apply changes:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"適用エラー:\n{ex.Message}", $"Could not apply changes:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -802,12 +802,12 @@ namespace AstraSize.Views
                 var snapshots = await host.GetAclSnapshotsAsync(panel.FolderPath, CancellationToken.None);
                 if (snapshots.Count == 0)
                 {
-                    MessageBox.Show(UiText("このフォルダの保存済みバックアップはありません。", "No saved backup exists for this folder."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
+                    AppDialog.Show(UiText("このフォルダの保存済みバックアップはありません。", "No saved backup exists for this folder."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
                 var latest = snapshots[0];
-                var confirm = MessageBox.Show(
+                var confirm = AppDialog.Show(
                     UiText($"最新のバックアップ（{latest.Timestamp:yyyy/MM/dd HH:mm:ss} 保存）へ復元しますか？\n\n対象: {panel.FolderPath}", $"Restore the latest backup (saved {latest.Timestamp:yyyy/MM/dd HH:mm:ss})?\n\nTarget: {panel.FolderPath}"),
                     UiText("バックアップ復元確認", "Confirm backup restore"),
                     MessageBoxButton.YesNo,
@@ -824,7 +824,7 @@ namespace AstraSize.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show(UiText($"復元エラー:\n{ex.Message}", $"Restore failed:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"復元エラー:\n{ex.Message}", $"Restore failed:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -833,7 +833,7 @@ namespace AstraSize.Views
             var path = LiveAclPathTextBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(path))
             {
-                MessageBox.Show(UiText("有効なフォルダパスを指定してください。", "Enter a valid folder path."), UiText("案内", "Information"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(UiText("有効なフォルダパスを指定してください。", "Enter a valid folder path."), UiText("案内", "Information"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -854,7 +854,7 @@ namespace AstraSize.Views
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText($"CSV出力エラー:\n{ex.Message}", $"CSV export failed:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show(UiText($"CSV出力エラー:\n{ex.Message}", $"CSV export failed:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -1116,14 +1116,14 @@ namespace AstraSize.Views
 
             if (string.IsNullOrWhiteSpace(targetAccount))
             {
-                MessageBox.Show(UiText("調査対象のアカウント名（ユーザーまたはグループ）を入力してください。", "Enter a user or group to investigate."), UiText("入力確認", "Check input"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(UiText("調査対象のアカウント名（ユーザーまたはグループ）を入力してください。", "Enter a user or group to investigate."), UiText("入力確認", "Check input"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 RevUserAccountTextBox.Focus();
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(rootPath))
             {
-                MessageBox.Show(UiText("有効な走査ルートフォルダーを指定してください。", "Enter a valid scan root folder."), UiText("入力確認", "Check input"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(UiText("有効な走査ルートフォルダーを指定してください。", "Enter a valid scan root folder."), UiText("入力確認", "Check input"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 RevRootPathTextBox.Focus();
                 return;
             }
@@ -1212,7 +1212,7 @@ namespace AstraSize.Views
             catch (Exception ex)
             {
                 RevStatusText.Text = UiText($"エラー: {ex.Message}", $"Error: {ex.Message}");
-                MessageBox.Show(UiText($"逆引き調査中にエラーが発生しました:\n{ex.Message}", $"Reverse lookup failed:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"逆引き調査中にエラーが発生しました:\n{ex.Message}", $"Reverse lookup failed:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -1253,7 +1253,7 @@ namespace AstraSize.Views
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText($"Excel出力に失敗しました:\n{ex.Message}", $"Excel export failed:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show(UiText($"Excel出力に失敗しました:\n{ex.Message}", $"Excel export failed:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }

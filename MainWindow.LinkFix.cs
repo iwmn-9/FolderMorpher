@@ -32,7 +32,7 @@ namespace AstraSize
 
             if (string.IsNullOrWhiteSpace(scope))
             {
-                MessageBox.Show(UiText("有効な検索対象フォルダを入力してください。", "Enter a valid folder to search."), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(UiText("有効な検索対象フォルダを入力してください。", "Enter a valid folder to search."), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -78,7 +78,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show(UiText($"スキャン失敗: {ex.Message}", $"Scan failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"スキャン失敗: {ex.Message}", $"Scan failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -93,14 +93,14 @@ namespace AstraSize
             var items = LinkItemsDataGrid.ItemsSource as List<LinkFixItem>;
             if (items == null || items.Count == 0)
             {
-                MessageBox.Show(UiText("修復対象のショートカットがありません。先に切断リンク検出スキャンを実行してください。", "No shortcuts to repair. Run a broken link scan first."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(UiText("修復対象のショートカットがありません。先に切断リンク検出スキャンを実行してください。", "No shortcuts to repair. Run a broken link scan first."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             var targets = items.Where(i => i.NeedsFix).ToList();
             if (targets.Count == 0)
             {
-                MessageBox.Show(UiText("修復が必要な項目はありません。", "No items need repair."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(UiText("修復が必要な項目はありません。", "No items need repair."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -157,7 +157,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show(UiText($"修復実行エラー: {ex.Message}", $"Repair failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"修復実行エラー: {ex.Message}", $"Repair failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -171,7 +171,7 @@ namespace AstraSize
 
             if (string.IsNullOrWhiteSpace(oldPattern) || string.IsNullOrWhiteSpace(newPattern))
             {
-                MessageBox.Show(UiText("置換前（旧パス）と置換後（新パス）を入力してください。", "Enter the old and new paths."), UiText("入力確認", "Check input"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(UiText("置換前（旧パス）と置換後（新パス）を入力してください。", "Enter the old and new paths."), UiText("入力確認", "Check input"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -193,7 +193,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText($"スクリプト生成失敗: {ex.Message}", $"Script generation failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show(UiText($"スクリプト生成失敗: {ex.Message}", $"Script generation failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }

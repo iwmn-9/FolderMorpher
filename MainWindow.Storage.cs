@@ -158,6 +158,8 @@ namespace AstraSize
                 : tab.StatusMessage;
 
             SaveStorageTabSession();
+            if (!string.IsNullOrWhiteSpace(tab.TargetPath))
+                SetActiveFolderScope(tab.TargetPath, selectStorageTab: false, persist: !_isInitializingTabs);
         }
 
         private void StorageTabItem_MouseDown(object sender, MouseButtonEventArgs e)
@@ -187,7 +189,7 @@ namespace AstraSize
             {
                 if (StorageTabs.Count <= 1)
                 {
-                    MessageBox.Show(UiText("最後のタブは閉じることができません。", "The last tab cannot be closed."),
+                    AppDialog.Show(UiText("最後のタブは閉じることができません。", "The last tab cannot be closed."),
                         UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
@@ -214,6 +216,7 @@ namespace AstraSize
             if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.FolderName))
             {
                 PathTextBox.Text = dialog.FolderName;
+                SetActiveFolderScope(dialog.FolderName, selectStorageTab: false);
                 if (_currentTab != null)
                 {
                     _currentTab.TargetPath = dialog.FolderName;
@@ -235,7 +238,7 @@ namespace AstraSize
             var path = PathTextBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(path))
             {
-                MessageBox.Show(UiText("有効なパス (ローカルまたは UNC) を入力してください。", "Enter a valid local or UNC path."),
+                AppDialog.Show(UiText("有効なパス (ローカルまたは UNC) を入力してください。", "Enter a valid local or UNC path."),
                     UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -257,6 +260,7 @@ namespace AstraSize
             GlobalProgressBar.IsIndeterminate = true;
 
             _currentTab.TargetPath = path;
+            SetActiveFolderScope(path, selectStorageTab: false);
             _currentTab.TabTitle = Path.GetFileName(path.TrimEnd('\\', '/'));
             if (string.IsNullOrEmpty(_currentTab.TabTitle)) _currentTab.TabTitle = path;
 
@@ -347,7 +351,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show(UiText($"スキャンエラー: {ex.Message}", $"Scan error: {ex.Message}"),
+                AppDialog.Show(UiText($"スキャンエラー: {ex.Message}", $"Scan error: {ex.Message}"),
                     UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusTextBlock.Text = UiText("スキャン失敗", "Scan failed");
             }
@@ -658,7 +662,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText($"移行ツリーへの追加に失敗しました: {ex.Message}", $"Could not add to migration tree: {ex.Message}"),
+                    AppDialog.Show(UiText($"移行ツリーへの追加に失敗しました: {ex.Message}", $"Could not add to migration tree: {ex.Message}"),
                         UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
@@ -679,7 +683,7 @@ namespace AstraSize
         {
             if (_currentTab?.RootNode == null)
             {
-                MessageBox.Show(UiText("エクスポートするスキャンデータがありません。", "No scan data to export."),
+                AppDialog.Show(UiText("エクスポートするスキャンデータがありません。", "No scan data to export."),
                     UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -704,7 +708,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText($"出力エラー: {ex.Message}", $"Export error: {ex.Message}"),
+                    AppDialog.Show(UiText($"出力エラー: {ex.Message}", $"Export error: {ex.Message}"),
                         UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
@@ -715,7 +719,7 @@ namespace AstraSize
             var path = PathTextBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(path))
             {
-                MessageBox.Show(UiText("対象パスが入力されていません。", "No target path was entered."),
+                AppDialog.Show(UiText("対象パスが入力されていません。", "No target path was entered."),
                     UiText("案内", "Notice"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }

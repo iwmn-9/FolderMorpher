@@ -31,6 +31,8 @@ namespace FolderMorpher.Services
         // 容量分析（Storage Explorer）のマルチタブ・セッション復元
         public List<string> StorageTabPaths { get; set; } = new();
         public int ActiveStorageTabIndex { get; set; } = 0;
+        public string ActiveScopePath { get; set; } = string.Empty;
+        public List<string> RecentScopePaths { get; set; } = new();
     }
 
     public class AppSettingsService
@@ -48,7 +50,10 @@ namespace FolderMorpher.Services
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             var dir = Path.Combine(appData, "FolderMorpher");
             Directory.CreateDirectory(dir);
-            _settingsFilePath = Path.Combine(dir, "appsettings.json");
+            var ipcTestId = Environment.GetEnvironmentVariable("FOLDERMORPHER_TEST_IPC_ID");
+            _settingsFilePath = Guid.TryParseExact(ipcTestId, "N", out _)
+                ? Path.Combine(Path.GetTempPath(), $"FolderMorpher_IpcSettings_{ipcTestId}.json")
+                : Path.Combine(dir, "appsettings.json");
             Load();
         }
 

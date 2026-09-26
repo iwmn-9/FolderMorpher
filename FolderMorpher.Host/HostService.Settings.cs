@@ -19,7 +19,9 @@ public partial class HostService
             CacheWriteCustomPath = source.CacheWriteCustomPath,
             Language = source.Language,
             StorageTabPaths = source.StorageTabPaths.ToList(),
-            ActiveStorageTabIndex = source.ActiveStorageTabIndex
+            ActiveStorageTabIndex = source.ActiveStorageTabIndex,
+            ActiveScopePath = source.ActiveScopePath,
+            RecentScopePaths = source.RecentScopePaths.ToList()
         });
     }
 
@@ -36,6 +38,8 @@ public partial class HostService
         target.Language = settings.Language == "en" ? "en" : "ja";
         target.StorageTabPaths = settings.StorageTabPaths?.Where(path => !string.IsNullOrWhiteSpace(path)).ToList() ?? new();
         target.ActiveStorageTabIndex = Math.Max(0, settings.ActiveStorageTabIndex);
+        target.ActiveScopePath = settings.ActiveScopePath ?? string.Empty;
+        target.RecentScopePaths = settings.RecentScopePaths?.Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList() ?? new();
         AppSettingsService.Instance.Save();
         return Task.CompletedTask;
     }

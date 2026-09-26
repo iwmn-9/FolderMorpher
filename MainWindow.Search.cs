@@ -71,6 +71,8 @@ namespace AstraSize
 
         private void SearchInputBox_TextChanged(object sender, TextChangedEventArgs e)
         {
+            if (SearchInputHint != null)
+                SearchInputHint.Visibility = string.IsNullOrEmpty(SearchInputBox.Text) ? Visibility.Visible : Visibility.Collapsed;
             CancelCurrentSearch();
             if (SearchQueryParser.Parse(SearchInputBox?.Text?.Trim() ?? string.Empty).IsEmpty)
             {
@@ -129,6 +131,7 @@ namespace AstraSize
             _searchResults.Clear();
             _allSearchResults.Clear();
             _searchResultsByPath.Clear();
+            if (SearchEmptyState != null) SearchEmptyState.Visibility = Visibility.Visible;
             _selectedSortType = "Relevance";
             if (SearchSortComboBox != null) SearchSortComboBox.SelectedIndex = 0;
             UpdateSearchKpi(0, 0, TimeSpan.Zero);
@@ -151,6 +154,7 @@ namespace AstraSize
                 if (SearchDirectTargetTextBox != null)
                 {
                     SearchDirectTargetTextBox.Text = dlg.FolderName;
+                    SetActiveFolderScope(dlg.FolderName);
                 }
             }
         }
@@ -239,7 +243,7 @@ namespace AstraSize
                 if (!isIncremental)
                 {
                     bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                    MessageBox.Show(
+                    AppDialog.Show(
                         isJa ? "走査対象のフォルダーまたはUNCパスを入力してください。" : "Please specify a target folder or UNC path to search.",
                         isJa ? "検索エラー" : "Search Error",
                         MessageBoxButton.OK,
@@ -450,7 +454,7 @@ namespace AstraSize
                 if (currentGen == Volatile.Read(ref _searchGeneration))
                 {
                     bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                    MessageBox.Show(
+                    AppDialog.Show(
                         (isJa ? "検索中にエラーが発生しました: " : "Error occurred during search: ") + ex.Message,
                         isJa ? "検索エラー" : "Search Error",
                         MessageBoxButton.OK,
@@ -601,7 +605,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText("ファイルを開けませんでした: ", "Could not open the file: ") + ex.Message);
+                    AppDialog.Show(UiText("ファイルを開けませんでした: ", "Could not open the file: ") + ex.Message);
                 }
             }
         }
@@ -644,6 +648,7 @@ namespace AstraSize
             if (string.IsNullOrEmpty(targetDir)) return;
 
             // Tab 2 (Live ACL) へジャンプ
+            SetActiveFolderScope(targetDir);
             NavTabLiveAcl.IsChecked = true;
 
             // LiveAclStudioControl にパスを渡して開く
@@ -688,7 +693,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText($"移行ツリーへの追加に失敗しました: {ex.Message}", $"Could not add to migration tree: {ex.Message}"),
+                    AppDialog.Show(UiText($"移行ツリーへの追加に失敗しました: {ex.Message}", $"Could not add to migration tree: {ex.Message}"),
                         UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
@@ -723,6 +728,7 @@ namespace AstraSize
             if (string.IsNullOrEmpty(targetDir)) return;
 
             // Tab 4 (LinkFix) へジャンプ
+            SetActiveFolderScope(targetDir);
             NavTabLinkFix.IsChecked = true;
             if (LinkSearchScopeTextBox != null)
             {
@@ -744,6 +750,7 @@ namespace AstraSize
             if (AuditPathTextBox != null)
             {
                 AuditPathTextBox.Text = targetDir;
+                SetActiveFolderScope(targetDir);
             }
             ShowToast(UiText("ファイル整理・監査対象パスを設定しました", "File audit target path set"));
         }
@@ -757,7 +764,7 @@ namespace AstraSize
             if (_searchResults.Count == 0)
             {
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                MessageBox.Show(
+                AppDialog.Show(
                     isJa ? "エクスポートする検索結果がありません。" : "No search results to export.",
                     isJa ? "情報" : "Information",
                     MessageBoxButton.OK,
@@ -784,7 +791,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText("Excel出力中にエラーが発生しました: ", "Excel export failed: ") + ex.Message);
+                    AppDialog.Show(UiText("Excel出力中にエラーが発生しました: ", "Excel export failed: ") + ex.Message);
                 }
             }
         }
@@ -794,7 +801,7 @@ namespace AstraSize
             if (_searchResults.Count == 0)
             {
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                MessageBox.Show(
+                AppDialog.Show(
                     isJa ? "エクスポートする検索結果がありません。" : "No search results to export.",
                     isJa ? "情報" : "Information",
                     MessageBoxButton.OK,
@@ -821,7 +828,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText("CSV出力中にエラーが発生しました: ", "CSV export failed: ") + ex.Message);
+                    AppDialog.Show(UiText("CSV出力中にエラーが発生しました: ", "CSV export failed: ") + ex.Message);
                 }
             }
         }
@@ -942,6 +949,7 @@ namespace AstraSize
             };
 
             var list = filtered.ToList();
+            if (SearchEmptyState != null) SearchEmptyState.Visibility = list.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
             _searchResults.Clear();
             foreach (var item in list)

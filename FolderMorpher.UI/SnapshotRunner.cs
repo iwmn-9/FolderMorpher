@@ -10,7 +10,7 @@ public static class SnapshotRunner
 {
     public static FolderMorpher.Services.AppLanguage? ForcedLanguage { get; private set; }
 
-    public static void Configure(string? snapshotPath, int selectTab, bool collapseSidebar,
+    public static void Configure(string? snapshotPath, int selectTab,
         string? forceLang, string logPath, Action<int> shutdown)
     {
             ForcedLanguage = string.IsNullOrEmpty(snapshotPath) ? null : forceLang switch
@@ -36,6 +36,21 @@ public static class SnapshotRunner
                                 FolderMorpher.Services.LocalizationService.Instance.SetLanguage(language);
 
                             if (selectTab == 1) mw.NavTabSearch.IsChecked = true;
+                            else if (selectTab == 12)
+                            {
+                                mw.NavTabSearch.IsChecked = true;
+                                mw.ScopePickerButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                            }
+                            else if (selectTab == 13)
+                            {
+                                mw.NavTabSearch.IsChecked = true;
+                                mw.ScopePickerButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                if (mw.ScopeTree.Items.OfType<System.Windows.Controls.TreeViewItem>().FirstOrDefault() is { } root)
+                                {
+                                    root.IsExpanded = true;
+                                    await System.Threading.Tasks.Task.Delay(600);
+                                }
+                            }
                             else if (selectTab == 11)
                             {
                                 mw.NavTabSearch.IsChecked = true;
@@ -91,6 +106,7 @@ public static class SnapshotRunner
                                 mw.SearchResults.Add(item2);
                                 mw.SearchResults.Add(item3);
                                 mw.SearchResults.Add(item4);
+                                mw.SearchEmptyState.Visibility = Visibility.Collapsed;
                                 mw.SearchListView.SelectedItem = item1;
 
                                 mw.SearchKpiHitCountText.Text = "4 件";
@@ -317,12 +333,7 @@ public static class SnapshotRunner
                             }
                             else mw.NavTabStorage.IsChecked = true;
 
-                            if (collapseSidebar)
-                            {
-                                mw.SidebarToggleButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-                            }
-
-                            await System.Threading.Tasks.Task.Delay(800);
+                            await System.Threading.Tasks.Task.Delay(selectTab == 11 ? 100 : 800);
                             mw.UpdateLayout();
 
                             int w = (int)mw.ActualWidth;
@@ -330,8 +341,15 @@ public static class SnapshotRunner
                             if (w <= 0) w = 1480;
                             if (h <= 0) h = 920;
 
+                            System.Windows.Media.Visual visual = mw;
+                            if (selectTab is 12 or 13 && mw.ScopePopup.Child is System.Windows.FrameworkElement popupContent)
+                            {
+                                visual = popupContent;
+                                w = (int)Math.Ceiling(popupContent.ActualWidth);
+                                h = (int)Math.Ceiling(popupContent.ActualHeight);
+                            }
                             var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(w, h, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
-                            rtb.Render(mw);
+                            rtb.Render(visual);
 
                             var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
                             enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));

@@ -11,4 +11,6 @@ public sealed class AppSettingsDto
     public string Language { get; set; } = "ja";
     public List<string> StorageTabPaths { get; set; } = new();
     public int ActiveStorageTabIndex { get; set; }
+    public string ActiveScopePath { get; set; } = string.Empty;
+    public List<string> RecentScopePaths { get; set; } = new();
 }

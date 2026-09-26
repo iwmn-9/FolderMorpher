@@ -105,7 +105,6 @@ namespace AstraSize
             catch { }
 
             string? snapshotPath = null;
-            bool collapseSidebar = false;
             int selectTab = 0;
             string? testSuiteDir = null;
             string? forceLang = null;
@@ -125,10 +124,6 @@ namespace AstraSize
                 {
                     selectTab = tabIdx;
                 }
-                else if (e.Args[i] == "--collapse")
-                {
-                    collapseSidebar = true;
-                }
                 else if (e.Args[i] == "--test-suite" && i + 1 < e.Args.Length)
                 {
                     testSuiteDir = e.Args[i + 1];
@@ -144,6 +139,7 @@ namespace AstraSize
                 ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 var testId = Guid.NewGuid().ToString("N");
                 var testDbPath = Path.Combine(Path.GetTempPath(), $"FolderMorpher_IpcTreeCache_{testId}.db");
+                var testSettingsPath = Path.Combine(Path.GetTempPath(), $"FolderMorpher_IpcSettings_{testId}.json");
                 Environment.SetEnvironmentVariable("FOLDERMORPHER_TEST_IPC_ID", testId);
                 Environment.SetEnvironmentVariable("FOLDERMORPHER_TEST_TREE_CACHE_DB", testDbPath);
                 Task.Run(async () =>
@@ -171,6 +167,9 @@ namespace AstraSize
                         {
                             var sourceChildPath = Path.Combine(testRoot, "source-folder");
                             Directory.CreateDirectory(sourceChildPath);
+                            var browsedFolders = await host.BrowseChildFoldersAsync(testRoot);
+                            if (!browsedFolders.Contains(sourceChildPath))
+                                throw new InvalidOperationException("Folder scope hierarchy did not roundtrip over IPC.");
                             var matchFile = Path.Combine(sourceChildPath, "ipc-search-match.txt");
                             await File.WriteAllTextAsync(matchFile, "FolderMorpher IPC roundtrip");
                             using var testCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(45));
@@ -178,6 +177,20 @@ namespace AstraSize
                             await Dispatcher.InvokeAsync(() =>
                             {
                                 searchWindow = new MainWindow();
+                                var dialogTimer = new System.Windows.Threading.DispatcherTimer
+                                {
+                                    Interval = TimeSpan.FromMilliseconds(120)
+                                };
+                                dialogTimer.Tick += (_, _) =>
+                                {
+                                    var dialog = Current.Windows.OfType<Window>().FirstOrDefault(window => window.Title == "IPC dialog");
+                                    if (dialog != null) { dialogTimer.Stop(); dialog.Close(); }
+                                };
+                                dialogTimer.Start();
+                                var dialogResult = AppDialog.Show("Dialog smoke test", "IPC dialog", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                                dialogTimer.Stop();
+                                if (dialogResult != MessageBoxResult.No)
+                                    throw new InvalidOperationException("App dialog lost the safe negative result.");
                                 FolderMorpher.UI.PresentationTestRunner.VerifyRuntimeLocalization(searchWindow);
                                 FolderMorpher.UI.PresentationTestRunner.VerifyAuditProvisionalDisplay(searchWindow);
                                 FindControl<TextBox>(searchWindow, "SearchDirectTargetTextBox").Text = testRoot;
@@ -574,6 +587,7 @@ namespace AstraSize
                         Console.Out.Flush();
                         FolderMorpher.HostClient.FolderMorpherHostClient.Instance.Dispose();
                         DeleteIpcTestDatabase(testDbPath);
+                        if (File.Exists(testSettingsPath)) File.Delete(testSettingsPath);
                         Environment.Exit(pong ? 0 : 1);
                     }
                     catch (Exception ex)
@@ -582,6 +596,7 @@ namespace AstraSize
                         Console.Out.Flush();
                         FolderMorpher.HostClient.FolderMorpherHostClient.Instance.StopLaunchedHostForTests();
                         DeleteIpcTestDatabase(testDbPath);
+                        if (File.Exists(testSettingsPath)) File.Delete(testSettingsPath);
                         Environment.Exit(1);
                     }
                 });
@@ -645,7 +660,7 @@ namespace AstraSize
                 return;
             }
 
-            SnapshotRunner.Configure(snapshotPath, selectTab, collapseSidebar, forceLang, LogPath, code => Shutdown(code));
+            SnapshotRunner.Configure(snapshotPath, selectTab, forceLang, LogPath, code => Shutdown(code));
             var mainWindow = new MainWindow();
             MainWindow = mainWindow;
             mainWindow.Show();

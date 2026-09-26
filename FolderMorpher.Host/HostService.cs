@@ -34,6 +34,7 @@ namespace FolderMorpher.Host
         private readonly ConcurrentDictionary<Guid, AuditSnapshot> _auditReports = new();
         private readonly ConcurrentDictionary<string, (DateTime SeenUtc, FileItemNode Root)> _liveScanRoots =
             new(StringComparer.OrdinalIgnoreCase);
+        private readonly SemaphoreSlim _scopeBrowseGate = new(2, 2);
         private int _shutdownRequested;
         internal Action? ShutdownRequested { get; set; }
 
@@ -192,6 +193,22 @@ namespace FolderMorpher.Host
                 await _storageHistory.LoadTreeCacheBranchAsync(rootPath, folderPath);
             if (folder == null) throw new DirectoryNotFoundException($"Cached folder not found: {folderPath}");
             return folder.Children.Select(child => StorageDtoMapper.ToLevelDto(child, 0)).ToList();
+        }
+
+        public async Task<List<string>> BrowseChildFoldersAsync(string folderPath)
+        {
+            if (string.IsNullOrWhiteSpace(folderPath)) throw new DirectoryNotFoundException(folderPath);
+            await _scopeBrowseGate.WaitAsync();
+            try
+            {
+                return await Task.Run(() =>
+                    // One level and at most 257 results. Never recurse through an UNC share from a popup.
+                    Directory.EnumerateDirectories(folderPath, "*", SearchOption.TopDirectoryOnly)
+                        .Take(257)
+                        .OrderBy(path => Path.GetFileName(path), StringComparer.CurrentCultureIgnoreCase)
+                        .ToList());
+            }
+            finally { _scopeBrowseGate.Release(); }
         }
 
         public async Task<bool> HasCachedTreeAsync(string targetPath)

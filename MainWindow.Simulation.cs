@@ -197,7 +197,7 @@ namespace AstraSize
                     ShowToast("容量分析スキャン結果を移行元ツリーに読み込みました");
                     return;
                 }
-                MessageBox.Show("有効な移行元フォルダパスを入力してください。", "通知", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show("有効な移行元フォルダパスを入力してください。", "通知", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -219,7 +219,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"移行元読込エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show($"移行元読込エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -428,13 +428,13 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"移行元の読み込みに失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show($"移行元の読み込みに失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
             else
             {
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                MessageBox.Show(
+                AppDialog.Show(
                     isJa ? "移行元ツリーからフォルダを選択してください。" : "Please select a folder from the source tree first.",
                     isJa ? "情報" : "Information",
                     MessageBoxButton.OK, MessageBoxImage.Information);
@@ -675,7 +675,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"移行元の読み込みに失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show($"移行元の読み込みに失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
                 return;
             }
@@ -1050,7 +1050,7 @@ namespace AstraSize
         {
             if (_selectedSimNode != null)
             {
-                if (MessageBox.Show($"フォルダ '{_selectedSimNode.Name}' を削除しますか？", "確認", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+                if (AppDialog.Show($"フォルダ '{_selectedSimNode.Name}' を削除しますか？", "確認", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
                 {
                     PushUndoSnapshot();
                     if (_selectedSimNode.Parent != null) _selectedSimNode.Parent.Children.Remove(_selectedSimNode);
@@ -1459,7 +1459,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"差分の作成に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show($"差分の作成に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1474,7 +1474,7 @@ namespace AstraSize
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             if (string.IsNullOrWhiteSpace(targetRoot))
             {
-                MessageBox.Show(isJa ? "移行先ルートフォルダを入力してください。" : "Please enter target root folder.",
+                AppDialog.Show(isJa ? "移行先ルートフォルダを入力してください。" : "Please enter target root folder.",
                                 isJa ? "通知" : "Notice", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -1545,7 +1545,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show(isJa ? $"スケルトン作成失敗: {ex.Message}" : $"Skeleton deployment failed: {ex.Message}",
+                AppDialog.Show(isJa ? $"スケルトン作成失敗: {ex.Message}" : $"Skeleton deployment failed: {ex.Message}",
                                 isJa ? "エラー" : "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
@@ -1579,7 +1579,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show($"出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -1614,7 +1614,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"保存エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show($"保存エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -1650,7 +1650,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"読込エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show($"読込エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -1661,7 +1661,7 @@ namespace AstraSize
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             if (string.IsNullOrWhiteSpace(targetRoot))
             {
-                MessageBox.Show(isJa ? "移行先ルートフォルダを入力してください。" : "Please enter target root folder.",
+                AppDialog.Show(isJa ? "移行先ルートフォルダを入力してください。" : "Please enter target root folder.",
                                 isJa ? "通知" : "Notice", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -1682,7 +1682,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"実行計画の作成に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show($"実行計画の作成に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1695,7 +1695,7 @@ namespace AstraSize
             if (_simRootFolders.Count == 0)
             {
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                MessageBox.Show(
+                AppDialog.Show(
                     isJa ? "移行設計ツリーが空です。先に移行元フォルダーを配置してください。" : "Migration tree is empty. Please add source folders first.",
                     isJa ? "移行パッケージ" : "Migration Package",
                     MessageBoxButton.OK,
@@ -1888,7 +1888,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
+                AppDialog.Show(
                     (isJa ? "移行パッケージ生成中にエラーが発生しました:\n\n" : "Error generating migration package:\n\n") + ex.Message,
                     isJa ? "生成エラー" : "Generation Error",
                     MessageBoxButton.OK,
@@ -1927,7 +1927,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show($"出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }

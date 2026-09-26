@@ -8,9 +8,9 @@
         xmlns:models="clr-namespace:AstraSize.Models"
         xmlns:eff="clr-namespace:FolderMorpher.Models"
         mc:Ignorable="d"
-        Title="FolderMorpher - Storage Monitor &amp; Migration Studio"
+        Title="FolderMorpher"
         Height="920" Width="1480"
-        MinHeight="720" MinWidth="1180"
+        MinHeight="720" MinWidth="1100"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource CanvasBackground}"
         FontFamily="{StaticResource MainFont}"
@@ -21,97 +21,101 @@
         SnapsToDevicePixels="True">
 
     <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto"/> <!-- Collapsible Navigation Sidebar -->
-            <ColumnDefinition Width="*"/>    <!-- Main Content Work Area -->
-        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="58"/>
+            <RowDefinition Height="64"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
-        <!-- 1. LEFT COLLAPSIBLE NAVIGATION SIDEBAR -->
-        <Border Grid.Column="0" x:Name="SidebarBorder" Width="220" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,1,0">
+        <!-- Primary navigation stays quiet; the selected folder is a separate workspace control. -->
+        <Border Grid.Row="0" Background="White" BorderBrush="#E4E9F0" BorderThickness="0,0,0,1" Padding="24,0">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="56"/>   <!-- Header (Brand & Toggle) -->
-                    <RowDefinition Height="*"/>    <!-- Nav List -->
-                    <RowDefinition Height="Auto"/> <!-- Footer / Version -->
-                </Grid.RowDefinitions>
-
-                <!-- Sidebar Header -->
-                <Border Grid.Row="0" x:Name="SidebarHeaderBorder" BorderBrush="#F1F5F9" BorderThickness="0,0,0,1" Padding="12,0">
-                    <Grid VerticalAlignment="Center">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition x:Name="SidebarToggleCol" Width="36"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Button x:Name="SidebarToggleButton" Content="☰" Width="34" Height="34" HorizontalAlignment="Center"
-                                Background="Transparent" BorderThickness="0" FontSize="16" Foreground="#475569"
-                                Cursor="Hand" Click="SidebarToggleButton_Click" ToolTip="サイドバーの開閉 (収縮 / 展開)"/>
-                        <StackPanel x:Name="SidebarBrandPanel" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0">
-                            <Border Background="#EFF6FF" CornerRadius="6" Width="28" Height="28" VerticalAlignment="Center" Margin="0,0,8,0">
-                                <TextBlock Text="📁" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="FolderMorpher" FontWeight="Bold" FontSize="14" Foreground="#0F172A"/>
-                                <TextBlock Text="Storage &amp; Migration" FontSize="11" Foreground="#94A3B8"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Grid>
-                </Border>
-
-                <!-- Nav Items (3 Groups: Explore / Design / Utility) -->
-                <StackPanel Grid.Row="1" x:Name="SidebarNavPanel" Margin="10,14">
-                    <!-- Group 1: 探索・観測 -->
-                    <RadioButton x:Name="NavTabStorage" Style="{StaticResource SidebarNavButton}"
-                                 IsChecked="True" Checked="NavTab_Checked" Tag="📊" Content="容量分析" ToolTip="容量分析"/>
-                    <RadioButton x:Name="NavTabSearch" Style="{StaticResource SidebarNavButton}"
-                                 Checked="NavTab_Checked" Tag="🔍" Content="ファイル検索" ToolTip="ファイル検索"/>
-                    <RadioButton x:Name="NavTabAudit" Style="{StaticResource SidebarNavButton}"
-                                 Checked="NavTab_Checked" Tag="🧹" Content="ファイル監査" ToolTip="重複・休眠・パス長チェック" Margin="0,0,0,14"/>
-
-                    <!-- Group 2: 設計・変更 -->
-                    <RadioButton x:Name="NavTabLiveAcl" Style="{StaticResource SidebarNavButton}"
-                                 Checked="NavTab_Checked" Tag="🛡️" Content="権限コントロール" ToolTip="権限コントロール"/>
-                    <RadioButton x:Name="NavTabSimulation" Style="{StaticResource SidebarNavButton}"
-                                 Checked="NavTab_Checked" Tag="🚀" Content="移行スタジオ" ToolTip="移行シミュレーション" Margin="0,0,0,14"/>
-
-                    <!-- Group 3: 事後・補助 -->
-                    <RadioButton x:Name="NavTabLinkFix" Style="{StaticResource SidebarNavButton}"
-                                 Checked="NavTab_Checked" Tag="🔗" Content="リンク修復" ToolTip="ショートカット・リンク修復"/>
-                    <RadioButton x:Name="NavTabMedia" Style="{StaticResource SidebarNavButton}"
-                                 Checked="NavTab_Checked" Tag="🖼️" Content="メディア最適化" ToolTip="写真軽量化・動画抽出"/>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="30" Height="30" CornerRadius="8" Background="#E8F0FC" Margin="0,0,10,0">
+                        <Path Data="M2,5 L9,5 11,7 22,7 22,19 2,19 Z" Stroke="#2456A6" StrokeThickness="1.8" Width="18" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="FolderMorpher" FontWeight="SemiBold" FontSize="17" Foreground="#15243A"/>
+                        <TextBlock x:Name="AppSubtitleText" Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#8390A3"/>
+                    </StackPanel>
                 </StackPanel>
-
-
-                <!-- Sidebar Footer -->
-                <Border Grid.Row="2" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0">
-                    <Grid>
-                        <!-- Expanded Footer (2-tier layout: Brand on top, Controls below) -->
-                        <StackPanel x:Name="SidebarFooterExpandedPanel" Margin="14,8,14,10">
-                            <StackPanel Margin="0,0,0,8">
-                                <TextBlock x:Name="SidebarVersionText" Text="FolderMorpher v2.2.20" FontSize="11" FontWeight="SemiBold" Foreground="#64748B"/>
-                                <TextBlock x:Name="SidebarSubtitleText" Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#94A3B8" Margin="0,1,0,0"/>
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal">
-                                <Button x:Name="SettingsButton" Content="⚙️" Height="24" Width="28" FontSize="11" Margin="0,0,6,0" Padding="0"
-                                        Style="{StaticResource FluentButtonSecondary}" Click="SettingsButton_Click" ToolTip="環境設定 / Settings"/>
-                                <Button x:Name="LanguageToggleButton" Content="🌐 EN" Height="24" FontSize="11" FontWeight="Bold" Foreground="#2563EB" Padding="8,2"
-                                        Style="{StaticResource FluentButtonSecondary}" Click="LanguageToggleButton_Click" ToolTip="言語切り替え / Switch Language (JA / EN)"/>
-                            </StackPanel>
-                        </StackPanel>
-
-                        <!-- Collapsed Footer (Mini Vertical Stack) -->
-                        <StackPanel x:Name="SidebarFooterCollapsedPanel" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,6,0,10">
-                            <Button x:Name="SettingsButtonMini" Content="⚙️" Width="34" Height="26" FontSize="11" Margin="0,0,0,4"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="SettingsButton_Click" ToolTip="環境設定 / Settings"/>
-                            <Button x:Name="LanguageToggleButtonMini" Content="🌐" Width="34" Height="26" FontSize="11" FontWeight="Bold" Foreground="#2563EB"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="LanguageToggleButton_Click" ToolTip="言語切り替え / Switch Language"/>
-                        </StackPanel>
-                    </Grid>
-                </Border>
+                <ScrollViewer Grid.Column="1" HorizontalAlignment="Center" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" MaxWidth="860">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Stretch">
+                        <RadioButton x:Name="NavTabSearch" Style="{StaticResource WorkspaceNavButton}" IsChecked="True" Checked="NavTab_Checked" Content="検索" ToolTip="ファイル検索"/>
+                        <RadioButton x:Name="NavTabStorage" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="容量" ToolTip="容量分析"/>
+                        <RadioButton x:Name="NavTabAudit" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="整理" ToolTip="整理候補"/>
+                        <RadioButton x:Name="NavTabMedia" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="メディア" ToolTip="メディア最適化"/>
+                        <Border x:Name="AdminTabsDivider" Width="1" Height="20" Background="#DCE3EB" Margin="10,0" VerticalAlignment="Center"/>
+                        <RadioButton x:Name="NavTabLiveAcl" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="権限" ToolTip="権限コントロール"/>
+                        <RadioButton x:Name="NavTabSimulation" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="移行" ToolTip="移行スタジオ"/>
+                        <RadioButton x:Name="NavTabLinkFix" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="リンク" ToolTip="リンク修復"/>
+                    </StackPanel>
+                </ScrollViewer>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="LanguageToggleButton" Content="🌐 EN" Height="32" Padding="10,0" Margin="0,0,7,0" Style="{StaticResource FluentButtonSecondary}" Click="LanguageToggleButton_Click" ToolTip="言語切り替え"/>
+                    <Button x:Name="SettingsButton" Content="⚙" Width="34" Height="32" Padding="0" Style="{StaticResource FluentButtonSecondary}" Click="SettingsButton_Click" ToolTip="環境設定"/>
+                </StackPanel>
             </Grid>
         </Border>
 
-        <!-- 2. RIGHT MAIN WORK AREA -->
-        <Grid Grid.Column="1">
+        <Border Grid.Row="1" Background="White" BorderBrush="#E9EDF3" BorderThickness="0,0,0,1" Padding="28,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="ScopeCaptionText" Text="参照フォルダー" FontSize="10" FontWeight="SemiBold" Foreground="#8390A3" Margin="0,0,0,3"/>
+                    <Button x:Name="ScopePickerButton" Click="ScopePickerButton_Click" Style="{StaticResource ScopePickerButtonStyle}" ToolTip="参照フォルダーを切り替える">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="M2,5 L9,5 11,7 22,7 22,19 2,19 Z" Stroke="#2456A6" StrokeThickness="1.8" Width="19" Height="17" Stretch="Uniform" Margin="0,0,9,0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="ScopePickerText" Text="フォルダーを選択" FontSize="14" FontWeight="SemiBold" Foreground="#1E3559" MaxWidth="390" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                            <TextBlock Text="⌄" FontSize="16" Foreground="#667B99" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                <TextBlock x:Name="ScopeFullPathText" Grid.Column="1" Text="" FontSize="12" Foreground="#7B8AA0" VerticalAlignment="Center" Margin="18,11,0,0" TextTrimming="CharacterEllipsis"/>
+                <Button x:Name="ScopeAddButton" Grid.Column="2" Content="＋ フォルダーを追加" Height="33" VerticalAlignment="Center" Style="{StaticResource FluentButtonSecondary}" Click="ScopeAddButton_Click"/>
+                <Popup x:Name="ScopePopup" PlacementTarget="{Binding ElementName=ScopePickerButton}" Placement="Bottom" HorizontalOffset="0" VerticalOffset="5" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                    <Border Width="490" MaxHeight="610" Background="White" BorderBrush="#D8E1ED" BorderThickness="1" CornerRadius="12" Padding="18" Margin="2">
+                        <Border.Effect><DropShadowEffect BlurRadius="20" ShadowDepth="7" Direction="270" Color="#1A2B45" Opacity="0.16"/></Border.Effect>
+                        <Grid>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                            <TextBlock x:Name="ScopePopupTitle" Text="参照フォルダーを選ぶ" FontSize="17" FontWeight="SemiBold" Foreground="#1A2C47" Margin="2,0,0,13"/>
+                            <Grid Grid.Row="1">
+                                <TextBox x:Name="ScopeFilterBox" Height="36" Padding="10,0" FontSize="13" VerticalContentAlignment="Center" TextChanged="ScopeFilterBox_TextChanged" ToolTip="登録済みフォルダーを絞り込む"/>
+                                <TextBlock x:Name="ScopeFilterHint" Text="フォルダーを絞り込む" FontSize="12" Foreground="#A0ADC0" Margin="11,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                            </Grid>
+                            <TextBlock x:Name="ScopeRecentTitle" Grid.Row="2" Text="最近使った場所" FontSize="11" FontWeight="SemiBold" Foreground="#6D7E96" Margin="2,18,0,5"/>
+                            <ScrollViewer Grid.Row="3" MaxHeight="370" VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+                                    <ItemsControl x:Name="ScopeRecentItems"/>
+                                    <Border Height="1" Background="#E8EDF4" Margin="0,13,0,12"/>
+                                    <TextBlock x:Name="ScopeTreeTitle" Text="フォルダー一覧" FontSize="11" FontWeight="SemiBold" Foreground="#6D7E96" Margin="2,0,0,8"/>
+                                    <TreeView x:Name="ScopeTree" SelectedItemChanged="ScopeTree_SelectedItemChanged" BorderThickness="0" Background="Transparent"/>
+                                </StackPanel>
+                            </ScrollViewer>
+                            <Grid Grid.Row="4" Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <Grid>
+                                    <TextBox x:Name="ScopeManualPathBox" Height="34" Padding="8,0" VerticalContentAlignment="Center" ToolTip="UNCまたはローカルのフォルダーパスを入力" TextChanged="ScopeManualPathBox_TextChanged" KeyDown="ScopeManualPathBox_KeyDown"/>
+                                    <TextBlock x:Name="ScopeManualPathHint" Text="パスを直接入力（UNCにも対応）" Foreground="#A0ADC0" FontSize="12" Margin="9,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                </Grid>
+                                <Button x:Name="ScopeManualApplyButton" Grid.Column="1" Content="開く" Width="68" Margin="8,0,0,0" Style="{StaticResource FluentButtonPrimary}" Click="ScopeManualApplyButton_Click"/>
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Popup>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>    <!-- Tab Views Container -->
                 <RowDefinition Height="Auto"/> <!-- Global Footer / Status Bar -->
@@ -122,7 +126,7 @@
             <!-- ======================================================== -->
             <!-- TAB 1: STORAGE EXPLORER (容量分析 & マルチタブ)           -->
             <!-- ======================================================== -->
-            <Grid x:Name="StorageTabPanel" Visibility="Visible">
+            <Grid x:Name="StorageTabPanel" Visibility="Collapsed">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/> <!-- Multi-Tab Header Strip -->
                     <RowDefinition Height="Auto"/> <!-- Toolbar & Path -->
@@ -131,7 +135,7 @@
                 </Grid.RowDefinitions>
 
                 <!-- Multi-Tab Strip -->
-                <Border Grid.Row="0" Background="#F1F5F9" BorderBrush="#CBD5E1" BorderThickness="0,0,0,1" Padding="16,6,16,0">
+                <Border Grid.Row="0" Visibility="Collapsed" Background="#F1F5F9" BorderBrush="#CBD5E1" BorderThickness="0,0,0,1" Padding="16,6,16,0">
                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                         <StackPanel Orientation="Horizontal">
                             <ItemsControl x:Name="StorageTabsItemsControl">
@@ -176,7 +180,7 @@
                 </Border>
 
                 <!-- Storage Toolbar -->
-                <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,10">
+                <Border Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="28,20,28,14">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -184,20 +188,13 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
-                        <Border Grid.Column="0" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Height="32" Padding="8,0">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="🔍 " Foreground="#94A3B8" VerticalAlignment="Center"/>
-                                <TextBox x:Name="PathTextBox" Grid.Column="1" BorderThickness="0" Background="Transparent"
-                                         VerticalAlignment="Center" FontSize="12.5" FontFamily="{StaticResource MonoFont}"
-                                         Foreground="#0F172A" KeyDown="PathTextBox_KeyDown"/>
-                            </Grid>
-                        </Border>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock x:Name="StoragePageTitleText" Text="容量分析" FontSize="20" FontWeight="SemiBold" Foreground="#1D2E49"/>
+                            <TextBlock x:Name="StoragePageHintText" Text="選択したフォルダーの容量と内訳を確認" FontSize="12" Foreground="#7789A1" Margin="0,4,0,0"/>
+                            <TextBox x:Name="PathTextBox" Visibility="Collapsed" KeyDown="PathTextBox_KeyDown"/>
+                        </StackPanel>
 
-                        <Button x:Name="StorageBrowseButton" Grid.Column="1" Content="参照..." Margin="8,0,10,0" Height="32"
+                        <Button x:Name="StorageBrowseButton" Grid.Column="1" Content="参照..." Visibility="Collapsed" Margin="8,0,10,0" Height="32"
                                 Style="{StaticResource FluentButtonSecondary}" Click="BrowseButton_Click"/>
 
                         <StackPanel Grid.Column="2" Orientation="Horizontal">
@@ -570,7 +567,7 @@
 
                 <!-- 3-Pane Split View -->
                 <!-- 4-Column Horizontal Workflow Layout -->
-                <Grid Grid.Row="1" Margin="20,16">
+                <Grid Grid.Row="1" Margin="28,24">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="2.3*" MinWidth="180"/> <!-- Col 0: Pane 1: Source Explorer -->
                         <ColumnDefinition Width="10"/>                  <!-- Col 1: Splitter -->
@@ -1030,7 +1027,7 @@
             <!-- ======================================================== -->
             <!-- TAB 3: LINK FIXER (ショートカット＆リンク一括修復)        -->
             <!-- ======================================================== -->
-            <Grid x:Name="LinkFixTabPanel" Visibility="Collapsed" Margin="20,16">
+            <Grid x:Name="LinkFixTabPanel" Visibility="Collapsed" Margin="28,24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
@@ -1126,7 +1123,7 @@
             <!-- ======================================================== -->
             <!-- TAB 5: AUDIT & HYGIENE (断捨離・ファイルサーバー健全化)       -->
             <!-- ======================================================== -->
-            <Grid x:Name="AuditTabPanel" Visibility="Collapsed" Margin="20,16">
+            <Grid x:Name="AuditTabPanel" Visibility="Collapsed" Margin="28,24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/> <!-- Controls Card -->
                     <RowDefinition Height="Auto"/> <!-- KPI Summary Cards -->
@@ -1134,10 +1131,7 @@
                 </Grid.RowDefinitions>
 
                 <!-- Controls Card -->
-                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="18" Margin="0,0,0,14">
-                    <Border.Effect>
-                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Direction="270" Color="#000000" Opacity="0.04"/>
-                    </Border.Effect>
+                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="21" Margin="0,0,0,14">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -1146,9 +1140,9 @@
                         </Grid.RowDefinitions>
 
                         <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                            <TextBlock x:Name="AuditHeaderTitle" Text="🧹 ファイルサーバー健全化 ＆ ファイル監査（重複整理・容量削減）" FontSize="15" FontWeight="Bold" Foreground="#0F172A"/>
-                            <TextBlock x:Name="AuditHeaderDesc" Text="世代・旧版、展開済ZIP残骸、墓場フォルダー、完全重複、休眠ファイルを分析し、理由付きで整理候補を提示します。"
-                                       FontSize="11" Foreground="#64748B" Margin="0,4,0,0"/>
+                            <TextBlock x:Name="AuditHeaderTitle" Text="整理候補" FontSize="20" FontWeight="SemiBold" Foreground="#1D2E49"/>
+                            <TextBlock x:Name="AuditHeaderDesc" Text="重複や休眠などの理由を重ねて、判断しやすい順に表示します。"
+                                       FontSize="12" Foreground="#7789A1" Margin="0,4,0,0"/>
                         </StackPanel>
 
                         <Grid Grid.Row="1">
@@ -1159,11 +1153,11 @@
 
                             <Grid Grid.Row="0">
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="0"/>
                                     <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                                <StackPanel Grid.Column="0" Visibility="Collapsed" Margin="0,0,12,0">
                                     <TextBlock x:Name="AuditTargetFolderLabel" Text="監査対象ディレクトリ (UNC / ローカル)" FontSize="12" FontWeight="SemiBold" Foreground="#334155" Margin="0,0,0,6"/>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -1178,7 +1172,7 @@
                                     </Grid>
                                 </StackPanel>
 
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="0,0,0,4">
+                                <WrapPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,4">
                                     <CheckBox x:Name="AuditCheckVersionFamiliesCheckBox" Content="世代・旧版" IsChecked="True" VerticalAlignment="Center" Margin="0,0,10,0" FontSize="12" Foreground="#334155" ToolTip="最新版が存在する過去バージョン・修正版ファイルを検出"/>
                                     <CheckBox x:Name="AuditCheckExtractedArchivesCheckBox" Content="展開済ZIP" IsChecked="True" VerticalAlignment="Center" Margin="0,0,10,0" FontSize="12" Foreground="#334155" ToolTip="同名フォルダーが存在するZIP残骸を検出"/>
                                     <CheckBox x:Name="AuditCheckDuplicatesCheckBox" Content="完全重複" IsChecked="True" VerticalAlignment="Center" Margin="0,0,10,0" FontSize="12" Foreground="#334155" ToolTip="SHA-256が完全一致する重複ファイルを検出"/>
@@ -1189,7 +1183,7 @@
                                         <ComboBoxItem x:Name="AuditBandwidthStandardItem" Content="通常 50MB/s (保護)" IsSelected="True" Tag="Standard50MB"/>
                                         <ComboBoxItem x:Name="AuditBandwidthUnlimitedItem" Content="無制限 (夜間最速)" Tag="Unlimited"/>
                                     </ComboBox>
-                                </StackPanel>
+                                </WrapPanel>
                             </Grid>
 
                             <Grid Grid.Row="1" Margin="0,10,0,0">
@@ -1467,7 +1461,7 @@
             <!-- ======================================================== -->
             <!-- TAB 6: MEDIA OPTIMIZER (写真軽量化 ＆ 巨大動画抽出)        -->
             <!-- ======================================================== -->
-            <Grid x:Name="MediaTabPanel" Visibility="Collapsed" Margin="20,16">
+            <Grid x:Name="MediaTabPanel" Visibility="Collapsed" Margin="28,24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/> <!-- Controls Card -->
                     <RowDefinition Height="Auto"/> <!-- KPI Summary Cards -->
@@ -1630,83 +1624,75 @@
             <!-- ======================================================== -->
             <!-- TAB 7: SEARCH STUDIO (高速・全文 統合ファイル検索)         -->
             <!-- ======================================================== -->
-            <Grid x:Name="SearchTabPanel" Visibility="Collapsed" Margin="20,16">
+            <Grid x:Name="SearchTabPanel" Visibility="Visible" Margin="28,24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/> <!-- Controls Card -->
                     <RowDefinition Height="Auto"/> <!-- KPI Summary Cards -->
                     <RowDefinition Height="*"/>    <!-- Results DataGrid -->
                 </Grid.RowDefinitions>
 
-                <!-- Controls Card -->
-                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="16,12" Margin="0,0,0,10">
+                <!-- A single calm search surface; the working folder lives in the header. -->
+                <Border Grid.Row="0" Background="Transparent" BorderThickness="0" Padding="0" Margin="0,0,0,18">
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/> <!-- Search Box & Action Buttons -->
-                            <RowDefinition Height="Auto"/> <!-- Scope Selection & Target Folder -->
-                            <RowDefinition Height="Auto"/> <!-- Progress Bar -->
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
-
-                        <!-- Row 0: Search Box & Buttons -->
-                        <Grid Grid.Row="0">
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,20">
+                            <TextBlock x:Name="SearchBreadcrumbScopeText" Text="参照フォルダー" FontSize="13" FontWeight="SemiBold" Foreground="#667B99"/>
+                            <TextBlock Text="  ›  " FontSize="13" Foreground="#9BA9BC"/>
+                            <TextBlock x:Name="SearchBreadcrumbCurrentText" Text="検索" FontSize="13" FontWeight="SemiBold" Foreground="#253B5D"/>
+                        </StackPanel>
+                        <Grid Grid.Row="1">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBox x:Name="SearchInputBox" Height="36" FontSize="13" Padding="10,0"
+                            <Grid>
+                            <TextBox x:Name="SearchInputBox" Height="48" FontSize="16" Padding="15,0"
                                      VerticalContentAlignment="Center" BorderBrush="#CBD5E1"
                                      TextChanged="SearchInputBox_TextChanged" KeyDown="SearchInputBox_KeyDown"
                                      ToolTip="検索構文を入力 (例: ext:xlsx size:>10MB dormant:>3y content:社外秘 regex:^backup.*\.zip)"/>
+                            <TextBlock x:Name="SearchInputHint" Text="ファイル名や本文から検索" FontSize="15" Foreground="#A2AEC0" Margin="16,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                            </Grid>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
-                                <Button x:Name="SearchExecuteButton" Content="🔍 検索" Height="36" Padding="16,0"
+                                <Button x:Name="SearchExecuteButton" Content="🔍 検索" Height="48" Padding="21,0"
                                         Style="{StaticResource FluentButtonPrimary}" Click="SearchExecuteButton_Click"
                                         ToolTip="検索を実行 (Enterキーでも実行可能)"/>
-                                <Button x:Name="SearchCancelButton" Content="⏹ 中断" Height="36" Padding="12,0" Margin="6,0,0,0"
+                                <Button x:Name="SearchCancelButton" Content="⏹ 中断" Height="48" Padding="16,0" Margin="8,0,0,0"
                                         Style="{StaticResource FluentButtonDanger}" Click="SearchCancelButton_Click"
                                         Visibility="Collapsed" ToolTip="実行中の走査を中断"/>
-                                <Button x:Name="SearchClearButton" Content="✕ クリア" Height="36" Padding="12,0" Margin="6,0,0,0"
+                                <Button x:Name="SearchClearButton" Content="✕ クリア" Height="48" Padding="16,0" Margin="8,0,0,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="SearchClearButton_Click"
                                         ToolTip="入力内容と結果をクリア"/>
                             </StackPanel>
                         </Grid>
-
-                        <!-- Row 1: Filters & Target Folder (全自動スマート検索) -->
-                        <Grid Grid.Row="1" Margin="0,10,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
+                        <Grid Grid.Row="2" Margin="0,13,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <CheckBox x:Name="SearchIncludeFoldersCheckBox" Content="📁 フォルダも含める"
-                                          FontSize="12" Foreground="#475569" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,14,0"
+                                          FontSize="13" Foreground="#52657F" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,20,0"
                                           ToolTip="検索結果にフォルダーも含めます"/>
                                 <CheckBox x:Name="SearchContentCheckBox" Content="📄 本文も検索"
-                                          FontSize="12" Foreground="#2563EB" FontWeight="SemiBold" VerticalAlignment="Center"
+                                          FontSize="13" Foreground="#285AA7" FontWeight="SemiBold" VerticalAlignment="Center"
                                           ToolTip="ファイル本文（Office/PDF/テキスト等）も探索します"/>
                             </StackPanel>
-                            <TextBlock x:Name="SearchTargetFolderLabel" Grid.Column="1" Text="対象フォルダー:" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <Grid Grid.Column="2">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBox x:Name="SearchDirectTargetTextBox" Height="28" FontSize="11" Padding="6,0" VerticalContentAlignment="Center" BorderBrush="#CBD5E1"/>
-                                <Button x:Name="SearchDirectBrowseButton" Grid.Column="1" Content="📁 参照..." Height="28" Margin="4,0,0,0"
-                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchDirectBrowseButton_Click" ToolTip="走査対象フォルダーを選択"/>
-                                <Button x:Name="SearchRefreshButton" Grid.Column="2" Content="↻" Width="28" Height="28" Margin="4,0,0,0" Padding="0" FontSize="13" FontWeight="Bold"
-                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchRefreshButton_Click" ToolTip="検索結果を更新"/>
-                            </Grid>
+                            <Button x:Name="SearchRefreshButton" Grid.Column="1" Content="↻  更新" Height="30" Padding="12,0" Style="{StaticResource FluentButtonSecondary}" Click="SearchRefreshButton_Click" ToolTip="検索結果を更新"/>
                         </Grid>
-
-                        <!-- Row 2: Progress Bar -->
-                        <ProgressBar x:Name="SearchProgressBar" Grid.Row="2" Height="3" Margin="0,8,0,0"
+                        <StackPanel Visibility="Collapsed">
+                            <TextBlock x:Name="SearchTargetFolderLabel" Text="対象フォルダー:"/>
+                            <TextBox x:Name="SearchDirectTargetTextBox"/>
+                            <Button x:Name="SearchDirectBrowseButton" Content="参照" Click="SearchDirectBrowseButton_Click"/>
+                        </StackPanel>
+                        <ProgressBar x:Name="SearchProgressBar" Grid.Row="3" Height="3" Margin="0,12,0,0"
                                      IsIndeterminate="True" Visibility="Collapsed" Foreground="#2563EB" Background="#E2E8F0" BorderThickness="0"/>
                     </Grid>
                 </Border>
 
                 <!-- Slim 1-Row Metrics Bar (Quiet Fluent) -->
-                <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="16,8" Margin="0,0,0,10">
+                <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="18,12" Margin="0,0,0,14">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/> <!-- Hit count -->
@@ -1754,7 +1740,7 @@
                 </Border>
 
                 <!-- Results Work Area: Full-Width Modern Card List with In-Card Actions -->
-                <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="14,12">
+                <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="16,14">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -1769,7 +1755,7 @@
                             </Grid.ColumnDefinitions>
 
                             <!-- Title -->
-                            <TextBlock x:Name="SearchTableTitleText" Text="検索結果一覧" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="SearchTableTitleText" Text="検索結果" FontWeight="SemiBold" FontSize="15" Foreground="#1D2E49" VerticalAlignment="Center"/>
                             <TextBlock x:Name="SearchTableHintText" Visibility="Collapsed"/>
 
                             <!-- Sort Dropdown -->
@@ -1814,12 +1800,12 @@
                             <ListBox.ItemContainerStyle>
                                 <Style TargetType="ListBoxItem">
                                     <Setter Property="Padding" Value="0"/>
-                                    <Setter Property="Margin" Value="0,0,0,6"/>
+                                    <Setter Property="Margin" Value="0"/>
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                     <Setter Property="Template">
                                         <Setter.Value>
                                             <ControlTemplate TargetType="ListBoxItem">
-                                                <Border x:Name="ItemBorder" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="12,10">
+                                                <Border x:Name="ItemBorder" Background="#FFFFFF" BorderBrush="#E8EDF4" BorderThickness="0,0,0,1" Padding="12,15">
                                                     <ContentPresenter/>
                                                 </Border>
                                                 <ControlTemplate.Triggers>
@@ -1918,6 +1904,13 @@
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
+                        <StackPanel x:Name="SearchEmptyState" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" IsHitTestVisible="False" Margin="0,0,0,32">
+                            <Border Width="52" Height="52" Background="#EEF3FA" CornerRadius="15" HorizontalAlignment="Center" Margin="0,0,0,13">
+                                <TextBlock Text="⌕" FontSize="30" Foreground="#6F8DB6" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock x:Name="SearchEmptyTitle" Text="このフォルダーから探す" FontSize="17" FontWeight="SemiBold" Foreground="#344B6A" HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="SearchEmptyHint" Text="上の欄に検索語を入力すると結果がここに表示されます" FontSize="12.5" Foreground="#8695A9" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                        </StackPanel>
                     </Grid>
                 </Border>
 
@@ -2644,6 +2637,7 @@
                     <ProgressBar x:Name="GlobalProgressBar" Height="4" Width="140" Margin="12,0,0,0" Minimum="0" Maximum="100" Value="0"
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
                 </StackPanel>
+                <TextBlock x:Name="AppVersionText" Grid.Column="1" Text="FolderMorpher" FontSize="11" Foreground="#9AA8BA" VerticalAlignment="Center"/>
             </Grid>
         </Border>
     </Grid>

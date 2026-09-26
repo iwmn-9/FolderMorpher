@@ -37,15 +37,17 @@ namespace AstraSize
             if (dialog.ShowDialog() == true)
             {
                 AuditPathTextBox.Text = dialog.FolderName;
+                SetActiveFolderScope(dialog.FolderName);
             }
         }
 
         private async void AuditStartButton_Click(object sender, RoutedEventArgs e)
         {
             var target = AuditPathTextBox.Text.Trim();
+            if (!string.IsNullOrWhiteSpace(target)) SetActiveFolderScope(target);
             if (string.IsNullOrWhiteSpace(target))
             {
-                MessageBox.Show(UiText("有効な監査対象ディレクトリを入力してください。", "Enter a valid folder to audit."), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(UiText("有効な監査対象ディレクトリを入力してください。", "Enter a valid folder to audit."), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -197,7 +199,7 @@ namespace AstraSize
             catch (Exception ex)
             {
                 if (generation != _auditScanGeneration) return;
-                MessageBox.Show(UiText($"監査エラー: {ex.Message}", $"Audit failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"監査エラー: {ex.Message}", $"Audit failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 AuditStatusText.Text = UiText("エラー発生", "Error");
             }
             finally
@@ -221,7 +223,7 @@ namespace AstraSize
         {
             if (_lastAuditReportId == Guid.Empty || _lastAuditItems == null || _lastAuditItems.Count == 0)
             {
-                MessageBox.Show(UiText("出力対象の監査結果がありません。先にスキャンを実行してください。", "No audit results to export. Run a scan first."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(UiText("出力対象の監査結果がありません。先にスキャンを実行してください。", "No audit results to export. Run a scan first."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -246,7 +248,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText($"Excel出力エラー: {ex.Message}", $"Excel export failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show(UiText($"Excel出力エラー: {ex.Message}", $"Excel export failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -255,7 +257,7 @@ namespace AstraSize
         {
             if (_lastAuditReportId == Guid.Empty || _lastAuditItems == null || _lastAuditItems.Count == 0)
             {
-                MessageBox.Show(UiText("出力対象のデータがありません。", "No data to export."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(UiText("出力対象のデータがありません。", "No data to export."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -278,7 +280,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText($"CSV出力エラー: {ex.Message}", $"CSV export failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show(UiText($"CSV出力エラー: {ex.Message}", $"CSV export failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -683,7 +685,7 @@ namespace AstraSize
         {
             if (_lastAuditReportId == Guid.Empty || _lastAuditItems == null || _lastAuditItems.Count == 0)
             {
-                MessageBox.Show(UiText("削除対象のファイルがありません。先に監査スキャンを実行してください。", "No files to delete. Run an audit first."), UiText("案内", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(UiText("削除対象のファイルがありません。先に監査スキャンを実行してください。", "No files to delete. Run an audit first."), UiText("案内", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -701,13 +703,13 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show(UiText($"削除計画の確認に失敗しました: {ex.Message}", $"Could not prepare the deletion plan: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"削除計画の確認に失敗しました: {ex.Message}", $"Could not prepare the deletion plan: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
             if (preview.SafeFileCount == 0 && preview.ProtectedOriginalPaths.Count == 0)
             {
-                MessageBox.Show(UiText("削除するファイルが選択されていません。チェックボックスでファイルを選択してから実行してください。", "No files selected. Check the files to delete, then try again."), UiText("案内", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(UiText("削除するファイルが選択されていません。チェックボックスでファイルを選択してから実行してください。", "No files selected. Check the files to delete, then try again."), UiText("案内", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -719,7 +721,7 @@ namespace AstraSize
 
                 if (preview.SafeFileCount == 0)
                 {
-                    MessageBox.Show(
+                    AppDialog.Show(
                         UiText($"選択された項目（{protectedPaths.Count:N0} 件）はすべて重複グループの【原本候補】です。\n\n" +
                             "原本全滅事故を防止するため、原本候補ファイルはツール上から削除できません。\n" +
                             "削除処理を中止しました。",
@@ -730,7 +732,7 @@ namespace AstraSize
                     return;
                 }
 
-                MessageBox.Show(
+                AppDialog.Show(
                     UiText($"⚠️ 選択項目の中に重複グループの【原本候補】が {protectedPaths.Count:N0} 件含まれていました。\n\n" +
                         "安全保護規則に従い、原本候補は自動的に保護・除外されました。\n" +
                         $"残りの複製・休眠ファイル（{preview.SafeFileCount:N0} 件）に対して削除確認へ進みます。",
@@ -743,7 +745,7 @@ namespace AstraSize
             // 3. 完全削除の最終確認ダイアログ（物理ファイル単位で正確な件数・容量を表示）
             long totalBytes = preview.SafeSizeBytes;
             string sizeFormatted = FileItemNode.FormatBytes(totalBytes);
-            var confirm = MessageBox.Show(
+            var confirm = AppDialog.Show(
                 UiText($"選択された {preview.SafeFileCount:N0} 件（合計 {sizeFormatted}）のファイルを【完全に削除】します。\n\n" +
                     "⚠️ 注意:\n" +
                     "・ファイルはごみ箱に入らず完全に削除され、アプリ側から復元することはできません。\n" +
@@ -768,7 +770,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show(UiText($"削除計画の実行に失敗しました: {ex.Message}", $"Deletion plan failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"削除計画の実行に失敗しました: {ex.Message}", $"Deletion plan failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
             finally
@@ -788,7 +790,7 @@ namespace AstraSize
 
             if (result.Errors.Count > 0)
             {
-                MessageBox.Show(
+                AppDialog.Show(
                     UiText($"{result.SuccessCount:N0} 件のファイルを削除しました（{FileItemNode.FormatBytes(result.FreedBytes)} 削減）。\n\n" +
                         $"以下の {result.Errors.Count:N0} 件でエラーが発生しました:\n",
                         $"Deleted {result.SuccessCount:N0} files ({FileItemNode.FormatBytes(result.FreedBytes)} freed).\n\n{result.Errors.Count:N0} errors occurred:\n") +
@@ -890,7 +892,7 @@ namespace AstraSize
                     sb.AppendLine(isJa ? $"参照先/最新版: {item.RelatedActivePath}" : $"Reference/Active: {item.RelatedActivePath}");
                 }
 
-                MessageBox.Show(sb.ToString(), isJa ? "整理スコア内訳" : "Score Breakdown", MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(sb.ToString(), isJa ? "整理スコア内訳" : "Score Breakdown", MessageBoxButton.OK, MessageBoxImage.Information);
                 e.Handled = true;
             }
         }
@@ -906,7 +908,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText($"除外登録に失敗しました: {ex.Message}", $"Could not ignore the file: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show(UiText($"除外登録に失敗しました: {ex.Message}", $"Could not ignore the file: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
                 _lastAuditItems.Remove(item);
@@ -931,14 +933,14 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show(UiText($"除外リストを取得できませんでした: {ex.Message}", $"Could not load the ignored list: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"除外リストを取得できませんでした: {ex.Message}", $"Could not load the ignored list: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
 
             if (ignoredItems.Count == 0)
             {
-                MessageBox.Show(
+                AppDialog.Show(
                     isJa ? "除外（保留）登録されているファイルはありません。" : "No files are currently ignored.",
                     isJa ? "除外リスト" : "Ignored List",
                     MessageBoxButton.OK,
@@ -960,7 +962,7 @@ namespace AstraSize
 
             sb.AppendLine(isJa ? "\n除外リストをすべてリセットして再度整理候補の対象にしますか？" : "\nDo you want to reset the ignore list and re-evaluate these files?");
 
-            var res = MessageBox.Show(sb.ToString(), isJa ? "整理除外リストの管理" : "Manage Ignored List", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            var res = AppDialog.Show(sb.ToString(), isJa ? "整理除外リストの管理" : "Manage Ignored List", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (res == MessageBoxResult.Yes)
             {
                 try
@@ -970,7 +972,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText($"除外リストをリセットできませんでした: {ex.Message}", $"Could not reset the ignored list: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show(UiText($"除外リストをリセットできませんでした: {ex.Message}", $"Could not reset the ignored list: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
                 UpdateIgnoredCountBadge();

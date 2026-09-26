@@ -48,6 +48,7 @@ namespace AstraSize
             if (NavTabLiveAcl != null) NavTabLiveAcl.Visibility = Visibility.Collapsed;
             if (NavTabSimulation != null) NavTabSimulation.Visibility = Visibility.Collapsed;
             if (NavTabLinkFix != null) NavTabLinkFix.Visibility = Visibility.Collapsed;
+            if (AdminTabsDivider != null) AdminTabsDivider.Visibility = Visibility.Collapsed;
 
             Title = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
                 ? "FolderCleaner - 容量分析 & ファイル監査・写真軽量化 クライアント"
@@ -65,17 +66,17 @@ namespace AstraSize
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
 
             // バージョン表示動的反映
-            if (SidebarVersionText != null)
+            if (AppVersionText != null)
             {
                 var ver = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version;
                 string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v2.1.2";
-                SidebarVersionText.Text = ClientModeState.IsClientMode
+                AppVersionText.Text = ClientModeState.IsClientMode
                     ? $"FolderCleaner {verStr}"
                     : $"FolderMorpher {verStr}";
             }
-            if (SidebarSubtitleText != null)
+            if (AppSubtitleText != null)
             {
-                SidebarSubtitleText.Text = ClientModeState.IsClientMode
+                AppSubtitleText.Text = ClientModeState.IsClientMode
                     ? Strings.AppSubtitleCleaner
                     : Strings.AppSubtitle;
             }
@@ -85,33 +86,46 @@ namespace AstraSize
             // 言語切り替えボタン自体の表示（次に切り替わる言語を提示）
             LanguageToggleButton.Content = Strings.LanguageToggleText;
             LanguageToggleButton.ToolTip = Strings.LanguageToggleToolTip;
-            LanguageToggleButtonMini.ToolTip = LanguageToggleButton.ToolTip;
-
-            // サイドバー 開閉ボタン & タブ名 & ToolTip
-            if (SidebarToggleButton != null) SidebarToggleButton.ToolTip = Strings.ToggleSidebarToolTip;
-            NavTabStorage.Content = Strings.TabStorage;
+            // 上部タブは短い名前にし、詳細はツールチップへ残す。
+            NavTabStorage.Content = isJa ? "容量" : "Storage";
             NavTabStorage.ToolTip = Strings.TabStorageToolTip;
-            NavTabLiveAcl.Content = Strings.TabLiveAcl;
+            NavTabLiveAcl.Content = isJa ? "権限" : "Access";
             NavTabLiveAcl.ToolTip = Strings.TabLiveAclToolTip;
-            NavTabSimulation.Content = Strings.TabSimulation;
+            NavTabSimulation.Content = isJa ? "移行" : "Migration";
             NavTabSimulation.ToolTip = Strings.TabSimulationToolTip;
-            NavTabLinkFix.Content = Strings.TabLinkFix;
+            NavTabLinkFix.Content = isJa ? "リンク" : "Links";
             NavTabLinkFix.ToolTip = Strings.TabLinkFixToolTip;
-            NavTabAudit.Content = Strings.TabAudit;
+            NavTabAudit.Content = isJa ? "整理" : "Cleanup";
             NavTabAudit.ToolTip = Strings.TabAuditToolTip;
-            NavTabMedia.Content = Strings.TabMedia;
+            NavTabMedia.Content = isJa ? "メディア" : "Media";
             NavTabMedia.ToolTip = Strings.TabMediaToolTip;
             if (NavTabSearch != null)
             {
-                NavTabSearch.Content = Strings.TabSearch;
+                NavTabSearch.Content = isJa ? "検索" : "Search";
                 NavTabSearch.ToolTip = Strings.TabSearchToolTip;
             }
+            ScopeCaptionText.Text = isJa ? "参照フォルダー" : "Working folder";
+            ScopeAddButton.Content = isJa ? "＋ フォルダーを追加" : "＋ Add folder";
+            ScopePopupTitle.Text = isJa ? "参照フォルダーを選ぶ" : "Choose a working folder";
+            ScopeRecentTitle.Text = isJa ? "最近使った場所" : "Recent locations";
+            ScopeTreeTitle.Text = isJa ? "フォルダー一覧" : "Folders";
+            ScopeManualApplyButton.Content = isJa ? "開く" : "Open";
+            ScopeFilterHint.Text = isJa ? "フォルダーを絞り込む" : "Filter saved folders";
+            ScopeManualPathHint.Text = isJa ? "パスを直接入力（UNCにも対応）" : "Enter a local or UNC path";
+            SearchInputHint.Text = isJa ? "ファイル名や本文から検索" : "Search filenames or content";
+            SearchBreadcrumbCurrentText.Text = isJa ? "検索" : "Search";
+            SearchEmptyTitle.Text = isJa ? "このフォルダーから探す" : "Search this folder";
+            SearchEmptyHint.Text = isJa ? "上の欄に検索語を入力すると結果がここに表示されます" : "Enter a query above to see results here";
+            UpdateScopeCaption();
+            RenderScopeChoices();
 
             // ==========================================
             // Tab 0 (Storage Explorer)
             // ==========================================
             AddStorageTabButton.Content = isJa ? "＋ 新しいタブ" : "＋ New Tab";
             StorageBrowseButton.Content = isJa ? "参照..." : "Browse...";
+            StoragePageTitleText.Text = isJa ? "容量分析" : "Storage";
+            StoragePageHintText.Text = isJa ? "選択したフォルダーの容量と内訳を確認" : "Explore size and composition of the selected folder";
             ScanButton.Content = isJa ? "スキャン開始" : "Start Scan";
             CancelButton.Content = isJa ? "中止" : "Cancel";
             ExportButton.Content = isJa ? "Excel / CSV 出力" : "Export Excel/CSV";
@@ -306,8 +320,8 @@ namespace AstraSize
                     ? UiText($"{_lastAuditSummary.TotalFilesScanned:N0} 件 (⚠️未走査 {_lastAuditSummary.InaccessibleDirectoriesCount})", $"{_lastAuditSummary.TotalFilesScanned:N0} items (⚠️ {_lastAuditSummary.InaccessibleDirectoriesCount} inaccessible folders)")
                     : UiText($"{_lastAuditSummary.TotalFilesScanned:N0} 件", $"{_lastAuditSummary.TotalFilesScanned:N0} items");
             }
-            AuditHeaderTitle.Text = isJa ? "🧹 ファイルサーバー健全化 ＆ 整理候補発見スタジオ" : "🧹 Storage Hygiene & Candidate Discovery Studio";
-            AuditHeaderDesc.Text = isJa ? "世代・旧版、展開済ZIP残骸、墓場フォルダー、完全重複、休眠ファイルを分析し、理由付きで整理候補を提示します。" : "Discovers older versions, extracted archive shadows, graveyard folders, duplicates, and dormant files with explainable reasons.";
+            AuditHeaderTitle.Text = isJa ? "整理候補" : "Cleanup candidates";
+            AuditHeaderDesc.Text = isJa ? "重複や休眠などの理由を重ねて、判断しやすい順に表示します。" : "Combine duplicate, dormant, and other reasons to rank candidates for review.";
             AuditTargetFolderLabel.Text = isJa ? "監査対象ディレクトリ (UNC / ローカル)" : "Target Audit Directory (UNC / Local)";
             if (AuditExcludeFoldersLabel != null) AuditExcludeFoldersLabel.Text = Strings.AuditExcludeFoldersLabel;
             if (AuditExcludeFoldersTextBox != null) AuditExcludeFoldersTextBox.ToolTip = Strings.AuditExcludeFoldersToolTip;
@@ -577,7 +591,7 @@ namespace AstraSize
             if (SearchDirectBrowseButton != null) SearchDirectBrowseButton.Content = Strings.BrowseWithFolder;
             if (SearchRefreshButton != null)
             {
-                SearchRefreshButton.Content = "↻";
+                SearchRefreshButton.Content = isJa ? "↻  更新" : "↻  Refresh";
                 SearchRefreshButton.ToolTip = isJa ? "検索結果を更新" : "Refresh search results";
             }
             if (SearchKpiHitCountTitle != null) SearchKpiHitCountTitle.Text = Strings.SearchKpiHitCount;
@@ -594,7 +608,7 @@ namespace AstraSize
             if (SearchKpiTotalSizeTitle != null) SearchKpiTotalSizeTitle.Text = Strings.SearchKpiTotalSize;
             if (SearchKpiElapsedTitle != null) SearchKpiElapsedTitle.Text = Strings.SearchKpiElapsed;
             if (SearchStatusTitle != null) SearchStatusTitle.Text = Strings.SearchStatusLabel;
-            if (SearchTableTitleText != null) SearchTableTitleText.Text = Strings.SearchTableTitle;
+            if (SearchTableTitleText != null) SearchTableTitleText.Text = isJa ? "検索結果" : "Results";
             if (SearchTargetFolderLabel != null) SearchTargetFolderLabel.Text = Strings.SearchTargetFolder;
             if (SearchTableHintText != null)
             {
@@ -635,7 +649,6 @@ namespace AstraSize
 
             // Settings Modal
             SettingsButton.ToolTip = isJa ? "環境設定 / Settings" : "Settings";
-            SettingsButtonMini.ToolTip = SettingsButton.ToolTip;
             SettingsTitleText.Text = isJa ? "⚙️ 環境設定 (Settings)" : "⚙️ Settings";
             SettingsDescText.Text = isJa
                 ? "キャッシュ、スナップショット履歴、監査レポートの参照先および保存先を構成します。"

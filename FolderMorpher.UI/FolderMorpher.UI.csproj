@@ -19,6 +19,7 @@
     <Compile Include="Models\**\*.cs" />
     <Compile Include="..\FolderMorpher.Core\Models\*.cs" Exclude="..\FolderMorpher.Core\Models\ScanTabModel.cs" Link="Models\%(Filename)%(Extension)" />
     <Compile Include="Services\AppSettingsService.cs" />
+    <Compile Include="Dialogs\*.cs" />
     <Compile Include="..\FolderMorpher.Core\Services\AppStrings.cs" Link="Services\AppStrings.cs" />
     <Compile Include="..\FolderMorpher.Core\Services\AuditReportPalette.cs" Link="Services\AuditReportPalette.cs" />
     <Compile Include="..\FolderMorpher.Core\Services\EffectiveAccessPalette.cs" Link="Services\EffectiveAccessPalette.cs" />

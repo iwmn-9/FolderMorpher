@@ -182,7 +182,9 @@ namespace FolderMorpher.Services.Testing
             var settings = new AppSettings
             {
                 StorageTabPaths = new List<string> { @"\\server\share1", @"D:\Data", @"C:\Users\Public" },
-                ActiveStorageTabIndex = 1
+                ActiveStorageTabIndex = 1,
+                ActiveScopePath = @"D:\Data",
+                RecentScopePaths = new List<string> { @"D:\Data", @"\\server\share1" }
             };
 
             var json = System.Text.Json.JsonSerializer.Serialize(settings);
@@ -193,6 +195,8 @@ namespace FolderMorpher.Services.Testing
                 throw new InvalidOperationException("AppSettings StorageTabPaths values corrupted.");
             if (deserialized.ActiveStorageTabIndex != 1)
                 throw new InvalidOperationException($"Expected ActiveStorageTabIndex 1, got {deserialized.ActiveStorageTabIndex}");
+            if (deserialized.ActiveScopePath != @"D:\Data" || deserialized.RecentScopePaths.Count != 2)
+                throw new InvalidOperationException("Working folder settings failed serialization roundtrip.");
 
             // 3. ScanTabModel のキャッシュ復元シミュレーション
             var tab = new AstraSize.Models.ScanTabModel

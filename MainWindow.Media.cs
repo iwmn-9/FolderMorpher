@@ -41,7 +41,7 @@ namespace AstraSize
             var target = MediaPathTextBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(target))
             {
-                MessageBox.Show(UiText("有効なディレクトリを入力してください。", "Enter a valid folder."), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                AppDialog.Show(UiText("有効なディレクトリを入力してください。", "Enter a valid folder."), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -96,7 +96,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show(UiText($"メディア走査エラー: {ex.Message}", $"Media scan failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"メディア走査エラー: {ex.Message}", $"Media scan failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 MediaStatusText.Text = UiText("エラー発生", "Error");
             }
             finally
@@ -111,14 +111,14 @@ namespace AstraSize
         {
             if (_lastMediaImages == null || _lastMediaImages.Count == 0)
             {
-                MessageBox.Show(UiText("軽量化対象の画像がありません。先にメディア走査を実行してください。", "No images to optimize. Run a media scan first."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(UiText("軽量化対象の画像がありません。先にメディア走査を実行してください。", "No images to optimize. Run a media scan first."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             var targets = _lastMediaImages.Where(i => !i.IsExcluded && !i.IsProcessed).ToList();
             if (targets.Count == 0)
             {
-                MessageBox.Show(UiText("軽量化が必要な画像はありません（すべて聖域保護または処理済みです）。", "No images need optimization; all are protected or already processed."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(UiText("軽量化が必要な画像はありません（すべて聖域保護または処理済みです）。", "No images need optimization; all are protected or already processed."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -203,7 +203,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show(UiText($"最適化エラー: {ex.Message}", $"Optimization failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AppDialog.Show(UiText($"最適化エラー: {ex.Message}", $"Optimization failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -215,7 +215,7 @@ namespace AstraSize
         {
             if (_lastMediaVideos == null || _lastMediaVideos.Count == 0)
             {
-                MessageBox.Show(UiText("圧縮対象の動画がありません。先にメディア走査を実行してください。", "No videos to compress. Run a media scan first."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(UiText("圧縮対象の動画がありません。先にメディア走査を実行してください。", "No videos to compress. Run a media scan first."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -238,7 +238,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText($"バッチ生成エラー: {ex.Message}", $"Batch generation failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show(UiText($"バッチ生成エラー: {ex.Message}", $"Batch generation failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -248,7 +248,7 @@ namespace AstraSize
             var allItems = _lastMediaImages.Concat(_lastMediaVideos).ToList();
             if (allItems.Count == 0)
             {
-                MessageBox.Show(UiText("出力対象のメディアデータがありません。", "No media data to export."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
+                AppDialog.Show(UiText("出力対象のメディアデータがありません。", "No media data to export."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -273,7 +273,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(UiText($"Excel出力エラー: {ex.Message}", $"Excel export failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                    AppDialog.Show(UiText($"Excel出力エラー: {ex.Message}", $"Excel export failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }

@@ -33,7 +33,9 @@ public sealed class AppSettingsService
             CacheWriteCustomPath = source.CacheWriteCustomPath,
             Language = source.Language,
             StorageTabPaths = source.StorageTabPaths.ToList(),
-            ActiveStorageTabIndex = source.ActiveStorageTabIndex
+            ActiveStorageTabIndex = source.ActiveStorageTabIndex,
+            ActiveScopePath = source.ActiveScopePath,
+            RecentScopePaths = source.RecentScopePaths.ToList()
         };
         lock (_saveLock)
         {
