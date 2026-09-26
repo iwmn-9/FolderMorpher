@@ -1,10 +1,43 @@
 using AstraSize.Models;
 using FolderMorpher.Models;
+using FolderMorpher.Services;
+using System.Reflection;
 
 namespace FolderMorpher.UI;
 
 public static class PresentationTestRunner
 {
+    public static void VerifyRuntimeLocalization(AstraSize.MainWindow window)
+    {
+        var language = LocalizationService.Instance;
+        var original = language.CurrentLanguage;
+        var apply = typeof(AstraSize.MainWindow).GetMethod("ApplyLocalization", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Main window localization entry point is missing.");
+        try
+        {
+            language.SetLanguage(AppLanguage.English);
+            apply.Invoke(window, null);
+            if (window.SearchMenuOpen.Header?.ToString() != "📄 Open File" ||
+                window.SearchMenuExportCsv.Header?.ToString() != "📑 Export to CSV (.csv)" ||
+                window.ColMigWaveWarnings.Header?.ToString() != "Warnings" ||
+                window.Resources["MigWave48hBadge"]?.ToString() != "⚠️ >48h" ||
+                window.AuditCheckDuplicatesCheckBox.ToolTip?.ToString() != "Find files with identical SHA-256 hashes")
+                throw new InvalidOperationException("Runtime English labels were not applied to context menus, wave table, or audit controls.");
+
+            language.SetLanguage(AppLanguage.Japanese);
+            apply.Invoke(window, null);
+            if (window.SearchMenuOpen.Header?.ToString() != "📄 ファイルを開く" ||
+                window.ColMigWaveWarnings.Header?.ToString() != "警告・判定" ||
+                window.Resources["MigWave48hBadge"]?.ToString() != "⚠️ 48h超")
+                throw new InvalidOperationException("Runtime Japanese labels were not restored.");
+        }
+        finally
+        {
+            language.SetLanguage(original);
+            apply.Invoke(window, null);
+        }
+    }
+
     public static void VerifyStorageNodePresentation()
     {
         var parent = new FileItemNode(@"C:\Root", "Root", 1000, true);

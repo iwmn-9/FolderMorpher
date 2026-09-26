@@ -30,7 +30,7 @@ namespace AstraSize
         {
             var dialog = new Microsoft.Win32.OpenFolderDialog
             {
-                Title = "監査対象ディレクトリを選択"
+                Title = UiText("監査対象ディレクトリを選択", "Select a folder to audit")
             };
             if (dialog.ShowDialog() == true)
             {
@@ -43,7 +43,7 @@ namespace AstraSize
             var target = AuditPathTextBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(target))
             {
-                MessageBox.Show("有効な監査対象ディレクトリを入力してください。", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(UiText("有効な監査対象ディレクトリを入力してください。", "Enter a valid folder to audit."), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -52,7 +52,7 @@ namespace AstraSize
 
             GlobalProgressBar.Visibility = Visibility.Visible;
             GlobalProgressBar.IsIndeterminate = true;
-            AuditStatusText.Text = "監査スキャン中...";
+            AuditStatusText.Text = UiText("監査スキャン中...", "Scanning for cleanup candidates...");
 
             var limit = AuditBandwidthLimit.Standard50MB;
             if (AuditBandwidthComboBox != null && AuditBandwidthComboBox.SelectedItem is ComboBoxItem cbi && cbi.Tag?.ToString() == "Unlimited")
@@ -116,7 +116,7 @@ namespace AstraSize
                         if (!string.IsNullOrWhiteSpace(status.ProgressText)) ((IProgress<string>)hostProgress).Report(status.ProgressText);
                     },
                     _auditCts.Token);
-                var report = auditJob.AuditReport ?? throw new InvalidOperationException("監査結果がHostから返されませんでした。");
+                var report = auditJob.AuditReport ?? throw new InvalidOperationException(UiText("監査結果がHostから返されませんでした。", "The host did not return an audit report."));
                 _lastAuditReportId = report.ReportId;
                 var summary = FolderMorpher.HostClient.AuditDtoMapper.ToViewSummary(report.Summary);
                 var items = report.Items.Select(FolderMorpher.HostClient.AuditDtoMapper.ToViewItem).ToList();
@@ -135,8 +135,8 @@ namespace AstraSize
                 if (AuditKpiTotalFiles != null)
                 {
                     AuditKpiTotalFiles.Text = summary.InaccessibleDirectoriesCount > 0
-                        ? $"{summary.TotalFilesScanned:N0} 件 (⚠️未走査 {summary.InaccessibleDirectoriesCount})"
-                        : $"{summary.TotalFilesScanned:N0} 件";
+                        ? UiText($"{summary.TotalFilesScanned:N0} 件 (⚠️未走査 {summary.InaccessibleDirectoriesCount})", $"{summary.TotalFilesScanned:N0} items (⚠️ {summary.InaccessibleDirectoriesCount} inaccessible folders)")
+                        : UiText($"{summary.TotalFilesScanned:N0} 件", $"{summary.TotalFilesScanned:N0} items");
                 }
                 if (AuditKpiReadyToClean != null) AuditKpiReadyToClean.Text = summary.ReadyToCleanSizeFormatted;
                 if (AuditKpiVersionFamily != null) AuditKpiVersionFamily.Text = summary.VersionFamilySizeFormatted;
@@ -144,19 +144,19 @@ namespace AstraSize
                 if (AuditKpiDormantSize != null) AuditKpiDormantSize.Text = summary.DormantSizeFormatted;
 
                 string statusMsg = summary.InaccessibleDirectoriesCount > 0
-                    ? $"完了: 整理候補 {items.Count:N0} 件検出 (⚠️アクセス拒否: {summary.InaccessibleDirectoriesCount} 箇所)"
-                    : $"完了: 整理候補 {items.Count:N0} 件検出 (整理推奨: {summary.ReadyToCleanSizeFormatted})";
+                    ? UiText($"完了: 整理候補 {items.Count:N0} 件検出 (⚠️アクセス拒否: {summary.InaccessibleDirectoriesCount} 箇所)", $"Complete: {items.Count:N0} candidates (⚠️ {summary.InaccessibleDirectoriesCount} inaccessible folders)")
+                    : UiText($"完了: 整理候補 {items.Count:N0} 件検出 (整理推奨: {summary.ReadyToCleanSizeFormatted})", $"Complete: {items.Count:N0} candidates (recommended: {summary.ReadyToCleanSizeFormatted})");
                 AuditStatusText.Text = statusMsg;
                 ShowToast(statusMsg);
             }
             catch (OperationCanceledException)
             {
-                AuditStatusText.Text = "監査を中止しました。";
+                AuditStatusText.Text = UiText("監査を中止しました。", "Audit canceled.");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"監査エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                AuditStatusText.Text = "エラー発生";
+                MessageBox.Show(UiText($"監査エラー: {ex.Message}", $"Audit failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                AuditStatusText.Text = UiText("エラー発生", "Error");
             }
             finally
             {
@@ -169,14 +169,14 @@ namespace AstraSize
         {
             if (_lastAuditItems == null || _lastAuditItems.Count == 0)
             {
-                MessageBox.Show("出力対象の監査結果がありません。先にスキャンを実行してください。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(UiText("出力対象の監査結果がありません。先にスキャンを実行してください。", "No audit results to export. Run a scan first."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             var dialog = new SaveFileDialog
             {
-                Title = "Excelレポートの保存先",
-                Filter = "Excel ワークブック (*.xlsx)|*.xlsx",
+                Title = UiText("Excelレポートの保存先", "Save Excel report"),
+                Filter = UiText("Excel ワークブック (*.xlsx)|*.xlsx", "Excel workbook (*.xlsx)|*.xlsx"),
                 InitialDirectory = GetDefaultExportDirectory(),
                 FileName = $"FolderMorpher_AuditReport_{DateTime.Now:yyyyMMdd_HHmm}.xlsx"
             };
@@ -189,12 +189,12 @@ namespace AstraSize
                     await host.ExportExcelReportAsync(BuildReportExportRequest(
                         dialog.FileName, AuditPathTextBox.Text.Trim(), _lastMediaImages.Concat(_lastMediaVideos)), CancellationToken.None);
 
-                    ShowToast("Excelレポートを出力しました");
+                    ShowToast(UiText("Excelレポートを出力しました", "Excel report exported"));
                     ShellHelper.SelectInExplorer(dialog.FileName);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Excel出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(UiText($"Excel出力エラー: {ex.Message}", $"Excel export failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -203,14 +203,14 @@ namespace AstraSize
         {
             if (_lastAuditItems == null || _lastAuditItems.Count == 0)
             {
-                MessageBox.Show("出力対象のデータがありません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(UiText("出力対象のデータがありません。", "No data to export."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             var dialog = new SaveFileDialog
             {
-                Title = "CSV棚卸し台帳の保存先",
-                Filter = "CSVファイル (*.csv)|*.csv",
+                Title = UiText("CSV棚卸し台帳の保存先", "Save CSV inventory"),
+                Filter = UiText("CSVファイル (*.csv)|*.csv", "CSV file (*.csv)|*.csv"),
                 FileName = $"FolderMorpher_AuditList_{DateTime.Now:yyyyMMdd}.csv"
             };
 
@@ -221,12 +221,12 @@ namespace AstraSize
                     var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
                     await host.ExportAuditCsvAsync(dialog.FileName,
                         _lastAuditItems.Select(FolderMorpher.HostClient.AuditDtoMapper.ToDto).ToList(), CancellationToken.None);
-                    ShowToast("CSV台帳を出力しました");
+                    ShowToast(UiText("CSV台帳を出力しました", "CSV inventory exported"));
                     ShellHelper.SelectInExplorer(dialog.FileName);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"CSV出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(UiText($"CSV出力エラー: {ex.Message}", $"CSV export failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -358,7 +358,7 @@ namespace AstraSize
                 }
                 else
                 {
-                    AuditTableTitleText.Text = $"{baseTitle} ({resultList.Count:N0} / {_lastAuditItems.Count:N0} 件)";
+                    AuditTableTitleText.Text = $"{baseTitle} ({resultList.Count:N0} / {_lastAuditItems.Count:N0} {UiText("件", "items")})";
                 }
             }
             else
@@ -441,7 +441,7 @@ namespace AstraSize
                                 rtcCount++;
                             }
                         }
-                        ShowToast($"表示中の「すぐ整理できそう」な候補 {rtcCount:N0} 件を選択しました");
+                        ShowToast(UiText($"表示中の「すぐ整理できそう」な候補 {rtcCount:N0} 件を選択しました", $"Selected {rtcCount:N0} visible recommended candidates"));
                         break;
 
                     case "VersionFamilyOnly":
@@ -455,7 +455,7 @@ namespace AstraSize
                                 vfCount++;
                             }
                         }
-                        ShowToast($"表示中の世代・旧版の過去版 {vfCount:N0} 件を選択しました");
+                        ShowToast(UiText($"表示中の世代・旧版の過去版 {vfCount:N0} 件を選択しました", $"Selected {vfCount:N0} visible older versions"));
                         break;
 
                     case "ExtractedArchiveOnly":
@@ -469,7 +469,7 @@ namespace AstraSize
                                 eaCount++;
                             }
                         }
-                        ShowToast($"表示中の展開済ZIP残骸 {eaCount:N0} 件を選択しました");
+                        ShowToast(UiText($"表示中の展開済ZIP残骸 {eaCount:N0} 件を選択しました", $"Selected {eaCount:N0} visible extracted ZIP archives"));
                         break;
 
                     case "DupCopyOnly":
@@ -483,7 +483,7 @@ namespace AstraSize
                                 dupCount++;
                             }
                         }
-                        ShowToast($"表示中の重複ファイルの原本以外（コピー） {dupCount:N0} 件を選択しました");
+                        ShowToast(UiText($"表示中の重複ファイルの原本以外（コピー） {dupCount:N0} 件を選択しました", $"Selected {dupCount:N0} visible duplicate copies"));
                         break;
 
                     case "Dormant3Y":
@@ -498,7 +498,7 @@ namespace AstraSize
                                 d3Count++;
                             }
                         }
-                        ShowToast($"表示中の3年以上未更新ファイル {d3Count:N0} 件を選択しました");
+                        ShowToast(UiText($"表示中の3年以上未更新ファイル {d3Count:N0} 件を選択しました", $"Selected {d3Count:N0} visible files unchanged for 3+ years"));
                         break;
 
                     case "Dormant5Y":
@@ -513,7 +513,7 @@ namespace AstraSize
                                 d5Count++;
                             }
                         }
-                        ShowToast($"表示中の5年以上未更新ファイル {d5Count:N0} 件を選択しました");
+                        ShowToast(UiText($"表示中の5年以上未更新ファイル {d5Count:N0} 件を選択しました", $"Selected {d5Count:N0} visible files unchanged for 5+ years"));
                         break;
 
                     case "SelectVisible":
@@ -522,7 +522,7 @@ namespace AstraSize
                         {
                             ai.IsChecked = true;
                         }
-                        ShowToast($"表示中の {visibleList.Count:N0} 件を選択しました");
+                        ShowToast(UiText($"表示中の {visibleList.Count:N0} 件を選択しました", $"Selected {visibleList.Count:N0} visible items"));
                         break;
 
                     case "ClearAll":
@@ -532,7 +532,7 @@ namespace AstraSize
                             ai.IsChecked = false;
                         }
                         if (AuditHeaderCheckBox != null) AuditHeaderCheckBox.IsChecked = false;
-                        ShowToast("選択をすべて解除しました");
+                        ShowToast(UiText("選択をすべて解除しました", "Selection cleared"));
                         break;
                 }
             }
@@ -589,7 +589,7 @@ namespace AstraSize
 
             if (_lastAuditItems == null || _lastAuditItems.Count == 0)
             {
-                AuditLiveSelectedReductionText.Text = "0 B (0 件)";
+                AuditLiveSelectedReductionText.Text = UiText("0 B (0 件)", "0 B (0 items)");
                 return;
             }
 
@@ -603,7 +603,7 @@ namespace AstraSize
                     RetainForCommit = false
                 }, CancellationToken.None);
                 if (generation != Volatile.Read(ref _auditPreviewGeneration)) return;
-                AuditLiveSelectedReductionText.Text = $"{FileItemNode.FormatBytes(preview.SafeSizeBytes)} ({preview.SafeFileCount:N0} 件)";
+                AuditLiveSelectedReductionText.Text = UiText($"{FileItemNode.FormatBytes(preview.SafeSizeBytes)} ({preview.SafeFileCount:N0} 件)", $"{FileItemNode.FormatBytes(preview.SafeSizeBytes)} ({preview.SafeFileCount:N0} items)");
             }
             catch (Exception ex)
             {
@@ -615,7 +615,7 @@ namespace AstraSize
         {
             if (_lastAuditItems == null || _lastAuditItems.Count == 0)
             {
-                MessageBox.Show("削除対象のファイルがありません。先に監査スキャンを実行してください。", "案内", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(UiText("削除対象のファイルがありません。先に監査スキャンを実行してください。", "No files to delete. Run an audit first."), UiText("案内", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -633,13 +633,13 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"削除計画の確認に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(UiText($"削除計画の確認に失敗しました: {ex.Message}", $"Could not prepare the deletion plan: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
             if (preview.SafeFileCount == 0 && preview.ProtectedOriginalPaths.Count == 0)
             {
-                MessageBox.Show("削除するファイルが選択されていません。チェックボックスでファイルを選択してから実行してください。", "案内", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(UiText("削除するファイルが選択されていません。チェックボックスでファイルを選択してから実行してください。", "No files selected. Check the files to delete, then try again."), UiText("案内", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -652,20 +652,22 @@ namespace AstraSize
                 if (preview.SafeFileCount == 0)
                 {
                     MessageBox.Show(
-                        $"選択された項目（{protectedPaths.Count:N0} 件）はすべて重複グループの【原本候補】です。\n\n" +
-                        "原本全滅事故を防止するため、原本候補ファイルはツール上から削除できません。\n" +
-                        "削除処理を中止しました。",
-                        "原本候補の保護",
+                        UiText($"選択された項目（{protectedPaths.Count:N0} 件）はすべて重複グループの【原本候補】です。\n\n" +
+                            "原本全滅事故を防止するため、原本候補ファイルはツール上から削除できません。\n" +
+                            "削除処理を中止しました。",
+                            $"All {protectedPaths.Count:N0} selected items are original candidates in duplicate groups.\n\nOriginal candidates cannot be deleted in this tool. Deletion was canceled."),
+                        UiText("原本候補の保護", "Original candidate protection"),
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);
                     return;
                 }
 
                 MessageBox.Show(
-                    $"⚠️ 選択項目の中に重複グループの【原本候補】が {protectedPaths.Count:N0} 件含まれていました。\n\n" +
-                    "安全保護規則に従い、原本候補は自動的に保護・除外されました。\n" +
-                    $"残りの複製・休眠ファイル（{preview.SafeFileCount:N0} 件）に対して削除確認へ進みます。",
-                    "原本候補の保護（自動除外）",
+                    UiText($"⚠️ 選択項目の中に重複グループの【原本候補】が {protectedPaths.Count:N0} 件含まれていました。\n\n" +
+                        "安全保護規則に従い、原本候補は自動的に保護・除外されました。\n" +
+                        $"残りの複製・休眠ファイル（{preview.SafeFileCount:N0} 件）に対して削除確認へ進みます。",
+                        $"⚠️ {protectedPaths.Count:N0} original candidates were among the selected items.\n\nThey were automatically protected and excluded. Continue to confirm deletion of the remaining {preview.SafeFileCount:N0} copies or dormant files."),
+                    UiText("原本候補の保護（自動除外）", "Original candidates excluded"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
             }
@@ -674,11 +676,12 @@ namespace AstraSize
             long totalBytes = preview.SafeSizeBytes;
             string sizeFormatted = FileItemNode.FormatBytes(totalBytes);
             var confirm = MessageBox.Show(
-                $"選択された {preview.SafeFileCount:N0} 件（合計 {sizeFormatted}）のファイルを【完全に削除】します。\n\n" +
-                "⚠️ 注意:\n" +
-                "・ファイルはごみ箱に入らず完全に削除され、アプリ側から復元することはできません。\n" +
-                "・本当に削除を実行してもよろしいですか？",
-                "ファイル完全削除の確認",
+                UiText($"選択された {preview.SafeFileCount:N0} 件（合計 {sizeFormatted}）のファイルを【完全に削除】します。\n\n" +
+                    "⚠️ 注意:\n" +
+                    "・ファイルはごみ箱に入らず完全に削除され、アプリ側から復元することはできません。\n" +
+                    "・本当に削除を実行してもよろしいですか？",
+                    $"Permanently delete {preview.SafeFileCount:N0} selected files ({sizeFormatted})?\n\n⚠️ These files will bypass the Recycle Bin and cannot be restored by this app. Continue?"),
+                UiText("ファイル完全削除の確認", "Confirm permanent deletion"),
                 MessageBoxButton.OKCancel,
                 MessageBoxImage.Stop);
 
@@ -688,7 +691,7 @@ namespace AstraSize
             AuditDeleteSelectedButton.IsEnabled = false;
             AuditStartButton.IsEnabled = false;
             GlobalProgressBar.Visibility = Visibility.Visible;
-            AuditStatusText.Text = "ファイル削除中...";
+            AuditStatusText.Text = UiText("ファイル削除中...", "Deleting files...");
 
             FolderMorpher.Contracts.AuditCleanupResultDto result;
             try
@@ -697,7 +700,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"削除計画の実行に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(UiText($"削除計画の実行に失敗しました: {ex.Message}", $"Deletion plan failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
             finally
@@ -713,21 +716,22 @@ namespace AstraSize
             ApplyAuditFilters();
             UpdateAuditKpiAfterDeletion();
 
-            AuditStatusText.Text = $"削除完了: {result.SuccessCount:N0} 件削除 ({FileItemNode.FormatBytes(result.FreedBytes)} 削減)";
+            AuditStatusText.Text = UiText($"削除完了: {result.SuccessCount:N0} 件削除 ({FileItemNode.FormatBytes(result.FreedBytes)} 削減)", $"Deletion complete: {result.SuccessCount:N0} files ({FileItemNode.FormatBytes(result.FreedBytes)} freed)");
 
             if (result.Errors.Count > 0)
             {
                 MessageBox.Show(
-                    $"{result.SuccessCount:N0} 件のファイルを削除しました（{FileItemNode.FormatBytes(result.FreedBytes)} 削減）。\n\n" +
-                    $"以下の {result.Errors.Count:N0} 件でエラーが発生しました:\n" +
-                    string.Join("\n", result.Errors.Take(5)) + (result.Errors.Count > 5 ? $"\n...他 {result.Errors.Count - 5} 件" : ""),
-                    "削除完了（一部エラー）",
+                    UiText($"{result.SuccessCount:N0} 件のファイルを削除しました（{FileItemNode.FormatBytes(result.FreedBytes)} 削減）。\n\n" +
+                        $"以下の {result.Errors.Count:N0} 件でエラーが発生しました:\n",
+                        $"Deleted {result.SuccessCount:N0} files ({FileItemNode.FormatBytes(result.FreedBytes)} freed).\n\n{result.Errors.Count:N0} errors occurred:\n") +
+                    string.Join("\n", result.Errors.Take(5)) + (result.Errors.Count > 5 ? UiText($"\n...他 {result.Errors.Count - 5} 件", $"\n...and {result.Errors.Count - 5} more") : ""),
+                    UiText("削除完了（一部エラー）", "Deletion complete with errors"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }
             else
             {
-                ShowToast($"🗑️ {result.SuccessCount:N0} 件のファイルを完全削除しました（{FileItemNode.FormatBytes(result.FreedBytes)} 削減）");
+                ShowToast(UiText($"🗑️ {result.SuccessCount:N0} 件のファイルを完全削除しました（{FileItemNode.FormatBytes(result.FreedBytes)} 削減）", $"🗑️ Permanently deleted {result.SuccessCount:N0} files ({FileItemNode.FormatBytes(result.FreedBytes)} freed)"));
             }
         }
 
@@ -818,7 +822,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"除外登録に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(UiText($"除外登録に失敗しました: {ex.Message}", $"Could not ignore the file: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
                 _lastAuditItems.Remove(item);
@@ -843,7 +847,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"除外リストを取得できませんでした: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(UiText($"除外リストを取得できませんでした: {ex.Message}", $"Could not load the ignored list: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
@@ -882,7 +886,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"除外リストをリセットできませんでした: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(UiText($"除外リストをリセットできませんでした: {ex.Message}", $"Could not reset the ignored list: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
                 UpdateIgnoredCountBadge();

@@ -172,7 +172,7 @@ namespace AstraSize
         {
             var newTab = new ScanTabModel
             {
-                TabTitle = $"タブ {StorageTabs.Count + 1}",
+                TabTitle = UiText($"タブ {StorageTabs.Count + 1}", $"Tab {StorageTabs.Count + 1}"),
                 TargetPath = PathTextBox.Text.Trim(),
                 IsSelected = true
             };
@@ -187,7 +187,8 @@ namespace AstraSize
             {
                 if (StorageTabs.Count <= 1)
                 {
-                    MessageBox.Show("最後のタブは閉じることができません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(UiText("最後のタブは閉じることができません。", "The last tab cannot be closed."),
+                        UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
@@ -207,7 +208,7 @@ namespace AstraSize
         {
             var dialog = new OpenFolderDialog
             {
-                Title = "スキャン対象フォルダの選択",
+                Title = UiText("スキャン対象フォルダの選択", "Select a folder to scan"),
                 InitialDirectory = PathTextBox.Text.Trim()
             };
             if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.FolderName))
@@ -234,7 +235,8 @@ namespace AstraSize
             var path = PathTextBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(path))
             {
-                MessageBox.Show("有効なパス (ローカルまたは UNC) を入力してください。", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(UiText("有効なパス (ローカルまたは UNC) を入力してください。", "Enter a valid local or UNC path."),
+                    UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -274,7 +276,8 @@ namespace AstraSize
                     FileTreeDataGrid.ItemsSource = _currentTab.VisibleFlatList;
                     UpdateDynamicInsightsForNode(cachedRoot);
                     UpdateMetricsCards(_currentTab);
-                    StatusTextBlock.Text = $"⚡ 前回のキャッシュを表示中 (バックグラウンドで最新データを走査・差分検出中...)";
+                    StatusTextBlock.Text = UiText("⚡ 前回のキャッシュを表示中 (バックグラウンドで最新データを走査・差分検出中...)",
+                        "⚡ Showing cached results while scanning for changes in the background...");
                 }
             }
             catch
@@ -287,8 +290,8 @@ namespace AstraSize
             var progress = new Progress<FolderMorpher.Contracts.StorageScanProgressDto>(p =>
             {
                 ScannedSizeTextBlock.Text = FileItemNode.FormatBytes(p.ScannedBytes);
-                TotalFilesTextBlock.Text = $"{p.ScannedFilesCount:N0} 項目走査済み";
-                StatusTextBlock.Text = $"スキャン中: {p.CurrentDirectory}";
+                TotalFilesTextBlock.Text = UiText($"{p.ScannedFilesCount:N0} 項目走査済み", $"{p.ScannedFilesCount:N0} items scanned");
+                StatusTextBlock.Text = UiText($"スキャン中: {p.CurrentDirectory}", $"Scanning: {p.CurrentDirectory}");
             });
 
             try
@@ -298,7 +301,7 @@ namespace AstraSize
                 var root = scanResult.RootNode == null ? null : FolderMorpher.HostClient.StorageNodeMapper.ToViewNode(scanResult.RootNode);
                 if (root == null)
                 {
-                    throw new InvalidOperationException(scanResult.ErrorMessage ?? "スキャン結果を取得できませんでした。");
+                    throw new InvalidOperationException(scanResult.ErrorMessage ?? UiText("スキャン結果を取得できませんでした。", "Could not retrieve scan results."));
                 }
 
                 var summary = new ScanSummary
@@ -330,19 +333,23 @@ namespace AstraSize
                 // Host owns cache and snapshot persistence after the scan.
                 SaveStorageTabSession();
 
-                string diffInfo = hadDiff && !string.IsNullOrEmpty(root.DiffFormatted) ? $" [差分: {root.DiffFormatted}]" : "";
+                string diffInfo = hadDiff && !string.IsNullOrEmpty(root.DiffFormatted)
+                    ? UiText($" [差分: {root.DiffFormatted}]", $" [Change: {root.DiffFormatted}]") : "";
                 StatusTextBlock.Text = summary.IsMftBoosted
-                    ? $"⚡ MFT高速スキャン完了 ({summary.ElapsedSeconds}秒): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)}){diffInfo}"
-                    : $"スキャン完了 ({summary.ElapsedSeconds}秒): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)}){diffInfo}";
+                    ? UiText($"⚡ MFT高速スキャン完了 ({summary.ElapsedSeconds}秒): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)}){diffInfo}",
+                        $"⚡ MFT scan complete ({summary.ElapsedSeconds}s): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)}){diffInfo}")
+                    : UiText($"スキャン完了 ({summary.ElapsedSeconds}秒): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)}){diffInfo}",
+                        $"Scan complete ({summary.ElapsedSeconds}s): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)}){diffInfo}");
             }
             catch (OperationCanceledException)
             {
-                StatusTextBlock.Text = "スキャンが中止されました。";
+                StatusTextBlock.Text = UiText("スキャンが中止されました。", "Scan canceled.");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"スキャンエラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusTextBlock.Text = "スキャン失敗";
+                MessageBox.Show(UiText($"スキャンエラー: {ex.Message}", $"Scan error: {ex.Message}"),
+                    UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusTextBlock.Text = UiText("スキャン失敗", "Scan failed");
             }
             finally
             {
@@ -364,31 +371,32 @@ namespace AstraSize
             if (tab.RootNode != null)
             {
                 ScannedSizeTextBlock.Text = FileItemNode.FormatBytes(tab.RootNode.SizeBytes);
-                TotalFilesTextBlock.Text = $"{tab.RootNode.FileCount:N0} ファイル / {tab.RootNode.FolderCount:N0} フォルダ";
+                TotalFilesTextBlock.Text = UiText($"{tab.RootNode.FileCount:N0} ファイル / {tab.RootNode.FolderCount:N0} フォルダ",
+                    $"{tab.RootNode.FileCount:N0} Files / {tab.RootNode.FolderCount:N0} Folders");
 
                 // 前回スキャンとの差分推移
                 if (tab.RootNode.DiffBytes.HasValue && tab.RootNode.DiffBytes.Value != 0)
                 {
                     TrendDiffTextBlock.Text = tab.RootNode.DiffFormatted;
-                    LastScanDateTextBlock.Text = "前回キャッシュ比較";
+                    LastScanDateTextBlock.Text = UiText("前回キャッシュ比較", "Compared with previous cache");
                 }
                 else if (tab.RootNode.DiffBytes.HasValue && tab.RootNode.DiffBytes.Value == 0)
                 {
-                    TrendDiffTextBlock.Text = "±0 B (変化なし)";
-                    LastScanDateTextBlock.Text = "前回キャッシュ比較";
+                    TrendDiffTextBlock.Text = UiText("±0 B (変化なし)", "±0 B (no change)");
+                    LastScanDateTextBlock.Text = UiText("前回キャッシュ比較", "Compared with previous cache");
                 }
                 else
                 {
-                    TrendDiffTextBlock.Text = "比較データなし";
-                    LastScanDateTextBlock.Text = "初回スキャン";
+                    TrendDiffTextBlock.Text = UiText("比較データなし", "No comparison data");
+                    LastScanDateTextBlock.Text = UiText("初回スキャン", "Initial scan");
                 }
             }
             else
             {
                 ScannedSizeTextBlock.Text = "0.00 GB";
-                TotalFilesTextBlock.Text = "0 ファイル / 0 フォルダ";
-                TrendDiffTextBlock.Text = "比較データなし";
-                LastScanDateTextBlock.Text = "初回スキャン";
+                TotalFilesTextBlock.Text = UiText("0 ファイル / 0 フォルダ", "0 Files / 0 Folders");
+                TrendDiffTextBlock.Text = UiText("比較データなし", "No comparison data");
+                LastScanDateTextBlock.Text = UiText("初回スキャン", "Initial scan");
             }
         }
 
@@ -434,7 +442,7 @@ namespace AstraSize
             }
             catch (Exception ex)
             {
-                StatusTextBlock.Text = $"フォルダーを開けません: {ex.Message}";
+                StatusTextBlock.Text = UiText($"フォルダーを開けません: {ex.Message}", $"Could not open folder: {ex.Message}");
                 Debug.WriteLine($"Storage expansion failed for {node.FullPath}: {ex}");
             }
         }
@@ -453,11 +461,11 @@ namespace AstraSize
 
         private static async Task LoadStorageChildrenAsync(FileItemNode node, ScanTabModel tab)
         {
-            var rootPath = tab.RootNode?.FullPath ?? throw new InvalidOperationException("スキャンルートがありません。");
+            var rootPath = tab.RootNode?.FullPath ?? throw new InvalidOperationException(UiText("スキャンルートがありません。", "Scan root is missing."));
             var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
             var children = await host.GetStorageChildrenAsync(rootPath, node.FullPath);
             if (children.Count == 0)
-                throw new InvalidOperationException("キャッシュに子要素が見つかりません。");
+                throw new InvalidOperationException(UiText("キャッシュに子要素が見つかりません。", "No children found in the cache."));
             node.Children.Clear();
             foreach (var child in children)
                 node.Children.Add(FolderMorpher.HostClient.StorageNodeMapper.ToViewNode(child, node));
@@ -476,7 +484,7 @@ namespace AstraSize
         {
             if (InsightsTargetScopeTextBlock == null || TopFilesDataGrid == null || FolderChildSharesDataGrid == null) return;
             var selectedTab = _currentTab;
-            InsightsTargetScopeTextBlock.Text = $"スコープ: {node.Name}";
+            InsightsTargetScopeTextBlock.Text = UiText($"スコープ: {node.Name}", $"Scope: {node.Name}");
             if (selectedTab is { } tab && node.HasUnloadedChildren)
             {
                 try { await EnsureStorageChildrenLoadedAsync(node, tab); }
@@ -590,7 +598,7 @@ namespace AstraSize
             if (TopFilesDataGrid.SelectedItem is LargestFileInfo fileInfo && !string.IsNullOrEmpty(fileInfo.FullPath))
             {
                 Clipboard.SetText(fileInfo.FullPath);
-                ShowToast($"パスをコピーしました: {fileInfo.Name}");
+                ShowToast(UiText($"パスをコピーしました: {fileInfo.Name}", $"Path copied: {fileInfo.Name}"));
             }
         }
 
@@ -602,7 +610,7 @@ namespace AstraSize
             {
                 NavTabLiveAcl.IsChecked = true;
                 LiveAclStudioControl.OpenFolder(item.FullPath);
-                ShowToast($"実環境 権限コントロールを開きました: {item.Name}");
+                ShowToast(UiText($"実環境 権限コントロールを開きました: {item.Name}", $"Opened Permission Control: {item.Name}"));
             }
         }
 
@@ -630,7 +638,7 @@ namespace AstraSize
             if (FileTreeDataGrid.SelectedItem is FileItemNode item)
             {
                 Clipboard.SetText(item.FullPath);
-                ShowToast($"パスをコピーしました: {item.FullPath}");
+                ShowToast(UiText($"パスをコピーしました: {item.FullPath}", $"Path copied: {item.FullPath}"));
             }
         }
 
@@ -646,11 +654,12 @@ namespace AstraSize
                     _simRootFolders.Add(FolderMorpher.HostClient.MigrationDtoMapper.ToViewNode(dto));
                     NavTabSimulation.IsChecked = true;
                     SimMockTreeView.ItemsSource = _simRootFolders;
-                    ShowToast($"モックツリーに配置しました: {item.Name}");
+                    ShowToast(UiText($"モックツリーに配置しました: {item.Name}", $"Added to migration tree: {item.Name}"));
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"移行ツリーへの追加に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(UiText($"移行ツリーへの追加に失敗しました: {ex.Message}", $"Could not add to migration tree: {ex.Message}"),
+                        UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -670,14 +679,15 @@ namespace AstraSize
         {
             if (_currentTab?.RootNode == null)
             {
-                MessageBox.Show("エクスポートするスキャンデータがありません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(UiText("エクスポートするスキャンデータがありません。", "No scan data to export."),
+                    UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             var dialog = new SaveFileDialog
             {
-                Title = "スキャン結果を保存",
-                Filter = "Excelブック (*.xlsx)|*.xlsx|CSVファイル (*.csv)|*.csv",
+                Title = UiText("スキャン結果を保存", "Save scan results"),
+                Filter = UiText("Excelブック (*.xlsx)|*.xlsx|CSVファイル (*.csv)|*.csv", "Excel workbook (*.xlsx)|*.xlsx|CSV file (*.csv)|*.csv"),
                 InitialDirectory = GetDefaultExportDirectory(),
                 FileName = $"ScanResult_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx"
             };
@@ -688,13 +698,14 @@ namespace AstraSize
                     var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
                     await host.ExportStorageScanAsync(dialog.FileName, _currentTab.TargetPath,
                         _currentTab.VisibleFlatList.Select(FolderMorpher.HostClient.StorageNodeMapper.ToFlatDto).ToList(), CancellationToken.None);
-                    ShowToast($"📊 {Path.GetFileName(dialog.FileName)} を出力しました");
+                    ShowToast(UiText($"📊 {Path.GetFileName(dialog.FileName)} を出力しました", $"📊 Exported {Path.GetFileName(dialog.FileName)}"));
 
                     ShellHelper.SelectInExplorer(dialog.FileName);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"出力エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(UiText($"出力エラー: {ex.Message}", $"Export error: {ex.Message}"),
+                        UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -704,7 +715,8 @@ namespace AstraSize
             var path = PathTextBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(path))
             {
-                MessageBox.Show("対象パスが入力されていません。", "案内", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(UiText("対象パスが入力されていません。", "No target path was entered."),
+                    UiText("案内", "Notice"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 

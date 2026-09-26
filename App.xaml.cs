@@ -178,6 +178,7 @@ namespace AstraSize
                             await Dispatcher.InvokeAsync(() =>
                             {
                                 searchWindow = new MainWindow();
+                                FolderMorpher.UI.PresentationTestRunner.VerifyRuntimeLocalization(searchWindow);
                                 FindControl<TextBox>(searchWindow, "SearchDirectTargetTextBox").Text = testRoot;
                                 FindControl<TextBox>(searchWindow, "SearchInputBox").Text = "ipc-search-match";
                                 FindControl<Button>(searchWindow, "SearchClearButton").RaiseEvent(new RoutedEventArgs(

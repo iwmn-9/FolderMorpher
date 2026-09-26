@@ -23,6 +23,8 @@ namespace AstraSize
 {
     public partial class MainWindow : Window
     {
+        private static string UiText(string ja, string en) => LocalizationService.Instance.GetString(ja, en);
+
         #region Localization (i18n)
         private async void LanguageToggleButton_Click(object sender, RoutedEventArgs e)
         {
@@ -162,6 +164,7 @@ namespace AstraSize
             ColShareName.Header = isJa ? "直下アイテム" : "Direct Child Item";
             ColShareSize.Header = isJa ? "容量" : "Size";
             ColShareRatio.Header = isJa ? "直下比率" : "Subfolder Share";
+            if (_currentTab != null) UpdateMetricsCards(_currentTab);
 
             // ==========================================
             // Tab 1 (Live ACL & Effective Access)
@@ -237,6 +240,25 @@ namespace AstraSize
             SimCtxDemote.Header = Strings.CtxDemote;
             SimCtxDelete.Header = Strings.Delete;
 
+            ColMigWaveNumber.Header = "Wave";
+            ColMigWaveName.Header = isJa ? "波次名称・移行対象" : "Wave / Migration Target";
+            ColMigWaveSize.Header = isJa ? "想定容量" : "Estimated Size";
+            ColMigWaveFileCount.Header = isJa ? "ファイル数" : "File Count";
+            ColMigWaveFullCopy.Header = isJa ? "初回フル同期 (1Gbps)" : "Initial Full Sync (1Gbps)";
+            ColMigWaveCutover.Header = isJa ? "本番切替 (差分2%)" : "Cutover (2% Delta)";
+            ColMigWaveWarnings.Header = isJa ? "警告・判定" : "Warnings";
+            Resources["MigWave48hTooltip"] = isJa
+                ? "初回フルコピーが48時間超の見込みです。週末枠超過に注意してください。"
+                : "Initial full copy may exceed 48 hours and the weekend window.";
+            Resources["MigWave48hBadge"] = isJa ? "⚠️ 48h超" : "⚠️ >48h";
+            Resources["MigWaveFileCountTooltip"] = isJa
+                ? "ファイル数が10万件超です。ランダムI/O過多に注意してください。"
+                : "More than 100,000 files. Watch for excessive random I/O.";
+            Resources["MigWaveFileCountBadge"] = isJa ? "⚠️ ファイル過多" : "⚠️ Many files";
+            MigFooterNoticeText.Text = isJa
+                ? "※ 子孫フォルダ (/XD) は自動除外されます。出力フォルダにバッチ・手順書一式を生成します。"
+                : "* Descendant folders (/XD) are excluded automatically. Batches and instructions are saved to the output folder.";
+
             // 仮想ツリーの各ノードの表示言語更新
             foreach (var root in _simRootFolders)
             {
@@ -278,6 +300,12 @@ namespace AstraSize
             {
                 AuditKpiTotalFiles.Text = isJa ? "0 件" : "0 Items";
             }
+            else if (_lastAuditSummary != null)
+            {
+                AuditKpiTotalFiles.Text = _lastAuditSummary.InaccessibleDirectoriesCount > 0
+                    ? UiText($"{_lastAuditSummary.TotalFilesScanned:N0} 件 (⚠️未走査 {_lastAuditSummary.InaccessibleDirectoriesCount})", $"{_lastAuditSummary.TotalFilesScanned:N0} items (⚠️ {_lastAuditSummary.InaccessibleDirectoriesCount} inaccessible folders)")
+                    : UiText($"{_lastAuditSummary.TotalFilesScanned:N0} 件", $"{_lastAuditSummary.TotalFilesScanned:N0} items");
+            }
             AuditHeaderTitle.Text = isJa ? "🧹 ファイルサーバー健全化 ＆ 整理候補発見スタジオ" : "🧹 Storage Hygiene & Candidate Discovery Studio";
             AuditHeaderDesc.Text = isJa ? "世代・旧版、展開済ZIP残骸、墓場フォルダー、完全重複、休眠ファイルを分析し、理由付きで整理候補を提示します。" : "Discovers older versions, extracted archive shadows, graveyard folders, duplicates, and dormant files with explainable reasons.";
             AuditTargetFolderLabel.Text = isJa ? "監査対象ディレクトリ (UNC / ローカル)" : "Target Audit Directory (UNC / Local)";
@@ -291,8 +319,10 @@ namespace AstraSize
 
             string auditBaseTitle = isJa ? "検出された整理候補一覧" : "Detected Cleanup Candidates";
             AuditTableTitleText.Text = _lastAuditItems.Count > 0
-                ? $"{auditBaseTitle} ({AuditItemsDataGrid?.Items.Count ?? _lastAuditItems.Count:N0} / {_lastAuditItems.Count:N0} 件)"
+                ? $"{auditBaseTitle} ({AuditItemsDataGrid?.Items.Count ?? _lastAuditItems.Count:N0} / {_lastAuditItems.Count:N0} {UiText("件", "items")})"
                 : auditBaseTitle;
+            if (AuditLiveSelectedReductionText != null && AuditLiveSelectedReductionText.Text.StartsWith("0 B (0 ", StringComparison.Ordinal))
+                AuditLiveSelectedReductionText.Text = UiText("0 B (0 件)", "0 B (0 items)");
             if (AuditLiveReductionLabel != null) AuditLiveReductionLabel.Text = isJa ? "選択中の削減見込み: " : "Est. Space Reclaimed: ";
             if (AuditMaxDisplayLabel != null) AuditMaxDisplayLabel.Text = isJa ? "表示件数:" : "Display Limit:";
             if (AuditMaxDisplayComboBox?.Items.Count >= 4)
@@ -343,9 +373,13 @@ namespace AstraSize
             }
             if (AuditHeaderCheckBox != null) AuditHeaderCheckBox.ToolTip = isJa ? "すべて選択 / すべて解除" : "Select All / Deselect All";
             if (AuditCheckVersionFamiliesCheckBox != null) AuditCheckVersionFamiliesCheckBox.Content = isJa ? "世代・旧版" : "Older Versions";
+            if (AuditCheckVersionFamiliesCheckBox != null) AuditCheckVersionFamiliesCheckBox.ToolTip = isJa ? "最新版が存在する過去バージョン・修正版ファイルを検出" : "Find older versions when a newer revision exists";
             if (AuditCheckExtractedArchivesCheckBox != null) AuditCheckExtractedArchivesCheckBox.Content = isJa ? "展開済ZIP" : "Extracted ZIPs";
+            if (AuditCheckExtractedArchivesCheckBox != null) AuditCheckExtractedArchivesCheckBox.ToolTip = isJa ? "同名フォルダーが存在するZIP残骸を検出" : "Find ZIP files with matching extracted folders";
             AuditCheckDuplicatesCheckBox.Content = isJa ? "完全重複" : "Duplicates";
+            AuditCheckDuplicatesCheckBox.ToolTip = isJa ? "SHA-256が完全一致する重複ファイルを検出" : "Find files with identical SHA-256 hashes";
             AuditCheckDormantCheckBox.Content = isJa ? "休眠・墓場 (3年超)" : "Dormant (3+ Yrs)";
+            AuditCheckDormantCheckBox.ToolTip = isJa ? "3年以上更新がなく閲覧も途絶えたファイル・フォルダーを検出" : "Find files and folders untouched for over three years";
             AuditCheckPathLimitsCheckBox.Content = isJa ? "パス長/禁則" : "Path / Invalid";
             if (AuditBandwidthLabel != null) AuditBandwidthLabel.Text = isJa ? "帯域:" : "Bandwidth:";
             if (AuditBandwidthStandardItem != null) AuditBandwidthStandardItem.Content = Strings.AuditBandwidthStandard;
@@ -374,18 +408,9 @@ namespace AstraSize
             {
                 MediaStatusText.Text = isJa ? "待機中" : "Ready";
             }
-            if (MediaKpiImagesCount.Text == "0 枚" || MediaKpiImagesCount.Text == "0 Items")
-            {
-                MediaKpiImagesCount.Text = isJa ? "0 枚" : "0 Items";
-            }
-            if (MediaKpiVideosCount.Text == "0 本" || MediaKpiVideosCount.Text == "0 Videos")
-            {
-                MediaKpiVideosCount.Text = isJa ? "0 本" : "0 Videos";
-            }
-            if (MediaKpiOptimizedCount.Text == "0 枚" || MediaKpiOptimizedCount.Text == "0 Items")
-            {
-                MediaKpiOptimizedCount.Text = isJa ? "0 枚" : "0 Items";
-            }
+            MediaKpiImagesCount.Text = UiText($"{_lastMediaImages.Count:N0} 枚", $"{_lastMediaImages.Count:N0} images");
+            MediaKpiVideosCount.Text = UiText($"{_lastMediaVideos.Count:N0} 本", $"{_lastMediaVideos.Count:N0} videos");
+            MediaKpiOptimizedCount.Text = UiText($"{_lastMediaSummary?.OptimizedImagesCount ?? 0:N0} 枚", $"{_lastMediaSummary?.OptimizedImagesCount ?? 0:N0} images");
             MediaHeaderTitle.Text = Strings.MediaHeaderTitle;
             MediaHeaderDesc.Text = Strings.MediaHeaderDesc;
             MediaTargetDirLabel.Text = isJa ? "走査対象ディレクトリ (UNC / ローカル)" : "Target Directory (UNC / Local)";
@@ -526,9 +551,24 @@ namespace AstraSize
             // ==========================================
             // Tab 6: Search Studio (統合ファイル検索)
             // ==========================================
-            if (SearchExecuteButton != null) SearchExecuteButton.Content = Strings.SearchExecute;
-            if (SearchCancelButton != null) SearchCancelButton.Content = Strings.SearchCancel;
-            if (SearchClearButton != null) SearchClearButton.Content = Strings.SearchClear;
+            if (SearchExecuteButton != null)
+            {
+                SearchExecuteButton.Content = Strings.SearchExecute;
+                SearchExecuteButton.ToolTip = isJa ? "検索を実行 (Enterキーでも実行可能)" : "Run search (or press Enter)";
+            }
+            if (SearchCancelButton != null)
+            {
+                SearchCancelButton.Content = Strings.SearchCancel;
+                SearchCancelButton.ToolTip = isJa ? "実行中の走査を中断" : "Stop the running search";
+            }
+            if (SearchClearButton != null)
+            {
+                SearchClearButton.Content = Strings.SearchClear;
+                SearchClearButton.ToolTip = isJa ? "入力内容と結果をクリア" : "Clear the query and results";
+            }
+            SearchInputBox.ToolTip = isJa
+                ? "検索構文を入力 (例: ext:xlsx size:>10MB content:社外秘)"
+                : "Enter a query (for example: ext:xlsx size:>10MB content:confidential)";
             if (SearchIncludeFoldersCheckBox != null) SearchIncludeFoldersCheckBox.Content = Strings.SearchIncludeFoldersCheck;
             if (SearchContentCheckBox != null) SearchContentCheckBox.Content = Strings.SearchContentCheck;
             if (SearchDirectBrowseButton != null) SearchDirectBrowseButton.Content = Strings.BrowseWithFolder;
@@ -538,6 +578,16 @@ namespace AstraSize
                 SearchRefreshButton.ToolTip = isJa ? "検索結果を更新" : "Refresh search results";
             }
             if (SearchKpiHitCountTitle != null) SearchKpiHitCountTitle.Text = Strings.SearchKpiHitCount;
+            SearchMenuOpen.Header = isJa ? "📄 ファイルを開く" : "📄 Open File";
+            SearchMenuExplore.Header = isJa ? "📂 エクスプローラーで表示" : "📂 Show in Explorer";
+            SearchMenuCopyPath.Header = isJa ? "📋 フルパスをコピー" : "📋 Copy Full Path";
+            SearchMenuCopyName.Header = isJa ? "📋 ファイル名をコピー" : "📋 Copy File Name";
+            SearchMenuLiveAcl.Header = isJa ? "🛡️ 権限コントロールで開く" : "🛡️ Open in Permission Control";
+            SearchMenuSimulation.Header = isJa ? "🚀 移行スタジオに追加" : "🚀 Add to Migration Studio";
+            SearchMenuLinkFix.Header = isJa ? "🔗 リンク修復へ転送" : "🔗 Send to Link Repair";
+            SearchMenuAudit.Header = isJa ? "🧹 ファイル監査へ転送" : "🧹 Send to File Audit";
+            SearchMenuExportExcel.Header = isJa ? "📊 Excelで出力 (.xlsx)" : "📊 Export to Excel (.xlsx)";
+            SearchMenuExportCsv.Header = isJa ? "📑 CSVで出力 (.csv)" : "📑 Export to CSV (.csv)";
             if (SearchKpiTotalSizeTitle != null) SearchKpiTotalSizeTitle.Text = Strings.SearchKpiTotalSize;
             if (SearchKpiElapsedTitle != null) SearchKpiElapsedTitle.Text = Strings.SearchKpiElapsed;
             if (SearchStatusTitle != null) SearchStatusTitle.Text = Strings.SearchStatusLabel;

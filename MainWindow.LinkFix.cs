@@ -32,7 +32,7 @@ namespace AstraSize
 
             if (string.IsNullOrWhiteSpace(scope))
             {
-                MessageBox.Show("有効な検索対象フォルダを入力してください。", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(UiText("有効な検索対象フォルダを入力してください。", "Enter a valid folder to search."), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -70,15 +70,15 @@ namespace AstraSize
                 }
 
                 LinkItemsDataGrid.ItemsSource = items;
-                ShowToast($"切断リンクスキャン完了: {items.Count} 件検出");
+                ShowToast(UiText($"切断リンクスキャン完了: {items.Count} 件検出", $"Broken link scan complete: {items.Count} found"));
             }
             catch (OperationCanceledException)
             {
-                StatusTextBlock.Text = "スキャンを中止しました。";
+                StatusTextBlock.Text = UiText("スキャンを中止しました。", "Scan canceled.");
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"スキャン失敗: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(UiText($"スキャン失敗: {ex.Message}", $"Scan failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -93,20 +93,20 @@ namespace AstraSize
             var items = LinkItemsDataGrid.ItemsSource as List<LinkFixItem>;
             if (items == null || items.Count == 0)
             {
-                MessageBox.Show("修復対象のショートカットがありません。先に切断リンク検出スキャンを実行してください。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(UiText("修復対象のショートカットがありません。先に切断リンク検出スキャンを実行してください。", "No shortcuts to repair. Run a broken link scan first."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             var targets = items.Where(i => i.NeedsFix).ToList();
             if (targets.Count == 0)
             {
-                MessageBox.Show("修復が必要な項目はありません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(UiText("修復が必要な項目はありません。", "No items need repair."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
             _lastLinkFixTargets = targets;
             LinkFixDiffDataGrid.ItemsSource = targets;
-            LinkFixDiffSummaryText.Text = $"📊 修復対象: {targets.Count}件 (各ファイル .bak 自動バックアップ生成)";
+            LinkFixDiffSummaryText.Text = UiText($"📊 修復対象: {targets.Count}件 (各ファイル .bak 自動バックアップ生成)", $"📊 To repair: {targets.Count} (automatic .bak backup per file)");
             LinkFixDiffModalOverlay.Visibility = Visibility.Visible;
         }
 
@@ -128,7 +128,7 @@ namespace AstraSize
 
             var progress = new Progress<(string Path, bool Success)>(p =>
             {
-                StatusTextBlock.Text = $"修復中: {Path.GetFileName(p.Path)} ({(p.Success ? "成功" : "失敗")})";
+                StatusTextBlock.Text = UiText($"修復中: {Path.GetFileName(p.Path)} ({(p.Success ? "成功" : "失敗")})", $"Repairing: {Path.GetFileName(p.Path)} ({(p.Success ? "success" : "failed")})");
             });
 
             try
@@ -148,16 +148,16 @@ namespace AstraSize
                 // Verify: 処理結果の検証
                 if (successCount == _lastLinkFixTargets.Count)
                 {
-                    ShowToast($"✅ ショートカット修復完了 (検証済): {successCount} / {_lastLinkFixTargets.Count} 件 全て修復");
+                    ShowToast(UiText($"✅ ショートカット修復完了 (検証済): {successCount} / {_lastLinkFixTargets.Count} 件 全て修復", $"✅ Shortcut repair verified: {successCount} / {_lastLinkFixTargets.Count} repaired"));
                 }
                 else
                 {
-                    ShowToast($"⚠️ ショートカット修復完了 (一部失敗): {successCount} / {_lastLinkFixTargets.Count} 件");
+                    ShowToast(UiText($"⚠️ ショートカット修復完了 (一部失敗): {successCount} / {_lastLinkFixTargets.Count} 件", $"⚠️ Shortcut repair completed with failures: {successCount} / {_lastLinkFixTargets.Count}"));
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"修復実行エラー: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(UiText($"修復実行エラー: {ex.Message}", $"Repair failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -171,14 +171,14 @@ namespace AstraSize
 
             if (string.IsNullOrWhiteSpace(oldPattern) || string.IsNullOrWhiteSpace(newPattern))
             {
-                MessageBox.Show("置換前（旧パス）と置換後（新パス）を入力してください。", "入力確認", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(UiText("置換前（旧パス）と置換後（新パス）を入力してください。", "Enter the old and new paths."), UiText("入力確認", "Check input"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             var dialog = new SaveFileDialog
             {
-                Title = "GPOログオンスクリプトの保存先を選択",
-                Filter = "PowerShell スクリプト (*.ps1)|*.ps1|すべてのファイル (*.*)|*.*",
+                Title = UiText("GPOログオンスクリプトの保存先を選択", "Save GPO logon script"),
+                Filter = UiText("PowerShell スクリプト (*.ps1)|*.ps1|すべてのファイル (*.*)|*.*", "PowerShell script (*.ps1)|*.ps1|All files (*.*)|*.*"),
                 FileName = "Repair-Shortcuts.ps1"
             };
 
@@ -188,12 +188,12 @@ namespace AstraSize
                 {
                     var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
                     await host.GenerateGpoLogonScriptAsync(dialog.FileName, oldPattern, newPattern, CancellationToken.None);
-                    ShowToast("GPOログオンスクリプトを生成しました");
+                    ShowToast(UiText("GPOログオンスクリプトを生成しました", "GPO logon script generated"));
                     ShellHelper.SelectInExplorer(dialog.FileName);
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"スクリプト生成失敗: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(UiText($"スクリプト生成失敗: {ex.Message}", $"Script generation failed: {ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }

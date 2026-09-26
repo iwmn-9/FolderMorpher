@@ -26,6 +26,7 @@ namespace AstraSize.Views
     /// </summary>
     public partial class LiveAclStudio : UserControl
     {
+        private static string UiText(string ja, string en) => LocalizationService.Instance.GetString(ja, en);
         // 外部連携イベント
         public event Action<string>? ToastRequested;
         public event Action<SimAclEntry, string, string, Action>? EditSecurityRequested;
@@ -229,7 +230,7 @@ namespace AstraSize.Views
         {
             var dialog = new OpenFolderDialog
             {
-                Title = "アクセス権を管理するフォルダを選択（UNC対応）",
+                Title = UiText("アクセス権を管理するフォルダを選択（UNC対応）", "Select a folder to manage permissions (UNC supported)"),
                 InitialDirectory = string.IsNullOrWhiteSpace(LiveAclPathTextBox.Text) ? @"C:\" : LiveAclPathTextBox.Text
             };
 
@@ -280,11 +281,11 @@ namespace AstraSize.Views
                 var rootNode = FolderMorpher.HostClient.StorageNodeMapper.ToViewNode(dto);
                 rootNode.IsExpanded = true;
                 _liveAclFolderTreeRoots.Add(rootNode);
-                ShowToast($"📁 フォルダツリーを展開しました: {rootNode.Name}");
+                ShowToast(UiText($"📁 フォルダツリーを展開しました: {rootNode.Name}", $"📁 Folder tree expanded: {rootNode.Name}"));
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"ツリー読み込みエラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(UiText($"ツリー読み込みエラー:\n{ex.Message}", $"Could not load folder tree:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -355,7 +356,7 @@ namespace AstraSize.Views
                 try
                 {
                     Clipboard.SetText(node.FullPath);
-                    ShowToast($"📋 パスをコピーしました: {node.FullPath}");
+                    ShowToast(UiText($"📋 パスをコピーしました: {node.FullPath}", $"📋 Path copied: {node.FullPath}"));
                 }
                 catch { }
             }
@@ -375,13 +376,13 @@ namespace AstraSize.Views
 
             if (string.IsNullOrWhiteSpace(parentPath))
             {
-                ShowToast("⚠️ 新規フォルダーの作成先（親フォルダー）が存在しません。先にフォルダーを参照または展開してください。");
+                ShowToast(UiText("⚠️ 新規フォルダーの作成先（親フォルダー）が存在しません。先にフォルダーを参照または展開してください。", "⚠️ Parent folder not found. Browse or expand a folder first."));
                 return;
             }
 
             _targetParentFolderForNewFolder = parentPath;
-            NewFolderModalParentPath.Text = $"作成先: {_targetParentFolderForNewFolder}";
-            NewFolderNameTextBox.Text = "新しいフォルダー";
+            NewFolderModalParentPath.Text = UiText($"作成先: {_targetParentFolderForNewFolder}", $"Create in: {_targetParentFolderForNewFolder}");
+            NewFolderNameTextBox.Text = UiText("新しいフォルダー", "New Folder");
             NewFolderModalErrorText.Visibility = Visibility.Collapsed;
             NewFolderModalOverlay.Visibility = Visibility.Visible;
             NewFolderNameTextBox.Focus();
@@ -410,7 +411,7 @@ namespace AstraSize.Views
             string folderName = NewFolderNameTextBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(folderName))
             {
-                NewFolderModalErrorText.Text = "フォルダー名を入力してください。";
+                NewFolderModalErrorText.Text = UiText("フォルダー名を入力してください。", "Enter a folder name.");
                 NewFolderModalErrorText.Visibility = Visibility.Visible;
                 return;
             }
@@ -418,7 +419,7 @@ namespace AstraSize.Views
             char[] invalidChars = Path.GetInvalidFileNameChars();
             if (folderName.IndexOfAny(invalidChars) >= 0)
             {
-                NewFolderModalErrorText.Text = "フォルダー名に使用できない文字 (\\ / : * ? \" < > | 等) が含まれています。";
+                NewFolderModalErrorText.Text = UiText("フォルダー名に使用できない文字 (\\ / : * ? \" < > | 等) が含まれています。", "Folder name contains invalid characters (\\ / : * ? \" < > |).");
                 NewFolderModalErrorText.Visibility = Visibility.Visible;
                 return;
             }
@@ -427,7 +428,7 @@ namespace AstraSize.Views
             {
                 var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
                 var plan = await host.PrepareFolderCreationAsync(_targetParentFolderForNewFolder, folderName, CancellationToken.None);
-                if (MessageBox.Show($"次のフォルダーを作成しますか？\n{plan.FullPath}", "作成内容の確認",
+                if (MessageBox.Show(UiText($"次のフォルダーを作成しますか？\n{plan.FullPath}", $"Create this folder?\n{plan.FullPath}"), UiText("作成内容の確認", "Confirm folder creation"),
                         MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                     return;
                 var newPath = await host.CommitFolderCreationAsync(plan.PlanId, CancellationToken.None);
@@ -439,11 +440,11 @@ namespace AstraSize.Views
                 // 即座に権限編集パネルを開く
                 AddLiveAclPanel(newPath);
 
-                ShowToast($"📁 新規フォルダーを作成し権限パネルを開きました: {folderName}");
+                ShowToast(UiText($"📁 新規フォルダーを作成し権限パネルを開きました: {folderName}", $"📁 Folder created and permission panel opened: {folderName}"));
             }
             catch (Exception ex)
             {
-                NewFolderModalErrorText.Text = $"作成に失敗しました: {ex.Message}";
+                NewFolderModalErrorText.Text = UiText($"作成に失敗しました: {ex.Message}", $"Could not create folder: {ex.Message}");
                 NewFolderModalErrorText.Visibility = Visibility.Visible;
             }
         }
@@ -524,13 +525,13 @@ namespace AstraSize.Views
             var existing = _liveAclPanels.FirstOrDefault(p => p.FolderPath.Equals(path, StringComparison.OrdinalIgnoreCase));
             if (existing != null)
             {
-                ShowToast($"⚠️ すでにパネルが開かれています: {existing.FolderName}");
+                ShowToast(UiText($"⚠️ すでにパネルが開かれています: {existing.FolderName}", $"⚠️ Panel already open: {existing.FolderName}"));
                 return;
             }
 
             if (_liveAclPanels.Count >= 6)
             {
-                MessageBox.Show("同時に開けるパネルは最大6つまでです。\n不要なパネルを閉じてから追加してください。", "パネル上限", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(UiText("同時に開けるパネルは最大6つまでです。\n不要なパネルを閉じてから追加してください。", "Up to six panels can be open at once.\nClose an unused panel first."), UiText("パネル上限", "Panel limit"), MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -570,11 +571,11 @@ namespace AstraSize.Views
 
                 _liveAclPanels.Add(panel);
                 UpdateLiveAclPanelsBanner();
-                ShowToast($"🛡️ 権限パネルを追加しました: {panel.FolderName} (計 {_liveAclPanels.Count}/6)");
+                ShowToast(UiText($"🛡️ 権限パネルを追加しました: {panel.FolderName} (計 {_liveAclPanels.Count}/6)", $"🛡️ Permission panel added: {panel.FolderName} ({_liveAclPanels.Count}/6)"));
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"権限読み込みエラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(UiText($"権限読み込みエラー:\n{ex.Message}", $"Could not load permissions:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -584,12 +585,12 @@ namespace AstraSize.Views
             {
                 if (panel.HasChanges)
                 {
-                    var res = MessageBox.Show($"「{panel.FolderName}」には未適用の変更があります。閉じてもよろしいですか？", "未適用変更の確認", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    var res = MessageBox.Show(UiText($"「{panel.FolderName}」には未適用の変更があります。閉じてもよろしいですか？", $"{panel.FolderName} has unapplied changes. Close it?"), UiText("未適用変更の確認", "Unapplied changes"), MessageBoxButton.YesNo, MessageBoxImage.Question);
                     if (res != MessageBoxResult.Yes) return;
                 }
                 _liveAclPanels.Remove(panel);
                 UpdateLiveAclPanelsBanner();
-                ShowToast($"パネルを閉じました: {panel.FolderName}");
+                ShowToast(UiText($"パネルを閉じました: {panel.FolderName}", $"Panel closed: {panel.FolderName}"));
             }
         }
 
@@ -599,12 +600,12 @@ namespace AstraSize.Views
             bool hasAnyChanges = _liveAclPanels.Any(p => p.HasChanges);
             if (hasAnyChanges)
             {
-                var res = MessageBox.Show("未適用の変更があるパネルが含まれています。すべて閉じてもよろしいですか？", "全パネル閉じる確認", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                var res = MessageBox.Show(UiText("未適用の変更があるパネルが含まれています。すべて閉じてもよろしいですか？", "Some panels have unapplied changes. Close them all?"), UiText("全パネル閉じる確認", "Close all panels"), MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (res != MessageBoxResult.Yes) return;
             }
             _liveAclPanels.Clear();
             UpdateLiveAclPanelsBanner();
-            ShowToast("全パネルを閉じました");
+            ShowToast(UiText("全パネルを閉じました", "All panels closed"));
         }
 
         private static void ApplyFolderState(LiveAclPanelModel panel, FolderMorpher.Contracts.AclFolderStateDto state)
@@ -629,12 +630,12 @@ namespace AstraSize.Views
 
             if (!panel.HasChanges)
             {
-                ShowToast($"未適用の変更はありません: {panel.FolderName}");
+                ShowToast(UiText($"未適用の変更はありません: {panel.FolderName}", $"No unapplied changes: {panel.FolderName}"));
                 return;
             }
 
             try { await ShowDiffModalAsync(panel); }
-            catch (Exception ex) { MessageBox.Show($"差分確認エラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error); }
+            catch (Exception ex) { MessageBox.Show(UiText($"差分確認エラー:\n{ex.Message}", $"Could not preview changes:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error); }
         }
 
         private async Task ShowDiffModalAsync(LiveAclPanelModel panel)
@@ -654,7 +655,7 @@ namespace AstraSize.Views
                 CurrentEntries = panel.CurrentAclEntries.Select(FolderMorpher.HostClient.AclDtoMapper.ToDto).ToList()
             }, CancellationToken.None);
 
-            LiveAclDiffTargetText.Text = $" - 対象: {panel.FolderName} ({panel.FolderPath})";
+            LiveAclDiffTargetText.Text = UiText($" - 対象: {panel.FolderName} ({panel.FolderPath})", $" - Target: {panel.FolderName} ({panel.FolderPath})");
 
             // 2. プレビューリストへのバインド
             foreach (var item in _currentChangePlan.DiffItems)
@@ -668,11 +669,11 @@ namespace AstraSize.Views
                 LiveAclInheritanceChangeBanner.Visibility = Visibility.Visible;
                 if (!_currentChangePlan.InheritanceAfter)
                 {
-                    LiveAclInheritanceChangeText.Text = $"🛡️ 継承: 有効 ➔ 無効 (親からの継承ACE {_currentChangePlan.InheritedAcesPromotedCount}件を明示ACEへ昇格・保持)";
+                    LiveAclInheritanceChangeText.Text = UiText($"🛡️ 継承: 有効 ➔ 無効 (親からの継承ACE {_currentChangePlan.InheritedAcesPromotedCount}件を明示ACEへ昇格・保持)", $"🛡️ Inheritance: on ➔ off ({_currentChangePlan.InheritedAcesPromotedCount} inherited ACEs preserved as explicit ACEs)");
                 }
                 else
                 {
-                    LiveAclInheritanceChangeText.Text = "🛡️ 継承: 無効 ➔ 有効 (親フォルダーからの権限を再継承)";
+                    LiveAclInheritanceChangeText.Text = UiText("🛡️ 継承: 無効 ➔ 有効 (親フォルダーからの権限を再継承)", "🛡️ Inheritance: off ➔ on (permissions inherited from parent again)");
                 }
             }
             else
@@ -681,8 +682,8 @@ namespace AstraSize.Views
             }
 
             // 4. サマリーテキスト更新
-            LiveAclDiffSummaryText.Text = $"📊 予定: +{_currentChangePlan.AddedCount}件, -{_currentChangePlan.RemovedCount}件, ~{_currentChangePlan.ModifiedCount}件";
-            LiveAclDiffUntouchedText.Text = $" (🛡️ 維持: {_currentChangePlan.UntouchedCount}件)";
+            LiveAclDiffSummaryText.Text = UiText($"📊 予定: +{_currentChangePlan.AddedCount}件, -{_currentChangePlan.RemovedCount}件, ~{_currentChangePlan.ModifiedCount}件", $"📊 Planned: +{_currentChangePlan.AddedCount}, -{_currentChangePlan.RemovedCount}, ~{_currentChangePlan.ModifiedCount}");
+            LiveAclDiffUntouchedText.Text = UiText($" (🛡️ 維持: {_currentChangePlan.UntouchedCount}件)", $" (🛡️ unchanged: {_currentChangePlan.UntouchedCount})");
 
             // 5. 外部競合チェック (✅ 正常 / ⚠️ 外部競合)
             bool hasConflict = _currentChangePlan.HasConflict;
@@ -692,14 +693,14 @@ namespace AstraSize.Views
                 LiveAclConflictBadge.Background = new SolidColorBrush(Color.FromRgb(0xFE, 0xE2, 0xE2));
                 LiveAclConflictBadge.BorderBrush = new SolidColorBrush(Color.FromRgb(0xFE, 0xCA, 0xCA));
                 LiveAclConflictBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));
-                LiveAclConflictBadgeText.Text = "⚠️ 外部競合";
+                LiveAclConflictBadgeText.Text = UiText("⚠️ 外部競合", "⚠️ External conflict");
             }
             else
             {
                 LiveAclConflictBadge.Background = new SolidColorBrush(Color.FromRgb(0xDC, 0xFC, 0xE7));
                 LiveAclConflictBadge.BorderBrush = new SolidColorBrush(Color.FromRgb(0xBB, 0xF7, 0xD0));
                 LiveAclConflictBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0x15, 0x80, 0x3D));
-                LiveAclConflictBadgeText.Text = "✅ 正常";
+                LiveAclConflictBadgeText.Text = UiText("✅ 正常", "✅ Ready");
             }
 
             LiveAclDiffModalOverlay.Visibility = Visibility.Visible;
@@ -728,7 +729,7 @@ namespace AstraSize.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"ACLの再確認に失敗しました:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(UiText($"ACLの再確認に失敗しました:\n{ex.Message}", $"Could not recheck ACL:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
             bool hasConflict = !string.IsNullOrEmpty(panel.OriginalSddl) &&
@@ -739,8 +740,8 @@ namespace AstraSize.Views
             if (hasConflict)
             {
                 var conflictRes = MessageBox.Show(
-                    $"⚠️ 外部ACL変更の競合が検知されています。\n\n外部の変更を上書きして適用を強制続行しますか？",
-                    "外部ACL競合",
+                    UiText("⚠️ 外部ACL変更の競合が検知されています。\n\n外部の変更を上書きして適用を強制続行しますか？", "⚠️ An external ACL change was detected.\n\nOverride that change and force application?"),
+                    UiText("外部ACL競合", "External ACL conflict"),
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning);
                 if (conflictRes != MessageBoxResult.Yes) return;
@@ -749,7 +750,7 @@ namespace AstraSize.Views
 
             LiveAclDiffModalOverlay.Visibility = Visibility.Collapsed;
             panel.IsApplying = true;
-            panel.StatusMessage = "適用中...";
+            panel.StatusMessage = UiText("適用中...", "Applying...");
 
             try
             {
@@ -757,10 +758,10 @@ namespace AstraSize.Views
                 var result = await host.CommitAclChangeAsync(plan.PlanId, forceApply, CancellationToken.None);
                 if (result.WasConflict)
                 {
-                    panel.StatusMessage = "外部競合";
+                    panel.StatusMessage = UiText("外部競合", "External conflict");
                     var reload = MessageBox.Show(
-                        "適用直前に外部変更（競合）が検出されました。最新のACLを再読込しますか？",
-                        "外部ACL競合", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                        UiText("適用直前に外部変更（競合）が検出されました。最新のACLを再読込しますか？", "An external ACL change occurred just before applying. Reload the current ACL?"),
+                        UiText("外部ACL競合", "External ACL conflict"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
                     if (reload == MessageBoxResult.Yes) ApplyFolderState(panel, result.CurrentState);
                     return;
                 }
@@ -769,19 +770,19 @@ namespace AstraSize.Views
 
                 if (result.VerificationSucceeded)
                 {
-                    panel.StatusMessage = $"正常 ({DateTime.Now:HH:mm:ss})";
-                    ShowToast($"✅ 適用完了 (正常): {panel.FolderName} ({appliedDeltaCount}件反映)");
+                    panel.StatusMessage = UiText($"正常 ({DateTime.Now:HH:mm:ss})", $"Verified ({DateTime.Now:HH:mm:ss})");
+                    ShowToast(UiText($"✅ 適用完了 (正常): {panel.FolderName} ({appliedDeltaCount}件反映)", $"✅ Changes verified: {panel.FolderName} ({appliedDeltaCount} applied)"));
                 }
                 else
                 {
-                    panel.StatusMessage = "検証不一致";
-                    ShowToast($"⚠️ 適用結果に不一致を検知: {panel.FolderName}");
+                    panel.StatusMessage = UiText("検証不一致", "Verification mismatch");
+                    ShowToast(UiText($"⚠️ 適用結果に不一致を検知: {panel.FolderName}", $"⚠️ Verification mismatch: {panel.FolderName}"));
                 }
             }
             catch (Exception ex)
             {
-                panel.StatusMessage = "適用失敗";
-                MessageBox.Show($"適用エラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                panel.StatusMessage = UiText("適用失敗", "Apply failed");
+                MessageBox.Show(UiText($"適用エラー:\n{ex.Message}", $"Could not apply changes:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -801,14 +802,14 @@ namespace AstraSize.Views
                 var snapshots = await host.GetAclSnapshotsAsync(panel.FolderPath, CancellationToken.None);
                 if (snapshots.Count == 0)
                 {
-                    MessageBox.Show("このフォルダの保存済みバックアップはありません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show(UiText("このフォルダの保存済みバックアップはありません。", "No saved backup exists for this folder."), UiText("情報", "Information"), MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
 
                 var latest = snapshots[0];
                 var confirm = MessageBox.Show(
-                    $"最新のバックアップ（{latest.Timestamp:yyyy/MM/dd HH:mm:ss} 保存）へ復元しますか？\n\n対象: {panel.FolderPath}",
-                    "バックアップ復元確認",
+                    UiText($"最新のバックアップ（{latest.Timestamp:yyyy/MM/dd HH:mm:ss} 保存）へ復元しますか？\n\n対象: {panel.FolderPath}", $"Restore the latest backup (saved {latest.Timestamp:yyyy/MM/dd HH:mm:ss})?\n\nTarget: {panel.FolderPath}"),
+                    UiText("バックアップ復元確認", "Confirm backup restore"),
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Question);
 
@@ -816,14 +817,14 @@ namespace AstraSize.Views
                 {
                     var state = await host.RollbackAclSnapshotAsync(panel.FolderPath, latest.Id, CancellationToken.None);
                     ApplyFolderState(panel, state);
-                    panel.StatusMessage = $"復元完了 ({latest.Timestamp:HH:mm:ss})";
+                    panel.StatusMessage = UiText($"復元完了 ({latest.Timestamp:HH:mm:ss})", $"Restored ({latest.Timestamp:HH:mm:ss})");
 
-                    ShowToast($"↩️ バックアップから復元しました: {panel.FolderName}");
+                    ShowToast(UiText($"↩️ バックアップから復元しました: {panel.FolderName}", $"↩️ Restored from backup: {panel.FolderName}"));
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"復元エラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(UiText($"復元エラー:\n{ex.Message}", $"Restore failed:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -832,14 +833,14 @@ namespace AstraSize.Views
             var path = LiveAclPathTextBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(path))
             {
-                MessageBox.Show("有効なフォルダパスを指定してください。", "案内", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(UiText("有効なフォルダパスを指定してください。", "Enter a valid folder path."), UiText("案内", "Information"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             var dialog = new SaveFileDialog
             {
-                Title = "実環境アクセス権マトリクス台帳 (CSV) を保存",
-                Filter = "CSVファイル (*.csv)|*.csv",
+                Title = UiText("実環境アクセス権マトリクス台帳 (CSV) を保存", "Save permission matrix (CSV)"),
+                Filter = UiText("CSVファイル (*.csv)|*.csv", "CSV file (*.csv)|*.csv"),
                 FileName = $"LiveAcl_Matrix_{Path.GetFileName(path.TrimEnd('\\', '/'))}_{DateTime.Now:yyyyMMdd}.csv"
             };
 
@@ -849,11 +850,11 @@ namespace AstraSize.Views
                 {
                     var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
                     await host.ExportAclMatrixAsync(dialog.FileName, path, CancellationToken.None);
-                    ShowToast("権限台帳CSVを出力しました");
+                    ShowToast(UiText("権限台帳CSVを出力しました", "Permission matrix CSV exported"));
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"CSV出力エラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(UiText($"CSV出力エラー:\n{ex.Message}", $"CSV export failed:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -900,7 +901,7 @@ namespace AstraSize.Views
                 a.InheritanceFlags == (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit) &&
                 a.PropagationFlags == PropagationFlags.None))
             {
-                ShowToast($"⚠️ すでに同一のアクセス権ルールが存在します: {p.DisplayName}");
+                ShowToast(UiText($"⚠️ すでに同一のアクセス権ルールが存在します: {p.DisplayName}", $"⚠️ An identical permission rule already exists: {p.DisplayName}"));
                 return;
             }
 
@@ -918,11 +919,11 @@ namespace AstraSize.Views
 
             if (isAdditional)
             {
-                ShowToast($"👥 「{panel.FolderName}」に同一アカウントの追加ルールを作成しました: {p.DisplayName} (Wクリックで詳細設定)");
+                ShowToast(UiText($"👥 「{panel.FolderName}」に同一アカウントの追加ルールを作成しました: {p.DisplayName} (Wクリックで詳細設定)", $"👥 Added another rule for {p.DisplayName} on {panel.FolderName} (double-click for details)"));
             }
             else
             {
-                ShowToast($"🛡️ 「{panel.FolderName}」に権限カードを追加: {p.DisplayName}");
+                ShowToast(UiText($"🛡️ 「{panel.FolderName}」に権限カードを追加: {p.DisplayName}", $"🛡️ Added permission card for {p.DisplayName} on {panel.FolderName}"));
             }
         }
 
@@ -938,7 +939,7 @@ namespace AstraSize.Views
                 // High 3: 継承ACEは親から引き継がれているため直接編集を抑止
                 if (acl.IsInherited)
                 {
-                    ShowToast("🔒 親フォルダーから継承されているため直接編集できません。\n親フォルダーで変更するか、「親フォルダからの権限継承」を外してください。");
+                    ShowToast(UiText("🔒 親フォルダーから継承されているため直接編集できません。\n親フォルダーで変更するか、「親フォルダからの権限継承」を外してください。", "🔒 Inherited permissions cannot be edited here. Change the parent folder or disable inheritance."));
                     return;
                 }
 
@@ -987,7 +988,7 @@ namespace AstraSize.Views
                         {
                             parentPanel.CurrentAclEntries.Remove(acl);
                             parentPanel.UpdateChangeStatus();
-                            ShowToast($"🗑️ 枠外ドロップで権限カードを解除しました: {acl.DisplayName}");
+                            ShowToast(UiText($"🗑️ 枠外ドロップで権限カードを解除しました: {acl.DisplayName}", $"🗑️ Removed permission card by dropping outside: {acl.DisplayName}"));
                         }
                     }
                 }
@@ -1098,7 +1099,7 @@ namespace AstraSize.Views
         {
             var dialog = new OpenFolderDialog
             {
-                Title = "逆引き走査を行うルートフォルダーを選択（UNC対応）",
+                Title = UiText("逆引き走査を行うルートフォルダーを選択（UNC対応）", "Select a root folder for reverse lookup (UNC supported)"),
                 InitialDirectory = string.IsNullOrWhiteSpace(RevRootPathTextBox.Text) ? @"C:\" : RevRootPathTextBox.Text
             };
 
@@ -1115,14 +1116,14 @@ namespace AstraSize.Views
 
             if (string.IsNullOrWhiteSpace(targetAccount))
             {
-                MessageBox.Show("調査対象のアカウント名（ユーザーまたはグループ）を入力してください。", "入力確認", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(UiText("調査対象のアカウント名（ユーザーまたはグループ）を入力してください。", "Enter a user or group to investigate."), UiText("入力確認", "Check input"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 RevUserAccountTextBox.Focus();
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(rootPath))
             {
-                MessageBox.Show("有効な走査ルートフォルダーを指定してください。", "入力確認", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(UiText("有効な走査ルートフォルダーを指定してください。", "Enter a valid scan root folder."), UiText("入力確認", "Check input"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 RevRootPathTextBox.Focus();
                 return;
             }
@@ -1139,9 +1140,9 @@ namespace AstraSize.Views
             RevProgressBar.Visibility = Visibility.Visible;
             RevExportExcelButton.IsEnabled = false;
 
-            RevTargetAccountHeader.Text = $"👤 調査対象: {targetAccount}";
-            RevTargetAccountSub.Text = "所属グループを解決中...";
-            RevStatusText.Text = "Active Directory / ローカルグループを解決中...";
+            RevTargetAccountHeader.Text = UiText($"👤 調査対象: {targetAccount}", $"👤 Target: {targetAccount}");
+            RevTargetAccountSub.Text = UiText("所属グループを解決中...", "Resolving group memberships...");
+            RevStatusText.Text = UiText("Active Directory / ローカルグループを解決中...", "Resolving Active Directory / local groups...");
 
             _revGroups.Clear();
             _revFolders.Clear();
@@ -1164,11 +1165,11 @@ namespace AstraSize.Views
                 var resolution = await host.ResolveEffectiveMembershipsAsync(targetAccount, ct);
                 foreach (var group in resolution.Groups)
                     _revGroups.Add(FolderMorpher.HostClient.IdentityDtoMapper.ToView(group));
-                RevGroupCountText.Text = $"{_revGroups.Count} 件";
+                RevGroupCountText.Text = UiText($"{_revGroups.Count} 件", $"{_revGroups.Count} groups");
                 RevTargetAccountSub.Text = resolution.StatusText;
 
                 // 2. フォルダツリーの実効アクセス権スキャン
-                RevStatusText.Text = "フォルダーツリーの実効アクセス権（Effective Access）を監査中...";
+                RevStatusText.Text = UiText("フォルダーツリーの実効アクセス権（Effective Access）を監査中...", "Auditing effective access across the folder tree...");
 
                 var effectiveJob = await FolderMorpher.HostClient.HostJobClient.RunAsync(
                     new FolderMorpher.Contracts.HostJobRequestDto
@@ -1182,7 +1183,7 @@ namespace AstraSize.Views
                     {
                         if (!string.IsNullOrWhiteSpace(status.ProgressText)) RevStatusText.Text = status.ProgressText;
                     }, ct);
-                var reportDto = effectiveJob.EffectiveAccessReport ?? throw new InvalidOperationException("逆引き監査結果がHostから返されませんでした。");
+                var reportDto = effectiveJob.EffectiveAccessReport ?? throw new InvalidOperationException(UiText("逆引き監査結果がHostから返されませんでした。", "The host did not return a reverse lookup report."));
                 var report = FolderMorpher.HostClient.IdentityDtoMapper.ToView(reportDto);
 
                 _currentEffectiveReport = report;
@@ -1199,19 +1200,19 @@ namespace AstraSize.Views
                 RevKpiMod.Text = $"{report.ModifyCount:N0}";
                 RevKpiRead.Text = $"{report.ReadOnlyCount:N0}";
 
-                RevStatusText.Text = $"監査完了: 総走査 {report.TotalFoldersScanned:N0} フォルダ中、{report.AccessibleFolders.Count:N0} 件のフォルダーを検出 (飛び地: {report.EnclaveCount}件, 遮断: {report.SeveredCount}件, 走査不能: {report.UnavailableCount}件)";
+                RevStatusText.Text = UiText($"監査完了: 総走査 {report.TotalFoldersScanned:N0} フォルダ中、{report.AccessibleFolders.Count:N0} 件のフォルダーを検出 (飛び地: {report.EnclaveCount}件, 遮断: {report.SeveredCount}件, 走査不能: {report.UnavailableCount}件)", $"Audit complete: {report.AccessibleFolders.Count:N0} accessible of {report.TotalFoldersScanned:N0} scanned folders (enclaves: {report.EnclaveCount}, blocked: {report.SeveredCount}, unavailable: {report.UnavailableCount})");
                 RevExportExcelButton.IsEnabled = report.AccessibleFolders.Count > 0;
-                ShowToast($"🔍 「{targetAccount}」の逆引き監査が完了しました ({report.AccessibleFolders.Count:N0} 件)");
+                ShowToast(UiText($"🔍 「{targetAccount}」の逆引き監査が完了しました ({report.AccessibleFolders.Count:N0} 件)", $"🔍 Reverse lookup complete for {targetAccount} ({report.AccessibleFolders.Count:N0} folders)"));
             }
             catch (OperationCanceledException)
             {
-                RevStatusText.Text = "⚠️ ユーザーによって調査が中止されました。";
-                ShowToast("⏹️ 逆引き調査を中止しました");
+                RevStatusText.Text = UiText("⚠️ ユーザーによって調査が中止されました。", "⚠️ Investigation canceled.");
+                ShowToast(UiText("⏹️ 逆引き調査を中止しました", "⏹️ Reverse lookup canceled"));
             }
             catch (Exception ex)
             {
-                RevStatusText.Text = $"エラー: {ex.Message}";
-                MessageBox.Show($"逆引き調査中にエラーが発生しました:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                RevStatusText.Text = UiText($"エラー: {ex.Message}", $"Error: {ex.Message}");
+                MessageBox.Show(UiText($"逆引き調査中にエラーが発生しました:\n{ex.Message}", $"Reverse lookup failed:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -1233,8 +1234,8 @@ namespace AstraSize.Views
             var safeName = _currentEffectiveReport.TargetAccountName.Replace('\\', '_').Replace('/', '_');
             var sfd = new SaveFileDialog
             {
-                Title = "実効アクセス権（逆引き監査）台帳の保存先を指定",
-                Filter = "Excel ワークブック (*.xlsx)|*.xlsx",
+                Title = UiText("実効アクセス権（逆引き監査）台帳の保存先を指定", "Save effective access report"),
+                Filter = UiText("Excel ワークブック (*.xlsx)|*.xlsx", "Excel workbook (*.xlsx)|*.xlsx"),
                 InitialDirectory = GetDefaultExportDirectory(),
                 FileName = $"EffectiveAccessAudit_{safeName}_{DateTime.Now:yyyyMMdd_HHmm}.xlsx"
             };
@@ -1246,13 +1247,13 @@ namespace AstraSize.Views
                     var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
                     await host.ExportEffectiveAccessReportAsync(sfd.FileName,
                         FolderMorpher.HostClient.IdentityDtoMapper.ToDto(_currentEffectiveReport), CancellationToken.None);
-                    ShowToast($"📋 {Path.GetFileName(sfd.FileName)} を出力しました");
+                    ShowToast(UiText($"📋 {Path.GetFileName(sfd.FileName)} を出力しました", $"📋 Exported {Path.GetFileName(sfd.FileName)}"));
                     ShellHelper.SelectInExplorer(sfd.FileName);
                     Process.Start(new ProcessStartInfo(sfd.FileName) { UseShellExecute = true });
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Excel出力に失敗しました:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(UiText($"Excel出力に失敗しました:\n{ex.Message}", $"Excel export failed:\n{ex.Message}"), UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
         }
@@ -1310,7 +1311,7 @@ namespace AstraSize.Views
         private async void RevBrowseUser_Click(object sender, RoutedEventArgs e)
         {
             PrincipalPickerModalOverlay.Visibility = Visibility.Visible;
-            PickerSelectedAccountText.Text = string.IsNullOrWhiteSpace(RevUserAccountTextBox.Text) ? "(未選択)" : RevUserAccountTextBox.Text.Trim();
+            PickerSelectedAccountText.Text = string.IsNullOrWhiteSpace(RevUserAccountTextBox.Text) ? UiText("(未選択)", "(None selected)") : RevUserAccountTextBox.Text.Trim();
             PickerApplyButton.IsEnabled = !string.IsNullOrWhiteSpace(RevUserAccountTextBox.Text);
 
             if (_pickerOuRoots.Count == 0)
@@ -1424,7 +1425,7 @@ namespace AstraSize.Views
             {
                 RevUserAccountTextBox.Text = _pickerSelectedPrincipal.AccountName;
                 PrincipalPickerModalOverlay.Visibility = Visibility.Collapsed;
-                ShowToast($"👤 調査対象を「{_pickerSelectedPrincipal.AccountName}」に設定しました");
+                ShowToast(UiText($"👤 調査対象を「{_pickerSelectedPrincipal.AccountName}」に設定しました", $"👤 Target set to {_pickerSelectedPrincipal.AccountName}"));
             }
             else if (!string.IsNullOrWhiteSpace(PickerSelectedAccountText.Text) && PickerSelectedAccountText.Text != "(未選択)")
             {

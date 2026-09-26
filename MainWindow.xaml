@@ -1792,18 +1792,18 @@
                                  MouseDoubleClick="SearchListView_MouseDoubleClick">
                             <ListBox.ContextMenu>
                                 <ContextMenu>
-                                    <MenuItem Header="📄 ファイルを開く (Open)" Click="SearchContextMenu_Open_Click"/>
-                                    <MenuItem Header="📂 エクスプローラーで表示 (Explore)" Click="SearchContextMenu_Explore_Click"/>
-                                    <MenuItem Header="📋 フルパスをコピー (Copy Path)" Click="SearchContextMenu_CopyPath_Click"/>
-                                    <MenuItem Header="📋 ファイル名をコピー (Copy Name)" Click="SearchContextMenu_CopyName_Click"/>
+                                    <MenuItem x:Name="SearchMenuOpen" Header="📄 ファイルを開く" Click="SearchContextMenu_Open_Click"/>
+                                    <MenuItem x:Name="SearchMenuExplore" Header="📂 エクスプローラーで表示" Click="SearchContextMenu_Explore_Click"/>
+                                    <MenuItem x:Name="SearchMenuCopyPath" Header="📋 フルパスをコピー" Click="SearchContextMenu_CopyPath_Click"/>
+                                    <MenuItem x:Name="SearchMenuCopyName" Header="📋 ファイル名をコピー" Click="SearchContextMenu_CopyName_Click"/>
                                     <Separator/>
-                                    <MenuItem Header="🛡️ Live ACLで開く (Live ACL Control)" Click="SearchContextMenu_LiveAcl_Click"/>
-                                    <MenuItem Header="🚀 移行スタジオに追加 (Simulation)" Click="SearchContextMenu_Simulation_Click"/>
-                                    <MenuItem Header="🔗 リンク修復へ転送 (LinkFixer)" Click="SearchContextMenu_LinkFix_Click"/>
-                                    <MenuItem Header="🧹 ファイル整理・監査へ転送 (Audit &amp; Hygiene)" Click="SearchContextMenu_Audit_Click"/>
+                                    <MenuItem x:Name="SearchMenuLiveAcl" Header="🛡️ 権限コントロールで開く" Click="SearchContextMenu_LiveAcl_Click"/>
+                                    <MenuItem x:Name="SearchMenuSimulation" Header="🚀 移行スタジオに追加" Click="SearchContextMenu_Simulation_Click"/>
+                                    <MenuItem x:Name="SearchMenuLinkFix" Header="🔗 リンク修復へ転送" Click="SearchContextMenu_LinkFix_Click"/>
+                                    <MenuItem x:Name="SearchMenuAudit" Header="🧹 ファイル監査へ転送" Click="SearchContextMenu_Audit_Click"/>
                                     <Separator/>
-                                    <MenuItem Header="📊 検索結果をExcelでエクスポート (.xlsx)" Click="SearchExportExcelButton_Click"/>
-                                    <MenuItem Header="📑 検索結果をCSVでエクスポート (.csv)" Click="SearchExportCsvButton_Click"/>
+                                    <MenuItem x:Name="SearchMenuExportExcel" Header="📊 Excelで出力 (.xlsx)" Click="SearchExportExcelButton_Click"/>
+                                    <MenuItem x:Name="SearchMenuExportCsv" Header="📑 CSVで出力 (.csv)" Click="SearchExportCsvButton_Click"/>
                                 </ContextMenu>
                             </ListBox.ContextMenu>
 
@@ -2195,7 +2195,7 @@
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="32"
                                   SelectionMode="Single">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Wave" Binding="{Binding WaveNumber, StringFormat='Wave {0}'}" Width="75">
+                                <DataGridTextColumn x:Name="ColMigWaveNumber" Header="Wave" Binding="{Binding WaveNumber, StringFormat='Wave {0}'}" Width="75">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="FontWeight" Value="Bold"/>
@@ -2206,7 +2206,7 @@
                                     </DataGridTextColumn.ElementStyle>
                                 </DataGridTextColumn>
 
-                                <DataGridTemplateColumn Header="波次名称・移行対象" Width="*">
+                                <DataGridTemplateColumn x:Name="ColMigWaveName" Header="波次名称・移行対象" Width="*">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock Text="{Binding WaveName}" FontWeight="SemiBold" FontSize="11.5" Foreground="#0F172A"
@@ -2215,7 +2215,7 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
 
-                                <DataGridTextColumn Header="想定容量" Binding="{Binding TotalSizeFormatted}" Width="100">
+                                <DataGridTextColumn x:Name="ColMigWaveSize" Header="想定容量" Binding="{Binding TotalSizeFormatted}" Width="100">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -2225,7 +2225,7 @@
                                     </DataGridTextColumn.ElementStyle>
                                 </DataGridTextColumn>
 
-                                <DataGridTextColumn Header="ファイル数" Binding="{Binding TotalFileCountFormatted}" Width="95">
+                                <DataGridTextColumn x:Name="ColMigWaveFileCount" Header="ファイル数" Binding="{Binding TotalFileCountFormatted}" Width="95">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -2234,7 +2234,7 @@
                                     </DataGridTextColumn.ElementStyle>
                                 </DataGridTextColumn>
 
-                                <DataGridTextColumn Header="初回フル同期 (1Gbps)" Binding="{Binding FullCopyTimeFormatted}" Width="130">
+                                <DataGridTextColumn x:Name="ColMigWaveFullCopy" Header="初回フル同期 (1Gbps)" Binding="{Binding FullCopyTimeFormatted}" Width="130">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="HorizontalAlignment" Value="Center"/>
@@ -2245,7 +2245,7 @@
                                     </DataGridTextColumn.ElementStyle>
                                 </DataGridTextColumn>
 
-                                <DataGridTextColumn Header="本番切替 (差分2%)" Binding="{Binding CutoverTimeFormatted}" Width="120">
+                                <DataGridTextColumn x:Name="ColMigWaveCutover" Header="本番切替 (差分2%)" Binding="{Binding CutoverTimeFormatted}" Width="120">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="HorizontalAlignment" Value="Center"/>
@@ -2256,19 +2256,19 @@
                                     </DataGridTextColumn.ElementStyle>
                                 </DataGridTextColumn>
 
-                                <DataGridTemplateColumn Header="警告・判定" Width="140">
+                                <DataGridTemplateColumn x:Name="ColMigWaveWarnings" Header="警告・判定" Width="140">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                 <Border Background="#FEF3C7" CornerRadius="3" Padding="4,1" Margin="2,0"
                                                         Visibility="{Binding HasOver48hWarning, Converter={StaticResource BoolToVis}}"
-                                                        ToolTip="初回フルコピーが48時間超の見込みです。週末枠超過に注意してください。">
-                                                    <TextBlock Text="⚠️ 48h超" FontSize="9.5" FontWeight="Bold" Foreground="#B45309"/>
+                                                        ToolTip="{DynamicResource MigWave48hTooltip}">
+                                                    <TextBlock Text="{DynamicResource MigWave48hBadge}" FontSize="9.5" FontWeight="Bold" Foreground="#B45309"/>
                                                 </Border>
                                                 <Border Background="#FEE2E2" CornerRadius="3" Padding="4,1" Margin="2,0"
                                                         Visibility="{Binding HasHighFileCountWarning, Converter={StaticResource BoolToVis}}"
-                                                        ToolTip="ファイル数が10万件超です。ランダムI/O過多のためスレッド数(/MT:32)の増強を推奨します。">
-                                                    <TextBlock Text="⚠️ ファイル過多" FontSize="9.5" FontWeight="Bold" Foreground="#B91C1C"/>
+                                                        ToolTip="{DynamicResource MigWaveFileCountTooltip}">
+                                                    <TextBlock Text="{DynamicResource MigWaveFileCountBadge}" FontSize="9.5" FontWeight="Bold" Foreground="#B91C1C"/>
                                                 </Border>
                                             </StackPanel>
                                         </DataTemplate>

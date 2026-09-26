@@ -591,7 +591,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show("ファイルを開けませんでした: " + ex.Message);
+                    MessageBox.Show(UiText("ファイルを開けませんでした: ", "Could not open the file: ") + ex.Message);
                 }
             }
         }
@@ -611,7 +611,7 @@ namespace AstraSize
             if (item != null)
             {
                 Clipboard.SetText(item.FullPath);
-                ShowToast("クリップボードにパスをコピーしました");
+                ShowToast(UiText("クリップボードにパスをコピーしました", "Path copied to clipboard"));
             }
         }
 
@@ -621,7 +621,7 @@ namespace AstraSize
             if (item != null)
             {
                 Clipboard.SetText(item.Name);
-                ShowToast("クリップボードにファイル名をコピーしました");
+                ShowToast(UiText("クリップボードにファイル名をコピーしました", "File name copied to clipboard"));
             }
         }
 
@@ -678,7 +678,8 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"移行ツリーへの追加に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(UiText($"移行ツリーへの追加に失敗しました: {ex.Message}", $"Could not add to migration tree: {ex.Message}"),
+                        UiText("エラー", "Error"), MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
             }
@@ -700,7 +701,7 @@ namespace AstraSize
             NavTabSimulation.IsChecked = true;
             _simRootFolders.Add(newNode);
             if (SimMockTreeView != null) SimMockTreeView.ItemsSource = _simRootFolders;
-            ShowToast($"移行ツリーに「{newNode.Name}」を追加しました");
+            ShowToast(UiText($"移行ツリーに「{newNode.Name}」を追加しました", $"Added {newNode.Name} to migration tree"));
         }
 
         private void SearchContextMenu_LinkFix_Click(object sender, RoutedEventArgs e)
@@ -717,7 +718,7 @@ namespace AstraSize
             {
                 LinkSearchScopeTextBox.Text = targetDir;
             }
-            ShowToast("リンク修復対象パスを設定しました");
+            ShowToast(UiText("リンク修復対象パスを設定しました", "Link repair target path set"));
         }
 
         private void SearchContextMenu_Audit_Click(object sender, RoutedEventArgs e)
@@ -734,7 +735,7 @@ namespace AstraSize
             {
                 AuditPathTextBox.Text = targetDir;
             }
-            ShowToast("ファイル整理・監査対象パスを設定しました");
+            ShowToast(UiText("ファイル整理・監査対象パスを設定しました", "File audit target path set"));
         }
 
         #endregion
@@ -756,6 +757,7 @@ namespace AstraSize
 
             var dlg = new SaveFileDialog
             {
+                Title = UiText("検索結果のExcel出力先", "Save search results as Excel"),
                 Filter = "Excel Workbook (*.xlsx)|*.xlsx",
                 FileName = $"Search_Report_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx"
             };
@@ -772,7 +774,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show("Excel出力中にエラーが発生しました: " + ex.Message);
+                    MessageBox.Show(UiText("Excel出力中にエラーが発生しました: ", "Excel export failed: ") + ex.Message);
                 }
             }
         }
@@ -792,6 +794,7 @@ namespace AstraSize
 
             var dlg = new SaveFileDialog
             {
+                Title = UiText("検索結果のCSV出力先", "Save search results as CSV"),
                 Filter = "CSV UTF-8 (*.csv)|*.csv",
                 FileName = $"Search_Report_{DateTime.Now:yyyyMMdd_HHmmss}.csv"
             };
@@ -808,7 +811,7 @@ namespace AstraSize
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show("CSV出力中にエラーが発生しました: " + ex.Message);
+                    MessageBox.Show(UiText("CSV出力中にエラーが発生しました: ", "CSV export failed: ") + ex.Message);
                 }
             }
         }
