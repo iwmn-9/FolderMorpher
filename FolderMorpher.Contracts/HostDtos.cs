@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using AstraSize.Models;
-using FolderMorpher.Models;
 
 namespace FolderMorpher.Contracts
 {
@@ -45,8 +43,9 @@ namespace FolderMorpher.Contracts
     public class StorageScanResultDto
     {
         public string TargetPath { get; set; } = string.Empty;
-        public FileItemNode? RootNode { get; set; }
-        public List<LargestFileInfo> Top10Files { get; set; } = new();
+        public StorageNodeDto? RootNode { get; set; }
+        public List<StorageTopFileDto> Top10Files { get; set; } = new();
+        public string ScanMode { get; set; } = "Standard";
         public TimeSpan Elapsed { get; set; }
         public long TotalBytes { get; set; }
         public int TotalFiles { get; set; }
@@ -60,7 +59,15 @@ namespace FolderMorpher.Contracts
     public class AuditScanRequestDto
     {
         public string TargetPath { get; set; } = string.Empty;
-        public AuditBandwidthLimit BandwidthLimit { get; set; } = AuditBandwidthLimit.Standard50MB;
+        public bool CheckDuplicates { get; set; } = true;
+        public bool CheckDormant { get; set; } = true;
+        public bool CheckVersionFamilies { get; set; } = true;
+        public bool CheckExtractedArchives { get; set; } = true;
+        public bool CheckGraveyardTrees { get; set; } = true;
+        public bool CheckPathLimits { get; set; } = true;
+        public double DormantYearsThreshold { get; set; } = 3.0;
+        public long MinFileSizeBytes { get; set; } = 100 * 1024;
+        public int BandwidthLimit { get; set; }
         public List<string>? IgnoredPaths { get; set; }
     }
 
@@ -69,9 +76,10 @@ namespace FolderMorpher.Contracts
     /// </summary>
     public class AuditReportDto
     {
+        public Guid ReportId { get; set; }
         public string TargetPath { get; set; } = string.Empty;
-        public List<AuditItem> Items { get; set; } = new();
-        public AuditSummary Summary { get; set; } = new();
+        public List<AuditItemDto> Items { get; set; } = new();
+        public AuditSummaryDto Summary { get; set; } = new();
         public TimeSpan Elapsed { get; set; }
     }
 
@@ -81,7 +89,7 @@ namespace FolderMorpher.Contracts
     public class AclApplyRequestDto
     {
         public string TargetFolder { get; set; } = string.Empty;
-        public List<SimAclEntry> TargetEntries { get; set; } = new();
+        public List<AclEntryDto> TargetEntries { get; set; } = new();
         public bool InheritFromParent { get; set; } = true;
     }
 
@@ -104,8 +112,8 @@ namespace FolderMorpher.Contracts
     /// </summary>
     public class LinkFixScanResultDto
     {
-        public List<FolderMorpher.Services.LinkFixItem> BrokenLinks { get; set; } = new();
-        public List<FolderMorpher.Services.OfficeLinkItem> OfficeLinks { get; set; } = new();
+        public List<ShortcutLinkDto> BrokenLinks { get; set; } = new();
+        public List<OfficeLinkDto> OfficeLinks { get; set; } = new();
         public int ScannedFilesCount { get; set; }
     }
 
@@ -114,8 +122,8 @@ namespace FolderMorpher.Contracts
     /// </summary>
     public class LinkFixApplyRequestDto
     {
-        public List<FolderMorpher.Services.LinkFixItem> TargetShortcuts { get; set; } = new();
-        public List<FolderMorpher.Services.OfficeLinkItem> TargetOfficeLinks { get; set; } = new();
+        public List<ShortcutLinkDto> TargetShortcuts { get; set; } = new();
+        public List<OfficeLinkDto> TargetOfficeLinks { get; set; } = new();
         public string OldPrefix { get; set; } = string.Empty;
         public string NewPrefix { get; set; } = string.Empty;
     }
@@ -135,7 +143,7 @@ namespace FolderMorpher.Contracts
     /// </summary>
     public class MediaScanResultDto
     {
-        public List<MediaItem> Images { get; set; } = new();
-        public List<MediaItem> Videos { get; set; } = new();
+        public List<MediaItemDto> Images { get; set; } = new();
+        public List<MediaItemDto> Videos { get; set; } = new();
     }
 }

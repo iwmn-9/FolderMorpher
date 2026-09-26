@@ -32,7 +32,7 @@ namespace AstraSize
 
         private void ApplyClientModeLayout()
         {
-            if (!App.IsClientMode) return;
+            if (!ClientModeState.IsClientMode) return;
 
             // クライアントモード（FolderCleaner）では管理者専用タブを非表示
             if (NavTabLiveAcl != null) NavTabLiveAcl.Visibility = Visibility.Collapsed;
@@ -59,13 +59,13 @@ namespace AstraSize
             {
                 var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
                 string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v2.1.2";
-                SidebarVersionText.Text = App.IsClientMode
+                SidebarVersionText.Text = ClientModeState.IsClientMode
                     ? $"FolderCleaner {verStr}"
                     : $"FolderMorpher {verStr}";
             }
             if (SidebarSubtitleText != null)
             {
-                SidebarSubtitleText.Text = App.IsClientMode
+                SidebarSubtitleText.Text = ClientModeState.IsClientMode
                     ? Strings.AppSubtitleCleaner
                     : Strings.AppSubtitle;
             }

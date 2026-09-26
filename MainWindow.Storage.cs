@@ -93,7 +93,9 @@ namespace AstraSize
 
             try
             {
-                var cachedRoot = await _historyService.LoadTreeCacheAsync(path);
+                var cacheHost = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var cachedDto = await cacheHost.LoadCachedTreeAsync(path);
+                var cachedRoot = cachedDto == null ? null : FolderMorpher.HostClient.StorageNodeMapper.ToViewNode(cachedDto);
                 if (cachedRoot != null)
                 {
                     cachedRoot.IsExpanded = true;
@@ -230,7 +232,7 @@ namespace AstraSize
         private async void ScanButton_Click(object sender, RoutedEventArgs e)
         {
             var path = PathTextBox.Text.Trim();
-            if (string.IsNullOrWhiteSpace(path) || (!Directory.Exists(path) && !File.Exists(path)))
+            if (string.IsNullOrWhiteSpace(path))
             {
                 MessageBox.Show("有効なパス (ローカルまたは UNC) を入力してください。", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -260,7 +262,9 @@ namespace AstraSize
             FileItemNode? cachedRoot = null;
             try
             {
-                cachedRoot = await _historyService.LoadTreeCacheAsync(path);
+                var cacheHost = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(ct);
+                var cachedDto = await cacheHost.LoadCachedTreeAsync(path);
+                cachedRoot = cachedDto == null ? null : FolderMorpher.HostClient.StorageNodeMapper.ToViewNode(cachedDto);
                 if (cachedRoot != null)
                 {
                     cachedRoot.IsExpanded = true;
@@ -291,7 +295,7 @@ namespace AstraSize
             {
                 // --- バックグラウンド最新スキャン実行 (Host IPC経由) ---
                 var scanResult = await host.ScanStorageAsync(new FolderMorpher.Contracts.StorageScanRequestDto { TargetPath = path }, progress, ct);
-                var root = scanResult.RootNode;
+                var root = scanResult.RootNode == null ? null : FolderMorpher.HostClient.StorageNodeMapper.ToViewNode(scanResult.RootNode);
                 if (root == null)
                 {
                     throw new InvalidOperationException(scanResult.ErrorMessage ?? "スキャン結果を取得できませんでした。");
@@ -303,19 +307,15 @@ namespace AstraSize
                     TotalBytes = scanResult.TotalBytes,
                     TotalFiles = scanResult.TotalFiles,
                     TotalFolders = scanResult.TotalFolders,
-                    LargestFiles = scanResult.Top10Files,
+                    LargestFiles = scanResult.Top10Files.Select(FolderMorpher.HostClient.StorageNodeMapper.ToViewFile).ToList(),
+                    ScanMode = scanResult.ScanMode,
                     ElapsedSeconds = scanResult.Elapsed.TotalSeconds
                 };
                 root.CachedTopFiles = summary.LargestFiles;
                 root.CachedExtensionStats = summary.ExtensionStats;
 
                 // --- 差分自動計算＆反映 ---
-                bool hadDiff = false;
-                if (cachedRoot != null)
-                {
-                    _historyService.ApplyTreeDiff(root, cachedRoot);
-                    hadDiff = root.DiffBytes.HasValue && root.DiffBytes.Value != 0;
-                }
+                bool hadDiff = root.DiffBytes.HasValue && root.DiffBytes.Value != 0;
 
                 root.IsExpanded = true;
                 _currentTab.RootNode = root;
@@ -327,9 +327,7 @@ namespace AstraSize
                 UpdateDynamicInsightsForNode(root);
                 UpdateMetricsCards(_currentTab);
 
-                // キャッシュ＆スナップショットをバックグラウンド自動保存
-                _ = _historyService.SaveTreeCacheAsync(root);
-                _ = _historyService.SaveSnapshotAsync(root);
+                // Host owns cache and snapshot persistence after the scan.
                 SaveStorageTabSession();
 
                 string diffInfo = hadDiff && !string.IsNullOrEmpty(root.DiffFormatted) ? $" [差分: {root.DiffFormatted}]" : "";
@@ -582,15 +580,24 @@ namespace AstraSize
             }
         }
 
-        private void CtxSendToSimulation_Click(object sender, RoutedEventArgs e)
+        private async void CtxSendToSimulation_Click(object sender, RoutedEventArgs e)
         {
             if (FileTreeDataGrid.SelectedItem is FileItemNode item)
             {
-                var simNode = _simService.ConvertToSimNode(item);
-                _simRootFolders.Add(simNode);
-                NavTabSimulation.IsChecked = true;
-                SimMockTreeView.ItemsSource = _simRootFolders;
-                ShowToast($"モックツリーに配置しました: {item.Name}");
+                try
+                {
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    var dto = await host.ConvertStorageToMigrationAsync(
+                        FolderMorpher.HostClient.StorageNodeMapper.ToTreeDto(item), CancellationToken.None);
+                    _simRootFolders.Add(FolderMorpher.HostClient.MigrationDtoMapper.ToViewNode(dto));
+                    NavTabSimulation.IsChecked = true;
+                    SimMockTreeView.ItemsSource = _simRootFolders;
+                    ShowToast($"モックツリーに配置しました: {item.Name}");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"移行ツリーへの追加に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
         }
 
@@ -605,7 +612,7 @@ namespace AstraSize
 
         private void CtxEditAcl_Click(object sender, RoutedEventArgs e) => CtxOpenLiveAcl_Click(sender, e);
 
-        private void ExportButton_Click(object sender, RoutedEventArgs e)
+        private async void ExportButton_Click(object sender, RoutedEventArgs e)
         {
             if (_currentTab?.RootNode == null)
             {
@@ -624,24 +631,10 @@ namespace AstraSize
             {
                 try
                 {
-                    if (dialog.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var excelService = new ExcelReportService();
-                        excelService.ExportStorageScanResult(dialog.FileName, _currentTab.TargetPath, _currentTab.VisibleFlatList);
-                        ShowToast($"📊 {Path.GetFileName(dialog.FileName)} を出力しました");
-                    }
-                    else
-                    {
-                        var sb = new StringBuilder();
-                        sb.Append('\uFEFF');
-                        sb.AppendLine("名前,パス,容量,全体占有率,ファイル数,フォルダ数,最終更新");
-                        foreach (var item in _currentTab.VisibleFlatList)
-                        {
-                            sb.AppendLine($"\"{item.Name}\",\"{item.FullPath}\",\"{item.FormattedSize}\",\"{item.PercentageFormatted}\",\"{item.FileCount}\",\"{item.FolderCount}\",\"{item.LastModified:yyyy/MM/dd HH:mm}\"");
-                        }
-                        File.WriteAllText(dialog.FileName, sb.ToString(), Encoding.UTF8);
-                        ShowToast($"📄 {Path.GetFileName(dialog.FileName)} を出力しました");
-                    }
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.ExportStorageScanAsync(dialog.FileName, _currentTab.TargetPath,
+                        _currentTab.VisibleFlatList.Select(FolderMorpher.HostClient.StorageNodeMapper.ToFlatDto).ToList(), CancellationToken.None);
+                    ShowToast($"📊 {Path.GetFileName(dialog.FileName)} を出力しました");
 
                     ShellHelper.SelectInExplorer(dialog.FileName);
                 }
@@ -661,7 +654,9 @@ namespace AstraSize
                 return;
             }
 
-            var history = await _historyService.GetHistoryForPathAsync(path);
+            var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+            var history = (await host.GetStorageHistoryAsync(path))
+                .Select(FolderMorpher.HostClient.HistoryDtoMapper.ToView).ToList();
             var historyWin = new HistoryWindow(path, history) { Owner = this };
             historyWin.ShowDialog();
         }

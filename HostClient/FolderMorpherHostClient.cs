@@ -22,9 +22,10 @@ namespace FolderMorpher.HostClient
         private NamedPipeClientStream? _pipeStream;
         private JsonRpc? _rpc;
         private IFolderMorpherHostService? _proxy;
+        private Process? _launchedHost;
         private readonly SemaphoreSlim _connectionLock = new(1, 1);
 
-        public string PipeName { get; } = $"FolderMorpher_IPC_{Environment.UserName}";
+        public string PipeName => IpcEndpoint.PipeName;
 
         public async Task<IFolderMorpherHostService> GetServiceAsync(CancellationToken ct = default)
         {
@@ -58,9 +59,10 @@ namespace FolderMorpher.HostClient
                 try
                 {
                     _pipeStream?.Dispose();
-                    _pipeStream = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+                    _pipeStream = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut,
+                        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    timeoutCts.CancelAfter(attempt == 0 ? 500 : 3000);
+                    timeoutCts.CancelAfter(attempt == 0 ? 500 : 15000);
                     await _pipeStream.ConnectAsync(timeoutCts.Token);
 
                     _rpc = JsonRpc.Attach(_pipeStream);
@@ -71,35 +73,47 @@ namespace FolderMorpher.HostClient
                 {
                     if (attempt == 0)
                     {
-                        // 接続できない場合、FolderMorpher.Host.exe をバックグラウンド起動
+                        // The same executable starts in host mode; single-file publish needs no companion EXE.
                         LaunchHostProcess();
                         await Task.Delay(500, ct);
                     }
                 }
             }
 
-            throw new InvalidOperationException("FolderMorpher.Host プロセスとの IPC 接続を確立できませんでした。");
+            throw new InvalidOperationException("FolderMorpher の Host モードとの IPC 接続を確立できませんでした。");
         }
 
         private void LaunchHostProcess()
         {
-            try
+            var processPath = Environment.ProcessPath
+                ?? throw new InvalidOperationException("現在の実行ファイルのパスを取得できません。");
+            var psi = new ProcessStartInfo
             {
-                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                var hostExe = Path.Combine(baseDir, "FolderMorpher.Host.exe");
-                if (File.Exists(hostExe))
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = hostExe,
-                        UseShellExecute = true,
-                        CreateNoWindow = true,
-                        WindowStyle = ProcessWindowStyle.Hidden
-                    };
-                    Process.Start(psi);
-                }
+                FileName = processPath,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+            if (string.Equals(Path.GetFileNameWithoutExtension(processPath), "dotnet", StringComparison.OrdinalIgnoreCase))
+            {
+                var assemblyPath = Path.Combine(AppContext.BaseDirectory, "FolderMorpher.dll");
+                if (!File.Exists(assemblyPath))
+                    throw new InvalidOperationException("開発時の Host 起動対象を取得できません。");
+                psi.ArgumentList.Add(assemblyPath);
             }
-            catch { }
+            psi.ArgumentList.Add("--host");
+            _launchedHost = Process.Start(psi) ?? throw new InvalidOperationException("Host プロセスを起動できませんでした。");
+        }
+
+        /// <summary>Only the IPC smoke test may stop a host process it started itself.</summary>
+        public void StopLaunchedHostForTests()
+        {
+            Dispose();
+            if (_launchedHost is not { HasExited: false } process) return;
+            process.Kill();
+            process.WaitForExit(5000);
+            process.Dispose();
+            _launchedHost = null;
         }
 
         public void Dispose()

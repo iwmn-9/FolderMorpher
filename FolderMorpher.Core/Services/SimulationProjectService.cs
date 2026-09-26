@@ -20,6 +20,54 @@ namespace AstraSize.Services
             WriteIndented = true
         };
 
+        public SimFolderNode CreateSimNodeFromSourceWithAcl(
+            FileItemNode source, int level, int maxDepth = int.MaxValue, CancellationToken ct = default)
+        {
+            var aclService = new AclService();
+            return CreateNode(source, null, level, maxDepth, aclService, ct);
+        }
+
+        private static SimFolderNode CreateNode(FileItemNode source, SimFolderNode? parent, int level,
+            int maxDepth, AclService aclService, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            var node = new SimFolderNode
+            {
+                Name = source.Name,
+                EstimatedSizeBytes = source.SizeBytes,
+                EstimatedFileCount = source.FileCount,
+                Level = level,
+                Parent = parent,
+                IsExpanded = true
+            };
+            if (!string.IsNullOrEmpty(source.FullPath))
+            {
+                node.MappedSourcePaths.Add(source.FullPath);
+                try
+                {
+                    var (entries, inherits, _) = aclService.GetSimAclForFolder(source.FullPath);
+                    node.InheritAcl = inherits;
+                    foreach (var entry in entries) node.AclEntries.Add(entry);
+                }
+                catch { /* Inaccessible folders remain in the design tree. */ }
+            }
+
+            if (level >= maxDepth) return node;
+            var children = source.Children.Where(child => child.IsDirectory && child.Name != "__DUMMY__").ToList();
+            if (children.Count == 0 && !string.IsNullOrEmpty(source.FullPath))
+            {
+                try
+                {
+                    children = new DirectoryInfo(source.FullPath).GetDirectories()
+                        .Select(dir => new FileItemNode(dir.FullName, dir.Name, 0, true, dir.LastWriteTime)).ToList();
+                }
+                catch { /* The tree stays partial when a branch cannot be read. */ }
+            }
+            foreach (var child in children)
+                node.Children.Add(CreateNode(child, node, level + 1, maxDepth, aclService, ct));
+            return node;
+        }
+
         /// <summary>
         /// Save project to .fmorph file
         /// </summary>

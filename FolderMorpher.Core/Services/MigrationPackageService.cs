@@ -177,10 +177,12 @@ namespace FolderMorpher.Services
         public async Task<string> GeneratePackageAsync(
             IEnumerable<SimFolderNode> rootNodes,
             MigrationPackageOptions options,
-            IProgress<string>? progress = null)
+            IProgress<string>? progress = null,
+            CancellationToken ct = default)
         {
             return await Task.Run(() =>
             {
+                ct.ThrowIfCancellationRequested();
                 var wavePlans = PlanWaves(rootNodes, options);
                 if (wavePlans.Count == 0) throw new InvalidOperationException("移行対象のフォルダーが存在しません。");
 
@@ -192,8 +194,12 @@ namespace FolderMorpher.Services
                 string cleanTargetName = Path.GetFileName(targetRoot.TrimEnd('\\', '/'));
                 if (string.IsNullOrWhiteSpace(cleanTargetName)) cleanTargetName = "Target";
 
-                string packageDir = Path.Combine(options.OutputDirectory, $"Migration_Package_{cleanTargetName}_{DateTime.Now:yyyyMMdd_HHmmss}");
+                string finalPackageDir = Path.Combine(options.OutputDirectory, $"Migration_Package_{cleanTargetName}_{DateTime.Now:yyyyMMdd_HHmmss}");
+                if (Directory.Exists(finalPackageDir)) finalPackageDir += $"_{Guid.NewGuid():N}";
+                string packageDir = finalPackageDir + $".partial_{Guid.NewGuid():N}";
                 Directory.CreateDirectory(packageDir);
+                try
+                {
 
                 string logsDir = Path.Combine(packageDir, "Logs");
                 Directory.CreateDirectory(logsDir);
@@ -205,6 +211,7 @@ namespace FolderMorpher.Services
                 // 各Waveのスクリプト生成
                 foreach (var wave in wavePlans)
                 {
+                    ct.ThrowIfCancellationRequested();
                     string safeWaveFolderName = $"Wave{wave.WaveNumber:D2}_{SanitizeFileName(wave.WaveName.Replace($"Wave {wave.WaveNumber}:", "").Trim())}";
                     string waveDir = Path.Combine(packageDir, safeWaveFolderName);
                     Directory.CreateDirectory(waveDir);
@@ -241,12 +248,14 @@ namespace FolderMorpher.Services
                 }
 
                 // 00_Run_All_Waves_StepByStep.bat (マスター対話実行バッチ)
+                ct.ThrowIfCancellationRequested();
                 progress?.Report("マスター実行スクリプトを生成中...");
                 string masterBat = Path.Combine(packageDir, "00_Run_All_Waves_StepByStep.bat");
                 string masterContent = GenerateMasterOrchestratorBat(waveBatEntries);
                 File.WriteAllText(masterBat, masterContent, new UTF8Encoding(false));
 
                 // README_MIGRATION_GUIDE.md (手順書ガイド)
+                ct.ThrowIfCancellationRequested();
                 progress?.Report("移行ガイド手順書を生成中...");
                 string guideMd = Path.Combine(packageDir, "README_MIGRATION_GUIDE.md");
                 string guideContent = GenerateReadmeGuide(wavePlans, targetRoot, options);
@@ -255,14 +264,22 @@ namespace FolderMorpher.Services
                 // Migration_Runbook.xlsx (Excel移行計画書・進捗台帳)
                 if (options.IncludeRunbookExcel)
                 {
+                    ct.ThrowIfCancellationRequested();
                     progress?.Report("Excel移行計画台帳 (Migration_Runbook.xlsx) を生成中...");
                     string excelPath = Path.Combine(packageDir, "Migration_Runbook.xlsx");
                     GenerateRunbookExcel(excelPath, wavePlans, targetRoot, options);
                 }
 
+                ct.ThrowIfCancellationRequested();
+                Directory.Move(packageDir, finalPackageDir);
                 progress?.Report("移行パッケージの生成が完了しました。");
-                return packageDir;
-            });
+                return finalPackageDir;
+                }
+                finally
+                {
+                    if (Directory.Exists(packageDir)) Directory.Delete(packageDir, recursive: true);
+                }
+            }, ct);
         }
 
         private static string GenerateWaveRobocopyBat(

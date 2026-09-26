@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <OutputType>Library</OutputType>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <AssemblyName>FolderMorpher.UI</AssemblyName>
+    <RootNamespace>FolderMorpher.UI</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ClientModeState.cs" />
+    <Compile Include="SnapshotRunner.cs" />
+    <Page Include="..\MainWindow.xaml" Link="MainWindow.xaml" />
+    <Page Include="..\HistoryWindow.xaml" Link="HistoryWindow.xaml" />
+    <Page Include="..\Views\**\*.xaml" Link="Views\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\AssemblyInfo.cs" Link="AssemblyInfo.cs" />
+    <Compile Include="..\MainWindow*.cs" Link="%(Filename)%(Extension)" />
+    <Compile Include="..\HistoryWindow.xaml.cs" Link="HistoryWindow.xaml.cs" />
+    <Compile Include="..\Views\**\*.cs" Link="Views\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Converters\**\*.cs" Link="Converters\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\HostClient\**\*.cs" Link="HostClient\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="StreamJsonRpc" Version="2.25.29" />
+    <PackageReference Include="System.DirectoryServices" Version="8.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FolderMorpher.Contracts\FolderMorpher.Contracts.csproj" />
+    <ProjectReference Include="..\FolderMorpher.Core\FolderMorpher.Core.csproj" />
+  </ItemGroup>
+</Project>

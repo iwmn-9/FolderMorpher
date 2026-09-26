@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using FolderMorpher.Contracts;
 
 namespace FolderMorpher.Host
 {
@@ -12,10 +13,10 @@ namespace FolderMorpher.Host
     {
         private static Mutex? _singleInstanceMutex;
 
-        public static async Task Main(string[] args)
+        public static async Task RunAsync(string[] args)
         {
             // ユーザーセッションごとの単一インスタンス Mutex
-            string mutexName = $@"Local\FolderMorpher_Host_{Environment.UserName}";
+            string mutexName = IpcEndpoint.MutexName;
             _singleInstanceMutex = new Mutex(true, mutexName, out bool createdNew);
 
             if (!createdNew)

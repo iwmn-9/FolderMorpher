@@ -23,18 +23,6 @@ namespace AstraSize
 {
     public partial class MainWindow : Window
     {
-        // Core Services
-        private readonly DiskScanService _scanService = new();
-        private readonly StorageHistoryService _historyService = new();
-        private readonly AclService _aclService = new();
-        private readonly LinkFixService _linkFixService = new();
-        private readonly ActiveDirectoryService _adService = new();
-        private readonly SimulationProjectService _simService = new();
-        private readonly AuditReportService _auditService = new();
-        private readonly OfficeLinkFixService _officeLinkService = new();
-        private readonly MediaOptimizerService _mediaService = new();
-        private readonly ExcelReportService _excelService = new();
-
         // Cancellation Tokens
         private CancellationTokenSource? _scanCts;
         private CancellationTokenSource? _linkFixCts;
@@ -67,8 +55,7 @@ namespace AstraSize
         private SimAclEntry? _currentEditingAcl;
         private SkeletonDeployPlan? _currentSkeletonPlan;
 
-        // Live ACL & Effective Access Services
-        private readonly EffectiveAccessService _effectiveAccessService = new();
+        // Live ACL modal state
         private Action? _onSecModalAppliedCallback;
 
         // Toast notification timer
@@ -86,6 +73,17 @@ namespace AstraSize
             catch { }
             return Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         }
+
+        private FolderMorpher.Contracts.ReportExportDto BuildReportExportRequest(
+            string outputPath, string scannedRoot, IEnumerable<MediaItem> mediaItems) => new()
+        {
+            OutputPath = outputPath,
+            ScannedRoot = scannedRoot,
+            AuditSummary = _lastAuditSummary == null ? null : FolderMorpher.HostClient.AuditDtoMapper.ToDto(_lastAuditSummary),
+            AuditItems = _lastAuditItems.Select(FolderMorpher.HostClient.AuditDtoMapper.ToDto).ToList(),
+            MediaSummary = _lastMediaSummary == null ? null : FolderMorpher.HostClient.MediaDtoMapper.ToDto(_lastMediaSummary),
+            MediaItems = mediaItems.Select(FolderMorpher.HostClient.MediaDtoMapper.ToDto).ToList()
+        };
 
         // Drag & Drop State (枠外ドロップ解除 & 広域受容 & Escキャンセル保護)
         private bool _droppedInSelfContainer = false;
@@ -120,7 +118,7 @@ namespace AstraSize
         {
             InitializeComponent();
 
-            LiveAclStudioControl.InitializeServices(_aclService, _adService, _effectiveAccessService);
+            LiveAclStudioControl.InitializeServices();
             LiveAclStudioControl.ToastRequested += ShowToast;
             LiveAclStudioControl.EditSecurityRequested += (acl, folderName, fullPath, onApplied) =>
             {
@@ -132,7 +130,7 @@ namespace AstraSize
             UpdateIgnoredCountBadge();
             InitializeSearchStudio();
 
-            var asmVer = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            var asmVer = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version;
             if (asmVer != null && SidebarVersionText != null)
             {
                 SidebarVersionText.Text = $"FolderMorpher v{asmVer.Major}.{asmVer.Minor}.{asmVer.Build}";
@@ -159,7 +157,7 @@ namespace AstraSize
             try
             {
                 InitializeStorageTabs();
-                if (!App.IsClientMode)
+                if (!ClientModeState.IsClientMode)
                 {
                     InitializeSimulationStudio();
                     await LoadAdPrincipalsAsync();

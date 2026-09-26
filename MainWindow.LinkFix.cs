@@ -31,7 +31,7 @@ namespace AstraSize
             var oldPattern = LinkOldPatternTextBox.Text.Trim();
             var newPattern = LinkNewPatternTextBox.Text.Trim();
 
-            if (string.IsNullOrWhiteSpace(scope) || !Directory.Exists(scope))
+            if (string.IsNullOrWhiteSpace(scope))
             {
                 MessageBox.Show("有効な検索対象フォルダを入力してください。", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -49,12 +49,12 @@ namespace AstraSize
             {
                 var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(_linkFixCts.Token);
                 var scanRes = await host.ScanBrokenLinksAsync(scope, oldPattern, newPattern, progress, _linkFixCts.Token);
-                var items = scanRes.BrokenLinks;
+                var items = scanRes.BrokenLinks.Select(FolderMorpher.HostClient.LinkFixDtoMapper.ToViewItem).ToList();
 
                 // M3対策: Officeファイル内部リンクも含める場合
                 if (LinkIncludeOfficeCheckBox.IsChecked == true)
                 {
-                    var officeItems = scanRes.OfficeLinks;
+                    var officeItems = scanRes.OfficeLinks.Select(FolderMorpher.HostClient.LinkFixDtoMapper.ToViewItem);
                     foreach (var off in officeItems)
                     {
                         items.Add(new LinkFixItem
@@ -139,7 +139,7 @@ namespace AstraSize
                 var hostProgress = new Progress<string>(s => StatusTextBlock.Text = s);
                 var applyReq = new FolderMorpher.Contracts.LinkFixApplyRequestDto
                 {
-                    TargetShortcuts = _lastLinkFixTargets
+                    TargetShortcuts = _lastLinkFixTargets.Select(FolderMorpher.HostClient.LinkFixDtoMapper.ToDto).ToList()
                 };
                 var applyRes = await host.RepairBrokenLinksAsync(applyReq, hostProgress, cts.Token);
                 var successCount = applyRes.RepairedCount;
@@ -165,7 +165,7 @@ namespace AstraSize
                 GlobalProgressBar.Visibility = Visibility.Collapsed;
             }
         }
-        private void LinkGenerateGpoButton_Click(object sender, RoutedEventArgs e)
+        private async void LinkGenerateGpoButton_Click(object sender, RoutedEventArgs e)
         {
             var oldPattern = LinkOldPatternTextBox.Text.Trim();
             var newPattern = LinkNewPatternTextBox.Text.Trim();
@@ -187,7 +187,8 @@ namespace AstraSize
             {
                 try
                 {
-                    _linkFixService.GenerateGpoLogonScript(dialog.FileName, oldPattern, newPattern);
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.GenerateGpoLogonScriptAsync(dialog.FileName, oldPattern, newPattern, CancellationToken.None);
                     ShowToast("GPOログオンスクリプトを生成しました");
                     ShellHelper.SelectInExplorer(dialog.FileName);
                 }

@@ -2,10 +2,13 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <StartupObject>AstraSize.Bootstrap</StartupObject>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
     <AssemblyName>FolderMorpher</AssemblyName>
     <RootNamespace>FolderMorpher</RootNamespace>
     <ApplicationTitle>FolderMorpher - Storage &amp; Migration Studio</ApplicationTitle>
@@ -16,23 +19,18 @@
 
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.105.1" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
-    <PackageReference Include="StreamJsonRpc" Version="2.25.29" />
-    <PackageReference Include="System.Data.OleDb" Version="10.0.12" />
-    <PackageReference Include="System.DirectoryServices" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="FolderMorpher.Core\**" />
-    <Compile Remove="FolderMorpher.Host\**" />
-    <EmbeddedResource Remove="FolderMorpher.Core\**" />
-    <EmbeddedResource Remove="FolderMorpher.Host\**" />
-    <None Remove="FolderMorpher.Core\**" />
-    <None Remove="FolderMorpher.Host\**" />
+    <Compile Include="App.xaml.cs" />
+    <Compile Include="Bootstrap.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="FolderMorpher.Core\FolderMorpher.Core.csproj" />
+    <ProjectReference Include="FolderMorpher.Contracts\FolderMorpher.Contracts.csproj" />
+    <ProjectReference Include="FolderMorpher.Host\FolderMorpher.Host.csproj" />
+    <ProjectReference Include="FolderMorpher.UI\FolderMorpher.UI.csproj" />
   </ItemGroup>
 
 </Project>

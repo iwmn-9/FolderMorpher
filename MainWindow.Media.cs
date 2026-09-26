@@ -40,7 +40,7 @@ namespace AstraSize
         private async void MediaScanButton_Click(object sender, RoutedEventArgs e)
         {
             var target = MediaPathTextBox.Text.Trim();
-            if (string.IsNullOrWhiteSpace(target) || !Directory.Exists(target))
+            if (string.IsNullOrWhiteSpace(target))
             {
                 MessageBox.Show("有効なディレクトリを入力してください。", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -74,9 +74,9 @@ namespace AstraSize
             try
             {
                 var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(_mediaCts.Token);
-                var scanRes = await host.ScanMediaAsync(options, progress, _mediaCts.Token);
-                var images = scanRes.Images;
-                var videos = scanRes.Videos;
+                var scanRes = await host.ScanMediaAsync(FolderMorpher.HostClient.MediaDtoMapper.ToDto(options), progress, _mediaCts.Token);
+                var images = scanRes.Images.Select(FolderMorpher.HostClient.MediaDtoMapper.ToViewItem).ToList();
+                var videos = scanRes.Videos.Select(FolderMorpher.HostClient.MediaDtoMapper.ToViewItem).ToList();
                 _lastMediaImages = images;
                 _lastMediaVideos = videos;
 
@@ -169,7 +169,18 @@ namespace AstraSize
                 using var cts = new CancellationTokenSource();
                 var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(cts.Token);
                 var hostProgress = new Progress<string>(s => MediaStatusText.Text = s);
-                var summary = await host.OptimizeImagesAsync(_lastMediaTargets, options, hostProgress, cts.Token);
+                var result = await host.OptimizeImagesAsync(
+                    _lastMediaTargets.Select(FolderMorpher.HostClient.MediaDtoMapper.ToDto).ToList(),
+                    FolderMorpher.HostClient.MediaDtoMapper.ToDto(options), hostProgress, cts.Token);
+                var summary = FolderMorpher.HostClient.MediaDtoMapper.ToViewSummary(result.Summary);
+                var updatedByPath = result.UpdatedItems.ToDictionary(item => item.FullPath, StringComparer.OrdinalIgnoreCase);
+                foreach (var target in _lastMediaTargets)
+                {
+                    if (!updatedByPath.TryGetValue(target.FullPath, out var updated)) continue;
+                    target.OptimizedSizeBytes = updated.OptimizedSizeBytes;
+                    target.Status = updated.Status;
+                    target.IsProcessed = updated.IsProcessed;
+                }
                 _lastMediaSummary = summary;
 
                 MediaItemsDataGrid.Items.Refresh();
@@ -201,7 +212,7 @@ namespace AstraSize
             }
         }
 
-        private void MediaGenVideoBatchButton_Click(object sender, RoutedEventArgs e)
+        private async void MediaGenVideoBatchButton_Click(object sender, RoutedEventArgs e)
         {
             if (_lastMediaVideos == null || _lastMediaVideos.Count == 0)
             {
@@ -220,7 +231,9 @@ namespace AstraSize
             {
                 try
                 {
-                    _mediaService.GenerateVideoCompressBatch(dialog.FileName, _lastMediaVideos);
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.GenerateVideoCompressBatchAsync(dialog.FileName,
+                        _lastMediaVideos.Select(FolderMorpher.HostClient.MediaDtoMapper.ToDto).ToList(), CancellationToken.None);
                     ShowToast("夜間動画圧縮バッチを生成しました");
                     ShellHelper.SelectInExplorer(dialog.FileName);
                 }
@@ -231,7 +244,7 @@ namespace AstraSize
             }
         }
 
-        private void MediaExportExcelButton_Click(object sender, RoutedEventArgs e)
+        private async void MediaExportExcelButton_Click(object sender, RoutedEventArgs e)
         {
             var allItems = _lastMediaImages.Concat(_lastMediaVideos).ToList();
             if (allItems.Count == 0)
@@ -252,13 +265,9 @@ namespace AstraSize
             {
                 try
                 {
-                    _excelService.GenerateComprehensiveReport(
-                        dialog.FileName,
-                        MediaPathTextBox.Text.Trim(),
-                        _lastAuditSummary,
-                        _lastAuditItems,
-                        _lastMediaSummary,
-                        allItems);
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.ExportExcelReportAsync(BuildReportExportRequest(
+                        dialog.FileName, MediaPathTextBox.Text.Trim(), allItems), CancellationToken.None);
 
                     ShowToast("Excelレポートを出力しました");
                     ShellHelper.SelectInExplorer(dialog.FileName);

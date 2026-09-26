@@ -58,13 +58,20 @@ namespace AstraSize
             };
         }
 
-        private void UpdateSimulationDomainBadge()
+        private async void UpdateSimulationDomainBadge()
         {
             if (DomainStatusText == null || DomainStatusBadge == null) return;
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-            if (_adService.IsDomainJoined)
+            FolderMorpher.Contracts.DirectoryStatusDto status;
+            try
             {
-                DomainStatusText.Text = $"🟢 {_adService.CurrentDomainName.ToUpperInvariant()}";
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                status = await host.GetDirectoryStatusAsync();
+            }
+            catch { status = new FolderMorpher.Contracts.DirectoryStatusDto(); }
+            if (status.IsDomainJoined)
+            {
+                DomainStatusText.Text = $"🟢 {status.CurrentDomainName.ToUpperInvariant()}";
                 DomainStatusBadge.Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#DCFCE7")!;
                 DomainStatusText.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#15803D")!;
             }
@@ -87,7 +94,9 @@ namespace AstraSize
 
         private async Task LoadAdPrincipalsAsync(string filter = "")
         {
-            var list = await _adService.SearchPrincipalsAsync(filter);
+            var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+            var list = (await host.GetAdPrincipalsAsync(filter, CancellationToken.None))
+                .Select(FolderMorpher.HostClient.IdentityDtoMapper.ToView).ToList();
             _rawAdPrincipalsCache = list;
             _adPrincipals.Clear();
             foreach (var item in list) _adPrincipals.Add(item);
@@ -96,11 +105,12 @@ namespace AstraSize
 
         private async Task CheckAndSyncAdPrincipalsAsync(bool forceRefresh = false)
         {
-            if (_adService == null) return;
             try
             {
                 var currentQuery = AdSearchTextBox?.Text?.Trim() ?? "";
-                var latest = await _adService.SearchPrincipalsAsync(currentQuery);
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var latest = (await host.GetAdPrincipalsAsync(currentQuery, CancellationToken.None))
+                    .Select(FolderMorpher.HostClient.IdentityDtoMapper.ToView).ToList();
                 if (forceRefresh || HasPrincipalsChanged(_rawAdPrincipalsCache, latest))
                 {
                     _rawAdPrincipalsCache = latest;
@@ -153,18 +163,18 @@ namespace AstraSize
             }
         }
 
-        private void SimSourceBrowseButton_Click(object sender, RoutedEventArgs e)
+        private async void SimSourceBrowseButton_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new OpenFolderDialog { Title = "現行ファイルサーバー（移行元）のフォルダーを選択" };
             var current = SimSourcePathTextBox.Text.Trim();
-            if (!string.IsNullOrWhiteSpace(current) && Directory.Exists(current))
+            if (!string.IsNullOrWhiteSpace(current))
             {
                 dialog.InitialDirectory = current;
             }
             if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.FolderName))
             {
                 SimSourcePathTextBox.Text = dialog.FolderName;
-                LoadSourceTree(dialog.FolderName);
+                await LoadSourceTreeAsync(dialog.FolderName);
             }
         }
 
@@ -176,10 +186,10 @@ namespace AstraSize
             }
         }
 
-        private void SimSourceLoadButton_Click(object sender, RoutedEventArgs e)
+        private async void SimSourceLoadButton_Click(object sender, RoutedEventArgs e)
         {
             var path = SimSourcePathTextBox.Text.Trim();
-            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            if (string.IsNullOrWhiteSpace(path))
             {
                 if (_currentTab?.RootNode != null)
                 {
@@ -192,17 +202,16 @@ namespace AstraSize
                 return;
             }
 
-            LoadSourceTree(path);
+            await LoadSourceTreeAsync(path);
         }
 
-        private void LoadSourceTree(string path)
+        private async Task LoadSourceTreeAsync(string path)
         {
             try
             {
-                var di = new DirectoryInfo(path);
-                var rootItem = new FileItemNode(di.FullName, di.Name, 0, true, di.LastWriteTime);
-
-                PopulateSubdirectoriesSafe(rootItem, di);
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var dto = await host.LoadMigrationSourceFolderAsync(path, CancellationToken.None);
+                var rootItem = FolderMorpher.HostClient.StorageNodeMapper.ToViewNode(dto);
 
                 // 初期状態で直下を展開して表示
                 rootItem.IsExpanded = true;
@@ -215,46 +224,7 @@ namespace AstraSize
             }
         }
 
-        private static void PopulateSubdirectoriesSafe(FileItemNode parentNode, DirectoryInfo di)
-        {
-            try
-            {
-                foreach (var sub in di.GetDirectories())
-                {
-                    var subNode = new FileItemNode(sub.FullName, sub.Name, 0, true, sub.LastWriteTime)
-                    {
-                        Parent = parentNode,
-                        Level = parentNode.Level + 1
-                    };
-
-                    // サブフォルダの存在確認（遅延展開用ダミー）
-                    try
-                    {
-                        if (sub.EnumerateDirectories().Any())
-                        {
-                            subNode.Children.Add(new FileItemNode(string.Empty, "__DUMMY__", 0, false));
-                        }
-                    }
-                    catch
-                    {
-                        // アクセス権限等で判定できない場合も展開可能にしておく
-                        subNode.Children.Add(new FileItemNode(string.Empty, "__DUMMY__", 0, false));
-                    }
-
-                    parentNode.Children.Add(subNode);
-                }
-            }
-            catch (UnauthorizedAccessException)
-            {
-                // アクセス拒否は安全にスキップ
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error enumerating directories in {di.FullName}: {ex.Message}");
-            }
-        }
-
-        private void SimSourceTreeViewItem_Expanded(object sender, RoutedEventArgs e)
+        private async void SimSourceTreeViewItem_Expanded(object sender, RoutedEventArgs e)
         {
             if (e.OriginalSource is TreeViewItem treeViewItem && treeViewItem.DataContext is FileItemNode folderNode)
             {
@@ -263,11 +233,14 @@ namespace AstraSize
                     folderNode.Children.Clear();
                     try
                     {
-                        var di = new DirectoryInfo(folderNode.FullPath);
-                        PopulateSubdirectoriesSafe(folderNode, di);
+                        var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                        var dto = await host.LoadMigrationSourceFolderAsync(folderNode.FullPath, CancellationToken.None);
+                        foreach (var child in dto.Children)
+                            folderNode.Children.Add(FolderMorpher.HostClient.StorageNodeMapper.ToViewNode(child, folderNode));
                     }
                     catch (Exception ex)
                     {
+                        folderNode.Children.Add(new FileItemNode(string.Empty, "__DUMMY__", 0, false));
                         System.Diagnostics.Debug.WriteLine($"Failed to expand {folderNode.FullPath}: {ex.Message}");
                     }
                 }
@@ -289,71 +262,12 @@ namespace AstraSize
             }
         }
 
-        private SimFolderNode CreateSimNodeFromSourceWithAcl(FileItemNode src, SimFolderNode? parent, int level, int maxDepth = int.MaxValue)
+        private async Task<SimFolderNode> CreateSimNodeFromSourceWithAclAsync(FileItemNode src, SimFolderNode? parent, int level, int maxDepth = int.MaxValue)
         {
-            var node = new SimFolderNode
-            {
-                Name = src.Name,
-                EstimatedSizeBytes = src.SizeBytes,
-                EstimatedFileCount = src.FileCount,
-                Level = level,
-                Parent = parent,
-                IsExpanded = true
-            };
-
-            if (!string.IsNullOrEmpty(src.FullPath))
-            {
-                node.MappedSourcePaths.Add(src.FullPath);
-                try
-                {
-                    if (Directory.Exists(src.FullPath))
-                    {
-                        var (entries, isInherited, _) = _aclService.GetSimAclForFolder(src.FullPath);
-                        node.InheritAcl = isInherited;
-                        foreach (var entry in entries)
-                        {
-                            node.AclEntries.Add(entry);
-                        }
-                    }
-                }
-                catch
-                {
-                    // アクセス拒否等でもツリー構築は継続
-                }
-            }
-
-            if (level < maxDepth)
-            {
-                // もし既に展開済みの子があればそれを採用（ダミーは除外）
-                var validChildren = src.Children.Where(c => c.IsDirectory && c.Name != "__DUMMY__").ToList();
-                if (validChildren.Count > 0)
-                {
-                    foreach (var childSrc in validChildren)
-                    {
-                        var childNode = CreateSimNodeFromSourceWithAcl(childSrc, node, level + 1, maxDepth);
-                        node.Children.Add(childNode);
-                    }
-                }
-                else if (!string.IsNullOrEmpty(src.FullPath) && Directory.Exists(src.FullPath))
-                {
-                    // 未展開の場合は実ファイルシステムから再帰的にサブフォルダを安全走査構築
-                    try
-                    {
-                        var di = new DirectoryInfo(src.FullPath);
-                        foreach (var subDir in di.GetDirectories())
-                        {
-                            var subFileItem = new FileItemNode(subDir.FullName, subDir.Name, 0, true, subDir.LastWriteTime);
-                            var childNode = CreateSimNodeFromSourceWithAcl(subFileItem, node, level + 1, maxDepth);
-                            node.Children.Add(childNode);
-                        }
-                    }
-                    catch
-                    {
-                        // アクセス拒否等はスキップ
-                    }
-                }
-            }
-
+            var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+            var dto = await host.CreateMigrationNodeFromStorageAsync(
+                FolderMorpher.HostClient.StorageNodeMapper.ToTreeDto(src), level, maxDepth, CancellationToken.None);
+            var node = FolderMorpher.HostClient.MigrationDtoMapper.ToViewNode(dto, parent);
             return node;
         }
 
@@ -364,6 +278,14 @@ namespace AstraSize
             {
                 UpdateDescendantLevels(child, newLevel + 1);
             }
+        }
+
+        private static void RelinkSimParentsAndLevels(SimFolderNode node, SimFolderNode? parent, int level)
+        {
+            node.Parent = parent;
+            node.Level = level;
+            foreach (var child in node.Children)
+                RelinkSimParentsAndLevels(child, node, level + 1);
         }
 
         private void UpdateSimCloneButtonState()
@@ -452,7 +374,7 @@ namespace AstraSize
                     _simRootFolders.Clear();
                     foreach (var root in restoredRoots)
                     {
-                        SimulationProjectService.LinkParentsAndLevels(root, null, 0);
+                        RelinkSimParentsAndLevels(root, null, 0);
                         _simRootFolders.Add(root);
                     }
 
@@ -479,28 +401,35 @@ namespace AstraSize
         }
         #endregion
 
-        private void SimCloneSelectedButton_Click(object sender, RoutedEventArgs e)
+        private async void SimCloneSelectedButton_Click(object sender, RoutedEventArgs e)
         {
             if (SimSourceTreeView.SelectedItem is FileItemNode selected)
             {
-                PushUndoSnapshot();
-                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-                if (_selectedSimNode != null)
+                try
                 {
-                    var newSub = CreateSimNodeFromSourceWithAcl(selected, _selectedSimNode, _selectedSimNode.Level + 1);
-                    _selectedSimNode.Children.Add(newSub);
-                    _selectedSimNode.IsExpanded = true;
-                    ShowToast(isJa
-                        ? $"📁 「{selected.Name}」を「{_selectedSimNode.Name}」直下にサブ配置しました"
-                        : $"📁 Placed '{selected.Name}' as a subfolder under '{_selectedSimNode.Name}'");
+                    var parent = _selectedSimNode;
+                    var newNode = await CreateSimNodeFromSourceWithAclAsync(selected, parent, parent?.Level + 1 ?? 0);
+                    PushUndoSnapshot();
+                    bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                    if (parent != null)
+                    {
+                        parent.Children.Add(newNode);
+                        parent.IsExpanded = true;
+                        ShowToast(isJa
+                            ? $"📁 「{selected.Name}」を「{parent.Name}」直下にサブ配置しました"
+                            : $"📁 Placed '{selected.Name}' as a subfolder under '{parent.Name}'");
+                    }
+                    else
+                    {
+                        _simRootFolders.Add(newNode);
+                        ShowToast(isJa
+                            ? $"📁 新環境ツリーにルート配置しました: {selected.Name}"
+                            : $"📁 Placed as new root folder: {selected.Name}");
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    var simNode = CreateSimNodeFromSourceWithAcl(selected, null, 0);
-                    _simRootFolders.Add(simNode);
-                    ShowToast(isJa
-                        ? $"📁 新環境ツリーにルート配置しました: {selected.Name}"
-                        : $"📁 Placed as new root folder: {selected.Name}");
+                    MessageBox.Show($"移行元の読み込みに失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
             else
@@ -721,7 +650,7 @@ namespace AstraSize
             ClearSimDragState();
         }
 
-        private void SimMockTreeView_Drop(object sender, DragEventArgs e)
+        private async void SimMockTreeView_Drop(object sender, DragEventArgs e)
         {
             ClearSimDragState();
             var target = GetSimNodeFromDragEvent(e);
@@ -729,20 +658,25 @@ namespace AstraSize
             // Case 1: Drop source folder from left explorer (Create subfolder with full ACL & hierarchy)
             if (e.Data.GetData("FolderMorpherSourceNode") is FileItemNode src)
             {
-                PushUndoSnapshot();
-                if (target != null)
+                try
                 {
-                    var newSub = CreateSimNodeFromSourceWithAcl(src, target, target.Level + 1);
-                    target.Children.Add(newSub);
-                    target.IsExpanded = true;
-                    ShowToast($"📁 「{src.Name}」を「{target.Name}」配下にサブフォルダ化（権限・階層継承）しました");
+                    var newNode = await CreateSimNodeFromSourceWithAclAsync(src, target, target?.Level + 1 ?? 0);
+                    PushUndoSnapshot();
+                    if (target != null)
+                    {
+                        target.Children.Add(newNode);
+                        target.IsExpanded = true;
+                        ShowToast($"📁 「{src.Name}」を「{target.Name}」配下にサブフォルダ化（権限・階層継承）しました");
+                    }
+                    else
+                    {
+                        _simRootFolders.Add(newNode);
+                        ShowToast($"📁 「{src.Name}」を第1階層（ルート）として配置しました");
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    // 空白ドロップは選択状態に関係なく第1階層（新設ルート）として配置
-                    var newRoot = CreateSimNodeFromSourceWithAcl(src, null, 0);
-                    _simRootFolders.Add(newRoot);
-                    ShowToast($"📁 「{src.Name}」を第1階層（ルート）として配置しました");
+                    MessageBox.Show($"移行元の読み込みに失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
                 return;
             }
@@ -1507,16 +1441,27 @@ namespace AstraSize
         #endregion
 
         #region Difference Review (Diff Inspector)
-        private void SimDiffReviewButton_Click(object sender, RoutedEventArgs e)
+        private async void SimDiffReviewButton_Click(object sender, RoutedEventArgs e)
         {
-            var targetRoot = SimTargetRootTextBox.Text.Trim();
-            var diffs = _simService.GenerateDiffReview(_currentTab?.RootNode, _simRootFolders);
-            DiffReviewDataGrid.ItemsSource = diffs;
-            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-            DiffSummaryStatsText.Text = string.IsNullOrWhiteSpace(targetRoot)
-                ? (isJa ? $"📊 差分項目: {diffs.Count}件" : $"📊 Diff Items: {diffs.Count}")
-                : (isJa ? $"📊 差分項目: {diffs.Count}件 (展開先: {targetRoot})" : $"📊 Diff Items: {diffs.Count} (Target: {targetRoot})");
-            DiffModalOverlay.Visibility = Visibility.Visible;
+            try
+            {
+                var targetRoot = SimTargetRootTextBox.Text.Trim();
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var dtos = await host.GenerateMigrationDiffAsync(
+                    _currentTab?.RootNode == null ? null : FolderMorpher.HostClient.StorageNodeMapper.ToTreeDto(_currentTab.RootNode),
+                    _simRootFolders.Select(FolderMorpher.HostClient.MigrationDtoMapper.ToDto).ToList(), CancellationToken.None);
+                var diffs = dtos.Select(FolderMorpher.HostClient.MigrationDtoMapper.ToView).ToList();
+                DiffReviewDataGrid.ItemsSource = diffs;
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                DiffSummaryStatsText.Text = string.IsNullOrWhiteSpace(targetRoot)
+                    ? (isJa ? $"📊 差分項目: {diffs.Count}件" : $"📊 Diff Items: {diffs.Count}")
+                    : (isJa ? $"📊 差分項目: {diffs.Count}件 (展開先: {targetRoot})" : $"📊 Diff Items: {diffs.Count} (Target: {targetRoot})");
+                DiffModalOverlay.Visibility = Visibility.Visible;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"差分の作成に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void DiffModalClose_Click(object sender, RoutedEventArgs e)
@@ -1535,9 +1480,6 @@ namespace AstraSize
                 return;
             }
 
-            // Plan-First 貫通: プレビュー承認された同一の SkeletonDeployPlan インスタンスを直接コミット
-            var plan = _currentSkeletonPlan ?? _simService.BuildDeployPlan(_simRootFolders, targetRoot, _currentTab?.RootNode);
-
             GlobalProgressBar.Visibility = Visibility.Visible;
             GlobalProgressBar.IsIndeterminate = true;
 
@@ -1548,13 +1490,29 @@ namespace AstraSize
 
             try
             {
+                var plan = _currentSkeletonPlan;
+                if (plan == null)
+                {
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    var dto = await host.BuildSkeletonDeployPlanAsync(
+                        _currentTab?.RootNode == null ? null : FolderMorpher.HostClient.StorageNodeMapper.ToTreeDto(_currentTab.RootNode),
+                        _simRootFolders.Select(FolderMorpher.HostClient.MigrationDtoMapper.ToDto).ToList(),
+                        targetRoot, CancellationToken.None);
+                    plan = FolderMorpher.HostClient.MigrationDtoMapper.ToView(dto);
+                }
                 using var cts = new CancellationTokenSource();
-                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(cts.Token);
-                var deployResult = await host.DeploySkeletonPlanAsync(plan, cts.Token);
+                var deployJob = await FolderMorpher.HostClient.HostJobClient.RunAsync(
+                    new FolderMorpher.Contracts.HostJobRequestDto
+                    {
+                        Kind = FolderMorpher.Contracts.HostJobKind.DeploySkeleton,
+                        SkeletonPlan = FolderMorpher.HostClient.MigrationDtoMapper.ToDto(plan)
+                    },
+                    status => { if (!string.IsNullOrWhiteSpace(status.ProgressText)) StatusTextBlock.Text = status.ProgressText; },
+                    cts.Token);
+                var deployResult = deployJob.SkeletonResult ?? throw new InvalidOperationException("展開結果がHostから返されませんでした。");
 
                 // Verify: 展開先ルートおよび新規作成された全フォルダーの実在検証 ＆ エラー件数照合
-                bool allPathsExist = Directory.Exists(plan.DestinationRoot) &&
-                                     deployResult.DeployedFolderPaths.All(p => Directory.Exists(p));
+                bool allPathsExist = deployResult.AllPathsExist;
                 bool isCleanSuccess = deployResult.FailedCount == 0 && deployResult.ConflictCount == 0 && allPathsExist;
                 DiffModalOverlay.Visibility = Visibility.Collapsed;
 
@@ -1597,7 +1555,7 @@ namespace AstraSize
             }
         }
 
-        private void DiffExportExcel_Click(object sender, RoutedEventArgs e)
+        private async void DiffExportExcel_Click(object sender, RoutedEventArgs e)
         {
             var diffs = DiffReviewDataGrid.ItemsSource as List<SimDiffItem>;
             if (diffs == null || diffs.Count == 0) return;
@@ -1613,24 +1571,10 @@ namespace AstraSize
             {
                 try
                 {
-                    if (dialog.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var excelService = new ExcelReportService();
-                        excelService.ExportSimDiffReport(dialog.FileName, diffs);
-                        ShowToast($"📊 {Path.GetFileName(dialog.FileName)} を出力しました");
-                    }
-                    else
-                    {
-                        var sb = new StringBuilder();
-                        sb.Append('\uFEFF');
-                        sb.AppendLine("変化の種別,現行サーバー (Before),Before詳細,新環境設計 (After),After詳細,権限差分詳細");
-                        foreach (var d in diffs)
-                        {
-                            sb.AppendLine($"\"{d.DiffType}\",\"{d.SourcePath.Replace("\n", " | ")}\",\"{d.SourceDetail}\",\"{d.TargetPath}\",\"{d.TargetDetail}\",\"{d.FormattedAclChanges.Replace("\n", " | ")}\"");
-                        }
-                        File.WriteAllText(dialog.FileName, sb.ToString(), Encoding.UTF8);
-                        ShowToast($"📄 {Path.GetFileName(dialog.FileName)} を出力しました");
-                    }
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.ExportMigrationDiffAsync(dialog.FileName,
+                        diffs.Select(FolderMorpher.HostClient.MigrationDtoMapper.ToDto).ToList(), CancellationToken.None);
+                    ShowToast($"📊 {Path.GetFileName(dialog.FileName)} を出力しました");
 
                     ShellHelper.SelectInExplorer(dialog.FileName);
                 }
@@ -1656,14 +1600,17 @@ namespace AstraSize
             {
                 try
                 {
-                    var project = new FolderMorphProject
+                    var project = new FolderMorpher.Contracts.SimulationProjectDto
                     {
                         ProjectName = SimProjectNameTextBox.Text.Trim(),
                         SourceRootPath = SimSourcePathTextBox.Text.Trim(),
                         TargetRootPath = SimTargetRootTextBox.Text.Trim(),
-                        RootFolders = _simRootFolders.ToList()
+                        CreatedAt = DateTime.Now,
+                        LastModifiedAt = DateTime.Now,
+                        RootFolders = _simRootFolders.Select(FolderMorpher.HostClient.MigrationDtoMapper.ToDto).ToList()
                     };
-                    await _simService.SaveProjectAsync(project, dialog.FileName);
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.SaveSimulationProjectAsync(project, dialog.FileName, CancellationToken.None);
                     ShowToast($"プロジェクトを保存しました: {Path.GetFileName(dialog.FileName)}");
                 }
                 catch (Exception ex)
@@ -1685,7 +1632,8 @@ namespace AstraSize
             {
                 try
                 {
-                    var project = await _simService.LoadProjectAsync(dialog.FileName);
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    var project = await host.LoadSimulationProjectAsync(dialog.FileName, CancellationToken.None);
                     if (project != null)
                     {
                         SimProjectNameTextBox.Text = project.ProjectName;
@@ -1695,7 +1643,8 @@ namespace AstraSize
                         _simUndoStack.Clear();
                         UpdateUndoButtonState();
                         _simRootFolders.Clear();
-                        foreach (var root in project.RootFolders) _simRootFolders.Add(root);
+                        foreach (var root in project.RootFolders)
+                            _simRootFolders.Add(FolderMorpher.HostClient.MigrationDtoMapper.ToViewNode(root));
 
                         ShowToast($"プロジェクトを読み込みました: {Path.GetFileName(dialog.FileName)}");
                     }
@@ -1707,7 +1656,7 @@ namespace AstraSize
             }
         }
 
-        private void SimDeploySkeletonButton_Click(object sender, RoutedEventArgs e)
+        private async void SimDeploySkeletonButton_Click(object sender, RoutedEventArgs e)
         {
             var targetRoot = SimTargetRootTextBox.Text.Trim();
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
@@ -1718,17 +1667,29 @@ namespace AstraSize
                 return;
             }
 
-            // Plan-First: 実行計画 (SkeletonDeployPlan) を事前構築し、同一インスタンスをプレビュー・コミットで貫通
-            _currentSkeletonPlan = _simService.BuildDeployPlan(_simRootFolders, targetRoot, _currentTab?.RootNode);
-            DiffReviewDataGrid.ItemsSource = _currentSkeletonPlan.DiffReviews;
-            DiffSummaryStatsText.Text = isJa
-                ? $"📊 計画項目: 作成予定 {_currentSkeletonPlan.PlannedCreateCount}件 / 既存保護 {_currentSkeletonPlan.PlannedExistingCount}件 (展開先: {targetRoot})"
-                : $"📊 Planned Items: {_currentSkeletonPlan.PlannedCreateCount} to create / {_currentSkeletonPlan.PlannedExistingCount} protected (Target: {targetRoot})";
-            DiffModalOverlay.Visibility = Visibility.Visible;
+            try
+            {
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var dto = await host.BuildSkeletonDeployPlanAsync(
+                    _currentTab?.RootNode == null ? null : FolderMorpher.HostClient.StorageNodeMapper.ToTreeDto(_currentTab.RootNode),
+                    _simRootFolders.Select(FolderMorpher.HostClient.MigrationDtoMapper.ToDto).ToList(),
+                    targetRoot, CancellationToken.None);
+                _currentSkeletonPlan = FolderMorpher.HostClient.MigrationDtoMapper.ToView(dto);
+                DiffReviewDataGrid.ItemsSource = _currentSkeletonPlan.DiffReviews;
+                DiffSummaryStatsText.Text = isJa
+                    ? $"📊 計画項目: 作成予定 {_currentSkeletonPlan.PlannedCreateCount}件 / 既存保護 {_currentSkeletonPlan.PlannedExistingCount}件 (展開先: {targetRoot})"
+                    : $"📊 Planned Items: {_currentSkeletonPlan.PlannedCreateCount} to create / {_currentSkeletonPlan.PlannedExistingCount} protected (Target: {targetRoot})";
+                DiffModalOverlay.Visibility = Visibility.Visible;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"実行計画の作成に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         #region Tab 3: Migration Package & Runbook Generation
         private List<MigrationWavePlan> _currentWavePlans = new();
+        private long _wavePlanGeneration;
 
         private void SimExportScriptsButton_Click(object sender, RoutedEventArgs e)
         {
@@ -1776,13 +1737,26 @@ namespace AstraSize
             }
         }
 
-        private void RefreshWavePlanPreview()
+        private async void RefreshWavePlanPreview()
         {
             if (_simRootFolders.Count == 0) return;
 
             var options = BuildCurrentMigrationOptions();
-            var service = new MigrationPackageService();
-            _currentWavePlans = service.PlanWaves(_simRootFolders, options);
+            long generation = Interlocked.Increment(ref _wavePlanGeneration);
+            try
+            {
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var plans = await host.PlanMigrationWavesAsync(
+                    _simRootFolders.Select(FolderMorpher.HostClient.MigrationDtoMapper.ToDto).ToList(),
+                    FolderMorpher.HostClient.MigrationDtoMapper.ToDto(options), CancellationToken.None);
+                if (generation != Volatile.Read(ref _wavePlanGeneration)) return;
+                _currentWavePlans = plans.Select(FolderMorpher.HostClient.MigrationDtoMapper.ToView).ToList();
+            }
+            catch (Exception ex)
+            {
+                if (generation == Volatile.Read(ref _wavePlanGeneration)) StatusTextBlock.Text = $"波次計算エラー: {ex.Message}";
+                return;
+            }
 
             MigWavePlanDataGrid.ItemsSource = null;
             MigWavePlanDataGrid.ItemsSource = _currentWavePlans;
@@ -1898,9 +1872,14 @@ namespace AstraSize
 
             try
             {
-                var service = new MigrationPackageService();
-                var progress = new Progress<string>(msg => StatusTextBlock.Text = msg);
-                string packageDir = await service.GeneratePackageAsync(_simRootFolders, options, progress);
+                var packageJob = await FolderMorpher.HostClient.HostJobClient.RunAsync(
+                    new FolderMorpher.Contracts.HostJobRequestDto
+                    {
+                        Kind = FolderMorpher.Contracts.HostJobKind.MigrationPackage,
+                        MigrationNodes = _simRootFolders.Select(FolderMorpher.HostClient.MigrationDtoMapper.ToDto).ToList(),
+                        MigrationOptions = FolderMorpher.HostClient.MigrationDtoMapper.ToDto(options)
+                    }, null, CancellationToken.None);
+                string packageDir = packageJob.PackageDirectory ?? throw new InvalidOperationException("移行パッケージの出力先がHostから返されませんでした。");
 
                 MigrationPackageOverlay.Visibility = Visibility.Collapsed;
                 ShowToast(isJa ? "移行パッケージ一式を出力しました" : "Migration package generated successfully");
@@ -1926,7 +1905,7 @@ namespace AstraSize
         }
         #endregion
 
-        private void SimExportExcelButton_Click(object sender, RoutedEventArgs e)
+        private async void SimExportExcelButton_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new SaveFileDialog
             {
@@ -1940,18 +1919,10 @@ namespace AstraSize
             {
                 try
                 {
-                    if (dialog.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var excelService = new ExcelReportService();
-                        excelService.ExportSimulationDesignMatrix(dialog.FileName, _simRootFolders);
-                        ShowToast($"📊 {Path.GetFileName(dialog.FileName)} を出力しました");
-                    }
-                    else
-                    {
-                        var csv = _simService.ExportDesignMatrixCsv(_simRootFolders);
-                        File.WriteAllText(dialog.FileName, csv, Encoding.UTF8);
-                        ShowToast($"📄 {Path.GetFileName(dialog.FileName)} を出力しました");
-                    }
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.ExportSimulationMatrixAsync(dialog.FileName,
+                        _simRootFolders.Select(FolderMorpher.HostClient.MigrationDtoMapper.ToDto).ToList(), CancellationToken.None);
+                    ShowToast($"📊 {Path.GetFileName(dialog.FileName)} を出力しました");
 
                     ShellHelper.SelectInExplorer(dialog.FileName);
                 }

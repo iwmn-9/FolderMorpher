@@ -29,15 +29,23 @@ jobs:
 
       - name: "Publish Self-Contained Single EXE"
         run: |
-          dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o ./dist
-          Copy-Item ./dist/FolderMorpher.exe -Destination ./dist/FolderCleaner.exe
+          dotnet publish ./FolderMorpher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o ./dist
+          $files = @(Get-ChildItem ./dist -File)
+          if ($files.Count -ne 1 -or $files[0].Name -ne 'FolderMorpher.exe') { throw "Expected only FolderMorpher.exe in dist: $($files.Name -join ', ')" }
+
+      - name: "Verify published EXE over real IPC"
+        run: |
+          $stdout = Join-Path $env:RUNNER_TEMP 'foldermorpher-ipc-stdout.txt'
+          $stderr = Join-Path $env:RUNNER_TEMP 'foldermorpher-ipc-stderr.txt'
+          $process = Start-Process -FilePath (Resolve-Path ./dist/FolderMorpher.exe) -ArgumentList '--test-ipc' -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          Get-Content $stdout
+          if ($process.ExitCode -ne 0) { Get-Content $stderr; throw "IPC integration test failed: exit $($process.ExitCode)" }
 
       - name: "Create GitHub Release"
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ./dist/FolderMorpher.exe
-            ./dist/FolderCleaner.exe
           name: "FolderMorpher ${{ github.ref_name }}"
           draft: false
           prerelease: false

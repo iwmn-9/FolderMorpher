@@ -25,6 +25,8 @@ namespace AstraSize
     public partial class MainWindow : Window
     {
         #region Audit & Hygiene Tab
+        private Guid _lastAuditReportId;
+        private long _auditPreviewGeneration;
         private void AuditBrowseButton_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new Microsoft.Win32.OpenFolderDialog
@@ -40,7 +42,7 @@ namespace AstraSize
         private async void AuditStartButton_Click(object sender, RoutedEventArgs e)
         {
             var target = AuditPathTextBox.Text.Trim();
-            if (string.IsNullOrWhiteSpace(target) || !Directory.Exists(target))
+            if (string.IsNullOrWhiteSpace(target))
             {
                 MessageBox.Show("有効な監査対象ディレクトリを入力してください。", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -93,12 +95,32 @@ namespace AstraSize
                 var auditReq = new FolderMorpher.Contracts.AuditScanRequestDto
                 {
                     TargetPath = options.TargetDirectory,
-                    BandwidthLimit = options.BandwidthLimit,
+                    CheckDuplicates = options.CheckDuplicates,
+                    CheckDormant = options.CheckDormant,
+                    CheckVersionFamilies = options.CheckVersionFamilies,
+                    CheckExtractedArchives = options.CheckExtractedArchives,
+                    CheckGraveyardTrees = options.CheckGraveyardTrees,
+                    CheckPathLimits = options.CheckPathLimits,
+                    DormantYearsThreshold = options.DormantYearsThreshold,
+                    MinFileSizeBytes = options.MinFileSizeBytes,
+                    BandwidthLimit = (int)options.BandwidthLimit,
                     IgnoredPaths = options.ExcludeFolderPatterns
                 };
-                var report = await host.RunAuditScanAsync(auditReq, hostProgress, _auditCts.Token);
-                var summary = report.Summary;
-                var items = report.Items;
+                var auditJob = await FolderMorpher.HostClient.HostJobClient.RunAsync(
+                    new FolderMorpher.Contracts.HostJobRequestDto
+                    {
+                        Kind = FolderMorpher.Contracts.HostJobKind.AuditScan,
+                        AuditRequest = auditReq
+                    },
+                    status =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(status.ProgressText)) ((IProgress<string>)hostProgress).Report(status.ProgressText);
+                    },
+                    _auditCts.Token);
+                var report = auditJob.AuditReport ?? throw new InvalidOperationException("監査結果がHostから返されませんでした。");
+                _lastAuditReportId = report.ReportId;
+                var summary = FolderMorpher.HostClient.AuditDtoMapper.ToViewSummary(report.Summary);
+                var items = report.Items.Select(FolderMorpher.HostClient.AuditDtoMapper.ToViewItem).ToList();
                 _lastAuditSummary = summary;
                 _lastAuditItems = items;
                 _auditSortProperty = "Default";
@@ -109,9 +131,6 @@ namespace AstraSize
                 }
                 ApplyAuditFilters();
                 UpdateLiveSelectedReduction();
-
-                // Sol提唱 (ADR 92): 一度計算したSHA-256ハッシュをTreeCacheへ書き戻し永続化（知識の再利用）
-                _ = _historyService.UpdateTreeCacheSha256Async(options.TargetDirectory, items);
 
                 // Update KPI Bar
                 if (AuditKpiTotalFiles != null)
@@ -147,7 +166,7 @@ namespace AstraSize
             }
         }
 
-        private void AuditExportExcelButton_Click(object sender, RoutedEventArgs e)
+        private async void AuditExportExcelButton_Click(object sender, RoutedEventArgs e)
         {
             if (_lastAuditItems == null || _lastAuditItems.Count == 0)
             {
@@ -167,13 +186,9 @@ namespace AstraSize
             {
                 try
                 {
-                    _excelService.GenerateComprehensiveReport(
-                        dialog.FileName,
-                        AuditPathTextBox.Text.Trim(),
-                        _lastAuditSummary,
-                        _lastAuditItems,
-                        _lastMediaSummary,
-                        _lastMediaImages.Concat(_lastMediaVideos).ToList());
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.ExportExcelReportAsync(BuildReportExportRequest(
+                        dialog.FileName, AuditPathTextBox.Text.Trim(), _lastMediaImages.Concat(_lastMediaVideos)), CancellationToken.None);
 
                     ShowToast("Excelレポートを出力しました");
                     ShellHelper.SelectInExplorer(dialog.FileName);
@@ -185,7 +200,7 @@ namespace AstraSize
             }
         }
 
-        private void AuditExportCsvButton_Click(object sender, RoutedEventArgs e)
+        private async void AuditExportCsvButton_Click(object sender, RoutedEventArgs e)
         {
             if (_lastAuditItems == null || _lastAuditItems.Count == 0)
             {
@@ -204,7 +219,9 @@ namespace AstraSize
             {
                 try
                 {
-                    _auditService.ExportAuditCsv(dialog.FileName, _lastAuditItems);
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.ExportAuditCsvAsync(dialog.FileName,
+                        _lastAuditItems.Select(FolderMorpher.HostClient.AuditDtoMapper.ToDto).ToList(), CancellationToken.None);
                     ShowToast("CSV台帳を出力しました");
                     ShellHelper.SelectInExplorer(dialog.FileName);
                 }
@@ -543,16 +560,18 @@ namespace AstraSize
 
         private bool _isAuditBatchUpdating = false;
 
-        private void UpdateLiveSelectedReduction()
+        private async void UpdateLiveSelectedReduction()
         {
             if (AuditLiveSelectedReductionText == null) return;
             if (_isAuditBatchUpdating) return;
 
             if (!Dispatcher.CheckAccess())
             {
-                Dispatcher.BeginInvoke(new Action(UpdateLiveSelectedReduction));
+                _ = Dispatcher.BeginInvoke(new Action(UpdateLiveSelectedReduction));
                 return;
             }
+
+            long generation = Interlocked.Increment(ref _auditPreviewGeneration);
 
             if (_lastAuditItems == null || _lastAuditItems.Count == 0)
             {
@@ -560,15 +579,22 @@ namespace AstraSize
                 return;
             }
 
-            // Medium 1: 物理ファイル単位の削除実行計画サービス（AuditCleanupService.BuildPlan）を正本として再利用
-            // 全監査行横断で原本候補パス（聖域）を特定し、同一FullPathの重複・休眠が混在していても原本候補を確実に除外
-            var plans = AuditCleanupService.BuildPlan(_lastAuditItems);
-            var validPlans = plans.Where(p => !p.IsOriginalCandidate).ToList();
-
-            long totalBytes = validPlans.Sum(x => x.Size);
-            int count = validPlans.Count;
-
-            AuditLiveSelectedReductionText.Text = $"{FileItemNode.FormatBytes(totalBytes)} ({count:N0} 件)";
+            try
+            {
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var preview = await host.PrepareAuditCleanupAsync(new FolderMorpher.Contracts.AuditCleanupPrepareRequestDto
+                {
+                    ReportId = _lastAuditReportId,
+                    SelectedAuditIds = _lastAuditItems.Where(item => item.IsChecked).Select(item => item.AuditId).ToList(),
+                    RetainForCommit = false
+                }, CancellationToken.None);
+                if (generation != Volatile.Read(ref _auditPreviewGeneration)) return;
+                AuditLiveSelectedReductionText.Text = $"{FileItemNode.FormatBytes(preview.SafeSizeBytes)} ({preview.SafeFileCount:N0} 件)";
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Audit reduction preview failed: {ex}");
+            }
         }
 
         private async void AuditDeleteSelectedButton_Click(object sender, RoutedEventArgs e)
@@ -579,32 +605,40 @@ namespace AstraSize
                 return;
             }
 
-            // 1. 全監査アイテムから物理ファイル（FullPath）単位の実行計画を作成（正本の整線）
-            var plans = AuditCleanupService.BuildPlan(_lastAuditItems);
-            if (plans.Count == 0)
+            FolderMorpher.Contracts.AuditCleanupPreviewDto preview;
+            FolderMorpher.Contracts.IFolderMorpherHostService host;
+            try
+            {
+                host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                preview = await host.PrepareAuditCleanupAsync(new FolderMorpher.Contracts.AuditCleanupPrepareRequestDto
+                {
+                    ReportId = _lastAuditReportId,
+                    SelectedAuditIds = _lastAuditItems.Where(item => item.IsChecked).Select(item => item.AuditId).ToList(),
+                    RetainForCommit = true
+                }, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"削除計画の確認に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            if (preview.SafeFileCount == 0 && preview.ProtectedOriginalPaths.Count == 0)
             {
                 MessageBox.Show("削除するファイルが選択されていません。チェックボックスでファイルを選択してから実行してください。", "案内", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
-            // 2. 原本候補保護の安全ガード（原本候補は聖域として無条件で保護・自動除外）
-            var originalPlans = plans.Where(p => p.IsOriginalCandidate).ToList();
-            if (originalPlans.Count > 0)
+            var protectedPaths = new HashSet<string>(preview.ProtectedOriginalPaths, StringComparer.OrdinalIgnoreCase);
+            if (protectedPaths.Count > 0)
             {
-                // 原本候補の全関連行（Dormant/Duplicate問わず）のチェックを強制解除
-                foreach (var op in originalPlans)
-                {
-                    foreach (var ai in op.AssociatedItems)
-                    {
-                        ai.IsChecked = false;
-                    }
-                }
-                plans.RemoveAll(p => p.IsOriginalCandidate);
+                foreach (var item in _lastAuditItems.Where(item => protectedPaths.Contains(item.FullPath)))
+                    item.IsChecked = false;
 
-                if (plans.Count == 0)
+                if (preview.SafeFileCount == 0)
                 {
                     MessageBox.Show(
-                        $"選択された項目（{originalPlans.Count:N0} 件）はすべて重複グループの【原本候補】です。\n\n" +
+                        $"選択された項目（{protectedPaths.Count:N0} 件）はすべて重複グループの【原本候補】です。\n\n" +
                         "原本全滅事故を防止するため、原本候補ファイルはツール上から削除できません。\n" +
                         "削除処理を中止しました。",
                         "原本候補の保護",
@@ -614,19 +648,19 @@ namespace AstraSize
                 }
 
                 MessageBox.Show(
-                    $"⚠️ 選択項目の中に重複グループの【原本候補】が {originalPlans.Count:N0} 件含まれていました。\n\n" +
+                    $"⚠️ 選択項目の中に重複グループの【原本候補】が {protectedPaths.Count:N0} 件含まれていました。\n\n" +
                     "安全保護規則に従い、原本候補は自動的に保護・除外されました。\n" +
-                    $"残りの複製・休眠ファイル（{plans.Count:N0} 件）に対して削除確認へ進みます。",
+                    $"残りの複製・休眠ファイル（{preview.SafeFileCount:N0} 件）に対して削除確認へ進みます。",
                     "原本候補の保護（自動除外）",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
             }
 
             // 3. 完全削除の最終確認ダイアログ（物理ファイル単位で正確な件数・容量を表示）
-            long totalBytes = plans.Sum(x => x.Size);
+            long totalBytes = preview.SafeSizeBytes;
             string sizeFormatted = FileItemNode.FormatBytes(totalBytes);
             var confirm = MessageBox.Show(
-                $"選択された {plans.Count:N0} 件（合計 {sizeFormatted}）のファイルを【完全に削除】します。\n\n" +
+                $"選択された {preview.SafeFileCount:N0} 件（合計 {sizeFormatted}）のファイルを【完全に削除】します。\n\n" +
                 "⚠️ 注意:\n" +
                 "・ファイルはごみ箱に入らず完全に削除され、アプリ側から復元することはできません。\n" +
                 "・本当に削除を実行してもよろしいですか？",
@@ -642,17 +676,29 @@ namespace AstraSize
             GlobalProgressBar.Visibility = Visibility.Visible;
             AuditStatusText.Text = "ファイル削除中...";
 
-            var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
-            var result = await host.ExecuteAuditCleanupAsync(plans, CancellationToken.None);
+            FolderMorpher.Contracts.AuditCleanupResultDto result;
+            try
+            {
+                result = await host.CommitAuditCleanupAsync(preview.PlanId, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"削除計画の実行に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            finally
+            {
+                GlobalProgressBar.Visibility = Visibility.Collapsed;
+                AuditDeleteSelectedButton.IsEnabled = true;
+                AuditStartButton.IsEnabled = true;
+            }
 
             // 5. データ・UIの最新化（削除されたFullPathを持つ全関連AuditItemを一括除去）
-            _lastAuditItems.RemoveAll(x => result.DeletedPaths.Contains(x.FullPath));
+            var deletedPaths = result.DeletedPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _lastAuditItems.RemoveAll(x => deletedPaths.Contains(x.FullPath));
             ApplyAuditFilters();
             UpdateAuditKpiAfterDeletion();
 
-            GlobalProgressBar.Visibility = Visibility.Collapsed;
-            AuditDeleteSelectedButton.IsEnabled = true;
-            AuditStartButton.IsEnabled = true;
             AuditStatusText.Text = $"削除完了: {result.SuccessCount:N0} 件削除 ({FileItemNode.FormatBytes(result.FreedBytes)} 削減)";
 
             if (result.Errors.Count > 0)

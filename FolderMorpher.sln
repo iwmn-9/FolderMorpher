@@ -9,6 +9,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FolderMorpher", "FolderMorp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FolderMorpher.Host", "FolderMorpher.Host\FolderMorpher.Host.csproj", "{13B2F2F8-3713-4FBD-9851-74C6A691E8C3}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FolderMorpher.Contracts", "FolderMorpher.Contracts\FolderMorpher.Contracts.csproj", "{AF5D9A7C-F226-4D7B-9DCE-9AECEF1DD5B8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FolderMorpher.UI", "FolderMorpher.UI\FolderMorpher.UI.csproj", "{EF389712-6B60-4EB8-AA89-43C95A224CAE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,5 +34,13 @@ Global
 		{13B2F2F8-3713-4FBD-9851-74C6A691E8C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{13B2F2F8-3713-4FBD-9851-74C6A691E8C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{13B2F2F8-3713-4FBD-9851-74C6A691E8C3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AF5D9A7C-F226-4D7B-9DCE-9AECEF1DD5B8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AF5D9A7C-F226-4D7B-9DCE-9AECEF1DD5B8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AF5D9A7C-F226-4D7B-9DCE-9AECEF1DD5B8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AF5D9A7C-F226-4D7B-9DCE-9AECEF1DD5B8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EF389712-6B60-4EB8-AA89-43C95A224CAE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EF389712-6B60-4EB8-AA89-43C95A224CAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EF389712-6B60-4EB8-AA89-43C95A224CAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EF389712-6B60-4EB8-AA89-43C95A224CAE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

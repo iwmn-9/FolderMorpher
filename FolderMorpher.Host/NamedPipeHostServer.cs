@@ -4,6 +4,7 @@ using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 using FolderMorpher.Contracts;
 using StreamJsonRpc;
 
@@ -15,7 +16,7 @@ namespace FolderMorpher.Host
     /// </summary>
     public class NamedPipeHostServer
     {
-        public static string PipeName => $"FolderMorpher_IPC_{Environment.UserName}";
+        public static string PipeName => IpcEndpoint.PipeName;
 
         private readonly HostService _hostService;
         private readonly CancellationTokenSource _cts = new();
@@ -47,9 +48,16 @@ namespace FolderMorpher.Host
                         PipeDirection.InOut,
                         NamedPipeServerStream.MaxAllowedServerInstances,
                         PipeTransmissionMode.Byte,
-                        PipeOptions.Asynchronous);
+                        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
                     await pipeServer.WaitForConnectionAsync(ct);
+
+                    if (!GetNamedPipeClientSessionId(pipeServer.SafePipeHandle, out uint clientSessionId) ||
+                        clientSessionId != (uint)IpcEndpoint.SessionId)
+                    {
+                        pipeServer.Dispose();
+                        continue;
+                    }
 
                     // 接続が来たら、非同期にハンドリングを開始し、リスナーは次の接続待機へ即座に戻る
                     _ = HandleClientConnectionAsync(pipeServer, ct);
@@ -61,10 +69,16 @@ namespace FolderMorpher.Host
                 catch (Exception)
                 {
                     // リスナーの予期せぬ例外は短時間待機して自己回復
-                    await Task.Delay(500, ct);
+                    try { await Task.Delay(500, ct); }
+                    catch (OperationCanceledException) { break; }
                 }
             }
         }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetNamedPipeClientSessionId(
+            Microsoft.Win32.SafeHandles.SafePipeHandle pipe,
+            out uint clientSessionId);
 
         private async Task HandleClientConnectionAsync(NamedPipeServerStream pipeStream, CancellationToken ct)
         {

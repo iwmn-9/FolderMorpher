@@ -23,6 +23,7 @@ namespace FolderMorpher.Models
 
     public class AuditItem : System.ComponentModel.INotifyPropertyChanged
     {
+        public Guid AuditId { get; set; }
         public static Action<AuditItem>? GlobalCheckedChanged;
 
         /// <summary>

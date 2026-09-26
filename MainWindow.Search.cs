@@ -13,7 +13,6 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using AstraSize.Models;
 using AstraSize.Services;
-using ClosedXML.Excel;
 using FolderMorpher.Models;
 using FolderMorpher.Services;
 using Microsoft.Win32;
@@ -128,6 +127,32 @@ namespace AstraSize
             }
         }
 
+        private static async Task<List<FolderMorpher.Contracts.SearchResultDto>> RunLiveSearchJobAsync(
+            string targetFolder,
+            SearchQuery query,
+            IProgress<FolderMorpher.Contracts.SearchProgressDto> progress,
+            CancellationToken ct)
+        {
+            var started = Stopwatch.StartNew();
+            var status = await FolderMorpher.HostClient.HostJobClient.RunAsync(
+                new FolderMorpher.Contracts.HostJobRequestDto
+                {
+                    Kind = FolderMorpher.Contracts.HostJobKind.Search,
+                    TargetPath = targetFolder,
+                    SearchQuery = FolderMorpher.HostClient.SearchDtoMapper.ToDto(query)
+                },
+                job => progress.Report(new FolderMorpher.Contracts.SearchProgressDto
+                {
+                    CurrentPath = job.ProgressText,
+                    HitCount = job.HitCount,
+                    TotalHitBytes = job.TotalHitBytes,
+                    Elapsed = started.Elapsed,
+                    IsCompleted = job.State == FolderMorpher.Contracts.HostJobState.Completed
+                }),
+                ct);
+            return status.SearchResults ?? throw new InvalidOperationException("検索結果がHostから返されませんでした。");
+        }
+
         #endregion
 
         #region Search Execution Core (Smart Auto-Routing)
@@ -190,7 +215,7 @@ namespace AstraSize
 
             SetSearchLoadingState(true);
 
-            var progress = new Progress<SearchProgressReport>(r =>
+            var progress = new Progress<FolderMorpher.Contracts.SearchProgressDto>(r =>
             {
                 if (currentGen != Volatile.Read(ref _searchGeneration)) return;
                 UpdateSearchKpi(r.HitCount, r.TotalHitBytes, r.Elapsed);
@@ -262,12 +287,8 @@ namespace AstraSize
                 {
                     try
                     {
-                        var cachedRoot = await StorageHistoryService.Instance.LoadTreeCacheAsync(targetFolder);
-                        if (cachedRoot != null)
-                        {
-                            scopedRoots.Add(cachedRoot);
-                            hasScannedTree = true;
-                        }
+                        var cacheHost = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(ct);
+                        hasScannedTree = await cacheHost.HasCachedTreeAsync(targetFolder);
                     }
                     catch { }
                 }
@@ -285,7 +306,9 @@ namespace AstraSize
                         nameOnlyQuery.SearchContentMode = false;
                         nameOnlyQuery.ContentKeyword = string.Empty;
 
-                        treeResults = await host.SearchInMemoryAsync(targetFolder, nameOnlyQuery, null, ct);
+                        treeResults = (await host.SearchInMemoryAsync(targetFolder,
+                            FolderMorpher.HostClient.SearchDtoMapper.ToDto(nameOnlyQuery), null, ct))
+                            .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                         if (currentGen == Volatile.Read(ref _searchGeneration))
                         {
                             _allSearchResults = treeResults.ToList();
@@ -305,7 +328,8 @@ namespace AstraSize
                     if (query.SearchContentMode && hasTarget)
                     {
                         // Step 2: 本文検索がONの場合は、ライブ直接走査をバックグラウンド実行して本文ヒットを合流！
-                        var liveHits = await host.SearchAsync(targetFolder, query, progress, ct);
+                        var liveHits = (await RunLiveSearchJobAsync(targetFolder, query, progress, ct))
+                            .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                         if (currentGen == Volatile.Read(ref _searchGeneration))
                         {
                             // treeResults と liveHits をマージ（同一パスならスニペットありを優先）
@@ -359,7 +383,8 @@ namespace AstraSize
                             : (query.SearchContentMode ? "🔍 Live scanning (instant name hits & content search)..." : "🔍 Running live direct search...");
                     }
 
-                    var results = await host.SearchAsync(targetFolder, query, progress, ct);
+                    var results = (await RunLiveSearchJobAsync(targetFolder, query, progress, ct))
+                        .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                     if (currentGen == Volatile.Read(ref _searchGeneration))
                     {
                         _allSearchResults = results;
@@ -523,7 +548,7 @@ namespace AstraSize
 
         {
             var item = GetSelectedSearchItem();
-            if (item != null && (File.Exists(item.FullPath) || Directory.Exists(item.FullPath)))
+            if (item != null)
             {
                 try
                 {
@@ -583,7 +608,7 @@ namespace AstraSize
             }
         }
 
-        private void SearchContextMenu_Simulation_Click(object sender, RoutedEventArgs e)
+        private async void SearchContextMenu_Simulation_Click(object sender, RoutedEventArgs e)
         {
             var item = GetSelectedSearchItem();
             if (item == null) return;
@@ -607,10 +632,20 @@ namespace AstraSize
             }
 
             SimFolderNode newNode;
-            if (matchedNode != null && _simService != null)
+            if (matchedNode != null)
             {
-                // 正本: スキャン済みノードから正確な配下容量・実測ファイル数・ACLを一括継承
-                newNode = _simService.ConvertToSimNode(matchedNode);
+                try
+                {
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    var dto = await host.ConvertStorageToMigrationAsync(
+                        FolderMorpher.HostClient.StorageNodeMapper.ToTreeDto(matchedNode), CancellationToken.None);
+                    newNode = FolderMorpher.HostClient.MigrationDtoMapper.ToViewNode(dto);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"移行ツリーへの追加に失敗しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
             }
             else
             {
@@ -671,7 +706,7 @@ namespace AstraSize
 
         #region Export (Excel / CSV)
 
-        private void SearchExportExcelButton_Click(object sender, RoutedEventArgs e)
+        private async void SearchExportExcelButton_Click(object sender, RoutedEventArgs e)
         {
             if (_searchResults.Count == 0)
             {
@@ -694,7 +729,9 @@ namespace AstraSize
             {
                 try
                 {
-                    ExportSearchResultsToExcel(dlg.FileName, _searchResults.ToList());
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.ExportSearchResultsAsync(dlg.FileName,
+                        _searchResults.Select(FolderMorpher.HostClient.SearchDtoMapper.ToDto).ToList(), CancellationToken.None);
                     bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                     ShowToast(isJa ? "Excel台帳を出力しました" : "Exported Excel report");
                 }
@@ -705,7 +742,7 @@ namespace AstraSize
             }
         }
 
-        private void SearchExportCsvButton_Click(object sender, RoutedEventArgs e)
+        private async void SearchExportCsvButton_Click(object sender, RoutedEventArgs e)
         {
             if (_searchResults.Count == 0)
             {
@@ -728,7 +765,9 @@ namespace AstraSize
             {
                 try
                 {
-                    ExportSearchResultsToCsv(dlg.FileName, _searchResults.ToList());
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.ExportSearchResultsAsync(dlg.FileName,
+                        _searchResults.Select(FolderMorpher.HostClient.SearchDtoMapper.ToDto).ToList(), CancellationToken.None);
                     bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                     ShowToast(isJa ? "CSVを出力しました" : "Exported CSV");
                 }
@@ -737,76 +776,6 @@ namespace AstraSize
                     MessageBox.Show("CSV出力中にエラーが発生しました: " + ex.Message);
                 }
             }
-        }
-
-        private static void ExportSearchResultsToExcel(string filePath, List<SearchResultItem> items)
-        {
-            using var wb = new XLWorkbook();
-            var ws = wb.Worksheets.Add("Search Results");
-
-            // Header styling
-            string[] headers = { "種別", "ファイル/フォルダ名", "サイズ (Bytes)", "サイズ (表示)", "更新日時", "拡張子", "パス長", "一致理由 / スニペット", "完全パス" };
-            for (int c = 0; c < headers.Length; c++)
-            {
-                ws.Cell(1, c + 1).Value = headers[c];
-                ws.Cell(1, c + 1).Style.Font.Bold = true;
-                ws.Cell(1, c + 1).Style.Fill.BackgroundColor = XLColor.FromArgb(37, 99, 235);
-                ws.Cell(1, c + 1).Style.Font.FontColor = XLColor.White;
-            }
-
-            int row = 2;
-            foreach (var item in items)
-            {
-                ws.Cell(row, 1).Value = item.IsDirectory ? "フォルダ" : "ファイル";
-                ws.Cell(row, 2).Value = item.Name;
-                ws.Cell(row, 3).Value = item.SizeBytes;
-                ws.Cell(row, 4).Value = item.FormattedSize;
-                ws.Cell(row, 5).Value = item.FormattedDate;
-                ws.Cell(row, 6).Value = item.Extension;
-                ws.Cell(row, 7).Value = item.PathLength;
-                ws.Cell(row, 8).Value = item.DisplaySnippetOrReason;
-                ws.Cell(row, 9).Value = item.FullPath;
-
-                if (item.IsPathLengthRisk)
-                {
-                    ws.Cell(row, 7).Style.Fill.BackgroundColor = XLColor.FromArgb(254, 226, 226);
-                    ws.Cell(row, 7).Style.Font.FontColor = XLColor.FromArgb(185, 28, 28);
-                }
-
-                row++;
-            }
-
-            ws.Columns().AdjustToContents();
-            wb.SaveAs(filePath);
-        }
-
-        private static void ExportSearchResultsToCsv(string filePath, List<SearchResultItem> items)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("Type,Name,SizeBytes,FormattedSize,LastWriteTime,Extension,PathLength,ReasonOrSnippet,FullPath");
-
-            foreach (var item in items)
-            {
-                string type = item.IsDirectory ? "Folder" : "File";
-                string name = EscapeCsv(item.Name);
-                string reason = EscapeCsv(item.DisplaySnippetOrReason);
-                string path = EscapeCsv(item.FullPath);
-
-                sb.AppendLine($"{type},{name},{item.SizeBytes},{item.FormattedSize},{item.FormattedDate},{item.Extension},{item.PathLength},{reason},{path}");
-            }
-
-            // BOM付き UTF-8
-            File.WriteAllText(filePath, sb.ToString(), new UTF8Encoding(true));
-        }
-
-        private static string EscapeCsv(string text)
-        {
-            if (string.IsNullOrEmpty(text)) return "\"\"";
-            if (text.Contains(',') || text.Contains('"') || text.Contains('\n') || text.Contains('\r'))
-            {
-                return "\"" + text.Replace("\"", "\"\"") + "\"";
-            }
-            return "\"" + text + "\"";
         }
 
         #endregion

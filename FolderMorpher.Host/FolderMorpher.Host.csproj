@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Library</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -14,10 +14,12 @@
 
   <ItemGroup>
     <PackageReference Include="StreamJsonRpc" Version="2.25.29" />
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\FolderMorpher.Core\FolderMorpher.Core.csproj" />
+    <ProjectReference Include="..\FolderMorpher.Contracts\FolderMorpher.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

@@ -27,12 +27,6 @@ namespace AstraSize.Views
     /// </summary>
     public partial class LiveAclStudio : UserControl
     {
-        // 依存サービス
-        private AclService? _aclService;
-        private ActiveDirectoryService? _adService;
-        private EffectiveAccessService? _effectiveAccessService;
-        private readonly ExcelReportService _excelService = new();
-
         // 外部連携イベント
         public event Action<string>? ToastRequested;
         public event Action<SimAclEntry, string, string, Action>? EditSecurityRequested;
@@ -67,7 +61,7 @@ namespace AstraSize.Views
 
         // Dry-Run 差分プレビュー状態
         private LiveAclPanelModel? _pendingDiffPanel;
-        private AclChangePlan? _currentChangePlan;
+        private FolderMorpher.Contracts.AclChangePreviewDto? _currentChangePlan;
         private readonly ObservableCollection<LiveAclDiffItem> _diffItems = new();
 
         public string CurrentPath => LiveAclPathTextBox.Text;
@@ -98,23 +92,27 @@ namespace AstraSize.Views
             UpdateLiveAclPanelsBanner();
         }
 
-        public void InitializeServices(AclService aclService, ActiveDirectoryService adService, EffectiveAccessService effectiveAccessService)
+        public void InitializeServices()
         {
-            _aclService = aclService;
-            _adService = adService;
-            _effectiveAccessService = effectiveAccessService;
             UpdateDomainBadge();
             StartAdSyncTimer();
             _ = CheckAdChangesAsync(forceRefresh: false);
         }
 
-        public void UpdateDomainBadge()
+        public async void UpdateDomainBadge()
         {
-            if (_adService == null || LiveAclDomainStatusText == null || LiveAclDomainStatusBadge == null) return;
+            if (LiveAclDomainStatusText == null || LiveAclDomainStatusBadge == null) return;
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-            if (_adService.IsDomainJoined)
+            FolderMorpher.Contracts.DirectoryStatusDto status;
+            try
             {
-                LiveAclDomainStatusText.Text = $"🟢 {_adService.CurrentDomainName.ToUpperInvariant()}";
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                status = await host.GetDirectoryStatusAsync();
+            }
+            catch { status = new FolderMorpher.Contracts.DirectoryStatusDto(); }
+            if (status.IsDomainJoined)
+            {
+                LiveAclDomainStatusText.Text = $"🟢 {status.CurrentDomainName.ToUpperInvariant()}";
                 LiveAclDomainStatusBadge.Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#DCFCE7")!;
                 LiveAclDomainStatusText.Foreground = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString("#15803D")!;
             }
@@ -142,7 +140,7 @@ namespace AstraSize.Views
             if (string.IsNullOrWhiteSpace(path)) return;
             LiveAclPathTextBox.Text = path;
             LoadLiveAclFolderTree(path);
-            if (_liveAclPanels.Count == 0 && Directory.Exists(path))
+            if (_liveAclPanels.Count == 0)
             {
                 AddLiveAclPanel(path);
             }
@@ -153,10 +151,7 @@ namespace AstraSize.Views
             if (string.IsNullOrWhiteSpace(path)) return;
             LiveAclPathTextBox.Text = path;
             LoadLiveAclFolderTree(path);
-            if (Directory.Exists(path))
-            {
-                AddLiveAclPanel(path);
-            }
+            AddLiveAclPanel(path);
         }
 
         private void ShowToast(string message)
@@ -253,7 +248,7 @@ namespace AstraSize.Views
             if (!string.IsNullOrWhiteSpace(path))
             {
                 LoadLiveAclFolderTree(path);
-                if (_liveAclPanels.Count == 0 && Directory.Exists(path))
+                if (_liveAclPanels.Count == 0)
                 {
                     AddLiveAclPanel(path);
                 }
@@ -268,7 +263,7 @@ namespace AstraSize.Views
                 if (!string.IsNullOrWhiteSpace(path))
                 {
                     LoadLiveAclFolderTree(path);
-                    if (_liveAclPanels.Count == 0 && Directory.Exists(path))
+                    if (_liveAclPanels.Count == 0)
                     {
                         AddLiveAclPanel(path);
                     }
@@ -276,27 +271,15 @@ namespace AstraSize.Views
             }
         }
 
-        private void LoadLiveAclFolderTree(string rootPath)
+        private async void LoadLiveAclFolderTree(string rootPath)
         {
-            if (!Directory.Exists(rootPath))
-            {
-                MessageBox.Show($"指定フォルダが存在しません:\n{rootPath}", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
             try
             {
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var dto = await host.LoadAclFolderTreeAsync(rootPath, 2, CancellationToken.None);
                 _liveAclFolderTreeRoots.Clear();
-                var rootDir = new DirectoryInfo(rootPath);
-                var rootNode = new FileItemNode
-                {
-                    Name = rootDir.Name.Length > 0 ? rootDir.Name : rootDir.FullName,
-                    FullPath = rootDir.FullName,
-                    IsDirectory = true,
-                    IsExpanded = true
-                };
-
-                PopulateFolderTreeChildren(rootNode, maxDepth: 2);
+                var rootNode = FolderMorpher.HostClient.StorageNodeMapper.ToViewNode(dto);
+                rootNode.IsExpanded = true;
                 _liveAclFolderTreeRoots.Add(rootNode);
                 ShowToast($"📁 フォルダツリーを展開しました: {rootNode.Name}");
             }
@@ -304,32 +287,6 @@ namespace AstraSize.Views
             {
                 MessageBox.Show($"ツリー読み込みエラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             }
-        }
-
-        private void PopulateFolderTreeChildren(FileItemNode parentNode, int maxDepth, int currentDepth = 0)
-        {
-            if (currentDepth >= maxDepth) return;
-            try
-            {
-                var dir = new DirectoryInfo(parentNode.FullPath);
-                foreach (var subDir in dir.EnumerateDirectories())
-                {
-                    if ((subDir.Attributes & FileAttributes.Hidden) != 0 || (subDir.Attributes & FileAttributes.System) != 0)
-                        continue;
-
-                    var childNode = new FileItemNode
-                    {
-                        Name = subDir.Name,
-                        FullPath = subDir.FullName,
-                        IsDirectory = true
-                    };
-
-                    PopulateFolderTreeChildren(childNode, maxDepth, currentDepth + 1);
-                    parentNode.Children.Add(childNode);
-                }
-            }
-            catch (UnauthorizedAccessException) { /* アクセス拒否は安全にスキップ */ }
-            catch (Exception) { }
         }
 
         private void LiveAclFolderTreeView_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -412,12 +369,12 @@ namespace AstraSize.Views
             {
                 parentPath = selectedNode.FullPath;
             }
-            else if (!string.IsNullOrWhiteSpace(LiveAclPathTextBox.Text) && Directory.Exists(LiveAclPathTextBox.Text))
+            else if (!string.IsNullOrWhiteSpace(LiveAclPathTextBox.Text))
             {
                 parentPath = LiveAclPathTextBox.Text;
             }
 
-            if (string.IsNullOrWhiteSpace(parentPath) || !Directory.Exists(parentPath))
+            if (string.IsNullOrWhiteSpace(parentPath))
             {
                 ShowToast("⚠️ 新規フォルダーの作成先（親フォルダー）が存在しません。先にフォルダーを参照または展開してください。");
                 return;
@@ -449,7 +406,7 @@ namespace AstraSize.Views
             }
         }
 
-        private void NewFolderModalCreate_Click(object sender, RoutedEventArgs e)
+        private async void NewFolderModalCreate_Click(object sender, RoutedEventArgs e)
         {
             string folderName = NewFolderNameTextBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(folderName))
@@ -467,17 +424,14 @@ namespace AstraSize.Views
                 return;
             }
 
-            string newPath = Path.Combine(_targetParentFolderForNewFolder, folderName);
-            if (Directory.Exists(newPath))
-            {
-                NewFolderModalErrorText.Text = "同名のフォルダーが既に存在します。";
-                NewFolderModalErrorText.Visibility = Visibility.Visible;
-                return;
-            }
-
             try
             {
-                Directory.CreateDirectory(newPath);
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var plan = await host.PrepareFolderCreationAsync(_targetParentFolderForNewFolder, folderName, CancellationToken.None);
+                if (MessageBox.Show($"次のフォルダーを作成しますか？\n{plan.FullPath}", "作成内容の確認",
+                        MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                    return;
+                var newPath = await host.CommitFolderCreationAsync(plan.PlanId, CancellationToken.None);
                 NewFolderModalOverlay.Visibility = Visibility.Collapsed;
 
                 // 親ノードの子リストに新しいノードを追加
@@ -566,14 +520,8 @@ namespace AstraSize.Views
             }
         }
 
-        private void AddLiveAclPanel(string path)
+        private async void AddLiveAclPanel(string path)
         {
-            if (!Directory.Exists(path))
-            {
-                MessageBox.Show($"フォルダが存在しません:\n{path}", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
             var existing = _liveAclPanels.FirstOrDefault(p => p.FolderPath.Equals(path, StringComparison.OrdinalIgnoreCase));
             if (existing != null)
             {
@@ -589,24 +537,24 @@ namespace AstraSize.Views
 
             try
             {
-                if (_aclService == null) return;
-                var (entries, isInherited, owner) = _aclService.GetSimAclForFolder(path);
-                string sddl = _aclService.GetSddl(path);
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var state = await host.GetAclFolderStateAsync(path, CancellationToken.None);
 
                 var panel = new LiveAclPanelModel
                 {
                     FolderPath = path,
                     FolderName = Path.GetFileName(path.TrimEnd('\\', '/')),
-                    OriginalInheritAcl = isInherited,
-                    InheritAcl = isInherited,
-                    OriginalSddl = sddl,
-                    StatusMessage = $"所有者: {owner}"
+                    OriginalInheritAcl = state.InheritsAcl,
+                    InheritAcl = state.InheritsAcl,
+                    OriginalSddl = state.Sddl,
+                    StatusMessage = $"所有者: {state.Owner}"
                 };
 
                 if (string.IsNullOrEmpty(panel.FolderName)) panel.FolderName = path;
 
-                foreach (var entry in entries)
+                foreach (var dto in state.Entries)
                 {
+                    var entry = FolderMorpher.HostClient.AclDtoMapper.ToView(dto);
                     panel.OriginalAclEntries.Add(entry.Clone());
                     panel.CurrentAclEntries.Add(entry.Clone());
                 }
@@ -660,29 +608,25 @@ namespace AstraSize.Views
             ShowToast("全パネルを閉じました");
         }
 
-        private void ReloadPanel(LiveAclPanelModel panel)
+        private static void ApplyFolderState(LiveAclPanelModel panel, FolderMorpher.Contracts.AclFolderStateDto state)
         {
-            if (_aclService == null || !Directory.Exists(panel.FolderPath)) return;
-            var (entries, isInherited, owner) = _aclService.GetSimAclForFolder(panel.FolderPath);
-            string currentSddl = _aclService.GetSddl(panel.FolderPath);
-
             panel.OriginalAclEntries.Clear();
             panel.CurrentAclEntries.Clear();
-            foreach (var item in entries)
+            foreach (var dto in state.Entries)
             {
+                var item = FolderMorpher.HostClient.AclDtoMapper.ToView(dto);
                 panel.OriginalAclEntries.Add(item.Clone());
                 panel.CurrentAclEntries.Add(item.Clone());
             }
-            panel.OriginalInheritAcl = isInherited;
-            panel.InheritAcl = isInherited;
-            panel.OriginalSddl = currentSddl;
-            panel.StatusMessage = $"最新読み込み完了: {DateTime.Now:HH:mm:ss}";
+            panel.OriginalInheritAcl = state.InheritsAcl;
+            panel.InheritAcl = state.InheritsAcl;
+            panel.OriginalSddl = state.Sddl;
             panel.UpdateChangeStatus();
         }
 
-        private void LiveAclPanelApplyDeltaButton_Click(object sender, RoutedEventArgs e)
+        private async void LiveAclPanelApplyDeltaButton_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is not FrameworkElement fe || fe.Tag is not LiveAclPanelModel panel || _aclService == null) return;
+            if (sender is not FrameworkElement fe || fe.Tag is not LiveAclPanelModel panel) return;
 
             if (!panel.HasChanges)
             {
@@ -690,30 +634,33 @@ namespace AstraSize.Views
                 return;
             }
 
-            ShowDiffModal(panel);
+            try { await ShowDiffModalAsync(panel); }
+            catch (Exception ex) { MessageBox.Show($"差分確認エラー:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error); }
         }
 
-        private void ShowDiffModal(LiveAclPanelModel panel)
+        private async Task ShowDiffModalAsync(LiveAclPanelModel panel)
         {
-            if (_aclService == null) return;
             _pendingDiffPanel = panel;
             _diffItems.Clear();
 
             // 1. Change Plan の単一構築 (BuildChangePlan)
-            _currentChangePlan = _aclService.BuildChangePlan(
-                panel.FolderPath,
-                panel.OriginalAclEntries,
-                panel.CurrentAclEntries.ToList(),
-                panel.InheritAcl,
-                panel.OriginalInheritAcl,
-                panel.OriginalSddl);
+            var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+            _currentChangePlan = await host.PrepareAclChangeAsync(new FolderMorpher.Contracts.AclChangeRequestDto
+            {
+                FolderPath = panel.FolderPath,
+                ExpectedOriginalSddl = panel.OriginalSddl,
+                InheritanceBefore = panel.OriginalInheritAcl,
+                InheritanceAfter = panel.InheritAcl,
+                OriginalEntries = panel.OriginalAclEntries.Select(FolderMorpher.HostClient.AclDtoMapper.ToDto).ToList(),
+                CurrentEntries = panel.CurrentAclEntries.Select(FolderMorpher.HostClient.AclDtoMapper.ToDto).ToList()
+            }, CancellationToken.None);
 
             LiveAclDiffTargetText.Text = $" - 対象: {panel.FolderName} ({panel.FolderPath})";
 
             // 2. プレビューリストへのバインド
             foreach (var item in _currentChangePlan.DiffItems)
             {
-                _diffItems.Add(item);
+                _diffItems.Add(FolderMorpher.HostClient.AclDtoMapper.ToView(item));
             }
 
             // 3. 継承変更バナーの表示/非表示と文言
@@ -735,14 +682,11 @@ namespace AstraSize.Views
             }
 
             // 4. サマリーテキスト更新
-            LiveAclDiffSummaryText.Text = $"📊 予定: +{_currentChangePlan.Added.Count}件, -{_currentChangePlan.Removed.Count}件, ~{_currentChangePlan.Modified.Count}件";
-            LiveAclDiffUntouchedText.Text = $" (🛡️ 維持: {_currentChangePlan.Untouched.Count}件)";
+            LiveAclDiffSummaryText.Text = $"📊 予定: +{_currentChangePlan.AddedCount}件, -{_currentChangePlan.RemovedCount}件, ~{_currentChangePlan.ModifiedCount}件";
+            LiveAclDiffUntouchedText.Text = $" (🛡️ 維持: {_currentChangePlan.UntouchedCount}件)";
 
             // 5. 外部競合チェック (✅ 正常 / ⚠️ 外部競合)
-            string currentSddl = _aclService.GetSddl(panel.FolderPath);
-            bool hasConflict = !string.IsNullOrEmpty(panel.OriginalSddl) &&
-                               !string.IsNullOrEmpty(currentSddl) &&
-                               !string.Equals(currentSddl, panel.OriginalSddl, StringComparison.OrdinalIgnoreCase);
+            bool hasConflict = _currentChangePlan.HasConflict;
 
             if (hasConflict)
             {
@@ -771,12 +715,23 @@ namespace AstraSize.Views
 
         private async void LiveAclDiffModalExecute_Click(object sender, RoutedEventArgs e)
         {
-            if (_pendingDiffPanel == null || _currentChangePlan == null || _aclService == null) return;
+            if (_pendingDiffPanel == null || _currentChangePlan == null) return;
             var panel = _pendingDiffPanel;
             var plan = _currentChangePlan;
 
             // 競合がある場合の最終確認
-            string currentSddl = _aclService.GetSddl(panel.FolderPath);
+            FolderMorpher.Contracts.IFolderMorpherHostService host;
+            string currentSddl;
+            try
+            {
+                host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                currentSddl = (await host.GetAclFolderStateAsync(panel.FolderPath, CancellationToken.None)).Sddl;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"ACLの再確認に失敗しました:\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
             bool hasConflict = !string.IsNullOrEmpty(panel.OriginalSddl) &&
                                !string.IsNullOrEmpty(currentSddl) &&
                                !string.Equals(currentSddl, panel.OriginalSddl, StringComparison.OrdinalIgnoreCase);
@@ -800,29 +755,20 @@ namespace AstraSize.Views
             try
             {
                 // 1. Commit (Change Plan をそのまま適用)
-                var result = await _aclService.ApplyChangePlanWithRollbackAsync(plan, forceApply);
-                int appliedDeltaCount = result.addedCount + result.removedCount + result.modifiedCount;
-
-                // 2. Verify (OS実態と ExpectedAfter のセマンティック突合)
-                var verifyResult = _aclService.VerifyChangePlan(plan);
-
-                // 3. OS実態再読込
-                var (refreshedEntries, refreshedInherit, _) = _aclService.GetSimAclForFolder(panel.FolderPath);
-                panel.OriginalAclEntries.Clear();
-                panel.CurrentAclEntries.Clear();
-                foreach (var item in refreshedEntries)
+                var result = await host.CommitAclChangeAsync(plan.PlanId, forceApply, CancellationToken.None);
+                if (result.WasConflict)
                 {
-                    panel.OriginalAclEntries.Add(item.Clone());
-                    panel.CurrentAclEntries.Add(item.Clone());
+                    panel.StatusMessage = "外部競合";
+                    var reload = MessageBox.Show(
+                        "適用直前に外部変更（競合）が検出されました。最新のACLを再読込しますか？",
+                        "外部ACL競合", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    if (reload == MessageBoxResult.Yes) ApplyFolderState(panel, result.CurrentState);
+                    return;
                 }
-                panel.OriginalInheritAcl = refreshedInherit;
-                panel.InheritAcl = refreshedInherit;
+                int appliedDeltaCount = result.AddedCount + result.RemovedCount + result.ModifiedCount;
+                ApplyFolderState(panel, result.CurrentState);
 
-                // 重要 (Solレビュー対応): Commit成功後はディスクの最新SDDLをOriginalSddlにセット
-                panel.OriginalSddl = _aclService.GetSddl(panel.FolderPath);
-                panel.UpdateChangeStatus();
-
-                if (verifyResult.IsSuccess)
+                if (result.VerificationSucceeded)
                 {
                     panel.StatusMessage = $"正常 ({DateTime.Now:HH:mm:ss})";
                     ShowToast($"✅ 適用完了 (正常): {panel.FolderName} ({appliedDeltaCount}件反映)");
@@ -831,20 +777,6 @@ namespace AstraSize.Views
                 {
                     panel.StatusMessage = "検証不一致";
                     ShowToast($"⚠️ 適用結果に不一致を検知: {panel.FolderName}");
-                }
-            }
-            catch (AclConflictException)
-            {
-                panel.StatusMessage = "外部競合";
-                var res = MessageBox.Show(
-                    $"適用直前に外部変更（競合）が検出されたため処理を中断しました。\n最新のACLを再読込しますか？",
-                    "外部ACL競合",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning);
-                if (res == MessageBoxResult.Yes)
-                {
-                    ReloadPanel(panel);
-                    ShowToast($"🔄 最新ACLを再読込: {panel.FolderName}");
                 }
             }
             catch (Exception ex)
@@ -862,11 +794,12 @@ namespace AstraSize.Views
 
         private async void LiveAclPanelRollbackButton_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is not FrameworkElement fe || fe.Tag is not LiveAclPanelModel panel || _aclService == null) return;
+            if (sender is not FrameworkElement fe || fe.Tag is not LiveAclPanelModel panel) return;
 
             try
             {
-                var snapshots = await _aclService.GetSnapshotsAsync(panel.FolderPath);
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var snapshots = await host.GetAclSnapshotsAsync(panel.FolderPath, CancellationToken.None);
                 if (snapshots.Count == 0)
                 {
                     MessageBox.Show("このフォルダの保存済みバックアップはありません。", "情報", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -882,21 +815,8 @@ namespace AstraSize.Views
 
                 if (confirm == MessageBoxResult.Yes)
                 {
-                    _aclService.RollbackToSnapshot(panel.FolderPath, latest);
-
-                    // パネルの状態を最新にリロード
-                    var (entries, isInherited, owner) = _aclService.GetSimAclForFolder(panel.FolderPath);
-                    panel.OriginalAclEntries.Clear();
-                    panel.CurrentAclEntries.Clear();
-                    foreach (var ent in entries)
-                    {
-                        panel.OriginalAclEntries.Add(ent.Clone());
-                        panel.CurrentAclEntries.Add(ent.Clone());
-                    }
-                    panel.OriginalInheritAcl = isInherited;
-                    panel.InheritAcl = isInherited;
-                    panel.OriginalSddl = latest.Sddl;
-                    panel.UpdateChangeStatus();
+                    var state = await host.RollbackAclSnapshotAsync(panel.FolderPath, latest.Id, CancellationToken.None);
+                    ApplyFolderState(panel, state);
                     panel.StatusMessage = $"復元完了 ({latest.Timestamp:HH:mm:ss})";
 
                     ShowToast($"↩️ バックアップから復元しました: {panel.FolderName}");
@@ -908,10 +828,10 @@ namespace AstraSize.Views
             }
         }
 
-        private void LiveAclExportMatrixButton_Click(object sender, RoutedEventArgs e)
+        private async void LiveAclExportMatrixButton_Click(object sender, RoutedEventArgs e)
         {
             var path = LiveAclPathTextBox.Text.Trim();
-            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path) || _aclService == null)
+            if (string.IsNullOrWhiteSpace(path))
             {
                 MessageBox.Show("有効なフォルダパスを指定してください。", "案内", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -928,9 +848,8 @@ namespace AstraSize.Views
             {
                 try
                 {
-                    var rootNode = _aclService.GetFolderAcl(path, maxDepth: 2);
-                    var csv = _aclService.GenerateMatrixCsv(rootNode);
-                    File.WriteAllText(dialog.FileName, csv, Encoding.UTF8);
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.ExportAclMatrixAsync(dialog.FileName, path, CancellationToken.None);
                     ShowToast("権限台帳CSVを出力しました");
                 }
                 catch (Exception ex)
@@ -1124,12 +1043,12 @@ namespace AstraSize.Views
 
         private async Task CheckAdChangesAsync(bool forceRefresh = false)
         {
-            if (_adService == null) return;
-
             try
             {
                 var currentQuery = LiveAclPrincipalSearchTextBox?.Text?.Trim() ?? "";
-                var latestPrincipals = await _adService.SearchPrincipalsAsync(currentQuery);
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var latestPrincipals = (await host.GetAdPrincipalsAsync(currentQuery, CancellationToken.None))
+                    .Select(FolderMorpher.HostClient.IdentityDtoMapper.ToView).ToList();
 
                 if (forceRefresh || HasPrincipalsChanged(_rawPrincipalsCache, latestPrincipals))
                 {
@@ -1202,7 +1121,7 @@ namespace AstraSize.Views
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath))
+            if (string.IsNullOrWhiteSpace(rootPath))
             {
                 MessageBox.Show("有効な走査ルートフォルダーを指定してください。", "入力確認", MessageBoxButton.OK, MessageBoxImage.Warning);
                 RevRootPathTextBox.Focus();
@@ -1241,32 +1160,31 @@ namespace AstraSize.Views
 
             try
             {
-                if (_effectiveAccessService == null) return;
-
                 // 1. グループ解決（直接所属＋多重入れ子AD Chain）
-                var (groups, resMode, resStatus) = await _effectiveAccessService.ResolveMembershipsAsync(targetAccount);
-                foreach (var g in groups) _revGroups.Add(g);
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(ct);
+                var resolution = await host.ResolveEffectiveMembershipsAsync(targetAccount, ct);
+                foreach (var group in resolution.Groups)
+                    _revGroups.Add(FolderMorpher.HostClient.IdentityDtoMapper.ToView(group));
                 RevGroupCountText.Text = $"{_revGroups.Count} 件";
-                RevTargetAccountSub.Text = resStatus;
+                RevTargetAccountSub.Text = resolution.StatusText;
 
                 // 2. フォルダツリーの実効アクセス権スキャン
                 RevStatusText.Text = "フォルダーツリーの実効アクセス権（Effective Access）を監査中...";
 
-                var progress = new Progress<(int scanned, int found)>(p =>
-                {
-                    RevStatusText.Text = $"スキャン進行中: {p.scanned:N0} フォルダ走査済み / {p.found:N0} 件でアクセス権検出";
-                });
-
-                var report = await _effectiveAccessService.ScanEffectiveAccessAsync(
-                    rootPath,
-                    targetAccount,
-                    groups,
-                    maxDepth: maxDepth,
-                    progress: progress,
-                    ct: ct);
-
-                report.ResolutionMode = resMode;
-                report.ResolutionStatusText = resStatus;
+                var effectiveJob = await FolderMorpher.HostClient.HostJobClient.RunAsync(
+                    new FolderMorpher.Contracts.HostJobRequestDto
+                    {
+                        Kind = FolderMorpher.Contracts.HostJobKind.EffectiveAccessAudit,
+                        TargetPath = rootPath,
+                        TargetAccount = targetAccount,
+                        MaxDepth = maxDepth,
+                        MembershipResolution = resolution
+                    }, status =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(status.ProgressText)) RevStatusText.Text = status.ProgressText;
+                    }, ct);
+                var reportDto = effectiveJob.EffectiveAccessReport ?? throw new InvalidOperationException("逆引き監査結果がHostから返されませんでした。");
+                var report = FolderMorpher.HostClient.IdentityDtoMapper.ToView(reportDto);
 
                 _currentEffectiveReport = report;
                 _revAllFoldersCache.AddRange(report.AllAuditItems);
@@ -1309,7 +1227,7 @@ namespace AstraSize.Views
             _revCts?.Cancel();
         }
 
-        private void RevExportExcel_Click(object sender, RoutedEventArgs e)
+        private async void RevExportExcel_Click(object sender, RoutedEventArgs e)
         {
             if (_currentEffectiveReport == null || _currentEffectiveReport.AccessibleFolders.Count == 0) return;
 
@@ -1326,7 +1244,9 @@ namespace AstraSize.Views
             {
                 try
                 {
-                    _excelService.ExportEffectiveAccessReport(sfd.FileName, _currentEffectiveReport);
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.ExportEffectiveAccessReportAsync(sfd.FileName,
+                        FolderMorpher.HostClient.IdentityDtoMapper.ToDto(_currentEffectiveReport), CancellationToken.None);
                     ShowToast($"📋 {Path.GetFileName(sfd.FileName)} を出力しました");
                     ShellHelper.SelectInExplorer(sfd.FileName);
                     Process.Start(new ProcessStartInfo(sfd.FileName) { UseShellExecute = true });
@@ -1394,11 +1314,13 @@ namespace AstraSize.Views
             PickerSelectedAccountText.Text = string.IsNullOrWhiteSpace(RevUserAccountTextBox.Text) ? "(未選択)" : RevUserAccountTextBox.Text.Trim();
             PickerApplyButton.IsEnabled = !string.IsNullOrWhiteSpace(RevUserAccountTextBox.Text);
 
-            if (_pickerOuRoots.Count == 0 && _adService != null)
+            if (_pickerOuRoots.Count == 0)
             {
                 try
                 {
-                    var ous = await _adService.GetOuHierarchyAsync();
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    var ous = (await host.GetAdOuHierarchyAsync(CancellationToken.None))
+                        .Select(FolderMorpher.HostClient.IdentityDtoMapper.ToView).ToList();
                     _pickerOuRoots.Clear();
                     foreach (var ou in ous)
                     {
@@ -1433,7 +1355,7 @@ namespace AstraSize.Views
 
         private async Task LoadPrincipalsForSelectedOuAsync()
         {
-            if (_pickerSelectedOu == null || _adService == null) return;
+            if (_pickerSelectedOu == null) return;
 
             var keyword = PickerSearchTextBox.Text.Trim();
             bool incUsers = PickerIncludeUsersCheck.IsChecked == true;
@@ -1441,7 +1363,10 @@ namespace AstraSize.Views
 
             try
             {
-                var list = await _adService.GetPrincipalsInOuAsync(_pickerSelectedOu.DistinguishedName, keyword, incUsers, incGroups);
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var list = (await host.GetAdPrincipalsInOuAsync(
+                    _pickerSelectedOu.DistinguishedName, keyword, incUsers, incGroups, CancellationToken.None))
+                    .Select(FolderMorpher.HostClient.IdentityDtoMapper.ToView).ToList();
                 _pickerPrincipals.Clear();
                 foreach (var p in list)
                 {
