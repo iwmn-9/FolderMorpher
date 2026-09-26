@@ -42,7 +42,7 @@ FolderMorpher separates observation from state mutation to keep exploration fast
 ---
 
 ### 2. 🔍 File Search (Search Studio)
-![Tab 6: Search Studio](docs/screenshots/tab6_en.png)
+![Search Studio](docs/screenshots/tab6_en.png)
 - **In-Memory & Direct Scanning**: Instant search across pre-scanned tree caches, with direct streaming traversal for unscanned folders and UNC shares.
 - **Everything-Compatible Syntax**: Filter by extension (`ext:xlsx,docx`), size (`size:>100MB`), dormant duration (`dormant:>3y`), path length (`pathlen:>240`), and invalid characters (`chars:illegal`).
 - **Full-Text Content Search**: High-performance content indexing utilizing Windows native IFilter and pure C# streaming fallback for PDF, Office (Excel sharedStrings / Word / PowerPoint), and text files.

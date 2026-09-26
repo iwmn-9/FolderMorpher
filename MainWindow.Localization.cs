@@ -65,7 +65,7 @@ namespace AstraSize
             // バージョン表示動的反映
             if (SidebarVersionText != null)
             {
-                var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                var ver = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version;
                 string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v2.1.2";
                 SidebarVersionText.Text = ClientModeState.IsClientMode
                     ? $"FolderCleaner {verStr}"

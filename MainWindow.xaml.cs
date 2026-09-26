@@ -22,6 +22,9 @@ namespace AstraSize
 {
     public partial class MainWindow : Window
     {
+        private readonly TaskCompletionSource<bool> _initialLocalization = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal Task<bool> InitialLocalization => _initialLocalization.Task;
+
         // Cancellation Tokens
         private CancellationTokenSource? _scanCts;
         private CancellationTokenSource? _linkFixCts;
@@ -157,10 +160,14 @@ namespace AstraSize
             try
             {
                 await AppSettingsService.Instance.LoadAsync();
-                LocalizationService.Instance.SetLanguage(
-                    AppSettingsService.Instance.Current.Language == "en" ? AppLanguage.English : AppLanguage.Japanese);
+                var language = SnapshotRunner.ForcedLanguage ??
+                    (AppSettingsService.Instance.Current.Language == "en" ? AppLanguage.English : AppLanguage.Japanese);
+                LocalizationService.Instance.SetLanguage(language);
+                LocalizationService.Instance.LanguageChanged += ApplyLocalization;
+                ApplyLocalization();
+                _initialLocalization.TrySetResult(true);
                 var settingsHost = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
-                await settingsHost.SetLanguageAsync(AppSettingsService.Instance.Current.Language);
+                await settingsHost.SetLanguageAsync(language == AppLanguage.English ? "en" : "ja");
                 InitializeStorageTabs();
                 if (!ClientModeState.IsClientMode)
                 {
@@ -168,11 +175,10 @@ namespace AstraSize
                     await LoadAdPrincipalsAsync();
                 }
 
-                LocalizationService.Instance.LanguageChanged += ApplyLocalization;
-                ApplyLocalization();
             }
             catch (Exception ex)
             {
+                _initialLocalization.TrySetResult(false);
                 Debug.WriteLine($"MainWindow_Loaded Error: {ex}");
             }
         }

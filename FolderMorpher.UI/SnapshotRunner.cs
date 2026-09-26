@@ -8,9 +8,17 @@ namespace AstraSize;
 
 public static class SnapshotRunner
 {
+    public static FolderMorpher.Services.AppLanguage? ForcedLanguage { get; private set; }
+
     public static void Configure(string? snapshotPath, int selectTab, bool collapseSidebar,
         string? forceLang, string logPath, Action<int> shutdown)
     {
+            ForcedLanguage = string.IsNullOrEmpty(snapshotPath) ? null : forceLang switch
+            {
+                "en" => FolderMorpher.Services.AppLanguage.English,
+                "ja" => FolderMorpher.Services.AppLanguage.Japanese,
+                _ => null
+            };
             if (!string.IsNullOrEmpty(snapshotPath))
             {
                 EventManager.RegisterClassHandler(typeof(MainWindow), FrameworkElement.LoadedEvent, new RoutedEventHandler(async (sender, args) =>
@@ -20,8 +28,10 @@ public static class SnapshotRunner
                         int snapshotExitCode = 0;
                         try
                         {
-                            if (forceLang == "en") FolderMorpher.Services.LocalizationService.Instance.SetLanguage(FolderMorpher.Services.AppLanguage.English);
-                            else if (forceLang == "ja") FolderMorpher.Services.LocalizationService.Instance.SetLanguage(FolderMorpher.Services.AppLanguage.Japanese);
+                            if (!await mw.InitialLocalization.WaitAsync(TimeSpan.FromSeconds(30)))
+                                throw new InvalidOperationException("Window localization failed before snapshot.");
+                            if (ForcedLanguage is { } language)
+                                FolderMorpher.Services.LocalizationService.Instance.SetLanguage(language);
 
                             if (selectTab == 1) mw.NavTabSearch.IsChecked = true;
                             else if (selectTab == 11)
