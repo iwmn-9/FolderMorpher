@@ -12,6 +12,7 @@ namespace FolderMorpher.Services
 {
     public class AuditReportService
     {
+        private const int DuplicateCandidateScore = 95;
         // NTFS/Windowsで実際に問題になる地雷文字 (日常記号 # % & { } ~ は過剰警告防止のため除外)
         private static readonly char[] NtfsInvalidChars = new[] { '*', ':', '<', '>', '?', '/', '\\', '|', '"' };
 
@@ -337,9 +338,11 @@ namespace FolderMorpher.Services
                                 summary.DuplicateWastedBytes += fi.Length;
                             }
 
-                            var dupBreakdown = isOriginal ? new List<ScoreFactorItem>() : new List<ScoreFactorItem>
+                            var dupBreakdown = new List<ScoreFactorItem>
                             {
-                                new ScoreFactorItem { NameJa = "SHA-256完全一致 (複製データ)", NameEn = "SHA-256 exact duplicate", Points = 95 }
+                                isOriginal
+                                    ? new ScoreFactorItem { NameJa = "グループ内の原本候補 (整理対象外)", NameEn = "Original candidate in duplicate group (protected)", Points = 0 }
+                                    : new ScoreFactorItem { NameJa = "SHA-256完全一致 (原本候補を除く)", NameEn = "SHA-256 exact duplicate (excluding original candidate)", Points = DuplicateCandidateScore }
                             };
 
                             items.Add(new AuditItem
@@ -358,7 +361,7 @@ namespace FolderMorpher.Services
                                 DuplicateGroupColorIndex = (groupNum - 1) % AuditReportPalette.GroupColorCount,
                                 IsOriginalCandidate = isOriginal,
                                 IsIgnored = AuditIgnoreService.Instance.IsIgnored(fi.FullPath, fi.Length, fi.LastWriteTime),
-                                WasteScore = isOriginal ? 0 : 95,
+                                WasteScore = isOriginal ? 0 : DuplicateCandidateScore,
                                 ScoreBreakdown = dupBreakdown
                             });
                         }

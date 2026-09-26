@@ -63,8 +63,25 @@ public static class PresentationTestRunner
     public static void VerifyAuditAndSimulationPresentation()
     {
         var audit = new AuditItem { FileName = "sample.pdf", WasteScore = 80 };
+        audit.ScoreBreakdown.Add(new ScoreFactorItem { NameJa = "検出理由", NameEn = "Detection reason", Points = 80 });
         if (audit.BadgeText != "PDF" || audit.ConfidenceBadgeBgHex != "#FEE2E2")
             throw new InvalidOperationException("Audit presentation bindings changed.");
+        var originalLanguage = LocalizationService.Instance.CurrentLanguage;
+        try
+        {
+            LocalizationService.Instance.SetLanguage(AppLanguage.Japanese);
+            if (audit.ScoreDisplay != "80点" || audit.ScoreBreakdownActionLabel != "内訳" ||
+                !audit.ScoreBreakdownSummary.Contains("検出理由 (+80点) → 合計: 80点"))
+                throw new InvalidOperationException("Japanese audit score action is missing.");
+            LocalizationService.Instance.SetLanguage(AppLanguage.English);
+            if (audit.ScoreDisplay != "80 pts" || audit.ScoreBreakdownActionLabel != "Details" ||
+                !audit.ScoreBreakdownSummary.Contains("Detection reason (+80 pts) → Total: 80 pts"))
+                throw new InvalidOperationException("English audit score action is missing.");
+        }
+        finally
+        {
+            LocalizationService.Instance.SetLanguage(originalLanguage);
+        }
         audit.IssueType = AuditIssueType.Duplicate;
         audit.DuplicateGroupIndex = 1;
         if (audit.RowBackgroundHex != "#EFF6FF")

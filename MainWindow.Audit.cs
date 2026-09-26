@@ -776,7 +776,7 @@ namespace AstraSize
             if (AuditKpiDormantSize != null) AuditKpiDormantSize.Text = _lastAuditSummary.DormantSizeFormatted;
         }
 
-        private void AuditScoreBreakdown_MouseDown(object sender, MouseButtonEventArgs e)
+        private void AuditScoreBreakdown_Click(object sender, RoutedEventArgs e)
         {
             if (sender is FrameworkElement elem && elem.DataContext is AuditItem item)
             {
@@ -798,6 +798,15 @@ namespace AstraSize
                 else
                 {
                     sb.AppendLine(item.ScoreBreakdownSummary);
+                }
+
+                sb.AppendLine();
+                sb.AppendLine(isJa
+                    ? "この点数は整理候補の優先度で、削除してよい確率ではありません。"
+                    : "This score ranks cleanup candidates; it is not a probability that deletion is safe.");
+                if (!item.IsCleanable)
+                {
+                    sb.AppendLine(isJa ? "この行は安全上、削除対象にできません。" : "This item is protected from deletion.");
                 }
 
                 if (!string.IsNullOrEmpty(item.RelatedActivePath))

@@ -391,8 +391,11 @@ namespace AstraSize
             ColAuditFileName.Header = isJa ? "ファイル名" : "File Name";
             ColAuditSize.Header = isJa ? "容量" : "Size";
             ColAuditModified.Header = isJa ? "最終更新日時" : "Last Modified";
-            ColAuditDetail.Header = isJa ? "判定理由 / 内訳" : "Reason / Breakdown";
+            ColAuditDetail.Header = isJa ? "判定理由" : "Reason";
             ColAuditFullPath.Header = isJa ? "完全パス" : "Full Path";
+
+            foreach (var item in _lastAuditItems)
+                item.NotifyLanguageChanged();
 
             if (AuditMenuIgnoreFile != null) AuditMenuIgnoreFile.Header = isJa ? "🛡️ このファイルを整理候補から除外 (次回から非表示)" : "🛡️ Ignore this file from candidate list";
             if (AuditMenuOpenExplorer != null) AuditMenuOpenExplorer.Header = isJa ? "📂 エクスプローラーで表示" : "📂 Show in Explorer";

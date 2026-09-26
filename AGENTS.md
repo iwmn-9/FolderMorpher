@@ -93,6 +93,8 @@ GUIの検索実行はLiveとキャッシュの双方をHost Jobとして所有�
 
 UNC/ネットワークドライブの容量スキャンは検索列挙と `SharedIoGovernor.EnumerationController` を共有し、同一共有先の列挙枠を合計2にする。`SafeFileEnumerator` の列挙と巨大ファイル再検査は各コントローラーのリースを1回だけ取得する。権限逆引きの現在ユーザー判定は修飾名の短縮名一致を禁じ、SID一致または完全修飾名一致に限定する（ADR 112）。
 
+整理候補の一覧は各行に点数と「内訳」操作を表示する。`AuditItem.ScoreBreakdown` が内訳の正本で、重複の原本以外はSHA-256一致で95点、原本候補は保護対象として0点。点数は整理の優先度であり、削除安全性の確率ではない。言語変更時は監査行の表示プロパティも通知する（ADR 113）。
+
 PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数を保つ（ADR 107）。P/Invoke宣言を変更する時はMicrosoftのシグネチャと照合し、検索回帰でプロセス終了時のCOM最終化も確認する。
 
 **旧方式**: 検索専用 FTS5 と Watcher は ADR 87 で通常画面から退役し、ADR 100 で旧サービスと専用テストも撤去した。`Microsoft.Data.Sqlite` は現行の `SqliteTreeCacheService` で引き続き使用する。
@@ -104,7 +106,7 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの設計判断記録（ADR 1〜112）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの設計判断記録（ADR 1〜113）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 

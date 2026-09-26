@@ -1397,18 +1397,22 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTemplateColumn x:Name="ColAuditConfidence" Header="整理の目安" SortMemberPath="WasteScore" Width="115">
+                                <DataGridTemplateColumn x:Name="ColAuditConfidence" Header="整理の目安" SortMemberPath="WasteScore" Width="205">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
-                                            <Border Background="{Binding ConfidenceBadgeBgHex}" BorderBrush="{Binding ConfidenceBadgeBorderHex}"
-                                                    BorderThickness="1" CornerRadius="10" Padding="8,2" Margin="4,2" HorizontalAlignment="Left"
-                                                    Cursor="Hand" ToolTip="{Binding ScoreBreakdownSummary}" MouseDown="AuditScoreBreakdown_MouseDown">
-                                                <StackPanel Orientation="Horizontal">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0">
+                                                <Border Background="{Binding ConfidenceBadgeBgHex}" BorderBrush="{Binding ConfidenceBadgeBorderHex}"
+                                                        BorderThickness="1" CornerRadius="10" Padding="8,2" VerticalAlignment="Center">
                                                     <TextBlock Text="{Binding ConfidenceDisplay}" FontSize="11" FontWeight="SemiBold"
                                                                Foreground="{Binding ConfidenceBadgeFgHex}" VerticalAlignment="Center"/>
-                                                    <TextBlock Text=" ℹ️" FontSize="9" VerticalAlignment="Center" Margin="2,0,0,0" Opacity="0.6"/>
+                                                </Border>
+                                                <TextBlock Text="{Binding ScoreDisplay}" FontSize="11" FontWeight="SemiBold" Foreground="#334155"
+                                                           VerticalAlignment="Center" Margin="7,0,0,0"/>
+                                                <Button Content="{Binding ScoreBreakdownActionLabel}" Click="AuditScoreBreakdown_Click"
+                                                        ToolTip="{Binding ScoreBreakdownSummary}" Cursor="Hand" Padding="3,0"
+                                                        Margin="5,0,0,0" Background="Transparent" BorderThickness="0"
+                                                        Foreground="#1D4ED8" FontSize="11" VerticalAlignment="Center"/>
                                                 </StackPanel>
-                                            </Border>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
@@ -1452,7 +1456,7 @@
                                 </DataGridTemplateColumn>
                                 <DataGridTextColumn x:Name="ColAuditSize" Header="容量" Binding="{Binding SizeFormatted}" SortMemberPath="Size" Width="90" ElementStyle="{StaticResource RightAlignedCell}"/>
                                 <DataGridTextColumn x:Name="ColAuditModified" Header="最終更新日時" Binding="{Binding LastWriteTime, StringFormat='yyyy/MM/dd HH:mm'}" SortMemberPath="LastWriteTime" Width="125" ElementStyle="{StaticResource LeftAlignedCell}"/>
-                                <DataGridTextColumn x:Name="ColAuditDetail" Header="判定理由 / 内訳" Binding="{Binding Detail}" SortMemberPath="Detail" Width="250" ElementStyle="{StaticResource LeftAlignedCell}"/>
+                                <DataGridTextColumn x:Name="ColAuditDetail" Header="判定理由" Binding="{Binding Detail}" SortMemberPath="Detail" Width="250" ElementStyle="{StaticResource LeftAlignedCell}"/>
                                 <DataGridTextColumn x:Name="ColAuditFullPath" Header="完全パス" Binding="{Binding FullPath}" SortMemberPath="FullPath" Width="*" ElementStyle="{StaticResource LeftAlignedCell}"/>
                             </DataGrid.Columns>
                         </DataGrid>

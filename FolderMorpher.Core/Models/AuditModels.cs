@@ -99,7 +99,8 @@ namespace FolderMorpher.Models
                         : $"Score: {WasteScore} pts";
                 }
                 var parts = ScoreBreakdown.Select(f => f.DisplayText);
-                return string.Join(" / ", parts) + $" ➔ 合計: {WasteScore}点";
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                return string.Join(" / ", parts) + (isJa ? $" → 合計: {WasteScore}点" : $" → Total: {WasteScore} pts");
             }
         }
 
@@ -218,7 +219,7 @@ namespace FolderMorpher.Models
         public int Points { get; set; }
 
         public string Name => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? NameJa : NameEn;
-        public string DisplayText => $"{Name} ({(Points >= 0 ? "+" : "")}{Points} pt)";
+        public string DisplayText => $"{Name} ({(Points > 0 ? "+" : "")}{Points}{(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese ? "点" : " pts")})";
     }
 
     /// <summary>

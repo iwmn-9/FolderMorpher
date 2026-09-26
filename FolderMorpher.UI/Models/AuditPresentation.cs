@@ -4,6 +4,23 @@ namespace FolderMorpher.Models;
 
 public partial class AuditItem
 {
+    public string ScoreDisplay => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+        ? $"{WasteScore}点"
+        : $"{WasteScore} pts";
+    public string ScoreBreakdownActionLabel => LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+        ? "内訳"
+        : "Details";
+
+    public void NotifyLanguageChanged()
+    {
+        OnPropertyChanged(nameof(IssueTypeDisplay));
+        OnPropertyChanged(nameof(DuplicateGroupBadge));
+        OnPropertyChanged(nameof(ConfidenceDisplay));
+        OnPropertyChanged(nameof(ScoreBreakdownSummary));
+        OnPropertyChanged(nameof(ScoreDisplay));
+        OnPropertyChanged(nameof(ScoreBreakdownActionLabel));
+    }
+
     private TablerBadgeInfo BadgeInfo => TablerBadgeHelper.GetBadge(FileName, false);
     public string BadgeText => BadgeInfo.Text;
     public string BadgeBackground => BadgeInfo.Background;

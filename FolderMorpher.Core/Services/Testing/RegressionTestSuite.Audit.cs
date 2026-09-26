@@ -633,6 +633,15 @@ namespace FolderMorpher.Services.Testing
                 if (dupGroups.Count != 2)
                     throw new InvalidOperationException($"Expected exactly 2 duplicate groups, got {dupGroups.Count}");
 
+                foreach (var duplicateGroup in dupGroups)
+                {
+                    if (duplicateGroup.Count(i => i.IsOriginalCandidate) != 1 ||
+                        duplicateGroup.Any(i => i.ScoreBreakdown.Count != 1 ||
+                            i.ScoreBreakdown[0].Points != i.WasteScore ||
+                            i.WasteScore != (i.IsOriginalCandidate ? 0 : 95)))
+                        throw new InvalidOperationException("Duplicate score or its explanation is inconsistent with original protection.");
+                }
+
                 var largeGroup = dupGroups.FirstOrDefault(g => g.Any(i => i.FileName == "fileA.dat"));
                 if (largeGroup == null || largeGroup.Count() != 2)
                     throw new InvalidOperationException("Large duplicate group (fileA & fileD) was not detected correctly.");
