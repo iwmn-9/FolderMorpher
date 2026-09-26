@@ -54,6 +54,7 @@
      - `FolderMorpherHostClient` はHost未起動時に同じEXEを `--host` で起動し、切断時に再接続する。
      - 通常のウィンドウ終了ではHostのJobを継続する。環境設定の「アプリとHostを終了」は実行中Jobを確認してから `RequestShutdownAsync` でHostを正常終了する。
 - **ビルド形態**: `Release win-x64` の **自己完結型（Self-Contained）単一実行可能ファイル (`FolderMorpher.exe`)**
+  - 配布出力の正本はリポジトリ直下の `dist/FolderMorpher.exe`。`FolderMorpher.csproj` の `PublishDir` とCI・手元の手順を同じ場所へ統一する。`bin` 内の旧 `AstraSize.*` は現在のビルド成果物ではない（ADR 115）。
   - ネイティブWPFエンジンDLLおよび SQLite ネイティブDLLはEXE内部にバンドルされる。
   - `-p:EnableCompressionInSingleFile=true` による Deflate 圧縮を標準採用。
 
@@ -165,10 +166,10 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
 ### 配布用単一EXEの生成（Release self-contained・圧縮約75.5MB）
 ```powershell
 $env:PATH = "C:\Users\iwakura\.dotnet;" + $env:PATH
-& "$HOME\.dotnet\dotnet.exe" publish ./FolderMorpher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -o ./publish-single
+& "$HOME\.dotnet\dotnet.exe" publish ./FolderMorpher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -o ./dist
 # Google Drive同期時は社内互換のため2つとも配置すること
-Copy-Item ./publish-single/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderMorpher.exe" -Force
-Copy-Item ./publish-single/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderCleaner.exe" -Force
+Copy-Item ./dist/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderMorpher.exe" -Force
+Copy-Item ./dist/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderCleaner.exe" -Force
 ```
 
 ### 自動回帰テストスイート（ヘッドレス自己検証・CIゲート）
@@ -178,7 +179,7 @@ Copy-Item ./publish-single/FolderMorpher.exe "G:\マイドライブ\FolderMorphe
 ```
 
 ### 単一EXEのIPC統合試験
-配布物を生成後、`publish-single/FolderMorpher.exe --test-ipc` を実行する。試験専用Named Pipe・Mutex・一時SQLiteで別PIDの `--host` を起動し、普段のHost/DBへ触れずStorage/Search/ACL/Audit/移行/設定のDTO、検索Clear/Stop、Host正常終了を確認する。
+配布物を生成後、`dist/FolderMorpher.exe --test-ipc` を実行する。試験専用Named Pipe・Mutex・一時SQLiteで別PIDの `--host` を起動し、普段のHost/DBへ触れずStorage/Search/ACL/Audit/移行/設定のDTO、検索Clear/Stop、Host正常終了を確認する。
 
 ### 自動統合テスト（ヘッドレス実行）
 ```powershell
