@@ -115,11 +115,11 @@ namespace FolderMorpher.Services
                     );
 
                     CREATE TABLE IF NOT EXISTS TreeNodes (
-                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        Id INTEGER PRIMARY KEY,
                         RootId INTEGER NOT NULL REFERENCES TreeRoots(Id) ON DELETE CASCADE,
                         FullPath TEXT NOT NULL,
                         Name TEXT NOT NULL,
-                        ParentPath TEXT,
+                        ParentId INTEGER,
                         Size INTEGER NOT NULL,
                         FileCount INTEGER NOT NULL,
                         FolderCount INTEGER NOT NULL,
@@ -131,13 +131,108 @@ namespace FolderMorpher.Services
                         Level INTEGER NOT NULL
                     );
 
-                    CREATE INDEX IF NOT EXISTS idx_treenodes_root ON TreeNodes(RootId);
-                    CREATE INDEX IF NOT EXISTS idx_treenodes_root_parent ON TreeNodes(RootId, ParentPath);
-                    CREATE INDEX IF NOT EXISTS idx_treenodes_root_path ON TreeNodes(RootId, FullPath);
                 ";
                 cmd.ExecuteNonQuery();
 
+                // Legacy caches repeat the full parent path in every row and in a large index.
+                // Migrate transactionally before creating the compact parent-id index.
+                var migrated = false;
+                using (var columns = conn.CreateCommand())
+                {
+                    columns.CommandText = "PRAGMA table_info(TreeNodes);";
+                    using var reader = columns.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        if (reader.GetString(1) != "ParentPath") continue;
+                        reader.Close();
+                        MigrateParentPaths(conn);
+                        migrated = true;
+                        break;
+                    }
+                }
+
+                using var indexes = conn.CreateCommand();
+                indexes.CommandText = @"
+                    DROP INDEX IF EXISTS idx_treenodes_root;
+                    CREATE INDEX IF NOT EXISTS idx_treenodes_root_parent ON TreeNodes(RootId, ParentId);
+                    CREATE INDEX IF NOT EXISTS idx_treenodes_root_path ON TreeNodes(RootId, FullPath);";
+                indexes.ExecuteNonQuery();
+
+                using var version = conn.CreateCommand();
+                version.CommandText = "PRAGMA user_version;";
+                var vacuumPending = migrated || Convert.ToInt64(version.ExecuteScalar()) == 104;
+                if (vacuumPending)
+                {
+                    // The old table and indexes still occupy free pages until a one-time vacuum.
+                    try
+                    {
+                        using var vacuum = conn.CreateCommand();
+                        vacuum.CommandText = "VACUUM; PRAGMA user_version=105;";
+                        vacuum.ExecuteNonQuery();
+                    }
+                    catch (SqliteException ex)
+                    {
+                        // A disk-space or concurrent-reader failure must not hide a valid migrated cache.
+                        System.Diagnostics.Trace.WriteLine($"Tree cache compaction remains pending: {ex}");
+                    }
+                }
+
                 _isInitialized = true;
+            }
+        }
+
+        private static void MigrateParentPaths(SqliteConnection conn)
+        {
+            using (var lookupIndex = conn.CreateCommand())
+            {
+                lookupIndex.CommandText = "CREATE INDEX IF NOT EXISTS idx_treenodes_root_path ON TreeNodes(RootId, FullPath);";
+                lookupIndex.ExecuteNonQuery();
+            }
+            using (var tx = conn.BeginTransaction())
+            {
+                using var migrate = conn.CreateCommand();
+                migrate.Transaction = tx;
+                migrate.CommandText = @"
+                    CREATE TABLE TreeNodesCompact (
+                        Id INTEGER PRIMARY KEY,
+                        RootId INTEGER NOT NULL REFERENCES TreeRoots(Id) ON DELETE CASCADE,
+                        FullPath TEXT NOT NULL,
+                        Name TEXT NOT NULL,
+                        ParentId INTEGER,
+                        Size INTEGER NOT NULL,
+                        FileCount INTEGER NOT NULL,
+                        FolderCount INTEGER NOT NULL,
+                        IsDirectory INTEGER NOT NULL,
+                        IsExpanded INTEGER NOT NULL,
+                        LastModified TEXT,
+                        CreationTime TEXT,
+                        Sha256 TEXT,
+                        Level INTEGER NOT NULL
+                    );
+                    INSERT INTO TreeNodesCompact
+                        (Id, RootId, FullPath, Name, ParentId, Size, FileCount, FolderCount,
+                         IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level)
+                    SELECT n.Id, n.RootId, n.FullPath, n.Name,
+                           (SELECT p.Id FROM TreeNodes p
+                            WHERE p.RootId = n.RootId AND p.FullPath = n.ParentPath LIMIT 1),
+                           n.Size, n.FileCount, n.FolderCount, n.IsDirectory, n.IsExpanded,
+                           n.LastModified, n.CreationTime, n.Sha256, n.Level
+                    FROM TreeNodes n;";
+                migrate.ExecuteNonQuery();
+
+                using (var validate = conn.CreateCommand())
+                {
+                    validate.Transaction = tx;
+                    validate.CommandText = @"SELECT COUNT(*) FROM TreeNodes n
+                        JOIN TreeNodesCompact c ON c.Id = n.Id
+                        WHERE n.ParentPath IS NOT NULL AND c.ParentId IS NULL;";
+                    if ((long)validate.ExecuteScalar()! != 0)
+                        throw new InvalidDataException("Tree cache migration found nodes without a parent; original cache was preserved.");
+                }
+
+                migrate.CommandText = "DROP TABLE TreeNodes; ALTER TABLE TreeNodesCompact RENAME TO TreeNodes; PRAGMA user_version=104;";
+                migrate.ExecuteNonQuery();
+                tx.Commit();
             }
         }
 
@@ -221,21 +316,29 @@ namespace FolderMorpher.Services
                     }
 
                     // 3. TreeNodes を単一トランザクションで一括挿入
+                    long nextNodeId;
+                    using (var nextIdCmd = conn.CreateCommand())
+                    {
+                        nextIdCmd.Transaction = tx;
+                        nextIdCmd.CommandText = "SELECT IFNULL(MAX(Id), 0) FROM TreeNodes;";
+                        nextNodeId = (long)nextIdCmd.ExecuteScalar()!;
+                    }
                     using (var insertNodeCmd = conn.CreateCommand())
                     {
                         insertNodeCmd.Transaction = tx;
                         insertNodeCmd.CommandText = @"
                             INSERT INTO TreeNodes (
-                                RootId, FullPath, Name, ParentPath, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level
+                                Id, RootId, FullPath, Name, ParentId, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level
                             ) VALUES (
-                                @rootId, @path, @name, @parentPath, @size, @files, @folders, @isDir, @isExp, @mod, @create, @sha, @lvl
+                                @id, @rootId, @path, @name, @parentId, @size, @files, @folders, @isDir, @isExp, @mod, @create, @sha, @lvl
                             );
                         ";
 
+                        var pId = insertNodeCmd.Parameters.Add("@id", SqliteType.Integer);
                         var pRootId = insertNodeCmd.Parameters.Add("@rootId", SqliteType.Integer);
                         var pPath = insertNodeCmd.Parameters.Add("@path", SqliteType.Text);
                         var pName = insertNodeCmd.Parameters.Add("@name", SqliteType.Text);
-                        var pParentPath = insertNodeCmd.Parameters.Add("@parentPath", SqliteType.Text);
+                        var pParentId = insertNodeCmd.Parameters.Add("@parentId", SqliteType.Integer);
                         var pSize = insertNodeCmd.Parameters.Add("@size", SqliteType.Integer);
                         var pFiles = insertNodeCmd.Parameters.Add("@files", SqliteType.Integer);
                         var pFolders = insertNodeCmd.Parameters.Add("@folders", SqliteType.Integer);
@@ -248,11 +351,13 @@ namespace FolderMorpher.Services
 
                         pRootId.Value = rootId;
 
-                        void InsertRecursive(FileItemNode node, string? parentPath)
+                        void InsertRecursive(FileItemNode node, long? parentId)
                         {
+                            var nodeId = ++nextNodeId;
+                            pId.Value = nodeId;
                             pPath.Value = node.FullPath ?? string.Empty;
                             pName.Value = node.Name ?? string.Empty;
-                            pParentPath.Value = (object?)parentPath ?? DBNull.Value;
+                            pParentId.Value = (object?)parentId ?? DBNull.Value;
                             pSize.Value = node.Size;
                             pFiles.Value = node.FileCount;
                             pFolders.Value = node.FolderCount;
@@ -269,7 +374,7 @@ namespace FolderMorpher.Services
                             {
                                 for (int i = 0; i < node.Children.Count; i++)
                                 {
-                                    InsertRecursive(node.Children[i], node.FullPath);
+                                    InsertRecursive(node.Children[i], nodeId);
                                 }
                             }
                         }
@@ -323,13 +428,13 @@ namespace FolderMorpher.Services
                 if (rootId <= 0) return null;
 
                 // Level ASC でソートして読み込むことで、親が必ず辞書に先に存在するかマップ化が容易
-                var nodeMap = new Dictionary<string, FileItemNode>(StringComparer.OrdinalIgnoreCase);
+                var nodeMap = new Dictionary<long, FileItemNode>();
                 FileItemNode? rootNode = null;
 
                 using (var loadNodesCmd = conn.CreateCommand())
                 {
                     loadNodesCmd.CommandText = @"
-                        SELECT FullPath, Name, ParentPath, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level
+                        SELECT FullPath, Name, ParentId, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level, Id
                         FROM TreeNodes
                         WHERE RootId = @rootId
                         ORDER BY Level ASC;
@@ -340,10 +445,10 @@ namespace FolderMorpher.Services
                     while (reader.Read())
                     {
                         var node = ReadNode(reader, false);
-                        var fullPath = node.FullPath;
-                        var parentPath = reader.IsDBNull(2) ? null : reader.GetString(2);
+                        var nodeId = reader.GetInt64(12);
+                        var parentId = reader.IsDBNull(2) ? (long?)null : reader.GetInt64(2);
 
-                        if (parentPath == null || !nodeMap.TryGetValue(parentPath, out var parentNode))
+                        if (parentId == null || !nodeMap.TryGetValue(parentId.Value, out var parentNode))
                         {
                             // ルートノード
                             if (rootNode == null)
@@ -357,7 +462,7 @@ namespace FolderMorpher.Services
                             parentNode.Children.Add(node);
                         }
 
-                        nodeMap[fullPath] = node;
+                        nodeMap[nodeId] = node;
                     }
                 }
 
@@ -400,7 +505,7 @@ namespace FolderMorpher.Services
             };
         }
 
-        /// <summary>Load one folder and its direct children through the indexed ParentPath lookup.</summary>
+        /// <summary>Load one folder and its direct children through the indexed ParentId lookup.</summary>
         public Task<FileItemNode?> LoadBranchAsync(string rootPath, string folderPath) => Task.Run(() =>
         {
             EnsureInitialized();
@@ -423,24 +528,26 @@ namespace FolderMorpher.Services
             }
 
             FileItemNode? branch;
+            long branchId;
             using (var nodeCmd = conn.CreateCommand())
             {
-                nodeCmd.CommandText = @"SELECT FullPath, Name, ParentPath, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level
+                nodeCmd.CommandText = @"SELECT FullPath, Name, ParentId, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level, Id
                     FROM TreeNodes WHERE RootId = @rootId AND FullPath = @path;";
                 nodeCmd.Parameters.AddWithValue("@rootId", rootId);
                 nodeCmd.Parameters.AddWithValue("@path", folderPath);
                 using var reader = nodeCmd.ExecuteReader();
                 if (!reader.Read()) return null;
                 branch = ReadNode(reader, false);
+                branchId = reader.GetInt64(12);
                 branch.Percentage = rootBytes > 0 ? (double)branch.Size / rootBytes * 100 : 0;
             }
 
             using (var childrenCmd = conn.CreateCommand())
             {
-                childrenCmd.CommandText = @"SELECT FullPath, Name, ParentPath, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level
-                    FROM TreeNodes WHERE RootId = @rootId AND ParentPath = @path ORDER BY IsDirectory DESC, Size DESC;";
+                childrenCmd.CommandText = @"SELECT FullPath, Name, ParentId, Size, FileCount, FolderCount, IsDirectory, IsExpanded, LastModified, CreationTime, Sha256, Level
+                    FROM TreeNodes WHERE RootId = @rootId AND ParentId = @parentId ORDER BY IsDirectory DESC, Size DESC;";
                 childrenCmd.Parameters.AddWithValue("@rootId", rootId);
-                childrenCmd.Parameters.AddWithValue("@path", folderPath);
+                childrenCmd.Parameters.AddWithValue("@parentId", branchId);
                 using var reader = childrenCmd.ExecuteReader();
                 while (reader.Read())
                 {

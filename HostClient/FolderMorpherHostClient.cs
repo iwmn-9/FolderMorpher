@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using FolderMorpher.Contracts;
@@ -62,12 +63,26 @@ namespace FolderMorpher.HostClient
                     _pipeStream = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut,
                         PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    timeoutCts.CancelAfter(attempt == 0 ? 500 : 15000);
+                    timeoutCts.CancelAfter(attempt == 0 ? 500 : 90000);
                     await _pipeStream.ConnectAsync(timeoutCts.Token);
 
                     _rpc = JsonRpc.Attach(_pipeStream);
                     _proxy = _rpc.Attach<IFolderMorpherHostService>();
+                    var status = await _proxy.GetStatusAsync().WaitAsync(TimeSpan.FromSeconds(5), ct);
+                    var clientVersion = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "unknown";
+                    if (!string.Equals(status.Version, clientVersion, StringComparison.Ordinal))
+                    {
+                        _rpc.Dispose();
+                        _pipeStream.Dispose();
+                        _proxy = null;
+                        throw new HostVersionMismatchException(
+                            $"起動中のFolderMorpher Hostは旧版です（Host {status.Version} / GUI {clientVersion}）。Hostの作業を終えてWindowsを再ログインし、新しいEXEを起動してください。");
+                    }
                     return;
+                }
+                catch (HostVersionMismatchException)
+                {
+                    throw;
                 }
                 catch
                 {
@@ -82,6 +97,8 @@ namespace FolderMorpher.HostClient
 
             throw new InvalidOperationException("FolderMorpher の Host モードとの IPC 接続を確立できませんでした。");
         }
+
+        private sealed class HostVersionMismatchException(string message) : InvalidOperationException(message) { }
 
         private void LaunchHostProcess()
         {

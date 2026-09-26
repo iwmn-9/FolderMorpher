@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 
 namespace FolderMorpher.Contracts
 {
@@ -9,7 +10,7 @@ namespace FolderMorpher.Contracts
     public class HostStatusDto
     {
         public bool IsRunning { get; set; } = true;
-        public string Version { get; set; } = "2.2.20";
+        public string Version { get; set; } = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "unknown";
         public string MachineName { get; set; } = Environment.MachineName;
         public string UserName { get; set; } = Environment.UserName;
         public int ProcessId { get; set; } = Environment.ProcessId;

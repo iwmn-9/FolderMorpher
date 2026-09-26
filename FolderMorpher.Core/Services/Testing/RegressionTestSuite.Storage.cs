@@ -12,6 +12,7 @@ using AstraSize.Services;
 using AstraSize.Services.Mft;
 using FolderMorpher.Models;
 using FolderMorpher.Services;
+using Microsoft.Data.Sqlite;
 
 namespace FolderMorpher.Services.Testing
 {
@@ -744,11 +745,59 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException("SqliteTreeCache: DeleteRootAsync 後もレコードが残存しています。");
                 }
+
+                await TestLegacyTreeCacheMigrationAsync(Path.Combine(tempDir, "legacy_tree_cache.db"));
             }
             finally
             {
                 try { Directory.Delete(tempDir, true); } catch { }
             }
+        }
+
+        private static async Task TestLegacyTreeCacheMigrationAsync(string dbPath)
+        {
+            const string rootPath = @"C:\LegacyShare";
+            const string folderPath = @"C:\LegacyShare\Sub";
+            const string filePath = @"C:\LegacyShare\Sub\report.txt";
+            using (var conn = new SqliteConnection($"Data Source={dbPath}"))
+            {
+                conn.Open();
+                using var seed = conn.CreateCommand();
+                seed.CommandText = @"
+                    CREATE TABLE TreeRoots (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT, NormalizedPath TEXT UNIQUE NOT NULL,
+                        OriginalTargetPath TEXT NOT NULL, Timestamp TEXT NOT NULL,
+                        TotalSizeBytes INTEGER NOT NULL, FileCount INTEGER NOT NULL,
+                        FolderCount INTEGER NOT NULL, TopFilesJson TEXT, ExtensionStatsJson TEXT);
+                    CREATE TABLE TreeNodes (
+                        Id INTEGER PRIMARY KEY AUTOINCREMENT, RootId INTEGER NOT NULL,
+                        FullPath TEXT NOT NULL, Name TEXT NOT NULL, ParentPath TEXT,
+                        Size INTEGER NOT NULL, FileCount INTEGER NOT NULL, FolderCount INTEGER NOT NULL,
+                        IsDirectory INTEGER NOT NULL, IsExpanded INTEGER NOT NULL,
+                        LastModified TEXT, CreationTime TEXT, Sha256 TEXT, Level INTEGER NOT NULL);
+                    CREATE INDEX idx_treenodes_root_path ON TreeNodes(RootId, FullPath);
+                    CREATE INDEX idx_treenodes_root_parent ON TreeNodes(RootId, ParentPath);
+                    INSERT INTO TreeRoots VALUES (1, 'C:\LegacyShare', 'C:\LegacyShare', '2026-01-01', 100, 1, 1, NULL, NULL);
+                    INSERT INTO TreeNodes VALUES (10, 1, 'C:\LegacyShare', 'LegacyShare', NULL, 100, 1, 1, 1, 1, NULL, NULL, NULL, 0);
+                    INSERT INTO TreeNodes VALUES (11, 1, 'C:\LegacyShare\Sub', 'Sub', 'C:\LegacyShare', 100, 1, 0, 1, 0, NULL, NULL, NULL, 1);
+                    INSERT INTO TreeNodes VALUES (12, 1, 'C:\LegacyShare\Sub\report.txt', 'report.txt', 'C:\LegacyShare\Sub', 100, 0, 0, 0, 0, NULL, NULL, 'ABC123', 2);";
+                seed.ExecuteNonQuery();
+            }
+
+            var cache = new SqliteTreeCacheService(dbPath);
+            var tree = await cache.LoadTreeAsync(rootPath);
+            var branch = await cache.LoadBranchAsync(rootPath, folderPath);
+            if (tree?.Children.SingleOrDefault()?.Children.SingleOrDefault()?.Sha256 != "ABC123" ||
+                branch?.Children.SingleOrDefault()?.FullPath != filePath)
+                throw new InvalidOperationException("SqliteTreeCache: 旧DBの親ID移行で階層またはSHA-256が失われました。");
+
+            using var verify = new SqliteConnection($"Data Source={dbPath}");
+            verify.Open();
+            using var schema = verify.CreateCommand();
+            schema.CommandText = "SELECT ParentId FROM TreeNodes WHERE FullPath = @path;";
+            schema.Parameters.AddWithValue("@path", filePath);
+            if ((long)schema.ExecuteScalar()! != 11)
+                throw new InvalidOperationException("SqliteTreeCache: 旧DBから親IDへの移行結果が不正です。");
         }
 
         /// <summary>
