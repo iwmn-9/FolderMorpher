@@ -2635,7 +2635,7 @@
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
                             <Button x:Name="SettingsCancelButton" Content="キャンセル" Width="90" Height="32" Margin="0,0,8,0"
                                     Style="{StaticResource FluentButtonSecondary}" Click="SettingsCancelButton_Click"/>
-                            <Button x:Name="SettingsSaveButton" Content="設定を保存" Width="100" Height="32"
+                            <Button x:Name="SettingsSaveButton" Content="設定を保存" Width="112" Height="32"
                                     Style="{StaticResource FluentButtonPrimary}" Click="SettingsSaveButton_Click"/>
                         </StackPanel>
                     </Grid>
