@@ -34,6 +34,8 @@ namespace FolderMorpher.Host
         private readonly ConcurrentDictionary<Guid, AuditSnapshot> _auditReports = new();
         private readonly ConcurrentDictionary<string, (DateTime SeenUtc, FileItemNode Root)> _liveScanRoots =
             new(StringComparer.OrdinalIgnoreCase);
+        private int _shutdownRequested;
+        internal Action? ShutdownRequested { get; set; }
 
         private sealed record AuditSnapshot(DateTime CreatedUtc, List<AuditItem> Items);
         private sealed record PreparedAuditCleanup(DateTime CreatedUtc, List<AuditCleanupPlan> Plans);
@@ -68,6 +70,32 @@ namespace FolderMorpher.Host
 
         public Task<bool> PingAsync()
         {
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> RequestShutdownAsync(bool cancelActiveJobs)
+        {
+            if (ShutdownRequested == null) return Task.FromResult(false);
+            lock (_jobLifecycleGate)
+            {
+                var running = _jobs.Values.Where(job => job.State == HostJobState.Running).ToList();
+                if (running.Count > 0 && !cancelActiveJobs) return Task.FromResult(false);
+                if (_shutdownRequested != 0) return Task.FromResult(true);
+                _shutdownRequested = 1;
+                foreach (var job in running)
+                {
+                    lock (job.Gate)
+                    {
+                        if (job.State == HostJobState.Running) job.Cancellation.Cancel();
+                    }
+                }
+            }
+            // Let StreamJsonRpc send the reply before closing its pipe.
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(200);
+                ShutdownRequested?.Invoke();
+            });
             return Task.FromResult(true);
         }
 

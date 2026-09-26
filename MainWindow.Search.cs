@@ -60,6 +60,7 @@ namespace AstraSize
         private void SearchRefreshButton_Click(object sender, RoutedEventArgs e)
         {
             // 現在の入力条件で検索を再実行（最新化）
+            if (SearchQueryParser.Parse(SearchInputBox?.Text?.Trim() ?? string.Empty).IsEmpty) return;
             ExecuteSearch(isIncremental: false);
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             ShowToast(isJa ? "🔄 検索結果を最新化しました" : "🔄 Refreshed search results");
@@ -69,8 +70,12 @@ namespace AstraSize
 
         private void SearchInputBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            // インクリメンタル即時検索（タイピング中の自動デバウンス検索）
-            _searchDebounceTimer?.Stop();
+            CancelCurrentSearch();
+            if (SearchQueryParser.Parse(SearchInputBox?.Text?.Trim() ?? string.Empty).IsEmpty)
+            {
+                ClearSearchResults();
+                return;
+            }
             _searchDebounceTimer?.Start();
         }
 
@@ -91,7 +96,10 @@ namespace AstraSize
 
         private void SearchCancelButton_Click(object sender, RoutedEventArgs e)
         {
-            _searchCts?.Cancel();
+            CancelCurrentSearch();
+            if (SearchStatusText != null)
+                SearchStatusText.Text = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                    ? "検索を中断しました。" : "Search canceled.";
         }
 
         private void SearchClearButton_Click(object sender, RoutedEventArgs e)
@@ -101,11 +109,30 @@ namespace AstraSize
                 SearchInputBox.Text = string.Empty;
                 SearchInputBox.Focus();
             }
+            CancelCurrentSearch();
+            ClearSearchResults();
+        }
+
+        private void CancelCurrentSearch()
+        {
+            _searchDebounceTimer?.Stop();
+            Interlocked.Increment(ref _searchGeneration);
+            var cts = _searchCts;
+            _searchCts = null;
+            cts?.Cancel();
+            SetSearchLoadingState(false);
+        }
+
+        private void ClearSearchResults()
+        {
             _searchResults.Clear();
             _allSearchResults.Clear();
             _selectedSortType = "Relevance";
             if (SearchSortComboBox != null) SearchSortComboBox.SelectedIndex = 0;
             UpdateSearchKpi(0, 0, TimeSpan.Zero);
+            if (SearchStatusText != null)
+                SearchStatusText.Text = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                    ? "待機中" : "Ready";
         }
 
 
@@ -126,17 +153,18 @@ namespace AstraSize
             }
         }
 
-        private static async Task<List<FolderMorpher.Contracts.SearchResultDto>> RunLiveSearchJobAsync(
+        private static async Task<List<FolderMorpher.Contracts.SearchResultDto>> RunSearchJobAsync(
             string targetFolder,
             SearchQuery query,
             IProgress<FolderMorpher.Contracts.SearchProgressDto> progress,
+            bool cached,
             CancellationToken ct)
         {
             var started = Stopwatch.StartNew();
             var status = await FolderMorpher.HostClient.HostJobClient.RunAsync(
                 new FolderMorpher.Contracts.HostJobRequestDto
                 {
-                    Kind = FolderMorpher.Contracts.HostJobKind.Search,
+                    Kind = cached ? FolderMorpher.Contracts.HostJobKind.CachedSearch : FolderMorpher.Contracts.HostJobKind.Search,
                     TargetPath = targetFolder,
                     SearchQuery = FolderMorpher.HostClient.SearchDtoMapper.ToDto(query)
                 },
@@ -160,6 +188,12 @@ namespace AstraSize
         {
             string rawQuery = SearchInputBox?.Text?.Trim() ?? string.Empty;
             var query = SearchQueryParser.Parse(rawQuery);
+            if (query.IsEmpty)
+            {
+                CancelCurrentSearch();
+                ClearSearchResults();
+                return;
+            }
 
             if (SearchIncludeFoldersCheckBox?.IsChecked == true)
             {
@@ -207,9 +241,10 @@ namespace AstraSize
                 return;
             }
 
-            _searchCts?.Cancel();
+            CancelCurrentSearch();
             _searchCts = new CancellationTokenSource();
-            var ct = _searchCts.Token;
+            var searchCts = _searchCts;
+            var ct = searchCts.Token;
             long currentGen = Interlocked.Increment(ref _searchGeneration);
 
             SetSearchLoadingState(true);
@@ -305,8 +340,7 @@ namespace AstraSize
                         nameOnlyQuery.SearchContentMode = false;
                         nameOnlyQuery.ContentKeyword = string.Empty;
 
-                        treeResults = (await host.SearchInMemoryAsync(targetFolder,
-                            FolderMorpher.HostClient.SearchDtoMapper.ToDto(nameOnlyQuery), null, ct))
+                        treeResults = (await RunSearchJobAsync(targetFolder, nameOnlyQuery, progress, cached: true, ct))
                             .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                         if (currentGen == Volatile.Read(ref _searchGeneration))
                         {
@@ -327,7 +361,7 @@ namespace AstraSize
                     if (query.SearchContentMode && hasTarget)
                     {
                         // Step 2: 本文検索がONの場合は、ライブ直接走査をバックグラウンド実行して本文ヒットを合流！
-                        var liveHits = (await RunLiveSearchJobAsync(targetFolder, query, progress, ct))
+                        var liveHits = (await RunSearchJobAsync(targetFolder, query, progress, cached: false, ct))
                             .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                         if (currentGen == Volatile.Read(ref _searchGeneration))
                         {
@@ -382,7 +416,7 @@ namespace AstraSize
                             : (query.SearchContentMode ? "🔍 Live scanning (instant name hits & content search)..." : "🔍 Running live direct search...");
                     }
 
-                    var results = (await RunLiveSearchJobAsync(targetFolder, query, progress, ct))
+                    var results = (await RunSearchJobAsync(targetFolder, query, progress, cached: false, ct))
                         .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                     if (currentGen == Volatile.Read(ref _searchGeneration))
                     {
@@ -426,6 +460,8 @@ namespace AstraSize
                 {
                     SetSearchLoadingState(false);
                 }
+                if (ReferenceEquals(_searchCts, searchCts)) _searchCts = null;
+                searchCts.Dispose();
             }
         }
 

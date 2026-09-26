@@ -63,8 +63,8 @@ namespace FolderMorpher.Services
             var dir = Path.Combine(localBase, "TreeCache");
             Directory.CreateDirectory(dir);
 
-            var isRegression = Environment.GetCommandLineArgs().Contains("--test-regression");
-            var testPath = isRegression
+            var isTest = Environment.GetCommandLineArgs().Any(arg => arg is "--test-regression" or "--test-ipc");
+            var testPath = isTest
                 ? Environment.GetEnvironmentVariable("FOLDERMORPHER_TEST_TREE_CACHE_DB")
                     ?? Path.Combine(Path.GetTempPath(), "FolderMorpher_regression_tree_cache.db")
                 : null;

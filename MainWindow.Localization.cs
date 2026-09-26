@@ -582,6 +582,7 @@ namespace AstraSize
 
             // Settings Modal
             SettingsButton.ToolTip = isJa ? "環境設定 / Settings" : "Settings";
+            SettingsButtonMini.ToolTip = SettingsButton.ToolTip;
             SettingsTitleText.Text = isJa ? "⚙️ 環境設定 (Settings)" : "⚙️ Settings";
             SettingsDescText.Text = isJa
                 ? "キャッシュ、スナップショット履歴、監査レポートの参照先および保存先を構成します。"
@@ -606,6 +607,7 @@ namespace AstraSize
             SettingsBrowseCustomButton.Content = isJa ? "参照..." : "Browse...";
             SettingsCancelButton.Content = isJa ? "キャンセル" : "Cancel";
             SettingsSaveButton.Content = isJa ? "設定を保存" : "Save Settings";
+            SettingsQuitCompletelyButton.Content = isJa ? "アプリとHostを終了" : "Exit app and Host";
             if (SettingsReadPathTextBox != null)
             {
                 SettingsReadPathTextBox.ToolTip = isJa ? "空の場合はローカル既定値 (%LocalAppData%\\FolderMorpher) を参照します" : "Defaults to local directory (%LocalAppData%\\FolderMorpher) if blank";

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace AstraSize
 {
@@ -10,6 +11,18 @@ namespace AstraSize
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "FolderMorpher",
             "debug_startup.log");
+
+        private static void DeleteIpcTestDatabase(string path)
+        {
+            foreach (var suffix in new[] { string.Empty, "-wal", "-shm" })
+            {
+                try { File.Delete(path + suffix); }
+                catch { /* An IPC failure should keep its original diagnostic. */ }
+            }
+        }
+
+        private static T FindControl<T>(Window window, string name) where T : FrameworkElement =>
+            window.FindName(name) as T ?? throw new InvalidOperationException($"UI test control missing: {name}");
 
         public App()
         {
@@ -129,6 +142,10 @@ namespace AstraSize
             if (e.Args.Contains("--test-ipc"))
             {
                 ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                var testId = Guid.NewGuid().ToString("N");
+                var testDbPath = Path.Combine(Path.GetTempPath(), $"FolderMorpher_IpcTreeCache_{testId}.db");
+                Environment.SetEnvironmentVariable("FOLDERMORPHER_TEST_IPC_ID", testId);
+                Environment.SetEnvironmentVariable("FOLDERMORPHER_TEST_TREE_CACHE_DB", testDbPath);
                 Task.Run(async () =>
                 {
                     try
@@ -157,6 +174,39 @@ namespace AstraSize
                             var matchFile = Path.Combine(sourceChildPath, "ipc-search-match.txt");
                             await File.WriteAllTextAsync(matchFile, "FolderMorpher IPC roundtrip");
                             using var testCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(45));
+                            MainWindow? searchWindow = null;
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                searchWindow = new MainWindow();
+                                FindControl<TextBox>(searchWindow, "SearchDirectTargetTextBox").Text = testRoot;
+                                FindControl<TextBox>(searchWindow, "SearchInputBox").Text = "ipc-search-match";
+                                FindControl<Button>(searchWindow, "SearchClearButton").RaiseEvent(new RoutedEventArgs(
+                                    System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                if (FindControl<TextBox>(searchWindow, "SearchInputBox").Text.Length != 0 ||
+                                    searchWindow.SearchResults.Count != 0 ||
+                                    FindControl<Button>(searchWindow, "SearchCancelButton").Visibility != Visibility.Collapsed ||
+                                    FindControl<ProgressBar>(searchWindow, "SearchProgressBar").Visibility != Visibility.Collapsed ||
+                                    !FindControl<Button>(searchWindow, "SearchExecuteButton").IsEnabled)
+                                    throw new InvalidOperationException("Search clear did not restore an idle UI.");
+                            });
+                            await Task.Delay(400, testCts.Token);
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                if (searchWindow!.SearchResults.Count != 0 ||
+                                    FindControl<Button>(searchWindow, "SearchCancelButton").Visibility != Visibility.Collapsed)
+                                    throw new InvalidOperationException("An empty search restarted after Clear.");
+                                FindControl<TextBox>(searchWindow, "SearchInputBox").Text = "ipc-search-match";
+                                FindControl<Button>(searchWindow, "SearchExecuteButton").RaiseEvent(new RoutedEventArgs(
+                                    System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                FindControl<Button>(searchWindow, "SearchCancelButton").RaiseEvent(new RoutedEventArgs(
+                                    System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                if (FindControl<Button>(searchWindow, "SearchCancelButton").Visibility != Visibility.Collapsed ||
+                                    !FindControl<Button>(searchWindow, "SearchExecuteButton").IsEnabled ||
+                                    FindControl<TextBlock>(searchWindow, "SearchStatusText").Text is not ("検索を中断しました。" or "Search canceled."))
+                                    throw new InvalidOperationException("Search Stop did not respond immediately.");
+                                searchWindow.Close();
+                            });
+                            Console.WriteLine("[TEST-IPC] Search Clear/Stop UI: SUCCESS");
                             var scan = await host.ScanStorageAsync(
                                 new FolderMorpher.Contracts.StorageScanRequestDto { TargetPath = testRoot }, null, testCts.Token);
                             if (scan.RootNode == null || scan.TotalFiles < 1 || scan.RootNode.Children.Count < 1)
@@ -238,6 +288,26 @@ namespace AstraSize
                                 throw new InvalidOperationException("Host job result did not survive the RPC roundtrip.");
                             Console.WriteLine($"[TEST-IPC] Host Job: {searchJob.SearchResults.Count} search result(s)");
                             await host.ReleaseJobAsync(searchJobId);
+
+                            var cachedJobId = await host.StartJobAsync(new FolderMorpher.Contracts.HostJobRequestDto
+                            {
+                                Kind = FolderMorpher.Contracts.HostJobKind.CachedSearch,
+                                TargetPath = testRoot,
+                                SearchQuery = query
+                            });
+                            FolderMorpher.Contracts.HostJobStatusDto cachedJob;
+                            do
+                            {
+                                cachedJob = await host.GetJobStatusAsync(cachedJobId);
+                                if (cachedJob.State == FolderMorpher.Contracts.HostJobState.Failed)
+                                    throw new InvalidOperationException($"Cached Host search job failed: {cachedJob.Error}");
+                                if (cachedJob.State == FolderMorpher.Contracts.HostJobState.Running)
+                                    await Task.Delay(50, testCts.Token);
+                            } while (cachedJob.State == FolderMorpher.Contracts.HostJobState.Running);
+                            if (cachedJob.SearchResults?.Any(item => string.Equals(item.FullPath, matchFile, StringComparison.OrdinalIgnoreCase)) != true)
+                                throw new InvalidOperationException("Cached Host search job lost its results.");
+                            await host.ReleaseJobAsync(cachedJobId);
+                            Console.WriteLine("[TEST-IPC] Cached Search Job: SUCCESS");
 
                             var auditJobId = await host.StartJobAsync(new FolderMorpher.Contracts.HostJobRequestDto
                             {
@@ -406,9 +476,19 @@ namespace AstraSize
                         {
                             Directory.Delete(testRoot, recursive: true);
                         }
+                        if (status.ProcessId == FolderMorpher.HostClient.FolderMorpherHostClient.Instance.LaunchedHostProcessId)
+                        {
+                            if (!await host.RequestShutdownAsync(cancelActiveJobs: false))
+                                throw new InvalidOperationException("Host refused a graceful shutdown with no active jobs.");
+                            using var hostProcess = System.Diagnostics.Process.GetProcessById(status.ProcessId);
+                            using var shutdownCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(10));
+                            await hostProcess.WaitForExitAsync(shutdownCts.Token);
+                            Console.WriteLine("[TEST-IPC] Graceful Host shutdown: SUCCESS");
+                        }
                         Console.WriteLine("[TEST-IPC] ALL IPC TESTS PASSED");
                         Console.Out.Flush();
-                        FolderMorpher.HostClient.FolderMorpherHostClient.Instance.StopLaunchedHostForTests();
+                        FolderMorpher.HostClient.FolderMorpherHostClient.Instance.Dispose();
+                        DeleteIpcTestDatabase(testDbPath);
                         Environment.Exit(pong ? 0 : 1);
                     }
                     catch (Exception ex)
@@ -416,6 +496,7 @@ namespace AstraSize
                         Console.WriteLine($"[TEST-IPC-FATAL] {ex}");
                         Console.Out.Flush();
                         FolderMorpher.HostClient.FolderMorpherHostClient.Instance.StopLaunchedHostForTests();
+                        DeleteIpcTestDatabase(testDbPath);
                         Environment.Exit(1);
                     }
                 });

@@ -6,7 +6,8 @@ public enum HostJobKind
     AuditScan = 2,
     DeploySkeleton = 3,
     MigrationPackage = 4,
-    EffectiveAccessAudit = 5
+    EffectiveAccessAudit = 5,
+    CachedSearch = 6
 }
 
 public enum HostJobState

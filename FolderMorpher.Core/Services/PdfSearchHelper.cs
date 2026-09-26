@@ -12,15 +12,12 @@ namespace FolderMorpher.Services
     /// </summary>
     public static class PdfSearchHelper
     {
-        private static readonly Guid IFilterGuid = new("89BCB740-6119-101A-BCB7-00DD010655AF");
-
         #region Windows IFilter COM Interop
 
         [DllImport("query.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern int LoadIFilter(
             string pwcsPath,
             IntPtr pUnkOuter,
-            ref Guid riid,
             out IntPtr ppIUnk);
 
         [ComImport, Guid("89BCB740-6119-101A-BCB7-00DD010655AF"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -214,8 +211,7 @@ namespace FolderMorpher.Services
             object? comObj = null;
             try
             {
-                Guid riid = IFilterGuid;
-                int hr = LoadIFilter(filePath, IntPtr.Zero, ref riid, out pUnk);
+                int hr = LoadIFilter(filePath, IntPtr.Zero, out pUnk);
                 if (hr == 0 && pUnk != IntPtr.Zero)
                 {
                     comObj = Marshal.GetObjectForIUnknown(pUnk);
@@ -324,8 +320,7 @@ namespace FolderMorpher.Services
             object? comObj = null;
             try
             {
-                Guid riid = IFilterGuid;
-                int hr = LoadIFilter(filePath, IntPtr.Zero, ref riid, out pUnk);
+                int hr = LoadIFilter(filePath, IntPtr.Zero, out pUnk);
                 if (hr != 0 || pUnk == IntPtr.Zero) return PdfFilterStatus.FailedOrUnsupported;
 
                 comObj = Marshal.GetObjectForIUnknown(pUnk);
@@ -483,8 +478,7 @@ namespace FolderMorpher.Services
             object? comObj = null;
             try
             {
-                Guid riid = IFilterGuid;
-                int hr = LoadIFilter(filePath, IntPtr.Zero, ref riid, out pUnk);
+                int hr = LoadIFilter(filePath, IntPtr.Zero, out pUnk);
                 if (hr != 0 || pUnk == IntPtr.Zero) return PdfFilterStatus.FailedOrUnsupported;
 
                 comObj = Marshal.GetObjectForIUnknown(pUnk);

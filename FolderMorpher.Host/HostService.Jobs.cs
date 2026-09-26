@@ -6,6 +6,7 @@ namespace FolderMorpher.Host;
 public partial class HostService
 {
     private readonly ConcurrentDictionary<Guid, HostJob> _jobs = new();
+    private readonly object _jobLifecycleGate = new();
 
     private sealed class HostJob
     {
@@ -55,13 +56,14 @@ public partial class HostService
         ArgumentNullException.ThrowIfNull(request);
         switch (request.Kind)
         {
-            case HostJobKind.Search when string.IsNullOrWhiteSpace(request.TargetPath) || request.SearchQuery == null:
+            case HostJobKind.Search or HostJobKind.CachedSearch when string.IsNullOrWhiteSpace(request.TargetPath) || request.SearchQuery == null:
             case HostJobKind.AuditScan when request.AuditRequest == null || string.IsNullOrWhiteSpace(request.AuditRequest.TargetPath):
             case HostJobKind.DeploySkeleton when request.SkeletonPlan == null:
             case HostJobKind.MigrationPackage when request.MigrationNodes == null || request.MigrationOptions == null:
             case HostJobKind.EffectiveAccessAudit when string.IsNullOrWhiteSpace(request.TargetPath) || string.IsNullOrWhiteSpace(request.TargetAccount):
                 throw new ArgumentException("Job request is incomplete.", nameof(request));
             case HostJobKind.Search:
+            case HostJobKind.CachedSearch:
             case HostJobKind.AuditScan:
             case HostJobKind.DeploySkeleton:
             case HostJobKind.MigrationPackage:
@@ -71,16 +73,21 @@ public partial class HostService
                 throw new ArgumentOutOfRangeException(nameof(request.Kind));
         }
 
-        foreach (var old in _jobs.Where(entry => entry.Value.State != HostJobState.Running &&
-                    entry.Value.CreatedUtc < DateTime.UtcNow.AddHours(-2)))
+        HostJob job;
+        lock (_jobLifecycleGate)
         {
-            if (_jobs.TryRemove(old.Key, out var removed)) removed.Cancellation.Dispose();
+            if (_shutdownRequested != 0)
+                throw new InvalidOperationException("Host is shutting down.");
+            foreach (var old in _jobs.Where(entry => entry.Value.State != HostJobState.Running &&
+                        entry.Value.CreatedUtc < DateTime.UtcNow.AddHours(-2)))
+            {
+                if (_jobs.TryRemove(old.Key, out var removed)) removed.Cancellation.Dispose();
+            }
+            if (_jobs.Values.Count(entry => entry.State == HostJobState.Running) >= 8 || _jobs.Count >= 64)
+                throw new InvalidOperationException("Host job limit reached. Wait for existing jobs to finish.");
+            job = new HostJob(request.Kind);
+            if (!_jobs.TryAdd(job.Id, job)) throw new InvalidOperationException("Could not register Host job.");
         }
-        if (_jobs.Values.Count(job => job.State == HostJobState.Running) >= 8 || _jobs.Count >= 64)
-            throw new InvalidOperationException("Host job limit reached. Wait for existing jobs to finish.");
-
-        var job = new HostJob(request.Kind);
-        if (!_jobs.TryAdd(job.Id, job)) throw new InvalidOperationException("Could not register Host job.");
         _ = Task.Run(() => ExecuteJobAsync(job, request));
         return Task.FromResult(job.Id);
     }
@@ -92,6 +99,7 @@ public partial class HostService
             switch (job.Kind)
             {
                 case HostJobKind.Search:
+                case HostJobKind.CachedSearch:
                     var searchProgress = new Progress<SearchProgressDto>(report =>
                     {
                         lock (job.Gate)
@@ -101,7 +109,9 @@ public partial class HostService
                             job.TotalHitBytes = report.TotalHitBytes;
                         }
                     });
-                    var results = await SearchAsync(request.TargetPath, request.SearchQuery!, searchProgress, job.Cancellation.Token);
+                    var results = job.Kind == HostJobKind.CachedSearch
+                        ? await SearchInMemoryAsync(request.TargetPath, request.SearchQuery!, searchProgress, job.Cancellation.Token)
+                        : await SearchAsync(request.TargetPath, request.SearchQuery!, searchProgress, job.Cancellation.Token);
                     job.Cancellation.Token.ThrowIfCancellationRequested();
                     lock (job.Gate) job.SearchResults = results;
                     break;
@@ -172,10 +182,13 @@ public partial class HostService
 
     public Task<bool> ReleaseJobAsync(Guid jobId)
     {
-        if (!_jobs.TryGetValue(jobId, out var job) || job.State == HostJobState.Running)
-            return Task.FromResult(false);
-        if (!_jobs.TryRemove(jobId, out var removed)) return Task.FromResult(false);
-        removed.Cancellation.Dispose();
-        return Task.FromResult(true);
+        if (!_jobs.TryGetValue(jobId, out var job)) return Task.FromResult(false);
+        lock (job.Gate)
+        {
+            if (job.State == HostJobState.Running || !_jobs.TryRemove(jobId, out var removed))
+                return Task.FromResult(false);
+            removed.Cancellation.Dispose();
+            return Task.FromResult(true);
+        }
     }
 }

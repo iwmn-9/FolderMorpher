@@ -27,6 +27,7 @@ namespace FolderMorpher.HostClient
         private readonly SemaphoreSlim _connectionLock = new(1, 1);
 
         public string PipeName => IpcEndpoint.PipeName;
+        public int? LaunchedHostProcessId => _launchedHost?.Id;
 
         public async Task<IFolderMorpherHostService> GetServiceAsync(CancellationToken ct = default)
         {
@@ -119,6 +120,8 @@ namespace FolderMorpher.HostClient
                 psi.ArgumentList.Add(assemblyPath);
             }
             psi.ArgumentList.Add("--host");
+            if (Environment.GetCommandLineArgs().Contains("--test-ipc"))
+                psi.ArgumentList.Add("--test-ipc");
             _launchedHost = Process.Start(psi) ?? throw new InvalidOperationException("Host プロセスを起動できませんでした。");
         }
 

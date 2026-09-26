@@ -52,6 +52,7 @@
   3. **`FolderMorpher.Host`**: `UseWPF=false` のライブラリ。`FolderMorpher.exe --host` で起動し、Coreサービス、SQLite、設定、ジョブを所有する。Named PipeはユーザーSIDとセッションを識別し、`PipeOptions.CurrentUserOnly` を使用。
   4. **`FolderMorpher.UI`**: WPF画面、画面用モデル、DTO変換、IPCクライアントを持ち、プロジェクト参照はContractsのみ。Coreモデルの事実部分は同一ソースをUIでもコンパイルし、分離済みの表示部分はUI partial classで足す。共有ソースの検索構文解析は残存する。
      - `FolderMorpherHostClient` はHost未起動時に同じEXEを `--host` で起動し、切断時に再接続する。
+     - 通常のウィンドウ終了ではHostのJobを継続する。環境設定の「アプリとHostを終了」は実行中Jobを確認してから `RequestShutdownAsync` でHostを正常終了する。
 - **ビルド形態**: `Release win-x64` の **自己完結型（Self-Contained）単一実行可能ファイル (`FolderMorpher.exe`)**
   - ネイティブWPFエンジンDLLおよび SQLite ネイティブDLLはEXE内部にバンドルされる。
   - `-p:EnableCompressionInSingleFile=true` による Deflate 圧縮を標準採用。
@@ -79,6 +80,10 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 **検索の現行入口**: `MainWindow.Search.cs` → `FolderMorpherHostClient` → `HostService.Search.cs` → `SearchEngineService`。直接走査は `SafeFileEnumerator.EnumerateFileEntriesParallelAsync(..., collectResults: false)` のコールバックで逐次処理する。ファイル名・パス・本文条件の共通判定は `SearchEngineService.MatchesSearchTerms` が正本。`TreeCachePruningIndex` はフォルダー時刻だけでは検索の完全性を保証できないため、通常画面の直接走査では構築しない。
 
 スキャンツリーがHostメモリにない場合のキャッシュ検索は、TreeCacheを全ツリーへ復元せず `SqliteTreeCacheService.EnumerateSearchEntries` から逐次照合する。再スキャンの前回差分も旧ツリーを復元せずDB行を逐次読む。どちらもローカルDBだけを読むのでUNCへの追加I/Oは発生しない。
+
+GUIの検索実行はLiveとキャッシュの双方をHost Jobとして所有し、停止・クリア・入力変更で旧Jobへキャンセルを伝える。空の検索条件では自動検索を起動しない。Host Jobのキャンセルは `HostJobClient` と `HostService.Jobs.cs` が正本で、GUIは世代番号で遅延応答を破棄する。
+
+PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数を保つ（ADR 107）。P/Invoke宣言を変更する時はMicrosoftのシグネチャと照合し、検索回帰でプロセス終了時のCOM最終化も確認する。
 
 **旧方式**: 検索専用 FTS5 と Watcher は ADR 87 で通常画面から退役し、ADR 100 で旧サービスと専用テストも撤去した。`Microsoft.Data.Sqlite` は現行の `SqliteTreeCacheService` で引き続き使用する。
 
@@ -157,7 +162,7 @@ Copy-Item ./publish-single/FolderMorpher.exe "G:\マイドライブ\FolderMorphe
 ```
 
 ### 単一EXEのIPC統合試験
-配布物を生成後、`publish-single/FolderMorpher.exe --test-ipc` を実行する。別PIDの `--host` を起動し、Named PipeでStorage/Search/ACL/Audit/移行/設定のDTOを往復させる。Hostの既存常駐プロセスがある場合はテスト対象EXEと同じビルドか確認する。
+配布物を生成後、`publish-single/FolderMorpher.exe --test-ipc` を実行する。試験専用Named Pipe・Mutex・一時SQLiteで別PIDの `--host` を起動し、普段のHost/DBへ触れずStorage/Search/ACL/Audit/移行/設定のDTO、検索Clear/Stop、Host正常終了を確認する。
 
 ### 自動統合テスト（ヘッドレス実行）
 ```powershell

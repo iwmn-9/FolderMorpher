@@ -426,6 +426,51 @@ namespace AstraSize
             SettingsModalOverlay.Visibility = Visibility.Collapsed;
         }
 
+        private async void SettingsQuitCompletelyButton_Click(object sender, RoutedEventArgs e)
+        {
+            SettingsQuitCompletelyButton.IsEnabled = false;
+            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+            try
+            {
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var status = await host.GetStatusAsync();
+                bool cancelJobs = false;
+                if (status.ActiveJobCount > 0)
+                {
+                    var choice = MessageBox.Show(
+                        isJa
+                            ? $"Hostで{status.ActiveJobCount}件の処理が実行中です。中断してアプリとHostを終了しますか？"
+                            : $"{status.ActiveJobCount} Host job(s) are running. Cancel them and exit the app and Host?",
+                        isJa ? "完全終了" : "Exit app and Host",
+                        MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    if (choice != MessageBoxResult.Yes) return;
+                    cancelJobs = true;
+                }
+                if (!await host.RequestShutdownAsync(cancelJobs))
+                {
+                    // A job may have started between the status read and the shutdown request.
+                    MessageBox.Show(
+                        isJa ? "実行中のHost処理があるため終了できませんでした。もう一度お試しください。"
+                             : "A Host job started before shutdown. Please try again.",
+                        isJa ? "完全終了" : "Exit app and Host",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+                Close();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    (isJa ? "Hostの終了を確認できませんでした: " : "Could not confirm Host shutdown: ") + ex.Message,
+                    isJa ? "完全終了" : "Exit app and Host",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                SettingsQuitCompletelyButton.IsEnabled = true;
+            }
+        }
+
         private void SettingsSaveButton_Click(object sender, RoutedEventArgs e)
         {
             var settings = AppSettingsService.Instance.Current;

@@ -11,58 +11,52 @@ namespace FolderMorpher.Host
     /// </summary>
     public static class Program
     {
-        private static Mutex? _singleInstanceMutex;
-
-        public static async Task RunAsync(string[] args)
+        public static Task RunAsync(string[] args)
         {
             // ユーザーセッションごとの単一インスタンス Mutex
             string mutexName = IpcEndpoint.MutexName;
-            _singleInstanceMutex = new Mutex(true, mutexName, out bool createdNew);
+            using var singleInstanceMutex = new Mutex(true, mutexName, out bool createdNew);
 
             if (!createdNew)
             {
                 // 既に起動している場合は二重起動せず静かに終了
-                return;
+                return Task.CompletedTask;
             }
 
             try
             {
                 var hostService = new HostService();
                 var server = new NamedPipeHostServer(hostService);
+                using var cts = new CancellationTokenSource();
+                hostService.ShutdownRequested = cts.Cancel;
                 server.Start();
 
-                // 常駐待機用 CancellationTokenSource
-                using var cts = new CancellationTokenSource();
-
                 // プロセス終了シグナル（ログオフ、シャットダウン、Ctrl+C等）を検知
-                AppDomain.CurrentDomain.ProcessExit += (s, e) =>
-                {
-                    server.Stop();
-                    cts.Cancel();
-                };
-
-                Console.CancelKeyPress += (s, e) =>
+                EventHandler onProcessExit = (s, e) => cts.Cancel();
+                ConsoleCancelEventHandler onConsoleCancel = (s, e) =>
                 {
                     e.Cancel = true;
-                    server.Stop();
                     cts.Cancel();
                 };
-
-                // キャンセルされるまで非同期に常駐待機
+                AppDomain.CurrentDomain.ProcessExit += onProcessExit;
+                Console.CancelKeyPress += onConsoleCancel;
                 try
                 {
-                    await Task.Delay(Timeout.Infinite, cts.Token);
+                    // Mutex ownership belongs to this entry thread. Keep its release on the same thread.
+                    cts.Token.WaitHandle.WaitOne();
                 }
-                catch (OperationCanceledException)
+                finally
                 {
-                    // 正常終了
+                    AppDomain.CurrentDomain.ProcessExit -= onProcessExit;
+                    Console.CancelKeyPress -= onConsoleCancel;
+                    server.Stop();
                 }
             }
             finally
             {
-                _singleInstanceMutex?.ReleaseMutex();
-                _singleInstanceMutex?.Dispose();
+                singleInstanceMutex.ReleaseMutex();
             }
+            return Task.CompletedTask;
         }
     }
 }

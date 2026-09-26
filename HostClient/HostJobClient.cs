@@ -18,6 +18,7 @@ public static class HostJobClient
                 ct.ThrowIfCancellationRequested();
                 service = await FolderMorpherHostClient.Instance.GetServiceAsync(ct);
                 var status = await service.GetJobStatusAsync(jobId);
+                ct.ThrowIfCancellationRequested();
                 onProgress?.Invoke(status);
                 switch (status.State)
                 {

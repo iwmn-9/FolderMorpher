@@ -982,3 +982,16 @@
 - **速度**: `(RootId, ParentId, Name)` で直下とパスを引く。DFS挿入順からフォルダーの `SubtreeEndId` を記録し、部分木Top10は連続ID範囲を走査する。`(RootId, Id)` は全ノード逐次走査用。キャッシュ検索と再スキャン差分はDB行をストリームで読み、旧全ツリーの復元を避ける。検索条件の正本は引き続き `SearchEngineService`、UNCのI/O制御は既存ガバナーとする。
 - **移行**: 旧表から新表へ単一トランザクションでコピーし、件数・親リンク・DFS順を検証してから切り替え、VACUUMで旧ページを回収する。実行中の旧Hostが所有するDBには触れない。初回起動時に移行が必要なため、既存GUI/Hostの終了後に新バージョンを起動する。
 - **検証範囲**: 実DBコピーの約165万行でSQLite整合性、親リンク、共通行の旧パスとの全件比較（不一致0）、部分木Top10一致を確認。約651MB→約199MB。`C:\Users`のTop10 SQLは旧約0.86秒から新約0.20秒、C#の直下取得は約0.02秒、C:\ルート約153万件の不一致キャッシュ検索は約2.7秒（同じ端末のローカルコピーでの測定）。合成DBと8領域の回帰試験も通す。数値は他の端末やUNC性能の保証ではない。
+
+### ADR 106: 検索Jobの停止とHostの明示終了
+
+- **背景**: クリア時の入力変更イベントがデバウンスを再起動し、空条件で全件検索が走った。停止ボタンはキャンセル要求後も画面を即時に戻さず、キャッシュ検索は直接RPCでHost側の実行停止が確実ではなかった。常駐Hostの終了はタスクマネージャーに頼っていた。
+- **決定**: GUIのLive検索とキャッシュ検索をともにHost Jobへ統一する。入力変更・停止・クリアで旧CancellationTokenをキャンセルし、世代番号を進めて旧応答を無視し、停止表示を即時反映する。空条件では検索を開始しない。キャッシュ照合の正本は従来の `SearchInMemoryAsync` / `SearchEngineService` のまま使う。
+- **終了操作**: 環境設定に「アプリとHostを終了」を設け、稼働Jobがあれば確認の上キャンセルする。Hostは新Job受付を止め、RPC応答を返してからNamed Pipeを閉じて正常終了する。通常のウィンドウ終了は従来どおりHost Jobを継続する。単一EXE・二プロセス境界は維持する。
+- **検証**: IPC試験にGUIのClear/Stop、キャッシュJob、試験が起動したHostの正常終了を追加。試験は専用Named Pipe・Mutex・一時SQLiteを使い、普段のHostとDBから隔離する。Releaseビルド0警告0エラー、8領域回帰、DLLとpublish後の単一EXE双方のIPC往復を確認。
+
+### ADR 107: PDF IFilter のネイティブ呼び出し定義
+
+- **事実**: `query.dll` の `LoadIFilter` は `path, outer, out interface` の3引数。旧P/Invokeは存在しない `riid` 引数を入れた4引数で、COM最終化時に間欠的なAccessViolationが出た。Microsoftの[定義](https://learn.microsoft.com/en-us/windows/win32/api/ntquery/nf-ntquery-loadifilter)へ合わせる。
+- **決定**: `LoadIFilter` の全3呼び出しを正しい宣言に統一する。既存のテキスト抽出・検索のフォールバックとCOM解放は維持する。
+- **検証**: 修正後のReleaseビルドと検索を含む8領域回帰を3回実行し、AccessViolationの再発がないことを確認。間欠的な不具合の絶対不存在を保証するものではない。
