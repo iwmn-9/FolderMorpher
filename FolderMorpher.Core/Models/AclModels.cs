@@ -287,7 +287,7 @@ namespace AstraSize.Models
     /// <summary>
     /// Live ACL Dry-Run 差分プレビュー用アイテム
     /// </summary>
-    public class LiveAclDiffItem
+    public partial class LiveAclDiffItem
     {
         public LiveAclDiffType DiffType { get; set; } = LiveAclDiffType.Added;
 
@@ -307,25 +307,9 @@ namespace AstraSize.Models
             }
         }
 
-        public string BadgeBackground => DiffType switch
-        {
-            LiveAclDiffType.Added => "#DCFCE7",
-            LiveAclDiffType.Removed => "#FEE2E2",
-            LiveAclDiffType.Modified => "#DBEAFE",
-            _ => "#F1F5F9"
-        };
-
-        public string BadgeForeground => DiffType switch
-        {
-            LiveAclDiffType.Added => "#15803D",
-            LiveAclDiffType.Removed => "#B91C1C",
-            LiveAclDiffType.Modified => "#1D4ED8",
-            _ => "#64748B"
-        };
-
         public string AccountName { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
-        public string IconGlyph { get; set; } = "👤";
+        public AdPrincipalType PrincipalType { get; set; } = AdPrincipalType.User;
         public AccessControlType AccessType { get; set; } = AccessControlType.Allow;
         public string AccessTypeDisplay
         {
@@ -337,8 +321,6 @@ namespace AstraSize.Models
                     : (isJa ? "✅ 許可" : "✅ Allow");
             }
         }
-        public string AccessTypeBadgeBg => AccessType == AccessControlType.Deny ? "#FEE2E2" : "#F0FDF4";
-        public string AccessTypeBadgeFg => AccessType == AccessControlType.Deny ? "#B91C1C" : "#15803D";
         public string BeforeRights { get; set; } = "―";
         public string AfterRights { get; set; } = "―";
         public string Details { get; set; } = string.Empty;

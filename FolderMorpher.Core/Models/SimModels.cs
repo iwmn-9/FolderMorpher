@@ -20,7 +20,7 @@ namespace AstraSize.Models
     /// <summary>
     /// Active Directory or local user/group card
     /// </summary>
-    public class AdPrincipalItem : INotifyPropertyChanged
+    public partial class AdPrincipalItem : INotifyPropertyChanged
     {
         public string AccountName { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
@@ -29,9 +29,6 @@ namespace AstraSize.Models
         public string Description { get; set; } = string.Empty;
 
         public string FullAccountName => string.IsNullOrEmpty(Domain) ? AccountName : $"{Domain}\\{AccountName}";
-        public string IconGlyph => PrincipalType == AdPrincipalType.User ? "👤" : "👥";
-        public string BadgeBackground => PrincipalType == AdPrincipalType.User ? "#E0F2FE" : "#FEF3C7";
-        public string BadgeForeground => PrincipalType == AdPrincipalType.User ? "#0369A1" : "#B45309";
 
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? prop = null)
@@ -41,7 +38,7 @@ namespace AstraSize.Models
     /// <summary>
     /// Detailed ACL entry supporting both basic and advanced Windows permissions (14 flags)
     /// </summary>
-    public class SimAclEntry : INotifyPropertyChanged
+    public partial class SimAclEntry : INotifyPropertyChanged
     {
         private string _accountName = string.Empty;
         private string _sid = string.Empty;
@@ -75,7 +72,7 @@ namespace AstraSize.Models
         public AdPrincipalType PrincipalType
         {
             get => _principalType;
-            set { _principalType = value; OnPropertyChanged(); OnPropertyChanged(nameof(IconGlyph)); }
+            set { _principalType = value; OnPropertyChanged(); OnPropertyChanged("IconGlyph"); }
         }
 
         public FileSystemRights Rights
@@ -141,9 +138,6 @@ namespace AstraSize.Models
                 OnPropertyChanged();
             }
         }
-
-        [JsonIgnore]
-        public string IconGlyph => PrincipalType == AdPrincipalType.User ? "👤" : "👥";
 
         [JsonIgnore]
         public string FormattedRights
@@ -519,7 +513,7 @@ namespace AstraSize.Models
     /// <summary>
     /// Virtual Folder Node in the FolderMorpher Simulation Tree
     /// </summary>
-    public class SimFolderNode : INotifyPropertyChanged
+    public partial class SimFolderNode : INotifyPropertyChanged
     {
         private string _id = Guid.NewGuid().ToString();
         private string _name = "新規フォルダ";
@@ -549,17 +543,17 @@ namespace AstraSize.Models
             {
                 _level = Math.Max(0, value);
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(IndentMargin));
+                OnPropertyChanged("IndentMargin");
                 OnPropertyChanged(nameof(LevelPillText));
-                OnPropertyChanged(nameof(LevelPillBackground));
-                OnPropertyChanged(nameof(LevelPillForeground));
+                OnPropertyChanged("LevelPillBackground");
+                OnPropertyChanged("LevelPillForeground");
             }
         }
 
         public long EstimatedSizeBytes
         {
             get => _estimatedSizeBytes;
-            set { _estimatedSizeBytes = value; OnPropertyChanged(); OnPropertyChanged(nameof(FormattedSize)); }
+            set { _estimatedSizeBytes = value; OnPropertyChanged(); OnPropertyChanged("FormattedSize"); }
         }
 
         public long? EstimatedFileCount
@@ -606,9 +600,6 @@ namespace AstraSize.Models
         public SimFolderNode? Parent { get; set; }
 
         [JsonIgnore]
-        public string IndentMargin => $"{Math.Min(12, Level) * 18},0,0,0";
-
-        [JsonIgnore]
         public string LevelPillText
         {
             get
@@ -619,29 +610,6 @@ namespace AstraSize.Models
                     : (isJa ? $"第{Level + 1}階層" : $"Level {Level + 1}");
             }
         }
-
-        [JsonIgnore]
-        public string LevelPillBackground => Level switch
-        {
-            0 => "#065F46",
-            1 => "#1E3A8A",
-            2 => "#4C1D95",
-            3 => "#831843",
-            _ => "#713F12"
-        };
-
-        [JsonIgnore]
-        public string LevelPillForeground => Level switch
-        {
-            0 => "#6EE7B7",
-            1 => "#93C5FD",
-            2 => "#C4B5FD",
-            3 => "#FBCFE8",
-            _ => "#FDE047"
-        };
-
-        [JsonIgnore]
-        public string FormattedSize => FileItemNode.FormatBytes(EstimatedSizeBytes);
 
         [JsonIgnore]
         public string FormattedFileCount
@@ -749,11 +717,12 @@ namespace AstraSize.Models
     /// <summary>
     /// Human-friendly Difference Review Model (Before vs After)
     /// </summary>
-    public class SimDiffItem
+    public enum SimDiffKind { Unspecified, Relocation, Consolidation, Preserved, NewFolder }
+
+    public partial class SimDiffItem
     {
         public string DiffType { get; set; } = "階層移動";
-        public string DiffTypeBadgeBackground { get; set; } = "#3B82F6";
-        public string DiffTypeBadgeForeground { get; set; } = "#FFFFFF";
+        public SimDiffKind Kind { get; set; } = SimDiffKind.Unspecified;
 
         public string SourcePath { get; set; } = string.Empty;
         public string SourceDetail { get; set; } = string.Empty;

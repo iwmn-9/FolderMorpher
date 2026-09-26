@@ -10,7 +10,7 @@ internal static class MigrationDtoMapper
     public static MigrationDiffDto ToDto(SimDiffItem item) => new()
     {
         DiffType = item.DiffType,
-        DiffTypeBadgeBackground = item.DiffTypeBadgeBackground,
+        Kind = (int)item.Kind,
         SourcePath = item.SourcePath,
         SourceDetail = item.SourceDetail,
         TargetPath = item.TargetPath,
@@ -88,7 +88,7 @@ internal static class MigrationDtoMapper
         DiffReviews = dto.DiffReviews.Select(diff => new SimDiffItem
         {
             DiffType = diff.DiffType,
-            DiffTypeBadgeBackground = diff.DiffTypeBadgeBackground,
+            Kind = (SimDiffKind)diff.Kind,
             SourcePath = diff.SourcePath,
             SourceDetail = diff.SourceDetail,
             TargetPath = diff.TargetPath,

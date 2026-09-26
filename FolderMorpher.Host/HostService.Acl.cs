@@ -150,7 +150,7 @@ public partial class HostService
                     DiffType = (int)item.DiffType,
                     AccountName = item.AccountName,
                     DisplayName = item.DisplayName,
-                    IconGlyph = item.IconGlyph,
+                    PrincipalType = (int)item.PrincipalType,
                     AccessType = (int)item.AccessType,
                     BeforeRights = item.BeforeRights,
                     AfterRights = item.AfterRights,

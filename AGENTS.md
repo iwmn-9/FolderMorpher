@@ -48,7 +48,7 @@
 - **フレームワーク**: .NET 8.0, C# 12
 - **実行境界 (ADR 101・102)**: 配布は `FolderMorpher.exe` 1本。通常起動はGUI、`--host` は同じEXEの別Hostプロセス。ソース依存は `UI -> Contracts <- Host -> Core`。起動分岐はルート `App.xaml.cs`。
   1. **`FolderMorpher.Contracts`**: Core/WPF非依存のRPC契約とDTO。循環参照する画面モデルをそのままパイプへ渡さない。
-  2. **`FolderMorpher.Core`**: `UseWPF=false` のヘッドレス・クラスライブラリ。走査、検索、ACL、監査、移行などの実処理を持つ。レポート出力向け文言と旧モデルの表示プロパティは一部残るため、変更時は画面表示と区別する。
+  2. **`FolderMorpher.Core`**: `UseWPF=false` のヘッドレス・クラスライブラリ。走査、検索、ACL、監査、移行などの実処理を持つ。モデルの色・バッジ・サイズ表示はUI側へ分けた。レポートに使うローカライズ済みの文言は一部Coreに残るため、変更時は出力意味論を確認する。
   3. **`FolderMorpher.Host`**: `UseWPF=false` のライブラリ。`FolderMorpher.exe --host` で起動し、Coreサービス、SQLite、設定、ジョブを所有する。Named PipeはユーザーSIDとセッションを識別し、`PipeOptions.CurrentUserOnly` を使用。
   4. **`FolderMorpher.UI`**: WPF画面、画面用モデル、DTO変換、IPCクライアントを持ち、プロジェクト参照はContractsのみ。Coreモデルの事実部分は同一ソースをUIでもコンパイルし、分離済みの表示部分はUI partial classで足す。共有ソースの検索構文解析は残存する。
      - `FolderMorpherHostClient` はHost未起動時に同じEXEを `--host` で起動し、切断時に再接続する。

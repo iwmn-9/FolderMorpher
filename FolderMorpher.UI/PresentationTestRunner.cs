@@ -1,4 +1,5 @@
 using AstraSize.Models;
+using FolderMorpher.Models;
 
 namespace FolderMorpher.UI;
 
@@ -18,5 +19,36 @@ public static class PresentationTestRunner
         if (parent.Children[0].ShareFormatted != "40.0%" ||
             parent.Children[0].DiffFormatted != "+50 MB ▲")
             throw new InvalidOperationException("Storage share/diff presentation changed.");
+    }
+
+    public static void VerifyAuditAndSimulationPresentation()
+    {
+        var audit = new AuditItem { FileName = "sample.pdf", WasteScore = 80 };
+        if (audit.BadgeText != "PDF" || audit.ConfidenceBadgeBgHex != "#FEE2E2")
+            throw new InvalidOperationException("Audit presentation bindings changed.");
+        audit.IssueType = AuditIssueType.Duplicate;
+        audit.DuplicateGroupIndex = 1;
+        if (audit.RowBackgroundHex != "#EFF6FF")
+            throw new InvalidOperationException("Audit group palette changed.");
+        var principal = new AdPrincipalItem { PrincipalType = AdPrincipalType.User };
+        if (principal.IconGlyph != "👤" || principal.BadgeBackground != "#E0F2FE")
+            throw new InvalidOperationException("Principal presentation bindings changed.");
+        var folder = new SimFolderNode { Level = 1 };
+        if (folder.IndentMargin != "18,0,0,0" || folder.LevelPillBackground != "#1E3A8A")
+            throw new InvalidOperationException("Simulation tree presentation bindings changed.");
+        var diff = new SimDiffItem { Kind = SimDiffKind.Consolidation };
+        if (diff.DiffTypeBadgeBackground != "#D97706")
+            throw new InvalidOperationException("Migration diff palette changed.");
+        var acl = new SimAclEntry { PrincipalType = AdPrincipalType.Group };
+        var aclDiff = new LiveAclDiffItem { PrincipalType = acl.PrincipalType };
+        if (acl.IconGlyph != "👥" || aclDiff.IconGlyph != "👥")
+            throw new InvalidOperationException("ACL principal icon changed.");
+        var access = new EffectiveFolderAccessItem
+        {
+            PermissionLevel = EffectivePermissionLevel.FullControl,
+            ChangeType = EffectiveAccessChangeType.EnclaveGranted
+        };
+        if (access.RightsBadgeBackground != "#DC2626" || access.ChangeBadgeForeground != "#DC2626")
+            throw new InvalidOperationException("Effective access palette changed.");
     }
 }

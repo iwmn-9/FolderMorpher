@@ -37,7 +37,7 @@ namespace FolderMorpher.Models
     /// <summary>
     /// An item representing a folder where the target user/group has effective permissions
     /// </summary>
-    public class EffectiveFolderAccessItem
+    public partial class EffectiveFolderAccessItem
     {
         public string FolderPath { get; set; } = string.Empty;
         public string FolderName { get; set; } = string.Empty;
@@ -77,19 +77,7 @@ namespace FolderMorpher.Models
             _ => Strings.RevRightsNone
         };
 
-        public string RightsBadgeBackground => PermissionLevel switch
-        {
-            EffectivePermissionLevel.FullControl => "#DC2626", // Red / High Privilege
-            EffectivePermissionLevel.Modify => "#D97706",      // Amber
-            EffectivePermissionLevel.ReadAndExecute => "#0284C7", // Sky Blue
-            EffectivePermissionLevel.Read => "#059669",        // Emerald
-            _ => "#94A3B8"                                      // Muted Gray / Severed
-        };
-
-        public string RightsBadgeForeground => "#FFFFFF";
-
         public string InheritanceBadgeText => IsInherited ? Strings.RevInheritedBadge : Strings.RevExplicitBadge;
-        public string InheritanceBadgeColor => IsInherited ? "#64748B" : "#2563EB";
 
         public string ChangeBadgeText => ChangeType switch
         {
@@ -103,47 +91,12 @@ namespace FolderMorpher.Models
             _ => Strings.RevChangeInherited
         };
 
-        public string ChangeBadgeBackground => ChangeType switch
-        {
-            EffectiveAccessChangeType.Baseline => "#F1F5F9",
-            EffectiveAccessChangeType.EnclaveGranted => "#FEF2F2",
-            EffectiveAccessChangeType.InheritanceSevered => "#FFF1F2",
-            EffectiveAccessChangeType.ScanUnavailable => "#FFFBEB",
-            EffectiveAccessChangeType.ExplicitBoundary => "#F0F9FF",
-            EffectiveAccessChangeType.PermissionChanged => "#FEF3C7",
-            EffectiveAccessChangeType.Unknown => "#F1F5F9",
-            _ => "#F8FAFC"
-        };
-
-        public string ChangeBadgeBorder => ChangeType switch
-        {
-            EffectiveAccessChangeType.Baseline => "#CBD5E1",
-            EffectiveAccessChangeType.EnclaveGranted => "#FCA5A5",
-            EffectiveAccessChangeType.InheritanceSevered => "#FDA4AF",
-            EffectiveAccessChangeType.ScanUnavailable => "#FDE68A",
-            EffectiveAccessChangeType.ExplicitBoundary => "#BAE6FD",
-            EffectiveAccessChangeType.PermissionChanged => "#FCD34D",
-            EffectiveAccessChangeType.Unknown => "#CBD5E1",
-            _ => "#E2E8F0"
-        };
-
-        public string ChangeBadgeForeground => ChangeType switch
-        {
-            EffectiveAccessChangeType.Baseline => "#475569",
-            EffectiveAccessChangeType.EnclaveGranted => "#DC2626",
-            EffectiveAccessChangeType.InheritanceSevered => "#E11D48",
-            EffectiveAccessChangeType.ScanUnavailable => "#D97706",
-            EffectiveAccessChangeType.ExplicitBoundary => "#0284C7",
-            EffectiveAccessChangeType.PermissionChanged => "#B45309",
-            EffectiveAccessChangeType.Unknown => "#64748B",
-            _ => "#64748B"
-        };
     }
 
     /// <summary>
     /// Information about a group the target principal belongs to (supporting multi-level nesting)
     /// </summary>
-    public class PrincipalGroupMembership
+    public partial class PrincipalGroupMembership
     {
         public string GroupName { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
@@ -153,7 +106,6 @@ namespace FolderMorpher.Models
         public string MembershipPath { get; set; } = string.Empty;
 
         public string DirectStatusText => IsDirect ? Strings.RevDirectMembership : string.Format(Strings.RevNestedMembership, NestingDepth);
-        public string DirectBadgeColor => IsDirect ? "#2563EB" : "#7C3AED";
     }
 
     /// <summary>

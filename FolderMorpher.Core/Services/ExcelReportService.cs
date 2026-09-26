@@ -169,7 +169,7 @@ namespace FolderMorpher.Services
                 if (item.IssueType == AuditIssueType.Duplicate && item.DuplicateGroupIndex > 0)
                 {
                     var rowRange = ws.Range(row, 2, row, 8);
-                    rowRange.Style.Fill.BackgroundColor = XLColor.FromHtml(item.RowBackgroundHex);
+                    rowRange.Style.Fill.BackgroundColor = XLColor.FromHtml(AuditReportPalette.RowBackground(item));
                 }
 
                 row++;
@@ -363,13 +363,13 @@ namespace FolderMorpher.Services
                 changeCell.Value = item.ChangeBadgeText;
                 changeCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                 changeCell.Style.Font.Bold = true;
-                changeCell.Style.Font.FontColor = XLColor.FromHtml(item.ChangeBadgeForeground);
+                changeCell.Style.Font.FontColor = XLColor.FromHtml(EffectiveAccessPalette.ChangeForeground(item.ChangeType));
 
                 var permCell = ws.Cell(row, 5);
                 permCell.Value = item.FormattedRights;
                 permCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                 permCell.Style.Font.Bold = true;
-                permCell.Style.Font.FontColor = XLColor.FromHtml(item.RightsBadgeBackground);
+                permCell.Style.Font.FontColor = XLColor.FromHtml(EffectiveAccessPalette.RightsBackground(item.PermissionLevel));
 
                 ws.Cell(row, 6).Value = item.GrantSource;
                 ws.Cell(row, 7).Value = item.GrantPathTrace;
@@ -590,7 +590,7 @@ namespace FolderMorpher.Services
                     ws.Cell(row, 3).Value = node.Name;
                     ws.Cell(row, 4).Value = node.LevelPillText;
                     ws.Cell(row, 5).Value = mappingStr;
-                    ws.Cell(row, 6).Value = node.FormattedSize;
+                    ws.Cell(row, 6).Value = FormatHelper.FormatBytes(node.EstimatedSizeBytes);
                     ws.Cell(row, 7).Value = node.InheritStatusBadge;
                     ws.Cell(row, 8).Value = isJa ? "(設定なし)" : "(None)";
                     ws.Cell(row, 9).Value = "-";
@@ -605,7 +605,7 @@ namespace FolderMorpher.Services
                         ws.Cell(row, 3).Value = node.Name;
                         ws.Cell(row, 4).Value = node.LevelPillText;
                         ws.Cell(row, 5).Value = mappingStr;
-                        ws.Cell(row, 6).Value = node.FormattedSize;
+                        ws.Cell(row, 6).Value = FormatHelper.FormatBytes(node.EstimatedSizeBytes);
                         ws.Cell(row, 7).Value = node.InheritStatusBadge;
                         ws.Cell(row, 8).Value = acl.DisplayName;
                         ws.Cell(row, 9).Value = acl.AccessType.ToString();
@@ -922,7 +922,7 @@ namespace FolderMorpher.Services
                                 CollectDescendantsForExcel(n, xdList);
                                 ws3.Cell(r3, 6).Value = xdList.Count > 0 ? string.Join(" ; ", xdList) : "-";
 
-                                ws3.Cell(r3, 7).Value = n.FormattedSize;
+                                ws3.Cell(r3, 7).Value = FormatHelper.FormatBytes(n.EstimatedSizeBytes);
                                 ws3.Cell(r3, 7).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
                                 ws3.Cell(r3, 8).Value = Math.Max(1, n.EstimatedSizeBytes / (10L * 1024 * 1024));

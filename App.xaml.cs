@@ -146,6 +146,7 @@ namespace AstraSize
                             throw new InvalidOperationException("Settings DTO roundtrip failed.");
                         await host.SetLanguageAsync(settings.Language);
                         FolderMorpher.UI.PresentationTestRunner.VerifyStorageNodePresentation();
+                        FolderMorpher.UI.PresentationTestRunner.VerifyAuditAndSimulationPresentation();
 
                         var testRoot = Path.Combine(Path.GetTempPath(), $"FolderMorpher_IpcTest_{Guid.NewGuid():N}");
                         Directory.CreateDirectory(testRoot);

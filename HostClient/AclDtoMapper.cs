@@ -37,7 +37,7 @@ internal static class AclDtoMapper
         DiffType = (LiveAclDiffType)dto.DiffType,
         AccountName = dto.AccountName,
         DisplayName = dto.DisplayName,
-        IconGlyph = dto.IconGlyph,
+        PrincipalType = (AdPrincipalType)dto.PrincipalType,
         AccessType = (AccessControlType)dto.AccessType,
         BeforeRights = dto.BeforeRights,
         AfterRights = dto.AfterRights,

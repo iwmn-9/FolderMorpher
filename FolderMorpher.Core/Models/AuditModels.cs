@@ -21,7 +21,7 @@ namespace FolderMorpher.Models
         Unlimited = 1     // 無制限 (夜間・最速)
     }
 
-    public class AuditItem : System.ComponentModel.INotifyPropertyChanged
+    public partial class AuditItem : System.ComponentModel.INotifyPropertyChanged
     {
         public Guid AuditId { get; set; }
         public static Action<AuditItem>? GlobalCheckedChanged;
@@ -54,11 +54,6 @@ namespace FolderMorpher.Models
         public long Size { get; set; }
         public string SizeFormatted => FormatHelper.FormatBytes(Size, 2);
 
-        private TablerBadgeInfo BadgeInfo => TablerBadgeHelper.GetBadge(FileName, false);
-        public string BadgeText => BadgeInfo.Text;
-        public string BadgeBackground => BadgeInfo.Background;
-        public string BadgeBorderBrush => BadgeInfo.BorderBrush;
-        public string BadgeForeground => BadgeInfo.Foreground;
         public DateTime LastWriteTime { get; set; }
         public DateTime LastAccessTime { get; set; }
         public AuditIssueType IssueType { get; set; }
@@ -126,27 +121,6 @@ namespace FolderMorpher.Models
             }
         }
 
-        public string ConfidenceBadgeBgHex => WasteScore switch
-        {
-            >= 80 => "#FEE2E2", // 薄赤
-            >= 50 => "#FEF3C7", // 薄黄
-            _ => "#F1F5F9"      // 薄灰
-        };
-
-        public string ConfidenceBadgeBorderHex => WasteScore switch
-        {
-            >= 80 => "#FCA5A5",
-            >= 50 => "#FDE68A",
-            _ => "#CBD5E1"
-        };
-
-        public string ConfidenceBadgeFgHex => WasteScore switch
-        {
-            >= 80 => "#991B1B",
-            >= 50 => "#92400E",
-            _ => "#475569"
-        };
-
         public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged(string prop) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(prop));
 
@@ -181,53 +155,6 @@ namespace FolderMorpher.Models
             }
         }
 
-        // 6色のソフトパステルパレット（隣接グループで重複しない視認性カラー）
-        public static readonly string[] GroupBgPalette = { "#EFF6FF", "#ECFDF5", "#FEF3C7", "#F3E8FF", "#FFE4E6", "#E0F2FE" };
-        public static readonly string[] GroupBorderPalette = { "#BFDBFE", "#A7F3D0", "#FDE68A", "#DDD6FE", "#FECDD3", "#BAE6FD" };
-        public static readonly string[] GroupTextPalette = { "#1E40AF", "#065F46", "#92400E", "#5B21B6", "#9F1239", "#075985" };
-
-        public string RowBackgroundHex => IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0
-            ? GroupBgPalette[DuplicateGroupColorIndex % GroupBgPalette.Length]
-            : "Transparent";
-
-        public string BadgeBackgroundHex
-        {
-            get
-            {
-                if (IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0)
-                    return GroupBgPalette[DuplicateGroupColorIndex % GroupBgPalette.Length];
-                if (IssueType == AuditIssueType.VersionFamily) return "#EFF6FF"; // 薄青
-                if (IssueType == AuditIssueType.ExtractedArchive) return "#FDF4FF"; // 薄紫
-                if (IssueType == AuditIssueType.GraveyardTree) return "#FEF2F2"; // 薄赤
-                return "Transparent";
-            }
-        }
-
-        public string BadgeBorderHex
-        {
-            get
-            {
-                if (IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0)
-                    return GroupBorderPalette[DuplicateGroupColorIndex % GroupBorderPalette.Length];
-                if (IssueType == AuditIssueType.VersionFamily) return "#BFDBFE";
-                if (IssueType == AuditIssueType.ExtractedArchive) return "#F0ABFC";
-                if (IssueType == AuditIssueType.GraveyardTree) return "#FECACA";
-                return "#E2E8F0";
-            }
-        }
-
-        public string BadgeForegroundHex
-        {
-            get
-            {
-                if (IssueType == AuditIssueType.Duplicate && DuplicateGroupIndex > 0)
-                    return GroupTextPalette[DuplicateGroupColorIndex % GroupTextPalette.Length];
-                if (IssueType == AuditIssueType.VersionFamily) return "#1D4ED8";
-                if (IssueType == AuditIssueType.ExtractedArchive) return "#A21CAF";
-                if (IssueType == AuditIssueType.GraveyardTree) return "#DC2626";
-                return "#64748B";
-            }
-        }
     }
 
     public class AuditSummary

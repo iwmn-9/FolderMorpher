@@ -51,7 +51,7 @@ public sealed class SkeletonFolderActionDto
 public sealed class MigrationDiffDto
 {
     public string DiffType { get; set; } = string.Empty;
-    public string DiffTypeBadgeBackground { get; set; } = "#3B82F6";
+    public int Kind { get; set; }
     public string SourcePath { get; set; } = string.Empty;
     public string SourceDetail { get; set; } = string.Empty;
     public string TargetPath { get; set; } = string.Empty;

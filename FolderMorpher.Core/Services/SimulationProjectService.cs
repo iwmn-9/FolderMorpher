@@ -174,14 +174,14 @@ namespace AstraSize.Services
                 var item = new SimDiffItem
                 {
                     TargetPath = node.RelativePath,
-                    TargetDetail = isJa ? $"階層レベル: {node.LevelPillText} ({node.FormattedSize})" : $"Level: {node.LevelPillText} ({node.FormattedSize})"
+                    TargetDetail = isJa ? $"階層レベル: {node.LevelPillText} ({FormatHelper.FormatBytes(node.EstimatedSizeBytes)})" : $"Level: {node.LevelPillText} ({FormatHelper.FormatBytes(node.EstimatedSizeBytes)})"
                 };
 
                 // Case A: 統合 (N:1)
                 if (node.MappedSourcePaths.Count > 1)
                 {
                     item.DiffType = isJa ? "統合・集約" : "Consolidation";
-                    item.DiffTypeBadgeBackground = "#D97706"; // Amber
+                    item.Kind = SimDiffKind.Consolidation;
                     item.SourcePath = string.Join("\n", node.MappedSourcePaths.Select(p => $"• {p}"));
                     item.SourceDetail = isJa ? $"{node.MappedSourcePaths.Count}箇所の現行フォルダを1つに統合" : $"Consolidating {node.MappedSourcePaths.Count} source folders";
                 }
@@ -196,13 +196,13 @@ namespace AstraSize.Services
                     if (!string.Equals(srcLeaf, node.Name, StringComparison.OrdinalIgnoreCase) || node.Level > 1)
                     {
                         item.DiffType = isJa ? "階層移動" : "Relocation";
-                        item.DiffTypeBadgeBackground = "#2563EB"; // Blue
+                        item.Kind = SimDiffKind.Relocation;
                         item.SourceDetail = isJa ? $"現行: {srcLeaf} ➔ 新階層へリロケート" : $"Source: {srcLeaf} ➔ Relocate to new path";
                     }
                     else
                     {
                         item.DiffType = isJa ? "構造維持" : "Preserved";
-                        item.DiffTypeBadgeBackground = "#475569"; // Slate
+                        item.Kind = SimDiffKind.Preserved;
                         item.SourceDetail = isJa ? "同名階層で移行" : "Migrate with same structure";
                     }
                 }
@@ -210,7 +210,7 @@ namespace AstraSize.Services
                 else
                 {
                     item.DiffType = isJa ? "新規作成" : "New Folder";
-                    item.DiffTypeBadgeBackground = "#059669"; // Emerald
+                    item.Kind = SimDiffKind.NewFolder;
                     item.SourcePath = isJa ? "(現行データなし)" : "(No existing data)";
                     item.SourceDetail = isJa ? "新環境で新設される空フォルダ" : "New empty folder on target server";
                 }
@@ -686,13 +686,13 @@ namespace AstraSize.Services
                 if (node.AclEntries.Count == 0)
                 {
                     string noneStr = isJa ? "(設定なし)" : "(None)";
-                    sb.AppendLine($"\"{EscapeCsv(node.RelativePath)}\",\"{EscapeCsv(node.Name)}\",\"{node.LevelPillText}\",\"{EscapeCsv(mappingStr)}\",\"{node.FormattedSize}\",\"{node.InheritStatusBadge}\",\"{noneStr}\",\"-\",\"-\"");
+                    sb.AppendLine($"\"{EscapeCsv(node.RelativePath)}\",\"{EscapeCsv(node.Name)}\",\"{node.LevelPillText}\",\"{EscapeCsv(mappingStr)}\",\"{FormatHelper.FormatBytes(node.EstimatedSizeBytes)}\",\"{node.InheritStatusBadge}\",\"{noneStr}\",\"-\",\"-\"");
                 }
                 else
                 {
                     foreach (var acl in node.AclEntries)
                     {
-                        sb.AppendLine($"\"{EscapeCsv(node.RelativePath)}\",\"{EscapeCsv(node.Name)}\",\"{node.LevelPillText}\",\"{EscapeCsv(mappingStr)}\",\"{node.FormattedSize}\",\"{node.InheritStatusBadge}\",\"{EscapeCsv(acl.DisplayName)}\",\"{acl.AccessType}\",\"{acl.FormattedRights}\"");
+                        sb.AppendLine($"\"{EscapeCsv(node.RelativePath)}\",\"{EscapeCsv(node.Name)}\",\"{node.LevelPillText}\",\"{EscapeCsv(mappingStr)}\",\"{FormatHelper.FormatBytes(node.EstimatedSizeBytes)}\",\"{node.InheritStatusBadge}\",\"{EscapeCsv(acl.DisplayName)}\",\"{acl.AccessType}\",\"{acl.FormattedRights}\"");
                     }
                 }
 

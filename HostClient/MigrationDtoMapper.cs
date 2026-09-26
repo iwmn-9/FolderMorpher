@@ -22,7 +22,7 @@ internal static class MigrationDtoMapper
     public static MigrationDiffDto ToDto(SimDiffItem item) => new()
     {
         DiffType = item.DiffType,
-        DiffTypeBadgeBackground = item.DiffTypeBadgeBackground,
+        Kind = (int)item.Kind,
         SourcePath = item.SourcePath,
         SourceDetail = item.SourceDetail,
         TargetPath = item.TargetPath,
@@ -33,7 +33,7 @@ internal static class MigrationDtoMapper
     public static SimDiffItem ToView(MigrationDiffDto dto) => new()
     {
         DiffType = dto.DiffType,
-        DiffTypeBadgeBackground = dto.DiffTypeBadgeBackground,
+        Kind = (SimDiffKind)dto.Kind,
         SourcePath = dto.SourcePath,
         SourceDetail = dto.SourceDetail,
         TargetPath = dto.TargetPath,
@@ -147,7 +147,7 @@ internal static class MigrationDtoMapper
         DiffReviews = plan.DiffReviews.Select(diff => new MigrationDiffDto
         {
             DiffType = diff.DiffType,
-            DiffTypeBadgeBackground = diff.DiffTypeBadgeBackground,
+            Kind = (int)diff.Kind,
             SourcePath = diff.SourcePath,
             SourceDetail = diff.SourceDetail,
             TargetPath = diff.TargetPath,

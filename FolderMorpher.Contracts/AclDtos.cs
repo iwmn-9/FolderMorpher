@@ -38,7 +38,7 @@ public sealed class AclDiffItemDto
     public int DiffType { get; set; }
     public string AccountName { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
-    public string IconGlyph { get; set; } = string.Empty;
+    public int PrincipalType { get; set; }
     public int AccessType { get; set; }
     public string BeforeRights { get; set; } = string.Empty;
     public string AfterRights { get; set; } = string.Empty;

@@ -355,7 +355,7 @@ namespace FolderMorpher.Services
                                 Sha256Hash = kvp.Key,
                                 DuplicateGroupId = groupId,
                                 DuplicateGroupIndex = groupNum,
-                                DuplicateGroupColorIndex = (groupNum - 1) % AuditItem.GroupBgPalette.Length,
+                                DuplicateGroupColorIndex = (groupNum - 1) % AuditReportPalette.GroupColorCount,
                                 IsOriginalCandidate = isOriginal,
                                 IsIgnored = AuditIgnoreService.Instance.IsIgnored(fi.FullPath, fi.Length, fi.LastWriteTime),
                                 WasteScore = isOriginal ? 0 : 95,

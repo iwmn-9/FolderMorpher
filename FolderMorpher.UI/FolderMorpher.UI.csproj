@@ -20,6 +20,8 @@
     <Compile Include="..\FolderMorpher.Core\Models\*.cs" Exclude="..\FolderMorpher.Core\Models\ScanTabModel.cs" Link="Models\%(Filename)%(Extension)" />
     <Compile Include="Services\AppSettingsService.cs" />
     <Compile Include="..\FolderMorpher.Core\Services\AppStrings.cs" Link="Services\AppStrings.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\AuditReportPalette.cs" Link="Services\AuditReportPalette.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\EffectiveAccessPalette.cs" Link="Services\EffectiveAccessPalette.cs" />
     <Compile Include="..\FolderMorpher.Core\Services\FormatHelper.cs" Link="Services\FormatHelper.cs" />
     <Compile Include="..\FolderMorpher.Core\Services\LocalizationService.cs" Link="Services\LocalizationService.cs" />
     <Compile Include="..\FolderMorpher.Core\Services\PathCanonicalizer.cs" Link="Services\PathCanonicalizer.cs" />

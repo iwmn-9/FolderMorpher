@@ -182,7 +182,7 @@ namespace FolderMorpher.Services.Testing
                 if (group1[0].DuplicateGroupColorIndex == group2[0].DuplicateGroupColorIndex)
                     throw new InvalidOperationException("Adjacent duplicate groups must have distinct cyclic color indexes");
 
-                if (string.IsNullOrEmpty(group1[0].RowBackgroundHex) || group1[0].RowBackgroundHex == "Transparent")
+                if (string.IsNullOrEmpty(AuditReportPalette.RowBackground(group1[0])) || AuditReportPalette.RowBackground(group1[0]) == "Transparent")
                     throw new InvalidOperationException("Duplicate item RowBackgroundHex should be non-transparent pastel color");
 
                 // 原本候補が先頭に並んでいるか
