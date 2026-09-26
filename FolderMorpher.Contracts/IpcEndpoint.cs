@@ -10,7 +10,8 @@ public static class IpcEndpoint
     {
         get
         {
-            if (!Environment.GetCommandLineArgs().Contains("--test-ipc")) return string.Empty;
+            var args = Environment.GetCommandLineArgs();
+            if (!args.Contains("--test-ipc") && !args.Contains("--snapshot")) return string.Empty;
             var id = Environment.GetEnvironmentVariable("FOLDERMORPHER_TEST_IPC_ID");
             return Guid.TryParseExact(id, "N", out _) ? $"_Test_{id}" : string.Empty;
         }

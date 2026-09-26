@@ -24,10 +24,11 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="58"/>
             <RowDefinition Height="64"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Primary navigation stays quiet; the selected folder is a separate workspace control. -->
+        <!-- Global mode and administration live above the working folder. -->
         <Border Grid.Row="0" Background="White" BorderBrush="#E4E9F0" BorderThickness="0,0,0,1" Padding="24,0">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -46,18 +47,15 @@
                 </StackPanel>
                 <ScrollViewer Grid.Column="1" HorizontalAlignment="Center" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" MaxWidth="860">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Stretch">
-                        <RadioButton x:Name="NavTabSearch" Style="{StaticResource WorkspaceNavButton}" IsChecked="True" Checked="NavTab_Checked" Content="検索" ToolTip="ファイル検索"/>
-                        <RadioButton x:Name="NavTabStorage" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="容量" ToolTip="容量分析"/>
-                        <RadioButton x:Name="NavTabAudit" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="整理" ToolTip="整理候補"/>
-                        <RadioButton x:Name="NavTabMedia" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="メディア" ToolTip="メディア最適化"/>
+                        <RadioButton x:Name="NavTabGeneral" Style="{StaticResource WorkspaceNavButton}" IsChecked="True" Checked="NavTab_Checked" Content="一般用途" ToolTip="フォルダーで作業"/>
                         <Border x:Name="AdminTabsDivider" Width="1" Height="20" Background="#DCE3EB" Margin="10,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="AdminTabsCaption" Text="管理" Foreground="#8A99AC" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="3,0,7,0"/>
                         <RadioButton x:Name="NavTabLiveAcl" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="権限" ToolTip="権限コントロール"/>
                         <RadioButton x:Name="NavTabSimulation" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="移行" ToolTip="移行スタジオ"/>
                         <RadioButton x:Name="NavTabLinkFix" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="リンク" ToolTip="リンク修復"/>
                     </StackPanel>
                 </ScrollViewer>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="LanguageToggleButton" Content="🌐 EN" Height="32" Padding="10,0" Margin="0,0,7,0" Style="{StaticResource FluentButtonSecondary}" Click="LanguageToggleButton_Click" ToolTip="言語切り替え"/>
                     <Button x:Name="SettingsButton" Content="⚙" Width="34" Height="32" Padding="0" Style="{StaticResource FluentButtonSecondary}" Click="SettingsButton_Click" ToolTip="環境設定"/>
                 </StackPanel>
             </Grid>
@@ -115,7 +113,17 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="2">
+        <!-- Folder actions sit below the scope with enough breathing room to read as the next choice. -->
+        <Border x:Name="FolderActionBar" Grid.Row="2" Height="70" Background="{StaticResource CanvasBackground}" Padding="28,14,28,8">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock x:Name="FolderActionCaption" Text="このフォルダーで" FontSize="11" FontWeight="SemiBold" Foreground="#8190A5" VerticalAlignment="Center" Margin="0,0,17,0"/>
+                <RadioButton x:Name="NavTabSearch" Style="{StaticResource FolderActionNavButton}" IsChecked="True" Checked="NavTab_Checked" Content="検索" ToolTip="ファイル検索"/>
+                <RadioButton x:Name="NavTabStorage" Style="{StaticResource FolderActionNavButton}" Checked="NavTab_Checked" Content="容量" ToolTip="容量分析"/>
+                <RadioButton x:Name="NavTabAudit" Style="{StaticResource FolderActionNavButton}" Checked="NavTab_Checked" Content="整理" ToolTip="整理候補とメディア最適化"/>
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="3">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>    <!-- Tab Views Container -->
                 <RowDefinition Height="Auto"/> <!-- Global Footer / Status Bar -->
@@ -1120,10 +1128,20 @@
                 </Border>
             </Grid>
 
+            <!-- Cleanup contains candidate discovery and media optimization. -->
+            <StackPanel x:Name="CleanupSectionBar" Visibility="Collapsed" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="28,14,0,0">
+                <Border Background="#EDF1F6" CornerRadius="9" Padding="3">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="CleanupCandidatesTab" GroupName="CleanupSection" Style="{StaticResource SegmentRadioButton}" IsChecked="True" Checked="CleanupSection_Checked" Content="整理候補"/>
+                        <RadioButton x:Name="CleanupMediaTab" GroupName="CleanupSection" Style="{StaticResource SegmentRadioButton}" Checked="CleanupSection_Checked" Content="メディア最適化"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
             <!-- ======================================================== -->
             <!-- TAB 5: AUDIT & HYGIENE (断捨離・ファイルサーバー健全化)       -->
             <!-- ======================================================== -->
-            <Grid x:Name="AuditTabPanel" Visibility="Collapsed" Margin="28,24">
+            <Grid x:Name="AuditTabPanel" Visibility="Collapsed" Margin="28,69,28,24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/> <!-- Controls Card -->
                     <RowDefinition Height="Auto"/> <!-- KPI Summary Cards -->
@@ -1461,7 +1479,7 @@
             <!-- ======================================================== -->
             <!-- TAB 6: MEDIA OPTIMIZER (写真軽量化 ＆ 巨大動画抽出)        -->
             <!-- ======================================================== -->
-            <Grid x:Name="MediaTabPanel" Visibility="Collapsed" Margin="28,24">
+            <Grid x:Name="MediaTabPanel" Visibility="Collapsed" Margin="28,69,28,24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/> <!-- Controls Card -->
                     <RowDefinition Height="Auto"/> <!-- KPI Summary Cards -->
@@ -2531,6 +2549,19 @@
 
                     <!-- Settings Body -->
                     <StackPanel Grid.Row="2" Margin="0,4,0,16">
+                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock x:Name="SettingsLanguageTitle" Text="表示言語" FontWeight="SemiBold" FontSize="12.5" Foreground="#1E293B"/>
+                                    <TextBlock x:Name="SettingsLanguageHint" Text="画面の表示言語を選択" FontSize="11" Foreground="#64748B" Margin="0,3,0,0"/>
+                                </StackPanel>
+                                <ComboBox x:Name="SettingsLanguageComboBox" Grid.Column="1" Width="145" Height="34" VerticalAlignment="Center" SelectedIndex="0">
+                                    <ComboBoxItem Content="日本語" Tag="ja"/>
+                                    <ComboBoxItem Content="English" Tag="en"/>
+                                </ComboBox>
+                            </Grid>
+                        </Border>
                         <!-- Read Cache Card -->
                         <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,12">
                             <StackPanel>

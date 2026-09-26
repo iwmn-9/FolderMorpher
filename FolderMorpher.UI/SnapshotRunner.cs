@@ -13,6 +13,13 @@ public static class SnapshotRunner
     public static void Configure(string? snapshotPath, int selectTab,
         string? forceLang, string logPath, Action<int> shutdown)
     {
+            string? snapshotTestId = null;
+            if (!string.IsNullOrEmpty(snapshotPath))
+            {
+                snapshotTestId = Guid.NewGuid().ToString("N");
+                Environment.SetEnvironmentVariable("FOLDERMORPHER_TEST_IPC_ID", snapshotTestId);
+                Environment.SetEnvironmentVariable("FOLDERMORPHER_TEST_TREE_CACHE_DB", Path.Combine(Path.GetTempPath(), $"FolderMorpher_IpcTreeCache_{snapshotTestId}.db"));
+            }
             ForcedLanguage = string.IsNullOrEmpty(snapshotPath) ? null : forceLang switch
             {
                 "en" => FolderMorpher.Services.AppLanguage.English,
@@ -133,7 +140,12 @@ public static class SnapshotRunner
                             else if (selectTab == 3) mw.NavTabSimulation.IsChecked = true;
                             else if (selectTab == 4) mw.NavTabLinkFix.IsChecked = true;
                             else if (selectTab == 5) mw.NavTabAudit.IsChecked = true;
-                            else if (selectTab == 6) mw.NavTabMedia.IsChecked = true;
+                            else if (selectTab == 14) mw.NavTabAudit.IsChecked = true;
+                            else if (selectTab == 6)
+                            {
+                                mw.NavTabAudit.IsChecked = true;
+                                mw.CleanupMediaTab.IsChecked = true;
+                            }
                             else if (selectTab == 100)
                             {
                                 mw.NavTabStorage.IsChecked = true;
@@ -335,6 +347,11 @@ public static class SnapshotRunner
 
                             await System.Threading.Tasks.Task.Delay(selectTab == 11 ? 100 : 800);
                             mw.UpdateLayout();
+                            if (selectTab == 14)
+                            {
+                                mw.AuditCategoryFilterComboBox.IsDropDownOpen = true;
+                                await System.Threading.Tasks.Task.Delay(150);
+                            }
 
                             int w = (int)mw.ActualWidth;
                             int h = (int)mw.ActualHeight;
@@ -347,6 +364,12 @@ public static class SnapshotRunner
                                 visual = popupContent;
                                 w = (int)Math.Ceiling(popupContent.ActualWidth);
                                 h = (int)Math.Ceiling(popupContent.ActualHeight);
+                            }
+                            else if (selectTab == 14 && mw.AuditCategoryFilterComboBox.Template.FindName("PART_Popup", mw.AuditCategoryFilterComboBox) is System.Windows.Controls.Primitives.Popup dropdown && dropdown.Child is System.Windows.FrameworkElement dropdownContent)
+                            {
+                                visual = dropdownContent;
+                                w = (int)Math.Ceiling(dropdownContent.ActualWidth);
+                                h = (int)Math.Ceiling(dropdownContent.ActualHeight);
                             }
                             var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(w, h, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
                             rtb.Render(visual);
@@ -367,6 +390,20 @@ public static class SnapshotRunner
                         }
                         finally
                         {
+                            try { FolderMorpher.HostClient.FolderMorpherHostClient.Instance.StopLaunchedHostForTests(); }
+                            catch (Exception ex)
+                            {
+                                snapshotExitCode = 1;
+                                File.AppendAllText(logPath, $"Snapshot Host cleanup error: {ex}\n");
+                            }
+                            if (snapshotTestId != null)
+                            {
+                                var dbPath = Path.Combine(Path.GetTempPath(), $"FolderMorpher_IpcTreeCache_{snapshotTestId}.db");
+                                foreach (var path in new[] { dbPath, dbPath + "-wal", dbPath + "-shm", Path.Combine(Path.GetTempPath(), $"FolderMorpher_IpcSettings_{snapshotTestId}.json") })
+                                {
+                                    try { File.Delete(path); } catch { /* Snapshot data is disposable. */ }
+                                }
+                            }
                             shutdown(snapshotExitCode);
                         }
                     }

@@ -186,6 +186,14 @@ namespace AstraSize
                 _initialLocalization.TrySetResult(false);
                 _initialStorage.TrySetResult(false);
                 Debug.WriteLine($"MainWindow_Loaded Error: {ex}");
+                try
+                {
+                    File.AppendAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FolderMorpher", "debug_startup.log"),
+                        $"MainWindow_Loaded Error: {ex}{Environment.NewLine}");
+                }
+                catch { /* Keep the original startup error available to the snapshot runner. */ }
+                if (!Environment.GetCommandLineArgs().Contains("--snapshot"))
+                    AppDialog.Show(ex.Message, UiText("起動できませんでした", "Startup failed"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -223,11 +231,21 @@ namespace AstraSize
         #endregion
 
         #region Navigation Tabs
+        private void CleanupSection_Checked(object sender, RoutedEventArgs e)
+        {
+            if (NavTabAudit?.IsChecked == true)
+                NavTab_Checked(this, new RoutedEventArgs());
+        }
+
         private void NavTab_Checked(object sender, RoutedEventArgs e)
         {
             if (StorageTabPanel == null || LiveAclStudioControl == null || SimulationTabPanel == null || LinkFixTabPanel == null ||
-                AuditTabPanel == null || MediaTabPanel == null || SearchTabPanel == null)
+                AuditTabPanel == null || MediaTabPanel == null || SearchTabPanel == null ||
+                FolderActionBar == null || CleanupSectionBar == null || NavTabGeneral == null)
                 return;
+
+            if (ReferenceEquals(sender, NavTabSearch) || ReferenceEquals(sender, NavTabStorage) || ReferenceEquals(sender, NavTabAudit))
+                NavTabGeneral.IsChecked = true;
 
             StorageTabPanel.Visibility = Visibility.Collapsed;
             LiveAclStudioControl.Visibility = Visibility.Collapsed;
@@ -236,10 +254,34 @@ namespace AstraSize
             AuditTabPanel.Visibility = Visibility.Collapsed;
             MediaTabPanel.Visibility = Visibility.Collapsed;
             SearchTabPanel.Visibility = Visibility.Collapsed;
+            CleanupSectionBar.Visibility = Visibility.Collapsed;
+            bool isGeneral = NavTabGeneral.IsChecked == true;
+            FolderActionBar.Visibility = isGeneral ? Visibility.Visible : Visibility.Collapsed;
 
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
 
-            if (NavTabStorage.IsChecked == true)
+            if (NavTabLiveAcl.IsChecked == true)
+            {
+                LiveAclStudioControl.Visibility = Visibility.Visible;
+                StatusTextBlock.Text = isJa ? "モード: 権限コントロール" : "Mode: Live ACL Control";
+                if (string.IsNullOrWhiteSpace(LiveAclStudioControl.CurrentPath) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
+                    LiveAclStudioControl.SetDefaultPath(PathTextBox.Text);
+            }
+            else if (NavTabSimulation.IsChecked == true)
+            {
+                SimulationTabPanel.Visibility = Visibility.Visible;
+                StatusTextBlock.Text = isJa ? "モード: 移行スタジオ" : "Mode: Simulation Studio";
+                if (string.IsNullOrWhiteSpace(SimSourcePathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
+                    SimSourcePathTextBox.Text = PathTextBox.Text;
+            }
+            else if (NavTabLinkFix.IsChecked == true)
+            {
+                LinkFixTabPanel.Visibility = Visibility.Visible;
+                StatusTextBlock.Text = isJa ? "モード: リンク修復" : "Mode: LinkFixer";
+                if (string.IsNullOrWhiteSpace(LinkSearchScopeTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
+                    LinkSearchScopeTextBox.Text = PathTextBox.Text;
+            }
+            else if (NavTabStorage.IsChecked == true)
             {
                 StorageTabPanel.Visibility = Visibility.Visible;
                 StatusTextBlock.Text = isJa ? "モード: 容量分析" : "Mode: Storage Explorer";
@@ -253,49 +295,22 @@ namespace AstraSize
                     SearchDirectTargetTextBox.Text = PathTextBox.Text;
                 }
             }
-            else if (NavTabLiveAcl.IsChecked == true)
-            {
-                LiveAclStudioControl.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: 権限コントロール" : "Mode: Live ACL Control";
-                if (string.IsNullOrWhiteSpace(LiveAclStudioControl.CurrentPath) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
-                {
-                    LiveAclStudioControl.SetDefaultPath(PathTextBox.Text);
-                }
-            }
-            else if (NavTabSimulation.IsChecked == true)
-            {
-                SimulationTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: 移行スタジオ" : "Mode: Simulation Studio";
-                if (string.IsNullOrWhiteSpace(SimSourcePathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
-                {
-                    SimSourcePathTextBox.Text = PathTextBox.Text;
-                }
-            }
-            else if (NavTabLinkFix.IsChecked == true)
-            {
-                LinkFixTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: リンク修復" : "Mode: LinkFixer";
-                if (string.IsNullOrWhiteSpace(LinkSearchScopeTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
-                {
-                    LinkSearchScopeTextBox.Text = PathTextBox.Text;
-                }
-            }
             else if (NavTabAudit.IsChecked == true)
             {
-                AuditTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: ファイル監査" : "Mode: Audit & Hygiene";
-                if (string.IsNullOrWhiteSpace(AuditPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
+                CleanupSectionBar.Visibility = Visibility.Visible;
+                if (CleanupMediaTab.IsChecked == true)
                 {
-                    AuditPathTextBox.Text = PathTextBox.Text;
+                    MediaTabPanel.Visibility = Visibility.Visible;
+                    StatusTextBlock.Text = isJa ? "モード: メディア最適化" : "Mode: Media Optimizer";
+                    if (string.IsNullOrWhiteSpace(MediaPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
+                        MediaPathTextBox.Text = PathTextBox.Text;
                 }
-            }
-            else if (NavTabMedia.IsChecked == true)
-            {
-                MediaTabPanel.Visibility = Visibility.Visible;
-                StatusTextBlock.Text = isJa ? "モード: メディア最適化" : "Mode: Media Optimizer";
-                if (string.IsNullOrWhiteSpace(MediaPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
+                else
                 {
-                    MediaPathTextBox.Text = PathTextBox.Text;
+                    AuditTabPanel.Visibility = Visibility.Visible;
+                    StatusTextBlock.Text = isJa ? "モード: ファイル監査" : "Mode: Audit & Hygiene";
+                    if (string.IsNullOrWhiteSpace(AuditPathTextBox.Text) && !string.IsNullOrWhiteSpace(PathTextBox.Text))
+                        AuditPathTextBox.Text = PathTextBox.Text;
                 }
             }
         }
@@ -326,6 +341,7 @@ namespace AstraSize
             }
 
             SettingsCustomPathTextBox.Text = settings.CacheWriteCustomPath;
+            SettingsLanguageComboBox.SelectedIndex = LocalizationService.Instance.CurrentLanguage == AppLanguage.English ? 1 : 0;
             UpdateSettingsCustomPathEnabled();
 
             SettingsModalOverlay.Visibility = Visibility.Visible;
@@ -424,9 +440,12 @@ namespace AstraSize
             }
         }
 
-        private void SettingsSaveButton_Click(object sender, RoutedEventArgs e)
+        private async void SettingsSaveButton_Click(object sender, RoutedEventArgs e)
         {
             var settings = AppSettingsService.Instance.Current;
+            var selectedLanguage = SettingsLanguageComboBox.SelectedIndex == 1 ? AppLanguage.English : AppLanguage.Japanese;
+            bool languageChanged = LocalizationService.Instance.CurrentLanguage != selectedLanguage;
+            settings.Language = selectedLanguage == AppLanguage.English ? "en" : "ja";
             settings.CacheReadPath = SettingsReadPathTextBox.Text.Trim();
             settings.FallbackToLocalOnReadError = SettingsFallbackCheckBox.IsChecked == true;
 
@@ -445,6 +464,16 @@ namespace AstraSize
             }
 
             AppSettingsService.Instance.Save();
+            if (languageChanged)
+            {
+                LocalizationService.Instance.SetLanguage(selectedLanguage);
+                try
+                {
+                    var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                    await host.SetLanguageAsync(settings.Language);
+                }
+                catch (Exception ex) { Debug.WriteLine($"Host language update failed: {ex}"); }
+            }
             SettingsModalOverlay.Visibility = Visibility.Collapsed;
             ShowToast(LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
                 ? "環境設定を保存しました"

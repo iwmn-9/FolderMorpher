@@ -199,6 +199,33 @@
                 </Setter.Value></Setter>
             </Style>
 
+            <Style x:Key="FolderActionNavButton" TargetType="RadioButton">
+                <Setter Property="GroupName" Value="FolderActions"/>
+                <Setter Property="Height" Value="42"/>
+                <Setter Property="MinWidth" Value="100"/>
+                <Setter Property="Margin" Value="0,0,8,0"/>
+                <Setter Property="Padding" Value="18,0"/>
+                <Setter Property="Foreground" Value="#52647F"/>
+                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template"><Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="ActionSurface" Background="#FFFFFF" BorderBrush="#DCE4EF" BorderThickness="1" CornerRadius="9" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ActionSurface" Property="BorderBrush" Value="#91AFDA"/></Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="ActionSurface" Property="Background" Value="#EAF2FD"/>
+                                <Setter TargetName="ActionSurface" Property="BorderBrush" Value="#8CB0E3"/>
+                                <Setter Property="Foreground" Value="#2456A6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value></Setter>
+            </Style>
+
             <Style x:Key="ScopePickerButtonStyle" TargetType="Button">
                 <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="BorderThickness" Value="0"/>
@@ -231,6 +258,66 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="TextBorder" Property="BorderBrush" Value="#3B70C0"/></Trigger>
                             <Trigger Property="IsEnabled" Value="False"><Setter TargetName="TextBorder" Property="Background" Value="#F2F4F7"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value></Setter>
+            </Style>
+
+            <Style TargetType="ComboBoxItem">
+                <Setter Property="Foreground" Value="#263A56"/>
+                <Setter Property="Padding" Value="10,7"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template"><Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="OptionSurface" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}" Margin="3,2">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="OptionSurface" Property="Background" Value="#EDF3FB"/></Trigger>
+                            <Trigger Property="IsSelected" Value="True"><Setter TargetName="OptionSurface" Property="Background" Value="#E4EFFD"/><Setter Property="Foreground" Value="#2456A6"/></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value></Setter>
+            </Style>
+
+            <Style TargetType="ComboBox">
+                <Setter Property="Background" Value="White"/>
+                <Setter Property="Foreground" Value="#263A56"/>
+                <Setter Property="BorderBrush" Value="#CBD6E5"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                <Setter Property="Template"><Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="SelectorSurface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7">
+                                <Grid>
+                                    <ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                      IsHitTestVisible="False" VerticalAlignment="Center" Margin="11,0,29,0"/>
+                                    <Path Data="M1,1 L5,5 9,1" Stroke="#667B99" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                          Width="10" Height="6" Stretch="Uniform" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,11,0" IsHitTestVisible="False"/>
+                                </Grid>
+                            </Border>
+                            <ToggleButton Focusable="False" ClickMode="Press" Background="Transparent" BorderThickness="0"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="Transparent"/></ControlTemplate></ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup" Placement="Bottom" PlacementTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}" AllowsTransparency="True" PopupAnimation="Fade"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}" Focusable="False">
+                                <Border Background="White" BorderBrush="#D8E2EE" BorderThickness="1" CornerRadius="9" Padding="3" Margin="2,4,2,9"
+                                        MinWidth="{Binding PlacementTarget.ActualWidth, RelativeSource={RelativeSource AncestorType=Popup}}" MaxWidth="420">
+                                    <Border.Effect><DropShadowEffect BlurRadius="16" ShadowDepth="5" Direction="270" Color="#233B5E" Opacity="0.17"/></Border.Effect>
+                                    <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto" CanContentScroll="True">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="SelectorSurface" Property="BorderBrush" Value="#86A8D3"/></Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="SelectorSurface" Property="BorderBrush" Value="#4D7DC2"/></Trigger>
+                            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="SelectorSurface" Property="Background" Value="#F2F4F7"/><Setter Property="Opacity" Value="0.65"/></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value></Setter>

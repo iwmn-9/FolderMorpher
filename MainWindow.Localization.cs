@@ -26,20 +26,6 @@ namespace AstraSize
         private static string UiText(string ja, string en) => LocalizationService.Instance.GetString(ja, en);
 
         #region Localization (i18n)
-        private async void LanguageToggleButton_Click(object sender, RoutedEventArgs e)
-        {
-            LocalizationService.Instance.ToggleLanguage();
-            var language = LocalizationService.Instance.CurrentLanguage == AppLanguage.English ? "en" : "ja";
-            AppSettingsService.Instance.Current.Language = language;
-            AppSettingsService.Instance.Save();
-            try
-            {
-                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
-                await host.SetLanguageAsync(language);
-            }
-            catch (Exception ex) { Debug.WriteLine($"Host language update failed: {ex}"); }
-        }
-
         private void ApplyClientModeLayout()
         {
             if (!ClientModeState.IsClientMode) return;
@@ -49,6 +35,7 @@ namespace AstraSize
             if (NavTabSimulation != null) NavTabSimulation.Visibility = Visibility.Collapsed;
             if (NavTabLinkFix != null) NavTabLinkFix.Visibility = Visibility.Collapsed;
             if (AdminTabsDivider != null) AdminTabsDivider.Visibility = Visibility.Collapsed;
+            if (AdminTabsCaption != null) AdminTabsCaption.Visibility = Visibility.Collapsed;
 
             Title = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
                 ? "FolderCleaner - 容量分析 & ファイル監査・写真軽量化 クライアント"
@@ -83,10 +70,11 @@ namespace AstraSize
 
             ApplyClientModeLayout();
 
-            // 言語切り替えボタン自体の表示（次に切り替わる言語を提示）
-            LanguageToggleButton.Content = Strings.LanguageToggleText;
-            LanguageToggleButton.ToolTip = Strings.LanguageToggleToolTip;
-            // 上部タブは短い名前にし、詳細はツールチップへ残す。
+            // Global mode and folder actions are separate navigation levels.
+            NavTabGeneral.Content = isJa ? "一般用途" : "Everyday";
+            NavTabGeneral.ToolTip = isJa ? "フォルダーで作業" : "Work with folders";
+            AdminTabsCaption.Text = isJa ? "管理" : "Admin";
+            FolderActionCaption.Text = isJa ? "このフォルダーで" : "In this folder";
             NavTabStorage.Content = isJa ? "容量" : "Storage";
             NavTabStorage.ToolTip = Strings.TabStorageToolTip;
             NavTabLiveAcl.Content = isJa ? "権限" : "Access";
@@ -97,8 +85,9 @@ namespace AstraSize
             NavTabLinkFix.ToolTip = Strings.TabLinkFixToolTip;
             NavTabAudit.Content = isJa ? "整理" : "Cleanup";
             NavTabAudit.ToolTip = Strings.TabAuditToolTip;
-            NavTabMedia.Content = isJa ? "メディア" : "Media";
-            NavTabMedia.ToolTip = Strings.TabMediaToolTip;
+            CleanupCandidatesTab.Content = isJa ? "整理候補" : "Candidates";
+            CleanupMediaTab.Content = isJa ? "メディア最適化" : "Media optimization";
+            CleanupMediaTab.ToolTip = Strings.TabMediaToolTip;
             if (NavTabSearch != null)
             {
                 NavTabSearch.Content = isJa ? "検索" : "Search";
@@ -649,6 +638,8 @@ namespace AstraSize
 
             // Settings Modal
             SettingsButton.ToolTip = isJa ? "環境設定 / Settings" : "Settings";
+            SettingsLanguageTitle.Text = isJa ? "表示言語" : "Display language";
+            SettingsLanguageHint.Text = isJa ? "画面の表示言語を選択" : "Choose the interface language";
             SettingsTitleText.Text = isJa ? "⚙️ 環境設定 (Settings)" : "⚙️ Settings";
             SettingsDescText.Text = isJa
                 ? "キャッシュ、スナップショット履歴、監査レポートの参照先および保存先を構成します。"

@@ -73,11 +73,34 @@ namespace FolderMorpher.HostClient
                     var clientVersion = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "unknown";
                     if (!string.Equals(status.Version, clientVersion, StringComparison.Ordinal))
                     {
+                        bool hostIsOlder = Version.TryParse(status.Version, out var hostVersion) &&
+                            Version.TryParse(clientVersion, out var guiVersion) && hostVersion < guiVersion;
+                        bool canRestart = hostIsOlder && attempt == 0 && status.ActiveJobCount == 0 &&
+                            await _proxy.RequestShutdownAsync(false).WaitAsync(TimeSpan.FromSeconds(5), ct);
                         _rpc.Dispose();
                         _pipeStream.Dispose();
                         _proxy = null;
-                        throw new HostVersionMismatchException(
-                            $"起動中のFolderMorpher Hostは旧版です（Host {status.Version} / GUI {clientVersion}）。Hostの作業を終えてWindowsを再ログインし、新しいEXEを起動してください。");
+                        if (canRestart)
+                        {
+                            try
+                            {
+                                using var previousHost = Process.GetProcessById(status.ProcessId);
+                                using var exitTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                                exitTimeout.CancelAfter(TimeSpan.FromSeconds(8));
+                                await previousHost.WaitForExitAsync(exitTimeout.Token);
+                            }
+                            catch (ArgumentException) { /* The old Host already exited. */ }
+                            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                            {
+                                throw new HostVersionMismatchException($"旧版Host {status.Version} が終了しませんでした。実行中の処理を確認してから、アプリとHostを終了してください。");
+                            }
+                            LaunchHostProcess();
+                            await Task.Delay(500, ct);
+                            continue;
+                        }
+                        throw new HostVersionMismatchException(hostIsOlder
+                            ? $"起動中のFolderMorpher Hostは旧版です（Host {status.Version} / GUI {clientVersion}）。実行中のHost処理を終えてから、旧版アプリの設定で「アプリとHostを終了」を選んでください。"
+                            : $"起動中のHostとGUIの版が一致しません（Host {status.Version} / GUI {clientVersion}）。新しいFolderMorpher.exeを起動してください。");
                     }
                     return;
                 }
@@ -120,7 +143,9 @@ namespace FolderMorpher.HostClient
                 psi.ArgumentList.Add(assemblyPath);
             }
             psi.ArgumentList.Add("--host");
-            if (Environment.GetCommandLineArgs().Contains("--test-ipc"))
+            if (Environment.GetCommandLineArgs().Contains("--test-ipc") ||
+                (Environment.GetCommandLineArgs().Contains("--snapshot") &&
+                 Guid.TryParseExact(Environment.GetEnvironmentVariable("FOLDERMORPHER_TEST_IPC_ID"), "N", out _)))
                 psi.ArgumentList.Add("--test-ipc");
             _launchedHost = Process.Start(psi) ?? throw new InvalidOperationException("Host プロセスを起動できませんでした。");
         }
