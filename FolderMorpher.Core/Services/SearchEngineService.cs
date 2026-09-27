@@ -190,6 +190,12 @@ namespace FolderMorpher.Services
                 int unreadFiles = 0;
                 long totalHitBytes = 0;
                 long lastReportMs = 0;
+                var coverage = new ScanCoverage();
+
+                (int discovered, int completed) DirectoryProgress()
+                {
+                    lock (coverage) return (coverage.DiscoveredFolders, coverage.CompletedFolders);
+                }
 
                 // BoundedChannel & Backpressure (最大2048件バッファでメモリ浪費防止)
                 var contentChannel = Channel.CreateBounded<SearchResultItem>(
@@ -274,10 +280,14 @@ namespace FolderMorpher.Services
                             if (elapsed - Volatile.Read(ref lastReportMs) > 100)
                             {
                                 Volatile.Write(ref lastReportMs, elapsed);
+                                var (discovered, completed) = DirectoryProgress();
                                 progress?.Report(new SearchProgressReport
                                 {
                                     HitCount = Volatile.Read(ref hitCount),
                                     ScannedCount = Volatile.Read(ref scannedCount),
+                                    ContentProcessedCount = dp,
+                                    DiscoveredDirectories = discovered,
+                                    ProcessedDirectories = completed,
                                     TotalHitBytes = Volatile.Read(ref totalHitBytes),
                                     CurrentPath = $"📄 Deep Search: {item.Name}",
                                     Elapsed = sw.Elapsed,
@@ -333,10 +343,14 @@ namespace FolderMorpher.Services
                     if (elapsed - Volatile.Read(ref lastReportMs) > 150)
                     {
                         Volatile.Write(ref lastReportMs, elapsed);
+                        var (discovered, completed) = DirectoryProgress();
                         progress?.Report(new SearchProgressReport
                         {
                             HitCount = Volatile.Read(ref hitCount),
                             ScannedCount = count,
+                            ContentProcessedCount = Volatile.Read(ref deepProcessed),
+                            DiscoveredDirectories = discovered,
+                            ProcessedDirectories = completed,
                             TotalHitBytes = Volatile.Read(ref totalHitBytes),
                             CurrentPath = entry.FullPath,
                             Elapsed = sw.Elapsed,
@@ -346,7 +360,6 @@ namespace FolderMorpher.Services
                 }
 
                 bool includeDirs = query.IncludeFolders || (query.IsDirectoryOnly == true);
-                var coverage = new ScanCoverage();
 
                 // ★ ADR 94: Server Search Accelerator（サーバー側インデックス拝借 ＆ 候補ピンポイント原本確認）
                 // Windows Server (WSP) または WSP 互換 NAS (Synology等) がインデックスを公開していれば、
@@ -462,10 +475,14 @@ namespace FolderMorpher.Services
                 }
 
                 sw.Stop();
+                var (finalDiscovered, finalCompleted) = DirectoryProgress();
                 progress?.Report(new SearchProgressReport
                 {
                     HitCount = results.Count,
                     ScannedCount = scannedCount,
+                    ContentProcessedCount = Volatile.Read(ref deepProcessed),
+                    DiscoveredDirectories = finalDiscovered,
+                    ProcessedDirectories = finalCompleted,
                     AccessDeniedFolders = coverage.AccessDeniedFolders,
                     UnreadFiles = Volatile.Read(ref unreadFiles),
                     TotalHitBytes = results.Sum(r => r.SizeBytes),

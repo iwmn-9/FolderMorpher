@@ -161,10 +161,16 @@ namespace AstraSize
                         if (settings.StorageTabPaths == null || settings.Language is not ("ja" or "en"))
                             throw new InvalidOperationException("Settings DTO roundtrip failed.");
                         settings.CloseHostOnWindowClose = true;
+                        settings.AdminSidebarCollapsed = false;
+                        settings.ScanDurationsSeconds["search-content|C:"] = 12.5;
                         await host.SaveAppSettingsAsync(settings);
-                        if (!(await host.GetAppSettingsAsync()).CloseHostOnWindowClose)
-                            throw new InvalidOperationException("Close-Host setting did not roundtrip over IPC.");
+                        var savedSettings = await host.GetAppSettingsAsync();
+                        if (!savedSettings.CloseHostOnWindowClose || savedSettings.AdminSidebarCollapsed ||
+                            !savedSettings.ScanDurationsSeconds.TryGetValue("search-content|C:", out var duration) || duration != 12.5)
+                            throw new InvalidOperationException("Window and scan estimate settings did not roundtrip over IPC.");
                         settings.CloseHostOnWindowClose = false;
+                        settings.AdminSidebarCollapsed = true;
+                        settings.ScanDurationsSeconds.Clear();
                         await host.SaveAppSettingsAsync(settings);
                         await host.SetLanguageAsync(settings.Language);
                         FolderMorpher.UI.PresentationTestRunner.VerifyStorageNodePresentation();
@@ -310,6 +316,9 @@ namespace AstraSize
                             } while (searchJob.State == FolderMorpher.Contracts.HostJobState.Running);
                             if (searchJob.SearchResults?.Any(item => string.Equals(item.FullPath, matchFile, StringComparison.OrdinalIgnoreCase)) != true)
                                 throw new InvalidOperationException("Host job result did not survive the RPC roundtrip.");
+                            if (searchJob.DiscoveredDirectories < 2 ||
+                                searchJob.DiscoveredDirectories != searchJob.ProcessedDirectories)
+                                throw new InvalidOperationException("Search directory frontier progress did not cross IPC.");
                             var liveBatch = await host.GetSearchJobResultsAsync(searchJobId, 0, 256);
                             if (liveBatch.Results.Count == 0 ||
                                 !liveBatch.Results.Any(item => string.Equals(item.FullPath, matchFile, StringComparison.OrdinalIgnoreCase)))
@@ -391,6 +400,8 @@ namespace AstraSize
                             } while (unreadJob.State == FolderMorpher.Contracts.HostJobState.Running);
                             if (unreadJob.UnreadFiles < 1)
                                 throw new InvalidOperationException("Unread Office file was incorrectly reported as a complete non-match.");
+                            if (unreadJob.ContentProcessedCount < 1)
+                                throw new InvalidOperationException("Content processing progress did not cross IPC.");
                             await host.ReleaseJobAsync(unreadJobId);
                             Console.WriteLine("[TEST-IPC] Search unread-file coverage: SUCCESS");
 

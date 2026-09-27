@@ -50,8 +50,7 @@ public static class SnapshotRunner
                                 {
                                     @"C:\Windows", @"C:\Users"
                                 };
-                                mw.ScopeManualPathBox.Text = @"C:\";
-                                mw.ScopeManualApplyButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                mw.SetActiveFolderScope(@"C:\");
                                 mw.ScopePickerButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
                                 var activeRow = mw.ScopeRecentItems.Items.OfType<System.Windows.Controls.Border>().FirstOrDefault()
                                     ?? throw new InvalidOperationException("Working folder was not listed in the expanded picker.");
@@ -72,8 +71,7 @@ public static class SnapshotRunner
                                         mw.StorageTabs.Any(tab => string.Equals(tab.TargetPath, @"C:\", StringComparison.OrdinalIgnoreCase)))
                                         throw new InvalidOperationException("Removing a scope left the registered folder behind.");
                                     mw.ScopePopup.IsOpen = false;
-                                    mw.ScopeManualPathBox.Text = @"C:\";
-                                    mw.ScopeManualApplyButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                    mw.SetActiveFolderScope(@"C:\");
                                 }
                             }
                             else if (selectTab == 12)
@@ -192,6 +190,20 @@ public static class SnapshotRunner
                                 mw.Width = 1100;
                                 mw.Height = 720;
                                 mw.NavTabSearch.IsChecked = true;
+                                if (mw.AdminSidebar.Visibility != Visibility.Collapsed || mw.AdminSidebarColumn.Width.Value != 0)
+                                    throw new InvalidOperationException("The administration sidebar did not start collapsed.");
+                            }
+                            else if (selectTab == 21)
+                            {
+                                mw.Width = 1100;
+                                mw.Height = 720;
+                                mw.NavTabSearch.IsChecked = true;
+                                mw.SetActiveFolderScope(@"C:\Company\LongProjectName\非常に長い参照フォルダー名_契約書と管理資料_2026年度版", selectStorageTab: false, persist: false);
+                                mw.AdminSidebarToggleButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                mw.UpdateLayout();
+                                if (mw.AdminSidebar.Visibility != Visibility.Visible || mw.ActiveScopeContainer.ActualWidth != 280 ||
+                                    !mw.ScopePickerText.Text.Contains("非常に長い参照フォルダー名"))
+                                    throw new InvalidOperationException("Expanded navigation or fixed-width folder selector failed.");
                             }
                             else if (selectTab == 6)
                             {

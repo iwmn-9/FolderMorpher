@@ -123,9 +123,16 @@ namespace AstraSize
         {
             InitializeComponent();
             ApplyClientModeLayout();
+            ApplyAdminSidebarState();
 
             LiveAclStudioControl.InitializeServices();
             LiveAclStudioControl.ToastRequested += ShowToast;
+            LiveAclStudioControl.ScanEtaStarted += path => _reverseAclScanEta = BeginScanEta("acl-reverse", path);
+            LiveAclStudioControl.ScanEtaFinished += completed =>
+            {
+                FinishScanEta(_reverseAclScanEta, completed);
+                _reverseAclScanEta = null;
+            };
             LiveAclStudioControl.EditSecurityRequested += (acl, folderName, fullPath, onApplied) =>
             {
                 OpenSecurityModal(acl, folderName, fullPath, onApplied);
@@ -144,6 +151,26 @@ namespace AstraSize
 
             PreviewKeyDown += MainWindow_PreviewKeyDown;
             Loaded += MainWindow_Loaded;
+        }
+
+        private void AdminSidebarToggleButton_Click(object sender, RoutedEventArgs e)
+        {
+            var settings = AppSettingsService.Instance.Current;
+            settings.AdminSidebarCollapsed = !settings.AdminSidebarCollapsed;
+            ApplyAdminSidebarState();
+            AppSettingsService.Instance.Save();
+        }
+
+        private void ApplyAdminSidebarState()
+        {
+            if (ClientModeState.IsClientMode) return;
+            bool collapsed = AppSettingsService.Instance.Current.AdminSidebarCollapsed;
+            AdminSidebar.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+            AdminSidebarColumn.Width = new GridLength(collapsed ? 0 : 208);
+            AdminSidebarToggleButton.Content = collapsed ? "☰" : "‹";
+            AdminSidebarToggleButton.ToolTip = collapsed
+                ? UiText("管理メニューを開く", "Open navigation")
+                : UiText("管理メニューを畳む", "Collapse navigation");
         }
 
         private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)

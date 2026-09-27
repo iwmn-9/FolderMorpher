@@ -250,6 +250,11 @@ namespace AstraSize
         {
             if (_currentTab == null) return;
 
+            long? previousFiles = string.Equals(_currentTab.RootNode?.FullPath, path, StringComparison.OrdinalIgnoreCase)
+                ? _currentTab.RootNode?.FileCount : null;
+            var scanEta = BeginScanEta("storage", path, previousFiles);
+            bool scanCompleted = false;
+
             _scanCts?.Cancel();
             _scanCts = new CancellationTokenSource();
             var ct = _scanCts.Token;
@@ -273,6 +278,7 @@ namespace AstraSize
                 cachedRoot = cachedDto == null ? null : FolderMorpher.HostClient.StorageNodeMapper.ToViewNode(cachedDto);
                 if (cachedRoot != null)
                 {
+                    UpdateScanEtaTotal(scanEta, cachedRoot.FileCount);
                     cachedRoot.IsExpanded = true;
                     _currentTab.RootNode = cachedRoot;
                     _currentTab.FlattenTree();
@@ -289,10 +295,9 @@ namespace AstraSize
                 // キャッシュロード失敗は通常走査にフォールバック
             }
 
-            var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(ct);
-
             var progress = new Progress<FolderMorpher.Contracts.StorageScanProgressDto>(p =>
             {
+                ReportScanEta(scanEta, p.ScannedFilesCount, p.ProcessedDirectories, p.DiscoveredDirectories);
                 ScannedSizeTextBlock.Text = FileItemNode.FormatBytes(p.ScannedBytes);
                 TotalFilesTextBlock.Text = UiText($"{p.ScannedFilesCount:N0} 項目走査済み", $"{p.ScannedFilesCount:N0} items scanned");
                 StatusTextBlock.Text = UiText($"スキャン中: {p.CurrentDirectory}", $"Scanning: {p.CurrentDirectory}");
@@ -300,6 +305,7 @@ namespace AstraSize
 
             try
             {
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(ct);
                 // --- バックグラウンド最新スキャン実行 (Host IPC経由) ---
                 var scanResult = await host.ScanStorageAsync(new FolderMorpher.Contracts.StorageScanRequestDto { TargetPath = path }, progress, ct);
                 var root = scanResult.RootNode == null ? null : FolderMorpher.HostClient.StorageNodeMapper.ToViewNode(scanResult.RootNode);
@@ -344,6 +350,7 @@ namespace AstraSize
                         $"⚡ MFT scan complete ({summary.ElapsedSeconds}s): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)}){diffInfo}")
                     : UiText($"スキャン完了 ({summary.ElapsedSeconds}秒): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)}){diffInfo}",
                         $"Scan complete ({summary.ElapsedSeconds}s): {root.Name} ({FileItemNode.FormatBytes(root.SizeBytes)}){diffInfo}");
+                scanCompleted = true;
             }
             catch (OperationCanceledException)
             {
@@ -357,6 +364,7 @@ namespace AstraSize
             }
             finally
             {
+                FinishScanEta(scanEta, scanCompleted);
                 ScanButton.Visibility = Visibility.Visible;
                 CancelButton.Visibility = Visibility.Collapsed;
                 GlobalProgressBar.Visibility = Visibility.Collapsed;

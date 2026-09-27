@@ -287,6 +287,10 @@ namespace FolderMorpher.Services.Testing
 
                 if (scannedEntries.Count != 4)
                     throw new InvalidOperationException($"EnumerateFileEntriesParallelAsync expected 4 entries, got {scannedEntries.Count}");
+                if (entryCoverage.DiscoveredFolders == 0 ||
+                    entryCoverage.DiscoveredFolders != entryCoverage.CompletedFolders ||
+                    entryCoverage.CompletedFolders != entryCoverage.TotalFoldersScanned)
+                    throw new InvalidOperationException("Directory frontier counters did not converge after enumeration.");
 
                 var rootEntry = scannedEntries.FirstOrDefault(e => e.Name == "root1.txt");
                 if (rootEntry == null)

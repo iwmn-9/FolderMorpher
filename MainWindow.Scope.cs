@@ -28,7 +28,7 @@ public partial class MainWindow
         RenderScopeChoices();
     }
 
-    private void SetActiveFolderScope(string path, bool selectStorageTab = true, bool persist = true)
+    internal void SetActiveFolderScope(string path, bool selectStorageTab = true, bool persist = true)
     {
         path = path.Trim().TrimEnd('\\', '/');
         if (path.Length == 2 && path[1] == ':') path += "\\";
@@ -96,7 +96,6 @@ public partial class MainWindow
     {
         if (ScopePopup.IsOpen) { ScopePopup.IsOpen = false; return; }
         ScopeFilterBox.Text = string.Empty;
-        ScopeManualPathBox.Text = string.Empty;
         RenderScopeChoices();
         ScopePopup.IsOpen = true;
     }
@@ -267,7 +266,9 @@ public partial class MainWindow
             Text = ScopeLeaf(path),
             Foreground = new SolidColorBrush(Color.FromRgb(32, 52, 81)),
             FontSize = 13,
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            MaxWidth = 355,
+            TextTrimming = TextTrimming.CharacterEllipsis
         });
         if (showPath)
             caption.Children.Add(new TextBlock
@@ -326,26 +327,4 @@ public partial class MainWindow
         if (dialog.ShowDialog(this) == true) ChooseScope(dialog.FolderName);
     }
 
-    private void ScopeManualPathBox_KeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter) ScopeManualApplyButton_Click(sender, e);
-    }
-
-    private void ScopeManualPathBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (ScopeManualPathHint != null)
-            ScopeManualPathHint.Visibility = string.IsNullOrEmpty(ScopeManualPathBox.Text) ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void ScopeManualApplyButton_Click(object sender, RoutedEventArgs e)
-    {
-        var path = ScopeManualPathBox.Text.Trim();
-        if (!Path.IsPathFullyQualified(path))
-        {
-            AppDialog.Show(UiText("ローカルまたはUNCの完全パスを指定してね。", "Enter a full local or UNC path."),
-                UiText("フォルダーを確認", "Check folder"), MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
-        ChooseScope(path);
-    }
 }

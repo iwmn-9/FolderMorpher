@@ -178,8 +178,13 @@ namespace AstraSize
                 },
                 job => progress.Report(new FolderMorpher.Contracts.SearchProgressDto
                 {
+                    IsCached = cached,
                     CurrentPath = job.ProgressText,
                     HitCount = job.HitCount,
+                    ScannedCount = job.ScannedCount,
+                    ContentProcessedCount = job.ContentProcessedCount,
+                    DiscoveredDirectories = job.DiscoveredDirectories,
+                    ProcessedDirectories = job.ProcessedDirectories,
                     TotalHitBytes = job.TotalHitBytes,
                     AccessDeniedFolders = job.AccessDeniedFolders,
                     UnreadFiles = job.UnreadFiles,
@@ -261,10 +266,15 @@ namespace AstraSize
 
             SetSearchLoadingState(true);
             var searchTotalSw = Stopwatch.StartNew();
+            ScanEtaSession? scanEta = null;
+            bool liveSearchCompleted = false;
 
             var progress = new Progress<FolderMorpher.Contracts.SearchProgressDto>(r =>
             {
                 if (currentGen != Volatile.Read(ref _searchGeneration)) return;
+                if (!r.IsCached) ReportScanEta(scanEta,
+                    query.HasDeepFileIoRequirement ? r.ContentProcessedCount : r.ScannedCount,
+                    r.ProcessedDirectories, r.DiscoveredDirectories);
                 // Host progress is per job. Cached name hits from the preceding job remain visible.
                 if (SearchKpiElapsedText != null) SearchKpiElapsedText.Text = $"{searchTotalSw.Elapsed.TotalSeconds:F2}s";
                 if (SearchStatusText != null && !string.IsNullOrEmpty(r.CurrentPath))
@@ -369,7 +379,9 @@ namespace AstraSize
                     if (query.HasDeepFileIoRequirement && hasTarget)
                     {
                         // Step 2: 本文・Officeリンク条件は、キャッシュがあっても原本をLive走査する。
+                        scanEta = BeginScanEta("search-content", targetFolder, scopedRoots.Sum(root => (long)root.FileCount));
                         var liveOutcome = await RunSearchJobAsync(targetFolder, query, progress, ReceiveBatch, cached: false, ct);
+                        liveSearchCompleted = true;
                         var liveHits = liveOutcome.Results
                             .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                         if (currentGen == Volatile.Read(ref _searchGeneration))
@@ -424,7 +436,10 @@ namespace AstraSize
                             : (query.HasDeepFileIoRequirement ? "🔍 Live scanning (instant name hits & content search)..." : "🔍 Running live direct search...");
                     }
 
+                    scanEta = BeginScanEta(query.HasDeepFileIoRequirement ? "search-content" : "search-name", targetFolder,
+                        scopedRoots.Sum(root => (long)root.FileCount));
                     var liveOutcome = await RunSearchJobAsync(targetFolder, query, progress, ReceiveBatch, cached: false, ct);
+                    liveSearchCompleted = true;
                     var results = liveOutcome.Results
                         .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                     if (currentGen == Volatile.Read(ref _searchGeneration))
@@ -464,6 +479,7 @@ namespace AstraSize
             }
             finally
             {
+                FinishScanEta(scanEta, liveSearchCompleted);
                 if (currentGen == Volatile.Read(ref _searchGeneration))
                 {
                     SetSearchLoadingState(false);

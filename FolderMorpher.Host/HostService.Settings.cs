@@ -22,7 +22,9 @@ public partial class HostService
             ActiveStorageTabIndex = source.ActiveStorageTabIndex,
             ActiveScopePath = source.ActiveScopePath,
             RecentScopePaths = source.RecentScopePaths.ToList(),
-            CloseHostOnWindowClose = source.CloseHostOnWindowClose
+            CloseHostOnWindowClose = source.CloseHostOnWindowClose,
+            AdminSidebarCollapsed = source.AdminSidebarCollapsed,
+            ScanDurationsSeconds = new(source.ScanDurationsSeconds ?? new())
         });
     }
 
@@ -42,6 +44,11 @@ public partial class HostService
         target.ActiveScopePath = settings.ActiveScopePath ?? string.Empty;
         target.RecentScopePaths = settings.RecentScopePaths?.Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList() ?? new();
         target.CloseHostOnWindowClose = settings.CloseHostOnWindowClose;
+        target.AdminSidebarCollapsed = settings.AdminSidebarCollapsed;
+        target.ScanDurationsSeconds = (settings.ScanDurationsSeconds ?? new())
+            .Where(entry => entry.Key.Length <= 1024 && double.IsFinite(entry.Value) && entry.Value > 0 && entry.Value <= 604800)
+            .Take(32)
+            .ToDictionary(entry => entry.Key, entry => entry.Value);
         AppSettingsService.Instance.Save();
         return Task.CompletedTask;
     }

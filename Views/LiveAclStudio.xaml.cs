@@ -29,6 +29,8 @@ namespace AstraSize.Views
         private static string UiText(string ja, string en) => LocalizationService.Instance.GetString(ja, en);
         // 外部連携イベント
         public event Action<string>? ToastRequested;
+        public event Action<string>? ScanEtaStarted;
+        public event Action<bool>? ScanEtaFinished;
         public event Action<SimAclEntry, string, string, Action>? EditSecurityRequested;
 
         // フォルダ別権限エディタ 状態管理
@@ -1158,6 +1160,8 @@ namespace AstraSize.Views
             _revCts = new CancellationTokenSource();
             var ct = _revCts.Token;
 
+            ScanEtaStarted?.Invoke(rootPath);
+            bool scanCompleted = false;
             try
             {
                 // 1. グループ解決（直接所属＋多重入れ子AD Chain）
@@ -1203,6 +1207,7 @@ namespace AstraSize.Views
                 RevStatusText.Text = UiText($"監査完了: 総走査 {report.TotalFoldersScanned:N0} フォルダ中、{report.AccessibleFolders.Count:N0} 件のフォルダーを検出 (飛び地: {report.EnclaveCount}件, 遮断: {report.SeveredCount}件, 走査不能: {report.UnavailableCount}件)", $"Audit complete: {report.AccessibleFolders.Count:N0} accessible of {report.TotalFoldersScanned:N0} scanned folders (enclaves: {report.EnclaveCount}, blocked: {report.SeveredCount}, unavailable: {report.UnavailableCount})");
                 RevExportExcelButton.IsEnabled = report.AccessibleFolders.Count > 0;
                 ShowToast(UiText($"🔍 「{targetAccount}」の逆引き監査が完了しました ({report.AccessibleFolders.Count:N0} 件)", $"🔍 Reverse lookup complete for {targetAccount} ({report.AccessibleFolders.Count:N0} folders)"));
+                scanCompleted = true;
             }
             catch (OperationCanceledException)
             {
@@ -1216,6 +1221,7 @@ namespace AstraSize.Views
             }
             finally
             {
+                ScanEtaFinished?.Invoke(scanCompleted);
                 RevStartScanButton.Visibility = Visibility.Visible;
                 RevCancelScanButton.Visibility = Visibility.Collapsed;
                 RevProgressBar.Visibility = Visibility.Collapsed;

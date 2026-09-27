@@ -39,6 +39,10 @@ public sealed class HostJobStatusDto
     public HostJobState State { get; set; }
     public string ProgressText { get; set; } = string.Empty;
     public int HitCount { get; set; }
+    public int ScannedCount { get; set; }
+    public int ContentProcessedCount { get; set; }
+    public int DiscoveredDirectories { get; set; }
+    public int ProcessedDirectories { get; set; }
     public long TotalHitBytes { get; set; }
     public int AccessDeniedFolders { get; set; }
     public int UnreadFiles { get; set; }

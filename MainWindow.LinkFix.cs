@@ -44,6 +44,8 @@ namespace AstraSize
 
             IProgress<string> progress = new Progress<string>(msg => StatusTextBlock.Text = msg);
 
+            var scanEta = BeginScanEta(LinkIncludeOfficeCheckBox.IsChecked == true ? "link-office" : "link-shortcut", scope);
+            bool linkScanCompleted = false;
             try
             {
                 var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(_linkFixCts.Token);
@@ -71,6 +73,7 @@ namespace AstraSize
 
                 LinkItemsDataGrid.ItemsSource = items;
                 ShowToast(UiText($"切断リンクスキャン完了: {items.Count} 件検出", $"Broken link scan complete: {items.Count} found"));
+                linkScanCompleted = true;
             }
             catch (OperationCanceledException)
             {
@@ -82,6 +85,7 @@ namespace AstraSize
             }
             finally
             {
+                FinishScanEta(scanEta, linkScanCompleted);
                 GlobalProgressBar.Visibility = Visibility.Collapsed;
             }
         }

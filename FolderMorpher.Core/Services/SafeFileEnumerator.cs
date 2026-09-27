@@ -9,6 +9,8 @@ namespace FolderMorpher.Services
     public class ScanCoverage
     {
         public int TotalFoldersScanned { get; set; }
+        public int DiscoveredFolders { get; set; }
+        public int CompletedFolders { get; set; }
         public int AccessDeniedFolders { get; set; }
         public int TotalFilesFound { get; set; }
         public bool IsCompleteCoverage => AccessDeniedFolders == 0;
@@ -178,7 +180,11 @@ namespace FolderMorpher.Services
 
             if (coverage != null)
             {
-                lock (coverage) coverage.TotalFoldersScanned++;
+                lock (coverage)
+                {
+                    coverage.TotalFoldersScanned++;
+                    coverage.DiscoveredFolders++;
+                }
             }
 
             bool rootOk;
@@ -256,6 +262,7 @@ namespace FolderMorpher.Services
                         }
 
                         folderQueue.Enqueue(dirPath);
+                        if (coverage != null) { lock (coverage) coverage.DiscoveredFolders++; }
                         if (includeDirectories)
                         {
                             var dirEntry = new ScannedFileEntry(
@@ -277,10 +284,16 @@ namespace FolderMorpher.Services
             {
                 if (coverage != null)
                 {
-                    lock (coverage) coverage.AccessDeniedFolders++;
+                    lock (coverage)
+                    {
+                        coverage.AccessDeniedFolders++;
+                        coverage.CompletedFolders++;
+                    }
                 }
                 return resultFiles?.ToList() ?? new List<ScannedFileEntry>();
             }
+
+            if (coverage != null) { lock (coverage) coverage.CompletedFolders++; }
 
             // サブフォルダーが存在しない場合は即時返却
             if (folderQueue.IsEmpty)
@@ -392,6 +405,7 @@ namespace FolderMorpher.Services
                                 {
                                     folderQueue.Enqueue(dirPath); // 2つ目以降はグローバルキューへ積んで他ワーカーへ分配
                                 }
+                                if (coverage != null) { lock (coverage) coverage.DiscoveredFolders++; }
 
                                 if (includeDirectories)
                                 {
@@ -444,6 +458,7 @@ namespace FolderMorpher.Services
                         finally
                         {
                             Interlocked.Decrement(ref activeWorkers);
+                            if (coverage != null) { lock (coverage) coverage.CompletedFolders++; }
                         }
                     }
                 }, ct);

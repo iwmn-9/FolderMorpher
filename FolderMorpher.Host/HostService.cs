@@ -120,6 +120,8 @@ namespace FolderMorpher.Host
                         CurrentDirectory = p.CurrentPath,
                         ScannedFilesCount = p.FilesScanned,
                         ScannedBytes = p.BytesScanned,
+                        DiscoveredDirectories = p.DiscoveredDirectories,
+                        ProcessedDirectories = p.ProcessedDirectories,
                         IsCompleted = false
                     });
                 }) : null;
@@ -621,9 +623,10 @@ namespace FolderMorpher.Host
         // 7. Tab 6: Audit & Hygiene
         // ==========================================
         public Task<AuditReportDto> RunAuditScanAsync(AuditScanRequestDto request, IProgress<string>? progress, CancellationToken ct) =>
-            RunAuditScanCoreAsync(request, progress, null, ct);
+            RunAuditScanCoreAsync(request,
+                progress == null ? null : new InlineProgress<AuditProgress>(p => progress.Report(p.CurrentStatus)), null, ct);
 
-        private async Task<AuditReportDto> RunAuditScanCoreAsync(AuditScanRequestDto request, IProgress<string>? progress,
+        private async Task<AuditReportDto> RunAuditScanCoreAsync(AuditScanRequestDto request, IProgress<AuditProgress>? progress,
             IProgress<IReadOnlyList<AuditItem>>? candidateProgress, CancellationToken ct)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -642,11 +645,7 @@ namespace FolderMorpher.Host
                 BandwidthLimit = (AuditBandwidthLimit)request.BandwidthLimit,
                 ExcludeFolderPatterns = request.IgnoredPaths ?? new List<string>()
             };
-            var auditProgress = progress != null 
-                ? new InlineProgress<AuditProgress>(p => progress.Report(p.CurrentStatus))
-                : null;
-
-            var (summary, items) = await auditService.RunAuditAsync(options, auditProgress, ct, candidateProgress);
+            var (summary, items) = await auditService.RunAuditAsync(options, progress, ct, candidateProgress);
             sw.Stop();
 
             _ = Task.Run(async () =>

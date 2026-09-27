@@ -16,6 +16,8 @@ namespace AstraSize.Services
         public string CurrentPath { get; set; } = string.Empty;
         public int FilesScanned { get; set; }
         public long BytesScanned { get; set; }
+        public int DiscoveredDirectories { get; set; }
+        public int ProcessedDirectories { get; set; }
     }
 
     public class DiskScanService
@@ -72,6 +74,9 @@ namespace AstraSize.Services
                 int filesScanned = 0;
                 long bytesScanned = 0;
                 long lastProgressTime = 0;
+                int pendingWorkCount = 0;
+                int discoveredDirectories = 1;
+                int processedDirectories = 0;
 
                 var largestFiles = new List<LargestFileInfo>(32);
                 long minLargestThreshold = 0;
@@ -156,7 +161,9 @@ namespace AstraSize.Services
                             {
                                 CurrentPath = fullPath,
                                 FilesScanned = filesScanned,
-                                BytesScanned = bytesScanned
+                                BytesScanned = bytesScanned,
+                                DiscoveredDirectories = Volatile.Read(ref discoveredDirectories),
+                                ProcessedDirectories = Volatile.Read(ref processedDirectories)
                             });
                         }
                     }
@@ -182,7 +189,6 @@ namespace AstraSize.Services
                 };
 
                 // Sol提唱: 未処理＋処理中ワークアイテム数を Interlocked で厳密追跡（Worker race 完全根絶）
-                int pendingWorkCount = 0;
                 var folderQueue = new ConcurrentQueue<(FileItemNode node, string currentPath, int depth)>();
                 folderQueue.Enqueue((rootNode, cleanTargetPath, 0));
                 Interlocked.Increment(ref pendingWorkCount);
@@ -271,12 +277,30 @@ namespace AstraSize.Services
                                     node.Children.Add(subNode);
 
                                     Interlocked.Increment(ref pendingWorkCount);
+                                    Interlocked.Increment(ref discoveredDirectories);
                                     folderQueue.Enqueue((subNode, subPath, depth + 1));
                                 }
                             }
                             finally
                             {
                                 Interlocked.Decrement(ref pendingWorkCount);
+                                Interlocked.Increment(ref processedDirectories);
+                                lock (statsLock)
+                                {
+                                    var now = stopwatch.ElapsedMilliseconds;
+                                    if (now - lastProgressTime > 150)
+                                    {
+                                        lastProgressTime = now;
+                                        progress?.Report(new ScanProgress
+                                        {
+                                            CurrentPath = item.currentPath,
+                                            FilesScanned = filesScanned,
+                                            BytesScanned = bytesScanned,
+                                            DiscoveredDirectories = Volatile.Read(ref discoveredDirectories),
+                                            ProcessedDirectories = Volatile.Read(ref processedDirectories)
+                                        });
+                                    }
+                                }
                             }
                         }
                     }, ct);

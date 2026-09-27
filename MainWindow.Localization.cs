@@ -33,6 +33,7 @@ namespace AstraSize
             // FolderCleanerには管理用ナビゲーションを作業面として見せない。
             AdminSidebar.Visibility = Visibility.Collapsed;
             AdminSidebarColumn.Width = new GridLength(0);
+            AdminSidebarToggleButton.Visibility = Visibility.Collapsed;
 
             Title = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
                 ? "FolderCleaner - 容量分析 & ファイル監査・写真軽量化 クライアント"
@@ -66,6 +67,7 @@ namespace AstraSize
             }
 
             ApplyClientModeLayout();
+            ApplyAdminSidebarState();
 
             // 管理者用は左ナビ、一般用途の作業種別は参照フォルダーの下に置く。
             SidebarGeneralCaption.Text = isJa ? "一般用途" : "Everyday";
@@ -96,9 +98,7 @@ namespace AstraSize
             ScopePopupTitle.Text = isJa ? "参照フォルダーを選ぶ" : "Choose a working folder";
             ScopeRecentTitle.Text = isJa ? "最近使った場所" : "Recent locations";
             ScopeTreeTitle.Text = isJa ? "フォルダー一覧" : "Folders";
-            ScopeManualApplyButton.Content = isJa ? "開く" : "Open";
             ScopeFilterHint.Text = isJa ? "フォルダーを絞り込む" : "Filter saved folders";
-            ScopeManualPathHint.Text = isJa ? "パスを直接入力（UNCにも対応）" : "Enter a local or UNC path";
             SearchInputHint.Text = isJa ? "ファイル名や本文から検索" : "Search filenames or content";
             SearchEmptyTitle.Text = isJa ? "このフォルダーから探す" : "Search this folder";
             SearchEmptyHint.Text = isJa ? "上の欄に検索語を入力すると結果がここに表示されます" : "Enter a query above to see results here";

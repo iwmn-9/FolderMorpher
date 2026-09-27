@@ -122,6 +122,8 @@ namespace AstraSize
                 StatusTextBlock.Text = s;
             }
 
+            var scanEta = BeginScanEta(options.CheckDuplicates ? "audit-hash" : "audit-basic", target);
+            bool auditCompleted = false;
             try
             {
                 var auditReq = new FolderMorpher.Contracts.AuditScanRequestDto
@@ -147,6 +149,7 @@ namespace AstraSize
                     status =>
                     {
                         if (!string.IsNullOrWhiteSpace(status.ProgressText)) ShowAuditProgress(status.ProgressText);
+                        ReportScanEta(scanEta, status.ScannedCount);
                     },
                     auditToken,
                     onAuditBatch: batch =>
@@ -200,6 +203,7 @@ namespace AstraSize
                     : UiText($"完了: 整理候補 {items.Count:N0} 件検出 (整理推奨: {summary.ReadyToCleanSizeFormatted})", $"Complete: {items.Count:N0} candidates (recommended: {summary.ReadyToCleanSizeFormatted})");
                 AuditStatusText.Text = statusMsg;
                 ShowToast(statusMsg);
+                auditCompleted = true;
             }
             catch (OperationCanceledException)
             {
@@ -214,6 +218,7 @@ namespace AstraSize
             }
             finally
             {
+                FinishScanEta(scanEta, auditCompleted);
                 if (generation == _auditScanGeneration)
                 {
                     _auditScanInProgress = false;

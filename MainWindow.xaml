@@ -40,6 +40,7 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="AdminSidebarToggleButton" Content="☰" Width="34" Height="32" Padding="0" Margin="0,0,12,0" Style="{StaticResource FluentButtonSecondary}" Click="AdminSidebarToggleButton_Click" ToolTip="管理メニューを開く"/>
                     <Border Width="30" Height="30" CornerRadius="8" Background="#E8F0FC" Margin="0,0,10,0">
                         <Path Data="M2,5 L9,5 11,7 22,7 22,19 2,19 Z" Stroke="#2456A6" StrokeThickness="1.8" Width="18" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
@@ -71,11 +72,11 @@
                 <StackPanel Orientation="Vertical" VerticalAlignment="Center">
                     <TextBlock x:Name="ScopeCaptionText" Text="参照フォルダー" FontSize="11" FontWeight="SemiBold" Foreground="#637995" Margin="0,0,0,6"/>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border x:Name="ActiveScopeContainer" Background="White" BorderBrush="#96B5DC" BorderThickness="1" CornerRadius="9">
-                                <Button x:Name="ScopePickerButton" Click="ScopePickerButton_Click" Style="{StaticResource ScopePickerButtonStyle}" ToolTip="参照フォルダーを切り替える" Padding="12,7,12,7">
+                        <Border x:Name="ActiveScopeContainer" Width="280" Background="White" BorderBrush="#96B5DC" BorderThickness="1" CornerRadius="9">
+                                <Button x:Name="ScopePickerButton" Width="278" Click="ScopePickerButton_Click" Style="{StaticResource ScopePickerButtonStyle}" ToolTip="参照フォルダーを切り替える" Padding="12,7,12,7">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Data="M2,5 L9,5 11,7 22,7 22,19 2,19 Z" Stroke="#2456A6" StrokeThickness="1.8" Width="19" Height="17" Stretch="Uniform" Margin="0,0,9,0" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="ScopePickerText" Text="フォルダーを選択" FontSize="15" FontWeight="SemiBold" Foreground="#1E3559" MaxWidth="290" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="ScopePickerText" Text="フォルダーを選択" FontSize="15" FontWeight="SemiBold" Foreground="#1E3559" Width="190" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                         <TextBlock Text="⌄" FontSize="16" Foreground="#667B99" Margin="12,0,0,0" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
@@ -101,18 +102,7 @@
                                     <TreeView x:Name="ScopeTree" SelectedItemChanged="ScopeTree_SelectedItemChanged" BorderThickness="0" Background="Transparent"/>
                                 </StackPanel>
                             </ScrollViewer>
-                            <Grid Grid.Row="4" Margin="0,14,0,0">
-                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                <Button x:Name="ScopeAddButton" Content="＋ フォルダーを追加" Height="34" HorizontalAlignment="Left" Margin="0,0,0,10" Style="{StaticResource FluentButtonSecondary}" Click="ScopeAddButton_Click" ToolTip="参照フォルダーを追加"/>
-                                <Grid Grid.Row="1">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                    <Grid>
-                                        <TextBox x:Name="ScopeManualPathBox" Height="34" Padding="8,0" VerticalContentAlignment="Center" ToolTip="UNCまたはローカルのフォルダーパスを入力" TextChanged="ScopeManualPathBox_TextChanged" KeyDown="ScopeManualPathBox_KeyDown"/>
-                                        <TextBlock x:Name="ScopeManualPathHint" Text="パスを直接入力（UNCにも対応）" Foreground="#A0ADC0" FontSize="12" Margin="9,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
-                                    </Grid>
-                                    <Button x:Name="ScopeManualApplyButton" Grid.Column="1" Content="開く" Width="68" Margin="8,0,0,0" Style="{StaticResource FluentButtonPrimary}" Click="ScopeManualApplyButton_Click"/>
-                                </Grid>
-                            </Grid>
+                            <Button x:Name="ScopeAddButton" Grid.Row="4" Content="＋ フォルダーを追加" Height="34" HorizontalAlignment="Left" Margin="0,14,0,0" Style="{StaticResource FluentButtonSecondary}" Click="ScopeAddButton_Click" ToolTip="参照フォルダーを追加"/>
                         </Grid>
                     </Border>
                 </Popup>
@@ -2601,11 +2591,13 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock x:Name="StatusTextBlock" Text="準備完了" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
-                    <ProgressBar x:Name="GlobalProgressBar" Height="4" Width="140" Margin="12,0,0,0" Minimum="0" Maximum="100" Value="0"
+                <Grid Grid.Column="0" VerticalAlignment="Center" Margin="0,0,18,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock x:Name="StatusTextBlock" Text="準備完了" FontSize="12" Foreground="{StaticResource TextSecondary}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                    <ProgressBar x:Name="GlobalProgressBar" Grid.Column="1" Height="4" Width="100" Margin="12,0,0,0" Minimum="0" Maximum="100" Value="0"
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
-                </StackPanel>
+                    <TextBlock x:Name="ScanEtaText" Grid.Column="2" Visibility="Collapsed" FontSize="11" Foreground="#526987" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                </Grid>
                 <TextBlock x:Name="AppVersionText" Grid.Column="1" Text="FolderMorpher" FontSize="11" Foreground="#9AA8BA" VerticalAlignment="Center"/>
             </Grid>
         </Border>

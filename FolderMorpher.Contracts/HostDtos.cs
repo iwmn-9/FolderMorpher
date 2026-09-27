@@ -35,6 +35,8 @@ namespace FolderMorpher.Contracts
         public string CurrentDirectory { get; set; } = string.Empty;
         public long ScannedFilesCount { get; set; }
         public long ScannedBytes { get; set; }
+        public int DiscoveredDirectories { get; set; }
+        public int ProcessedDirectories { get; set; }
         public bool IsCompleted { get; set; }
     }
 

@@ -19,6 +19,10 @@ public partial class HostService
         public HostJobState State = HostJobState.Running;
         public string ProgressText = string.Empty;
         public int HitCount;
+        public int ScannedCount;
+        public int ContentProcessedCount;
+        public int DiscoveredDirectories;
+        public int ProcessedDirectories;
         public long TotalHitBytes;
         public int AccessDeniedFolders;
         public int UnreadFiles;
@@ -115,6 +119,10 @@ public partial class HostService
                     State = State,
                     ProgressText = ProgressText,
                     HitCount = HitCount,
+                    ScannedCount = ScannedCount,
+                    ContentProcessedCount = ContentProcessedCount,
+                    DiscoveredDirectories = DiscoveredDirectories,
+                    ProcessedDirectories = ProcessedDirectories,
                     TotalHitBytes = TotalHitBytes,
                     AccessDeniedFolders = AccessDeniedFolders,
                     UnreadFiles = UnreadFiles,
@@ -184,6 +192,10 @@ public partial class HostService
                         {
                             job.ProgressText = report.CurrentPath;
                             job.HitCount = report.HitCount;
+                            job.ScannedCount = report.ScannedCount;
+                            job.ContentProcessedCount = report.ContentProcessedCount;
+                            job.DiscoveredDirectories = report.DiscoveredDirectories;
+                            job.ProcessedDirectories = report.ProcessedDirectories;
                             job.TotalHitBytes = report.TotalHitBytes;
                             job.AccessDeniedFolders = report.AccessDeniedFolders;
                             job.UnreadFiles = report.UnreadFiles;
@@ -202,9 +214,13 @@ public partial class HostService
                     }
                     break;
                 case HostJobKind.AuditScan:
-                    var auditProgress = new InlineProgress<string>(message =>
+                    var auditProgress = new InlineProgress<AuditProgress>(p =>
                     {
-                        lock (job.Gate) job.ProgressText = message;
+                        lock (job.Gate)
+                        {
+                            job.ProgressText = p.CurrentStatus;
+                            job.ScannedCount = (int)Math.Min(int.MaxValue, p.ScannedFilesCount);
+                        }
                     });
                     var auditBatches = new InlineProgress<IReadOnlyList<AuditItem>>(job.AppendAuditBatch);
                     var report = await RunAuditScanCoreAsync(request.AuditRequest!, auditProgress, auditBatches, job.Cancellation.Token);

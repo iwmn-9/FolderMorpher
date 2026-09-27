@@ -70,6 +70,8 @@ namespace AstraSize
                 StatusTextBlock.Text = msg;
             });
 
+            var scanEta = BeginScanEta("media-scan", target);
+            bool mediaCompleted = false;
             try
             {
                 var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync(_mediaCts.Token);
@@ -89,6 +91,7 @@ namespace AstraSize
 
                 MediaStatusText.Text = UiText($"走査完了: 画像 {images.Count} 枚, 動画 {videos.Count} 本", $"Scan complete: {images.Count} images, {videos.Count} videos");
                 ShowToast(UiText($"メディア走査完了: {allItems.Count} 件検出", $"Media scan complete: {allItems.Count} found"));
+                mediaCompleted = true;
             }
             catch (OperationCanceledException)
             {
@@ -101,6 +104,7 @@ namespace AstraSize
             }
             finally
             {
+                FinishScanEta(scanEta, mediaCompleted);
                 GlobalProgressBar.Visibility = Visibility.Collapsed;
             }
         }
