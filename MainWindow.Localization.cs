@@ -91,7 +91,7 @@ namespace AstraSize
                 NavTabSearch.ToolTip = Strings.TabSearchToolTip;
             }
             ScopeCaptionText.Text = isJa ? "参照フォルダー" : "Working folder";
-            ScopeAddButton.Content = isJa ? "＋ 追加" : "＋ Add";
+            ScopeAddButton.Content = isJa ? "＋ フォルダーを追加" : "＋ Add a folder";
             ScopeAddButton.ToolTip = isJa ? "参照フォルダーを追加" : "Add a working folder";
             ScopePopupTitle.Text = isJa ? "参照フォルダーを選ぶ" : "Choose a working folder";
             ScopeRecentTitle.Text = isJa ? "最近使った場所" : "Recent locations";
@@ -128,8 +128,8 @@ namespace AstraSize
             if (TopFilesDataGrid != null) TopFilesDataGrid.ToolTip = isJa ? "ダブルクリックでエクスプローラーを開く" : "Double-click to open in Explorer";
             if (FolderChildSharesDataGrid != null) FolderChildSharesDataGrid.ToolTip = isJa ? "ダブルクリックで該当フォルダへドリルダウン" : "Double-click to drill down";
 
-            StorageKpiScannedSizeTitle.Text = isJa ? "スキャン対象 容量" : "Scanned Capacity";
-            StorageKpiDiffTrendTitle.Text = isJa ? "前回差分推移" : "Historical Growth";
+            StorageKpiScannedSizeTitle.Text = isJa ? "スキャン対象" : "Scanned";
+            StorageKpiDiffTrendTitle.Text = isJa ? "前回差分" : "Previous change";
 
             if (InsightsTargetScopeTextBlock.Text == "スコープ: 全体" || InsightsTargetScopeTextBlock.Text == "Scope: Entire Scan")
             {
@@ -308,6 +308,9 @@ namespace AstraSize
             }
             AuditHeaderTitle.Text = isJa ? "整理候補" : "Cleanup candidates";
             AuditHeaderDesc.Text = isJa ? "重複や休眠などの理由を重ねて、判断しやすい順に表示します。" : "Combine duplicate, dormant, and other reasons to rank candidates for review.";
+            AuditOptionsButton.Content = AuditOptionsPanel.Visibility == Visibility.Visible
+                ? (isJa ? "検出条件を隠す ▴" : "Hide scan options ▴")
+                : (isJa ? "検出条件を表示 ▾" : "Show scan options ▾");
             AuditTargetFolderLabel.Text = isJa ? "監査対象ディレクトリ (UNC / ローカル)" : "Target Audit Directory (UNC / Local)";
             if (AuditExcludeFoldersLabel != null) AuditExcludeFoldersLabel.Text = Strings.AuditExcludeFoldersLabel;
             if (AuditExcludeFoldersTextBox != null) AuditExcludeFoldersTextBox.ToolTip = Strings.AuditExcludeFoldersToolTip;
@@ -571,7 +574,7 @@ namespace AstraSize
                 SearchRefreshButton.Content = isJa ? "↻  更新" : "↻  Refresh";
                 SearchRefreshButton.ToolTip = isJa ? "検索結果を更新" : "Refresh search results";
             }
-            if (SearchKpiHitCountTitle != null) SearchKpiHitCountTitle.Text = Strings.SearchKpiHitCount;
+            if (SearchKpiHitCountTitle != null) SearchKpiHitCountTitle.Text = isJa ? "ヒット" : "Hits";
             SearchMenuOpen.Header = isJa ? "📄 ファイルを開く" : "📄 Open File";
             SearchMenuExplore.Header = isJa ? "📂 エクスプローラーで表示" : "📂 Show in Explorer";
             SearchMenuCopyPath.Header = isJa ? "📋 フルパスをコピー" : "📋 Copy Full Path";
@@ -582,9 +585,9 @@ namespace AstraSize
             SearchMenuAudit.Header = isJa ? "🧹 ファイル監査へ転送" : "🧹 Send to File Audit";
             SearchMenuExportExcel.Header = isJa ? "📊 Excelで出力 (.xlsx)" : "📊 Export to Excel (.xlsx)";
             SearchMenuExportCsv.Header = isJa ? "📑 CSVで出力 (.csv)" : "📑 Export to CSV (.csv)";
-            if (SearchKpiTotalSizeTitle != null) SearchKpiTotalSizeTitle.Text = Strings.SearchKpiTotalSize;
-            if (SearchKpiElapsedTitle != null) SearchKpiElapsedTitle.Text = Strings.SearchKpiElapsed;
-            if (SearchStatusTitle != null) SearchStatusTitle.Text = Strings.SearchStatusLabel;
+            if (SearchKpiTotalSizeTitle != null) SearchKpiTotalSizeTitle.Text = isJa ? "容量" : "Size";
+            if (SearchKpiElapsedTitle != null) SearchKpiElapsedTitle.Text = isJa ? "時間" : "Time";
+            if (SearchStatusTitle != null) SearchStatusTitle.Text = isJa ? "状況" : "Status";
             if (SearchTableTitleText != null) SearchTableTitleText.Text = isJa ? "検索結果" : "Results";
             if (SearchTargetFolderLabel != null) SearchTargetFolderLabel.Text = Strings.SearchTargetFolder;
             if (SearchTableHintText != null)

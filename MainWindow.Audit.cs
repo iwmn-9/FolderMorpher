@@ -28,6 +28,16 @@ namespace AstraSize
         private long _auditScanGeneration;
         private bool _auditScanInProgress;
         private long _auditPreviewGeneration;
+        private void AuditOptionsButton_Click(object sender, RoutedEventArgs e)
+        {
+            AuditOptionsPanel.Visibility = AuditOptionsPanel.Visibility == Visibility.Visible
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            AuditOptionsButton.Content = AuditOptionsPanel.Visibility == Visibility.Visible
+                ? UiText("検出条件を隠す ▴", "Hide scan options ▴")
+                : UiText("検出条件を表示 ▾", "Show scan options ▾");
+        }
+
         private void AuditBrowseButton_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new Microsoft.Win32.OpenFolderDialog

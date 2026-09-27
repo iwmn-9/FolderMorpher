@@ -80,7 +80,6 @@
                                     </StackPanel>
                                 </Button>
                         </Border>
-                        <Button x:Name="ScopeAddButton" Content="＋ 追加" Height="38" Margin="8,0,0,0" VerticalAlignment="Center" Style="{StaticResource FluentButtonSecondary}" Click="ScopeAddButton_Click" ToolTip="参照フォルダーを追加"/>
                     </StackPanel>
                 </StackPanel>
                 <Popup x:Name="ScopePopup" PlacementTarget="{Binding ElementName=ScopePickerButton}" Placement="Bottom" HorizontalOffset="0" VerticalOffset="5" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
@@ -103,12 +102,16 @@
                                 </StackPanel>
                             </ScrollViewer>
                             <Grid Grid.Row="4" Margin="0,14,0,0">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <Grid>
-                                    <TextBox x:Name="ScopeManualPathBox" Height="34" Padding="8,0" VerticalContentAlignment="Center" ToolTip="UNCまたはローカルのフォルダーパスを入力" TextChanged="ScopeManualPathBox_TextChanged" KeyDown="ScopeManualPathBox_KeyDown"/>
-                                    <TextBlock x:Name="ScopeManualPathHint" Text="パスを直接入力（UNCにも対応）" Foreground="#A0ADC0" FontSize="12" Margin="9,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                <Button x:Name="ScopeAddButton" Content="＋ フォルダーを追加" Height="34" HorizontalAlignment="Left" Margin="0,0,0,10" Style="{StaticResource FluentButtonSecondary}" Click="ScopeAddButton_Click" ToolTip="参照フォルダーを追加"/>
+                                <Grid Grid.Row="1">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <Grid>
+                                        <TextBox x:Name="ScopeManualPathBox" Height="34" Padding="8,0" VerticalContentAlignment="Center" ToolTip="UNCまたはローカルのフォルダーパスを入力" TextChanged="ScopeManualPathBox_TextChanged" KeyDown="ScopeManualPathBox_KeyDown"/>
+                                        <TextBlock x:Name="ScopeManualPathHint" Text="パスを直接入力（UNCにも対応）" Foreground="#A0ADC0" FontSize="12" Margin="9,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                    </Grid>
+                                    <Button x:Name="ScopeManualApplyButton" Grid.Column="1" Content="開く" Width="68" Margin="8,0,0,0" Style="{StaticResource FluentButtonPrimary}" Click="ScopeManualApplyButton_Click"/>
                                 </Grid>
-                                <Button x:Name="ScopeManualApplyButton" Grid.Column="1" Content="開く" Width="68" Margin="8,0,0,0" Style="{StaticResource FluentButtonPrimary}" Click="ScopeManualApplyButton_Click"/>
                             </Grid>
                         </Grid>
                     </Border>
@@ -142,7 +145,6 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/> <!-- Multi-Tab Header Strip -->
                     <RowDefinition Height="Auto"/> <!-- Toolbar & Path -->
-                    <RowDefinition Height="Auto"/> <!-- Key Metrics Cards -->
                     <RowDefinition Height="*"/>    <!-- Split View (Tree & Insights) -->
                 </Grid.RowDefinitions>
 
@@ -192,20 +194,20 @@
                 </Border>
 
                 <!-- Storage Toolbar -->
-                <Border Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="28,20,28,14">
+                <Border Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="20,10,20,10">
                     <Grid>
                         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 
-                        <StackPanel Grid.Row="0" VerticalAlignment="Center">
-                            <TextBlock x:Name="StoragePageTitleText" Text="容量分析" FontSize="20" FontWeight="SemiBold" Foreground="#1D2E49"/>
-                            <TextBlock x:Name="StoragePageHintText" Text="選択したフォルダーの容量と内訳を確認" FontSize="12" Foreground="#7789A1" Margin="0,4,0,0"/>
+                        <StackPanel Grid.Row="0" Visibility="Collapsed">
+                            <TextBlock x:Name="StoragePageTitleText" Text="容量分析"/>
+                            <TextBlock x:Name="StoragePageHintText" Text="選択したフォルダーの容量と内訳を確認"/>
                             <TextBox x:Name="PathTextBox" Visibility="Collapsed" KeyDown="PathTextBox_KeyDown"/>
                         </StackPanel>
 
                         <Button x:Name="StorageBrowseButton" Grid.Row="1" Content="参照..." Visibility="Collapsed" Margin="8,0,10,0" Height="32"
                                 Style="{StaticResource FluentButtonSecondary}" Click="BrowseButton_Click"/>
 
-                        <WrapPanel Grid.Row="1" Margin="0,13,0,0" HorizontalAlignment="Left">
+                        <WrapPanel Grid.Row="0" HorizontalAlignment="Left">
                             <Button x:Name="ScanButton" Content="スキャン開始" Height="32" Margin="0,0,8,0"
                                     Style="{StaticResource FluentButtonPrimary}" Click="ScanButton_Click"/>
                             <Button x:Name="CancelButton" Content="中止" Height="32" Margin="0,0,8,0" Background="#E11D48"
@@ -215,43 +217,23 @@
                             <Button x:Name="TabHistoryButton" Content="📈 容量推移グラフ" Height="32"
                                     Style="{StaticResource FluentButtonSecondary}" Click="HistoryButton_Click"/>
                         </WrapPanel>
-                    </Grid>
-                </Border>
-
-                <!-- Metrics Cards -->
-                <Border Grid.Row="2" Background="{StaticResource CanvasBackground}" Padding="20,12">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="16"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-
-                        <Border Grid.Column="0" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
-                            <StackPanel>
-                                <Grid>
-                                    <TextBlock x:Name="StorageKpiScannedSizeTitle" Text="スキャン対象容量" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
-                                    <Border x:Name="MftBoostBadge" Visibility="Collapsed" Background="#EFF6FF" BorderBrush="#3B82F6" BorderThickness="1" CornerRadius="4" Padding="6,1" HorizontalAlignment="Right">
-                                        <TextBlock Text="⚡ MFT Boost" FontSize="11" FontWeight="Bold" Foreground="#1D4ED8"/>
-                                    </Border>
-                                </Grid>
-                                <TextBlock x:Name="ScannedSizeTextBlock" Text="0.00 GB" FontSize="22" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="{StaticResource TextPrimary}" Margin="0,2,0,0"/>
-                                <TextBlock x:Name="TotalFilesTextBlock" Text="0 ファイル / 0 フォルダ" FontSize="11.5" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10">
-                            <StackPanel>
-                                <TextBlock x:Name="StorageKpiDiffTrendTitle" Text="前回スキャンとの差分推移" FontSize="12" Foreground="{StaticResource TextSecondary}"/>
-                                <TextBlock x:Name="TrendDiffTextBlock" Text="比較データなし" FontSize="22" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="{StaticResource AccentSky}" Margin="0,2,0,0"/>
-                                <TextBlock x:Name="LastScanDateTextBlock" Text="初回スキャン" FontSize="11.5" Foreground="{StaticResource TextSubtle}" Margin="0,2,0,0"/>
-                            </StackPanel>
-                        </Border>
+                        <WrapPanel Grid.Row="1" Margin="0,9,0,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="StorageKpiScannedSizeTitle" Text="スキャン対象 容量" FontSize="11" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <TextBlock x:Name="ScannedSizeTextBlock" Text="0.00 GB" FontSize="13" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="TotalFilesTextBlock" Text="0 ファイル / 0 フォルダ" FontSize="11" Foreground="{StaticResource TextSubtle}" VerticalAlignment="Center" Margin="9,0,0,0"/>
+                            <Border Width="1" Height="14" Background="#CBD5E1" Margin="14,0" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="StorageKpiDiffTrendTitle" Text="前回差分推移" FontSize="11" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <TextBlock x:Name="TrendDiffTextBlock" Text="比較データなし" FontSize="12" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="{StaticResource AccentSky}" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="LastScanDateTextBlock" Text="初回スキャン" FontSize="11" Foreground="{StaticResource TextSubtle}" VerticalAlignment="Center" Margin="9,0,0,0"/>
+                            <Border x:Name="MftBoostBadge" Visibility="Collapsed" Background="#EFF6FF" BorderBrush="#3B82F6" BorderThickness="1" CornerRadius="4" Padding="6,1" Margin="10,0,0,0">
+                                <TextBlock Text="⚡ MFT Boost" FontSize="11" FontWeight="Bold" Foreground="#1D4ED8"/>
+                            </Border>
+                        </WrapPanel>
                     </Grid>
                 </Border>
 
                 <!-- Storage Split View (Tree & Insights) -->
-                <Grid Grid.Row="3" Margin="20,0,20,12">
+                <Grid Grid.Row="2" Margin="20,0,20,12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="6.5*"/>
                         <ColumnDefinition Width="14"/>
@@ -1149,7 +1131,7 @@
                 </Grid.RowDefinitions>
 
                 <!-- Controls Card -->
-                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="21" Margin="0,0,0,14">
+                <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="16,12" Margin="0,0,0,10">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -1157,13 +1139,17 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                            <TextBlock x:Name="AuditHeaderTitle" Text="整理候補" FontSize="20" FontWeight="SemiBold" Foreground="#1D2E49"/>
-                            <TextBlock x:Name="AuditHeaderDesc" Text="重複や休眠などの理由を重ねて、判断しやすい順に表示します。"
-                                       FontSize="12" Foreground="#7789A1" Margin="0,4,0,0"/>
-                        </StackPanel>
+                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock x:Name="AuditHeaderTitle" Text="整理候補" FontSize="17" FontWeight="SemiBold" Foreground="#1D2E49"/>
+                                <TextBlock x:Name="AuditHeaderDesc" Text="重複や休眠などの理由を重ねて、判断しやすい順に表示します。"
+                                           FontSize="11" Foreground="#7789A1" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <Button x:Name="AuditOptionsButton" Grid.Column="1" Content="検出条件を表示 ▾" Height="30" Style="{StaticResource FluentButtonSecondary}" Click="AuditOptionsButton_Click" VerticalAlignment="Center"/>
+                        </Grid>
 
-                        <Grid Grid.Row="1">
+                        <Grid x:Name="AuditOptionsPanel" Grid.Row="1" Visibility="Collapsed">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
@@ -1197,7 +1183,7 @@
                                     <CheckBox x:Name="AuditCheckDormantCheckBox" Content="休眠・墓場 (3年超)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,10,0" FontSize="12" Foreground="#334155" ToolTip="3年以上更新がなく閲覧も途絶えたファイル・フォルダーを検出"/>
                                     <CheckBox x:Name="AuditCheckPathLimitsCheckBox" Content="パス長/禁則" IsChecked="True" VerticalAlignment="Center" Margin="0,0,14,0" FontSize="12" Foreground="#334155"/>
                                     <TextBlock x:Name="AuditBandwidthLabel" Text="帯域:" VerticalAlignment="Center" FontSize="12" Foreground="#64748B" Margin="0,0,6,0"/>
-                                    <ComboBox x:Name="AuditBandwidthComboBox" Height="30" Width="155" VerticalAlignment="Center" FontSize="11.5">
+                                    <ComboBox x:Name="AuditBandwidthComboBox" Height="30" Width="190" VerticalAlignment="Center" FontSize="11.5">
                                         <ComboBoxItem x:Name="AuditBandwidthStandardItem" Content="通常 50MB/s (保護)" IsSelected="True" Tag="Standard50MB"/>
                                         <ComboBoxItem x:Name="AuditBandwidthUnlimitedItem" Content="無制限 (夜間最速)" Tag="Unlimited"/>
                                     </ComboBox>
@@ -1217,7 +1203,7 @@
                             </Grid>
                         </Grid>
 
-                        <Grid Grid.Row="2" Margin="0,16,0,0">
+                        <Grid Grid.Row="2" Margin="0,4,0,0">
                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                             <WrapPanel Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
@@ -1309,8 +1295,8 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="12"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Name="AuditTableTitleText" Grid.Column="0" Text="検出された整理候補一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
                             <Border Grid.Column="1" Background="#FEE2E2" BorderBrush="#FCA5A5" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="14,0,0,0" VerticalAlignment="Center">
@@ -1319,17 +1305,19 @@
                                     <TextBlock x:Name="AuditLiveSelectedReductionText" Text="0 B (0 件)" FontSize="11" Foreground="#DC2626" FontWeight="Bold"/>
                                 </StackPanel>
                             </Border>
-                            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock x:Name="AuditMaxDisplayLabel" Text="表示件数:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <ComboBox x:Name="AuditMaxDisplayComboBox" Width="135" Height="28" FontSize="11.5" Margin="0,0,12,0" SelectionChanged="AuditFilter_Changed">
+                            <WrapPanel Grid.Column="3" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,10,0">
+                                    <TextBlock x:Name="AuditMaxDisplayLabel" Text="表示件数:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <ComboBox x:Name="AuditMaxDisplayComboBox" Width="135" Height="28" FontSize="11.5" Margin="0,0,12,0" SelectionChanged="AuditFilter_Changed">
                                     <ComboBoxItem Content="上位100件 (推奨)" IsSelected="True" Tag="100"/>
                                     <ComboBoxItem Content="上位300件" Tag="300"/>
                                     <ComboBoxItem Content="上位500件" Tag="500"/>
                                     <ComboBoxItem Content="全件表示" Tag="All"/>
-                                </ComboBox>
-
-                                <TextBlock x:Name="AuditSmartSelectLabel" Text="☑️ 一括選択:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <ComboBox x:Name="AuditSmartSelectComboBox" Width="175" Height="28" FontSize="11" Margin="0,0,12,0" SelectionChanged="AuditSmartSelectComboBox_SelectionChanged">
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,10,0">
+                                    <TextBlock x:Name="AuditSmartSelectLabel" Text="☑️ 一括選択:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <ComboBox x:Name="AuditSmartSelectComboBox" Width="175" Height="28" FontSize="11" Margin="0,0,12,0" SelectionChanged="AuditSmartSelectComboBox_SelectionChanged">
                                     <ComboBoxItem x:Name="AuditSmartItemPreset" Content="選択プリセット..." IsSelected="True" Tag="None"/>
                                     <ComboBoxItem Content="「整理推奨」を一括選択" Tag="ReadyToClean"/>
                                     <ComboBoxItem Content="世代・旧版の過去版を選択" Tag="VersionFamilyOnly"/>
@@ -1338,10 +1326,11 @@
                                     <ComboBoxItem x:Name="AuditSmartItemDormant3Y" Content="3年以上前の休眠を選択" Tag="Dormant3Y"/>
                                     <ComboBoxItem x:Name="AuditSmartItemVisible" Content="表示中のみすべて選択" Tag="SelectVisible"/>
                                     <ComboBoxItem x:Name="AuditSmartItemClear" Content="選択をすべて解除" Tag="ClearAll"/>
-                                </ComboBox>
-
-                                <TextBlock x:Name="AuditFilterLabel" Text="絞り込み:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <ComboBox x:Name="AuditCategoryFilterComboBox" Width="135" Height="28" FontSize="11.5" Margin="0,0,10,0" SelectionChanged="AuditFilter_Changed">
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,10,0">
+                                    <TextBlock x:Name="AuditFilterLabel" Text="絞り込み:" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <ComboBox x:Name="AuditCategoryFilterComboBox" Width="135" Height="28" FontSize="11.5" Margin="0,0,10,0" SelectionChanged="AuditFilter_Changed">
                                     <ComboBoxItem Content="すべて表示" IsSelected="True" Tag="All"/>
                                     <ComboBoxItem Content="整理推奨 のみ" Tag="ReadyToClean"/>
                                     <ComboBoxItem Content="要確認 のみ" Tag="ReviewAdvised"/>
@@ -1351,7 +1340,8 @@
                                     <ComboBoxItem Content="完全重複 のみ" Tag="Duplicate"/>
                                     <ComboBoxItem Content="長期休眠 のみ" Tag="Dormant"/>
                                     <ComboBoxItem Content="パス長・禁則 のみ" Tag="PathLimit"/>
-                                </ComboBox>
+                                    </ComboBox>
+                                </StackPanel>
                                 <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Height="28" Width="180" Padding="6,0">
                                     <Grid>
                                         <TextBox x:Name="AuditSearchFilterTextBox" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" FontSize="11.5" TextChanged="AuditFilter_Changed"/>
@@ -1369,7 +1359,7 @@
                                         </TextBlock>
                                     </Grid>
                                 </Border>
-                            </StackPanel>
+                            </WrapPanel>
                         </Grid>
                         <DataGrid x:Name="AuditItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="30" HeadersVisibility="Column" RowHeaderWidth="0"
@@ -1644,7 +1634,6 @@
             <Grid x:Name="SearchTabPanel" Visibility="Visible" Margin="28,12,28,24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/> <!-- Controls Card -->
-                    <RowDefinition Height="Auto"/> <!-- KPI Summary Cards -->
                     <RowDefinition Height="*"/>    <!-- Results DataGrid -->
                 </Grid.RowDefinitions>
 
@@ -1691,56 +1680,8 @@
                     </Grid>
                 </Border>
 
-                <!-- Slim 1-Row Metrics Bar (Quiet Fluent) -->
-                <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="18,12" Margin="0,0,0,14">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/> <!-- Hit count -->
-                            <ColumnDefinition Width="Auto"/> <!-- Separator -->
-                            <ColumnDefinition Width="Auto"/> <!-- Total size -->
-                            <ColumnDefinition Width="Auto"/> <!-- Separator -->
-                            <ColumnDefinition Width="Auto"/> <!-- Elapsed -->
-                            <ColumnDefinition Width="Auto"/> <!-- Separator -->
-                            <ColumnDefinition Width="*"/>    <!-- Status -->
-                        </Grid.ColumnDefinitions>
-
-                        <!-- Hit Count -->
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock x:Name="SearchKpiHitCountTitle" Text="ヒット件数:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBlock x:Name="SearchKpiHitCountText" Text="0 件" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#0F172A" VerticalAlignment="Center"/>
-                        </StackPanel>
-
-                        <!-- Separator 1 -->
-                        <Border Grid.Column="1" Width="1" Background="#E2E8F0" Margin="14,2"/>
-
-                        <!-- Total Size -->
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock x:Name="SearchKpiTotalSizeTitle" Text="合計容量:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBlock x:Name="SearchKpiTotalSizeText" Text="0 B" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#2563EB" VerticalAlignment="Center"/>
-                        </StackPanel>
-
-                        <!-- Separator 2 -->
-                        <Border Grid.Column="3" Width="1" Background="#E2E8F0" Margin="14,2"/>
-
-                        <!-- Elapsed -->
-                        <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock x:Name="SearchKpiElapsedTitle" Text="所要時間:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBlock x:Name="SearchKpiElapsedText" Text="0.00s" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#059669" VerticalAlignment="Center"/>
-                        </StackPanel>
-
-                        <!-- Separator 3 -->
-                        <Border Grid.Column="5" Width="1" Background="#E2E8F0" Margin="14,2"/>
-
-                        <!-- Status / Path -->
-                        <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock x:Name="SearchStatusTitle" Text="走査状況:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBlock x:Name="SearchStatusText" Text="待機中" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="#64748B" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Grid>
-                </Border>
-
                 <!-- Results Work Area: Full-Width Modern Card List with In-Card Actions -->
-                <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="16,14">
+                <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="16,14">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -1750,16 +1691,33 @@
                         <!-- List Header Toolbar with Sort Dropdown -->
                         <Grid Grid.Row="0" Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
                             <!-- Title -->
-                            <TextBlock x:Name="SearchTableTitleText" Text="検索結果" FontWeight="SemiBold" FontSize="15" Foreground="#1D2E49" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="SearchTableTitleText" Text="検索結果" FontWeight="SemiBold" FontSize="15" Foreground="#1D2E49" VerticalAlignment="Center" Margin="0,0,16,0"/>
                             <TextBlock x:Name="SearchTableHintText" Visibility="Collapsed"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock x:Name="SearchKpiHitCountTitle" Text="ヒット" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <TextBlock x:Name="SearchKpiHitCountText" Text="0 件" FontSize="12" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#0F172A" VerticalAlignment="Center"/>
+                                <Border Width="1" Height="14" Background="#E2E8F0" Margin="10,0" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="SearchKpiTotalSizeTitle" Text="容量" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <TextBlock x:Name="SearchKpiTotalSizeText" Text="0 B" FontSize="12" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#2563EB" VerticalAlignment="Center"/>
+                                <Border Width="1" Height="14" Background="#E2E8F0" Margin="10,0" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="SearchKpiElapsedTitle" Text="時間" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <TextBlock x:Name="SearchKpiElapsedText" Text="0.00s" FontSize="12" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#059669" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <Grid Grid.Column="2" Margin="15,0,12,0" VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock x:Name="SearchStatusTitle" Text="状況" FontSize="11" Foreground="#64748B" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="SearchStatusText" Grid.Column="1" Text="待機中" FontSize="11" TextTrimming="CharacterEllipsis" Foreground="#64748B" VerticalAlignment="Center" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                            </Grid>
 
                             <!-- Sort Dropdown -->
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock x:Name="SearchSortLabel" Text="並び替え:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                 <ComboBox x:Name="SearchSortComboBox" Height="26" Width="180" FontSize="11"
                                           SelectionChanged="SearchSortComboBox_SelectionChanged">

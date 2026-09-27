@@ -180,6 +180,19 @@ public static class SnapshotRunner
                                 mw.Height = 720;
                                 mw.NavTabAudit.IsChecked = true;
                             }
+                            else if (selectTab == 19)
+                            {
+                                mw.NavTabAudit.IsChecked = true;
+                                mw.AuditOptionsButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                if (mw.AuditOptionsPanel.Visibility != Visibility.Visible)
+                                    throw new InvalidOperationException("Cleanup scan options did not expand.");
+                            }
+                            else if (selectTab == 20)
+                            {
+                                mw.Width = 1100;
+                                mw.Height = 720;
+                                mw.NavTabSearch.IsChecked = true;
+                            }
                             else if (selectTab == 6)
                             {
                                 mw.NavTabAudit.IsChecked = true;
