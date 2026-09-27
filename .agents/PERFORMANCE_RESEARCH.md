@@ -48,6 +48,12 @@ FolderMorpherの `SearchEngineService.SearchDirectFolderAsync(@"C:\", SearchQuer
 
 拡張子を付けない `rg -uu` の全C検索は1,229.822秒で試験を中断し、完了しなかった。これはFolderMorpherが対象外とする形式まで開く別の負荷であり、製品速度の比較値には使わない。拡張子指定の比較も、ripgrepはOffice/PDFを本文抽出せず、文字コード・バイナリ判定・エラー処理・TreeCache投入がFolderMorpherと同一ではない。ファイル件数とヒット数が近くても、読んだバイト数や仕事量が等しいとは限らない。したがって `約4分対9～12分` は**この端末の生テキスト検索エンジンとの参考目盛り**であり、厳密な速度比・一般的な製品平均ではない。Everythingも公式FAQで本文はインデックスせず検索が遅いと説明しているが、同じC全域の公開測定時間はない。[Everything公式FAQ](https://www.voidtools.com/faq/)。
 
+### ripgrep / ripgrep-all から取り込む範囲
+
+- [ripgrep公式FAQ](https://github.com/BurntSushi/ripgrep/blob/master/FAQ.md#how-is-ripgrep-licensed)によれば、ripgrepはMITまたはUnlicenseを選べる。コードを実際に取り込む場合は選択したライセンスと依存関係の表示を確認する。一方、[ripgrep-allのLICENSE](https://github.com/phiresky/ripgrep-all/blob/master/LICENSE.md)はAGPL-3.0。現行の配布形態へrgaコードを直接複製・結合する判断はしない。形式別アダプターという設計上の発想は独立実装で検討できる。
+- [ripgrep-allのREADME](https://github.com/phiresky/ripgrep-all/blob/master/README.md)では、rgaはripgrepへ形式別抽出結果を渡し、PDFにPoppler、DOCX等にPandocなどの外部ツールを使う。小さな抽出結果はローカルDBへキャッシュする。この方式は主に検索対象形式と再検索速度を増やすもので、初回の生テキスト走査が速くなる保証ではない。単一EXE配布・通常権限・セキュリティツール・UNC負荷の条件下では、外部プロセスの採用や抽出全文キャッシュの追加を実測前提の別判断とする。永続Candidate Indexの保留も維持する。
+- FolderMorpherには、拡張子別の本文抽出、単一語Span照合、複数語Aho–Corasick、サイズ別Read、Chunk境界保護がすでにある。既存の高速照合や形式別抽出と同じものを新機能として重ねない。差があるのは生テキストのOpen/Read/デコード/照合、Office/PDF抽出、TreeCache保存等の合算なので、まずR03の段階別計測で時間とReadバイトを特定する。その結果に応じ、文字コード・大小文字・日本語・境界跨ぎ・対象形式・検索結果を保つテキスト専用fast pathを同じCドライブ条件でA/B比較する。初回速度が改善しなければ採用しない。
+
 ### 独立した比較
 
 - **小テキストの非一致検索**: C上の13,329バイトのソースを同じ本文検索関数で各1万回。旧版3.40～3.66秒・約2.78GB割当、新版3.14～3.26秒・約0.56GB割当。60,000バイトでも旧版3.37/4.11秒・約2.78GB、新版2.97/3.48秒・約1.05GB。順序を交互にした。単一ファイル反復なので全Cの代用ではない。
