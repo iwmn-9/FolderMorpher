@@ -24,6 +24,7 @@ dist/
 ## AI Agent Workspace & Memory
 .agents/*
 !.agents/ADR.md
+!.agents/PERFORMANCE_RESEARCH.md
 
 ## Local Specification & User Requirements
 USER_REQUIREMENTS.md

@@ -80,6 +80,8 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 
 **検索の現行入口**: `MainWindow.Search.cs` → `HostJobClient` → `HostService.Jobs.cs` / `HostService.cs` → `SearchEngineService`。直接走査は `SafeFileEnumerator.EnumerateFileEntriesParallelAsync(..., collectResults: false)` のコールバックで逐次処理する。ファイル名・パス・本文条件の共通判定は `SearchEngineService.MatchesSearchTerms` が正本。`TreeCachePruningIndex` はフォルダー時刻だけでは検索の完全性を保証できないため、通常画面の直接走査では構築しない。
 
+**初回性能の研究候補**: [`.agents/PERFORMANCE_RESEARCH.md`](.agents/PERFORMANCE_RESEARCH.md) にローカル・UNC双方の列挙、本文検索、容量分析、重複整理の未採用実験と比較条件をまとめる。これはADRの決定事項ではない。測定・検証で採用した内容だけ実装とADRへ移す。
+
 **初回Live走査からのTreeCache形成（ADR 125）**: TreeCacheにルートがないとき、検索と除外なしの整理は `SafeFileEnumerator` の同じ列挙結果を `TreeScanCapture.cs` へ流す。フォルダーを検索結果に含めない場合もキャッシュにはディレクトリを記録する。有界Channel・ローカル一時SQLiteの後、完走した完全カバレッジだけ `SqliteTreeCacheService.Capture.cs` が既存の `ParentId + Name` スキーマへ原子的に公開する。中止・アクセス拒否・除外付き整理では公開しない。既存キャッシュを上書きせず、UNCを再走査しない。整理ボタンは実行中のみ「中止」になり、Host Jobのキャンセルを待って開始状態へ戻る。
 
 **走査見込みと整理帯域（ADR 122）**: 検索のETAは結果見出しの経過時間の隣に、容量・整理・メディアは件数の隣、リンクは検出件数の隣、ACL逆引きは件数帯の直下に表示する。`MainWindow.ScanEta.cs` は件数・前回所要時間・初回の大きめの母数を用いて安全側に見積もる。進捗根拠のない初回走査はまず「見積もり中」とし、件数を返さない旧RPCだけ30秒後から広い暫定値を出す。MFTの総レコード数は確定母数として扱う。整理の帯域選択UIは撤去した。`AuditReportService` はローカルのSHA-256読み取りを制限せず、UNC・ネットワークドライブのみ実測p95遅延を見て8〜100MiB/sの範囲で調整する。並列度2は維持する。旧IPCの帯域指定値は互換のため残す。
