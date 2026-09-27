@@ -21,17 +21,26 @@ namespace FolderMorpher.Services
         /// ディレクトリ列挙専用のレイテンシ適応コントローラー（ベースライン 5〜15ms、安全な2並列固定・上限2）。
         /// サーバーのファイルシステム管理領域・メタデータキャッシュを100%保護。
         /// </summary>
-        public AdaptiveConcurrencyController EnumerationController { get; } = new(min: 2, defaultVal: 2, max: 2);
+        public AdaptiveConcurrencyController EnumerationController { get; }
 
         /// <summary>
         /// 本文読み込み専用のレイテンシ適応コントローラー（AIMD: 4 ➔ 6 ➔ 8 ➔ 最大12）。
         /// SMBパイプラインを充填し、RTT遅延を隠蔽してスループットを最大化。
         /// </summary>
-        public AdaptiveConcurrencyController ContentController { get; } = new(min: 2, defaultVal: 4, max: 12);
+        public AdaptiveConcurrencyController ContentController { get; }
 
-        public SharedVolumeGovernor(string rootKey)
+        public SharedVolumeGovernor(string rootKey, bool isNetwork)
         {
             RootKey = rootKey;
+            // SMB needs the shared latency governor. On a local volume its
+            // short-I/O baseline falsely collapses content reads to two slots.
+            // Keep separate, bounded local pools without SMB backoff.
+            EnumerationController = isNetwork
+                ? new(min: 2, defaultVal: 2, max: 2)
+                : new(min: 4, defaultVal: 4, max: 4);
+            ContentController = isNetwork
+                ? new(min: 2, defaultVal: 4, max: 12)
+                : new(min: 8, defaultVal: 8, max: 8);
         }
 
     }
@@ -50,7 +59,8 @@ namespace FolderMorpher.Services
         public static SharedVolumeGovernor GetGovernor(string? path)
         {
             string rootKey = PathCanonicalizer.GetVolumeOrShareRoot(path);
-            return _governors.GetOrAdd(rootKey, key => new SharedVolumeGovernor(key));
+            return _governors.GetOrAdd(rootKey,
+                key => new SharedVolumeGovernor(key, PathCanonicalizer.IsNetworkPath(path)));
         }
 
         /// <summary>

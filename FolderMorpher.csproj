@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <StartupObject>AstraSize.Bootstrap</StartupObject>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -12,7 +12,7 @@
     <AssemblyName>FolderMorpher</AssemblyName>
     <RootNamespace>FolderMorpher</RootNamespace>
     <ApplicationTitle>FolderMorpher - Storage &amp; Migration Studio</ApplicationTitle>
-    <Version>2.3.11</Version>
+    <Version>2.4.0</Version>
     <PublishDir>$(MSBuildProjectDirectory)\dist\</PublishDir>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <CodePage>65001</CodePage>

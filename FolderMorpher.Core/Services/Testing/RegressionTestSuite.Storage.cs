@@ -945,13 +945,13 @@ namespace FolderMorpher.Services.Testing
 
             // 2. SharedIoGovernor の独立性検証
             var volGov = SharedIoGovernor.GetGovernor(@"C:\TestDrive\Folder");
-            if (volGov.EnumerationController.MaxConcurrencyLimit != 2)
+            if (volGov.EnumerationController.MaxConcurrencyLimit != 4)
             {
-                throw new InvalidOperationException("SharedIoGovernor: EnumerationController の上限が 2 ではありません。");
+                throw new InvalidOperationException("SharedIoGovernor: local EnumerationController の上限が 4 ではありません。");
             }
-            if (volGov.ContentController.MaxConcurrencyLimit != 12)
+            if (volGov.ContentController.MaxConcurrencyLimit != 8)
             {
-                throw new InvalidOperationException("SharedIoGovernor: ContentController の上限が 12 ではありません。");
+                throw new InvalidOperationException("SharedIoGovernor: local ContentController の上限が 8 ではありません。");
             }
 
             // 3. ContentExtractionService.OpenBufferedReadStream の knownSize 動作検証

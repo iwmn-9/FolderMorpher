@@ -45,7 +45,7 @@
 
 - **アプリケーション名**: `FolderMorpher` (旧 AstraSize)
 - **種別**: Windows デスクトップ向け 大容量ファイルサーバー監視 & NTFSアクセス権移行・シミュレーションスタジオ
-- **フレームワーク**: .NET 8.0, C# 12
+- **フレームワーク**: .NET 10.0, C# 14
 - **実行境界 (ADR 101・102)**: 配布は `FolderMorpher.exe` 1本。通常起動はGUI、`--host` は同じEXEの別Hostプロセス。ソース依存は `UI -> Contracts <- Host -> Core`。起動分岐はルート `Bootstrap.cs`。
   1. **`FolderMorpher.Contracts`**: Core/WPF非依存のRPC契約とDTO。循環参照する画面モデルをそのままパイプへ渡さない。
   2. **`FolderMorpher.Core`**: `UseWPF=false` のヘッドレス・クラスライブラリ。走査、検索、ACL、監査、移行などの実処理を持つ。モデルの色・バッジ・サイズ表示はUI側へ分けた。レポートに使うローカライズ済みの文言は一部Coreに残るため、変更時は出力意味論を確認する。
@@ -80,7 +80,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 
 **検索の現行入口**: `MainWindow.Search.cs` → `HostJobClient` → `HostService.Jobs.cs` / `HostService.cs` → `SearchEngineService`。直接走査は `SafeFileEnumerator.EnumerateFileEntriesParallelAsync(..., collectResults: false)` のコールバックで逐次処理する。ファイル名・パス・本文条件の共通判定は `SearchEngineService.MatchesSearchTerms` が正本。`TreeCachePruningIndex` はフォルダー時刻だけでは検索の完全性を保証できないため、通常画面の直接走査では構築しない。
 
-**初回性能の研究記録**: [`.agents/PERFORMANCE_RESEARCH.md`](.agents/PERFORMANCE_RESEARCH.md) にローカル・UNC双方の実験候補、採否と計測値をまとめる。採用済みの契約はADR 127と実装を正本とし、Cドライブの所要時間からUNC性能を推定しない。
+**初回性能の研究記録**: [`.agents/PERFORMANCE_RESEARCH.md`](.agents/PERFORMANCE_RESEARCH.md) にローカル・UNC双方の実験候補、採否と計測値をまとめる。採用済みの契約はADR 127・128と実装を正本とし、Cドライブの所要時間からUNC性能を推定しない。
 
 **初回Live走査からのTreeCache形成（ADR 125・127）**: TreeCacheにルートがないとき、検索と除外なしの整理は `SafeFileEnumerator` の同じ列挙結果を `TreeScanCapture.cs` へ流す。フォルダーを検索結果に含めない場合もキャッシュにはディレクトリを記録する。有界Channel・ローカル一時SQLiteの後、完走した完全カバレッジだけ `SqliteTreeCacheService.Capture.cs` が既存の `ParentId + Name` スキーマへ原子的に公開する。最初のアクセス拒否後は検索・監査を続けつつ一時DBへの新規投入を止める。並べ替え索引は完全走査の確認後だけ作る。中止・アクセス拒否・除外付き整理では公開しない。既存キャッシュを上書きせず、UNCを再走査しない。整理ボタンは実行中のみ「中止」になり、Host Jobのキャンセルを待って開始状態へ戻る。
 
@@ -90,9 +90,11 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 
 **低容量警告（ADR 124）**: Coreの `StorageAvailableSpaceService` は `GetDiskFreeSpaceExW` で接続ユーザー向けの利用可能量と総量を取得し、残り10%以下だけ警告とする。UIは `GetStorageAvailabilityAsync` IPCでタブ切替・対象変更・走査完了時はルート、ツリーでフォルダーを選んだ時はそのパス、ファイルなら親パスを200ms静観後に照会する。ルートの値を子に流用しない。平常時と取得できない時は表示を増やさない。FSRMの階層別クォータが容量APIで必ず見えるわけではなく、警告なしは個別クォータの安全証明ではない。
 
-GUIは `SearchQuery.HasDeepFileIoRequirement` を正本としてLive本文・Officeリンク検索を起動する。`content:` 指定だけでも、対象ツリーがキャッシュ済みなら空結果で終わらせず原本を検索する。本文速度の比較はFolderMorpherのHost経由で同じ検索経路を使い、Cドライブ全体の実在する本文語で測る。Cドライブの結果からUNC固有のSMB効果を断定しない。
+GUIは `SearchQuery.HasDeepFileIoRequirement` を正本としてLive本文・Officeリンク検索を起動する。`content:` 指定だけでも、対象ツリーがキャッシュ済みなら空結果で終わらせず原本を検索する。本文速度の比較はFolderMorpherの `SearchEngineService.SearchDirectFolderAsync` を試験プロセスから呼び、Cドライブ全体の実在する本文語で測る。この比較はGUI/Host IPCを含まない。Cドライブの結果からUNC固有のSMB効果を断定しない。
 
 テキスト本文走査の文字バッファはプールで再利用し、返却時にクリアする。64KiB以下のファイルかつ短い検索語なら16KiB、その他は64KiB。単一語はバッファ上で直接照合し、ヒット時だけスニペット用文字列を作る。ファイルごとの先頭NUL判定は厳密な非一致証明ではないため、索引なし枝刈りとして一般化しない（ADR 109・127）。
+
+単一ASCII語かつUTF-8判定のテキストは、同じFileStreamからbyte列を直接照合する。ASCII-onlyを最後まで読んだ非一致だけ確定し、非ASCII byteを含む非一致は既存のデコーダーへ巻き戻してUnicodeの大小文字照合を保つ。ヒット時だけスニペットを生成する。これはripgrep-allの「形式別抽出＋byte検索」の発想を独立実装した部分であり、AGPLのコードは取り込まない（ADR 128）。
 
 大容量テキストの`FileStream`先読み幅は`AdaptiveTextReadController.cs`が検索セッション内で64/256/512/1024KiBから選ぶ。8MiB未満は64KiBを基本とし、16KiB以下の小ファイルだけ16KiBを使う。UNCとネットワークドライブの大容量読み幅は最大256KiB。64KiB以下では`StreamReader`の内部バッファを8KiBに抑える。Officeの主要本文Entryを先に読み、残りの対象Entryも検査する。検索理由はヒット時だけ作り、先頭判定用byte配列も再利用する（ADR 110・127）。
 
@@ -104,7 +106,7 @@ GUIは `SearchQuery.HasDeepFileIoRequirement` を正本としてLive本文・Off
 
 GUIの検索実行はLiveとキャッシュの双方をHost Jobとして所有し、停止・クリア・入力変更で旧Jobへキャンセルを伝える。検索ボタンは実行中だけ同位置の「中止」に変わり、停止・完了で「検索」に戻る。空の検索条件では自動検索を起動しない。Host Jobのキャンセルは `HostJobClient` と `HostService.Jobs.cs` が正本で、GUIは世代番号で遅延応答を破棄する。検索ヒットは `GetSearchJobResultsAsync` の連番カーソルで途中表示し、Hostの途中送信用リングは最大2048件、完了時の `SearchResults` が最終正本。GUIの件数はキャッシュ先行結果とLive結果の重複除去後に数え、Jobごとの進捗件数で上書きしない。列挙不能フォルダーと例外で読めなかった本文ファイルを最終状態に表示する（すべての抽出器内部の失敗を検出できるわけではない）。
 
-UNC/ネットワークドライブの容量スキャンは検索列挙と `SharedIoGovernor.EnumerationController` を共有し、同一共有先の列挙枠を合計2にする。`SafeFileEnumerator` の列挙と巨大ファイル再検査は各コントローラーのリースを1回だけ取得する。権限逆引きの現在ユーザー判定は修飾名の短縮名一致を禁じ、SID一致または完全修飾名一致に限定する（ADR 112）。
+UNC/ネットワークドライブの容量スキャンは検索列挙と `SharedIoGovernor.EnumerationController` を共有し、同一共有先の列挙枠を合計2にする。本文はUNCだけAIMD 2〜12並列。ローカルは列挙4・本文8の固定上限を用い、SMBの遅延閾値でローカルReadが2並列へ落ちないようにする（ADR 128）。`SafeFileEnumerator` の列挙と巨大ファイル再検査は各コントローラーのリースを1回だけ取得する。権限逆引きの現在ユーザー判定は修飾名の短縮名一致を禁じ、SID一致または完全修飾名一致に限定する（ADR 112）。
 
 整理候補の一覧は各行に点数と「内訳」操作を表示する。`AuditItem.ScoreBreakdown` が内訳の正本で、重複理由は原本以外に95点、原本候補に0点を与える。点数は整理の優先度であり、削除安全性の確率ではない。言語変更時は監査行の表示プロパティも通知する（ADR 113）。
 
@@ -123,13 +125,13 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの設計判断記録（ADR 1〜125）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの設計判断記録（ADR 1〜128）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 
 #### 主要な中核原則サマリー（詳細は `.agents/ADR.md` 参照）
 
-設計判断（ADR 1〜125）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
+設計判断（ADR 1〜128）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
 
 1. **全体占有率メーター & 2連カード（Storage / ADR 61）**:
    - 親フォルダーに対する直下シェア（右ペイン「選択フォルダーの内訳」）と、スキャン対象ルート総容量に対する全体占有率を二重加算防止のため厳格分離。ルート行は `―`（ハイフン）表示。メトリクスカードは「スキャン対象 容量」「前回差分推移」の2連カード化。
@@ -145,7 +147,7 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
 5. **UNC/ネットワーク走査 ＆ 適応並列度ガバナー（Win32 Native & SharedIoGovernor / ADR 8, 36, 45, 80, 90, 91, 98）**:
    - `FindFirstFileExW` (`FindExInfoBasic` + `FIND_FIRST_EX_LARGE_FETCH`) による巨大バッファ一括取得 & 8.3短縮名スキップ。`SafeFindHandle` (RAII) によるリーク根絶。4段自動フォールバック。
    - フォルダー単位RPCの完全根絶（ゼロI/O化）: 列挙タイムスタンプを子ノード生成時に直結。
-   - `SharedIoGovernor`: ディレクトリ列挙専用コントローラー（安全な2並列固定・上限2）と本文読み込み専用コントローラー（AIMD: 4 ➔ 最大12並列）を完全分離。
+   - `SharedIoGovernor`: UNCは列挙2並列、本文AIMD 2〜12並列。ローカルは列挙4並列、本文8並列の固定上限。両者のコントローラーを分離する（ADR 128）。
    - 純粋I/O時間計測（CPU展開・パース時間を除外した真のネットワーク遅延）と、再昇格可能な AIMD（不可逆崖落ち永久固定の撤廃）により、サーバーを保護しつつ SMB スループットを最大化。重複 RPC（事前の `File.Exists`、既知サイズの `FileInfo.Length`）を全廃。
 6. **検索スタジオのアーキテクチャ（Search Studio / ADR 87, 90, 93, 94, 95, 96, 97, 99, 108〜112）**:
    - **非管理者権限が通常経路の前提**: 管理者権限が必要なUSN変更ジャーナル等に基本検索や検索結果の完全性を依存させない。ローカル・UNCの双方で一般ユーザー権限による検索を維持する（ADR 108）。
@@ -177,7 +179,7 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
 & "$HOME\.dotnet\dotnet.exe" build
 ```
 
-### 配布用単一EXEの生成（Release self-contained・圧縮約75.5MB）
+### 配布用単一EXEの生成（Release self-contained・単一EXE）
 ```powershell
 $env:PATH = "C:\Users\iwakura\.dotnet;" + $env:PATH
 & "$HOME\.dotnet\dotnet.exe" publish ./FolderMorpher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -o ./dist
@@ -197,38 +199,37 @@ Copy-Item ./dist/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderCl
 
 ### 自動統合テスト（ヘッドレス実行）
 ```powershell
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --test-suite "C:\Path\To\TestDir"
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --test-suite "C:\Path\To\TestDir"
 ```
 
 ### ヘッドレス実機レンダリング（オフスクリーン撮影でUIを目視確認）
 ```powershell
 # Tab 0: 容量分析
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab0.png" --tab 0
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\tab0.png" --tab 0
 
 # Tab 1: ファイル検索
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab1_search.png" --tab 1
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\tab1_search.png" --tab 1
 
 # Tab 2: 権限コントロール
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab2_liveacl.png" --tab 2
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\tab2_liveacl.png" --tab 2
 
 # Tab 3: 移行スタジオ
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab3_simulation.png" --tab 3
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\tab3_simulation.png" --tab 3
 
 # Tab 4: リンク修復
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab4_linkfix.png" --tab 4
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\tab4_linkfix.png" --tab 4
 
 # Tab 5: ファイル監査
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab5_audit.png" --tab 5
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\tab5_audit.png" --tab 5
 
 # Tab 6: メディア最適化
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\tab6_media.png" --tab 6
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\tab6_media.png" --tab 6
 
 # 参照フォルダー切替: 閉じた階層 / 一階層展開
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\scope.png" --tab 12
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\scope_expanded.png" --tab 13
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\scope.png" --tab 12
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\scope_expanded.png" --tab 13
 
 # 一般向け: 参照先の展開・ホバー×と登録解除／情シス向け最小幅
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\client_scope.png" --tab 16 --client
-& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net8.0-windows\FolderMorpher.dll" --snapshot ".\admin_narrow.png" --tab 18
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\client_scope.png" --tab 16 --client
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\admin_narrow.png" --tab 18
 ```
-

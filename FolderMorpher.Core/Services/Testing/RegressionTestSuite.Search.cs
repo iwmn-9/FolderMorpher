@@ -1549,13 +1549,16 @@ namespace FolderMorpher.Services.Testing
                 // 【ADR 91】列挙用と本文読込用のコントローラーが分離され、学習汚染が発生しないことの検証
                 if (ReferenceEquals(g1.EnumerationController, g1.ContentController))
                     throw new Exception("ADR 91 failed: EnumerationController and ContentController must be separate instances.");
-                if (g1.EnumerationController.MaxConcurrencyLimit != 2 || g1.ContentController.MaxConcurrencyLimit != 12)
+                if (g1.EnumerationController.MaxConcurrencyLimit != 4 || g1.ContentController.MaxConcurrencyLimit != 8)
                     throw new Exception("Shared I/O controller limits no longer match the enumeration/content budgets.");
 
                 var uncG1 = SharedIoGovernor.GetGovernor(@"\\file-server01\ShareA\SubDir1\Doc.txt");
                 var uncG2 = SharedIoGovernor.GetGovernor(@"\\FILE-SERVER01\shareA\SubDir2\Other.xlsx");
                 if (!ReferenceEquals(uncG1, uncG2))
                     throw new Exception("ADR 90/91 failed: SharedIoGovernor did not share governor for same UNC share (case-insensitive).");
+                if (uncG1.EnumerationController.MaxConcurrencyLimit != 2 ||
+                    uncG1.ContentController.MaxConcurrencyLimit != 12)
+                    throw new Exception("UNC I/O governor must retain the shared-server limits.");
 
                 var uncG3 = SharedIoGovernor.GetGovernor(@"\\file-server01\ShareB\Data.csv");
                 if (ReferenceEquals(uncG1, uncG3))
@@ -1868,6 +1871,19 @@ namespace FolderMorpher.Services.Testing
                         knownSize: new FileInfo(smallBoundaryFile).Length);
                     if (smallSnippet == null || !smallSnippet.Contains(kw))
                         throw new Exception("Small-file read buffer missed a keyword across the 16 KiB boundary.");
+
+                    // Raw-byte ASCII path and decoded fallback must return the same
+                    // answer when non-ASCII text appears before a later ASCII hit.
+                    string mixedFile = Path.Combine(tempDir, "mixed_utf8.txt");
+                    File.WriteAllText(mixedFile, "先頭の日本語\n" + new string('A', 70000) + "TaRgEt_WoRd", Encoding.UTF8);
+                    var mixedSnippet = await ContentExtractionService.SearchTextContentWithBufferAsync(
+                        mixedFile, "target_word", null, null, 1, CancellationToken.None);
+                    if (mixedSnippet?.Contains("TaRgEt_WoRd") != true)
+                        throw new Exception("UTF-8 decoded fallback missed an ASCII term after non-ASCII text.");
+                    var asciiMiss = await ContentExtractionService.SearchTextContentWithBufferAsync(
+                        boundaryFile, "DOES_NOT_EXIST", null, null, 1, CancellationToken.None);
+                    if (asciiMiss != null)
+                        throw new Exception("ASCII byte search reported a false positive.");
 
                     // C. 安全是正検証: TreeCachePruningIndex の安全化
                     var mockRoot = new FileItemNode

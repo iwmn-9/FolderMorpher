@@ -114,7 +114,7 @@ FolderMorpher は、探索時の軽快さを保ちつつ、データ変更時の
 
 ## 🛠️ 技術スタック & アーキテクチャ
 
-- **言語 / ランタイム**: C# 12 / .NET 8.0 Windows Desktop SDK (Self-Contained 単一実行ファイル)
+- **言語 / ランタイム**: C# 14 / .NET 10.0 Windows Desktop SDK (Self-Contained 単一実行ファイル)
 - **UIフレームワーク**: WPF (Windows Presentation Foundation) / Fluent Light Design
 - **ディレクトリサービス**: `System.DirectoryServices` (LDAP / ADSI)
 - **セキュリティ**: `System.Security.AccessControl` (NTFS ACL / SDDL)

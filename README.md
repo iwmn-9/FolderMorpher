@@ -113,7 +113,7 @@ FolderMorpher separates observation from state mutation to keep exploration fast
 
 ## 🛠️ Tech Stack & Architecture
 
-- **Language / Runtime**: C# 12 / .NET 8.0 Windows Desktop SDK (Self-Contained Single EXE)
+- **Language / Runtime**: C# 14 / .NET 10.0 Windows Desktop SDK (Self-Contained Single EXE)
 - **UI Framework**: WPF (Windows Presentation Foundation) / Fluent Light Design
 - **Directory Services**: `System.DirectoryServices` (LDAP / ADSI)
 - **Security**: `System.Security.AccessControl` (NTFS ACL / SDDL)

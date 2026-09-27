@@ -70,6 +70,14 @@ rgaのWindows配布物0.10.9は `--rga-no-cache` でPDF/DOCX前処理が `No cac
 
 実行順はrga→FolderMorpher→dnGrepで、WindowsのファイルキャッシュやCドライブ上のファイル変化を固定していない。対象ファイルの符号化・バイナリ判定・エラー表示・メタデータ保存も完全同一ではない。単発の時間を恒常的な速度比や「C#だから遅い」という因果に使わない。UNCにも外挿しない。今回の値は、次に列挙・Open/Read・デコード/照合・一時DB待ちを分離して、ローカルの並列度とメモリ予算を比較する基準とする。
 
+### 2026-09-28: .NET 10・rga方式・fclonesの実測
+
+- 条件: `content:SubtreeEndId` をCドライブ全体の同じ19種類の生テキスト拡張子で検索した。FolderMorpherは `SearchDirectFolderAsync` を別の試験プロセスから呼び、毎回空の試験専用TreeCacheを割り当てた。rga 0.9.6は `--rga-no-cache --no-config -uu -i -F -l`。OSキャッシュは消しておらず、実行中にCドライブのファイル数も少し変わる。GUI/Host IPCとOffice/PDF抽出は含まない。
+- .NET 10＋ASCII byte照合、従来のローカルI/Oガバナー: **527.067秒**、本文304,059件、ヒット25件、最終本文並列2、CPU278.688秒、割当15.02GB。ローカル列挙4・本文8固定上限へ変更後: **209.057秒**、本文304,096件、ヒット25件、本文並列8、CPU218.062秒、割当14.83GB、最大Working Set約148MB。両FolderMorpher回のソート済みヒットパスSHA-256は `E2401BBC6DEF6EED97398C2A8BC98438797F009E081BCEDFB2C973190B97A109`。rgaは**223.158秒**、ヒット25件で、FolderMorpher後者とパス集合が完全一致した。実行順・OSキャッシュが異なるので209/223秒を恒常的な優劣とは扱わない。変更前の純粋な.NET 8対.NET 10比較もこの結果からは分離できない。
+- 生テキストの単一ASCII語はUTF-8判定後に同一ストリームのbyte列を走査し、ASCII-onlyの非一致だけを確定する。非ASCII byteを含む非一致は従来のデコーダーへ戻してUnicode大小文字照合を守る。形式別抽出アダプターは既存実装を維持する。rgaのAGPL-3.0コードは取り込まない。Cの改善にはローカル本文並列数の回復が大きく寄与した見込みだが、寄与率は単独A/Bで未分離。UNCは旧2列挙・AIMD本文のままであり、Cの速度を外挿しない。
+- 重複比較は実在の `C:\Users\iwakura\.nuget\packages`（3147ファイル、約782MB）で実施。FolderMorpher監査は重複判定のみ・最小100KiB、初回7.599秒、キャッシュ暖機後の旧先頭/末尾一体方式0.555〜0.619秒、新しい先頭/末尾別方式0.540〜0.597秒で、39群・重複105件と全グループのパスが一致。fclones 0.35.0は `group --hidden --no-ignore --min 100KiB --hash-fn sha256 --format json`、`--cache`なしで2.577秒、同じ39群・105件。fclonesは749件だけをサイズ条件で対象とし、FolderMorpherは3147件列挙と監査処理を行うため壁時計の直接順位にはしない。先頭/末尾を別に開く案はこの入力で明確な改善がなく、コードを残さなかった。先頭・末尾の部分ハッシュで確定せず、最終SHAと削除直前の再照合を維持する。
+- 試験用rga・fclones・ハーネス・ログは `%TEMP%\FolderMorpher-CompetitorBench-20260927` に隔離し、配布EXEへ入れない。研究値はここを正本とし、常用キャッシュ・通常ユーザー設定を書き換えない。
+
 ### ripgrep / ripgrep-all から取り込む範囲
 
 - [ripgrep公式FAQ](https://github.com/BurntSushi/ripgrep/blob/master/FAQ.md#how-is-ripgrep-licensed)によれば、ripgrepはMITまたはUnlicenseを選べる。コードを実際に取り込む場合は選択したライセンスと依存関係の表示を確認する。一方、[ripgrep-allのLICENSE](https://github.com/phiresky/ripgrep-all/blob/master/LICENSE.md)はAGPL-3.0。現行の配布形態へrgaコードを直接複製・結合する判断はしない。形式別アダプターという設計上の発想は独立実装で検討できる。

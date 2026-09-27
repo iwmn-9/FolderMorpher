@@ -17,6 +17,11 @@ namespace FolderMorpher.Services
     /// </summary>
     public static class ContentExtractionService
     {
+        private enum AsciiSearchState { Hit, Miss, NeedsDecoder }
+
+        private readonly record struct AsciiSearchResult(
+            AsciiSearchState State, string? Snippet, long BytesRead, double ReadMilliseconds, double MaxReadMilliseconds);
+
         public const int MaxCharsPerDocument = 500_000; // 1ドキュメントあたりの最大インデックス文字数 (約1MB)
         public const int DefaultSnippetRadius = 60;     // 前後スニペット文字数
 
@@ -375,6 +380,27 @@ namespace FolderMorpher.Services
                 if (!isUtf16Bom && !isUtf16NoBom && nulls >= 2) return null; // 純粋なバイナリは即座に脱落
 
                 Encoding encoding = DetectTextEncoding(fs);
+                // rga/rg-style raw-byte route for the common plain ASCII case. A UTF-8
+                // ASCII hit is exact; on a miss, any non-ASCII byte sends the file to
+                // the existing decoder so Unicode case folding is never lost.
+                if (encoding.CodePage == Encoding.UTF8.CodePage &&
+                    TryGetAsciiKeyword(singleKeyword, out byte[]? asciiKeyword))
+                {
+                    var ascii = await SearchAsciiUtf8Async(fs, asciiKeyword!, readBufferSize, ct);
+                    if (ascii.State != AsciiSearchState.NeedsDecoder)
+                    {
+                        if (ascii.MaxReadMilliseconds > 0)
+                            reportIoElapsed?.Invoke(ascii.MaxReadMilliseconds);
+                        if (ascii.State == AsciiSearchState.Miss)
+                        {
+                            completedMiss = true;
+                            readController?.ReportCompletedMiss(readBufferSize, knownSize,
+                                ascii.BytesRead, ascii.ReadMilliseconds, ascii.MaxReadMilliseconds);
+                        }
+                        return ascii.Snippet;
+                    }
+                    fs.Position = 0;
+                }
                 int readerBufferSize = knownSize >= 0 && knownSize <= 64 * 1024 ? 8192 : 65536;
                 using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true,
                     bufferSize: readerBufferSize);
@@ -491,6 +517,97 @@ namespace FolderMorpher.Services
             }
             return null;
         }
+
+        private static bool TryGetAsciiKeyword(string? keyword, out byte[]? bytes)
+        {
+            bytes = null;
+            if (string.IsNullOrEmpty(keyword) || keyword.Length > 4096) return false;
+            foreach (char c in keyword)
+            {
+                if (c > 0x7f || c == 0) return false;
+            }
+            bytes = Encoding.ASCII.GetBytes(keyword);
+            return true;
+        }
+
+        private static async Task<AsciiSearchResult> SearchAsciiUtf8Async(
+            FileStream stream, byte[] keyword, int readBufferSize, CancellationToken ct)
+        {
+            stream.Position = 0;
+            int bufferSize = Math.Max(16 * 1024, readBufferSize);
+            byte[] buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+            int overlap = 0;
+            long bytesRead = 0;
+            double readMilliseconds = 0;
+            double maxReadMilliseconds = 0;
+            AsciiSearchResult Result(AsciiSearchState state, string? snippet) =>
+                new(state, snippet, bytesRead, readMilliseconds, maxReadMilliseconds);
+            try
+            {
+                byte firstLower = ToAsciiLower(keyword[0]);
+                byte firstUpper = ToAsciiUpper(keyword[0]);
+                while (true)
+                {
+                    long started = Stopwatch.GetTimestamp();
+                    int read = await stream.ReadAsync(buffer.AsMemory(overlap, bufferSize - overlap), ct);
+                    if (read > 0)
+                    {
+                        double elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                        bytesRead += read;
+                        readMilliseconds += elapsed;
+                        maxReadMilliseconds = Math.Max(maxReadMilliseconds, elapsed);
+                    }
+                    int count = overlap + read;
+                    if (count == 0) return Result(AsciiSearchState.Miss, null);
+
+                    ReadOnlySpan<byte> span = buffer.AsSpan(0, count);
+                    int offset = 0;
+                    while (offset <= count - keyword.Length)
+                    {
+                        int next = span.Slice(offset).IndexOfAny(firstLower, firstUpper);
+                        if (next < 0) break;
+                        offset += next;
+                        if (offset <= count - keyword.Length && AsciiEqualsIgnoreCase(span.Slice(offset, keyword.Length), keyword))
+                        {
+                            string text = Encoding.UTF8.GetString(buffer, 0, count);
+                            string word = Encoding.ASCII.GetString(keyword);
+                            int index = text.IndexOf(word, StringComparison.OrdinalIgnoreCase);
+                            if (index >= 0)
+                                return Result(AsciiSearchState.Hit, ExtractSnippet(text, index, word.Length));
+                            return Result(AsciiSearchState.NeedsDecoder, null);
+                        }
+                        offset++;
+                    }
+
+                    // ASCII-only bytes prove a miss. A high byte may be a Unicode
+                    // equivalent under OrdinalIgnoreCase, so let the decoder decide.
+                    for (int i = 0; i < count; i++)
+                        if (buffer[i] >= 0x80)
+                            return Result(AsciiSearchState.NeedsDecoder, null);
+
+                    if (read == 0) return Result(AsciiSearchState.Miss, null);
+                    overlap = Math.Min(count, keyword.Length - 1);
+                    if (overlap > 0) buffer.AsSpan(count - overlap, overlap).CopyTo(buffer);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+        private static bool AsciiEqualsIgnoreCase(ReadOnlySpan<byte> candidate, ReadOnlySpan<byte> keyword)
+        {
+            for (int i = 0; i < keyword.Length; i++)
+                if (ToAsciiLower(candidate[i]) != ToAsciiLower(keyword[i])) return false;
+            return true;
+        }
+
+        private static byte ToAsciiLower(byte value) => value is >= (byte)'A' and <= (byte)'Z'
+            ? (byte)(value + 32) : value;
+
+        private static byte ToAsciiUpper(byte value) => value is >= (byte)'a' and <= (byte)'z'
+            ? (byte)(value - 32) : value;
 
         /// <summary>
         /// 【Large File Pipeline - ADR 90】50MB超の巨大ファイル（ログ、CSV、ダンプ等）に対して、
