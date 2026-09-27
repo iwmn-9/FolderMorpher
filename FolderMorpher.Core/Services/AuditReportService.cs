@@ -33,6 +33,9 @@ namespace FolderMorpher.Services
 
             // 1. ファイル列挙（SafeFileEnumerator に一本化・ScannedFileEntry で stat 再問い合わせゼロ）
             var coverage = new ScanCoverage();
+            await using var treeCapture = options.ExcludeFolderPatterns.Count == 0
+                ? await TreeScanCapture.TryStartAsync(options.TargetDirectory, ct)
+                : null;
             summary.Coverage = coverage;
             progress?.Report(new AuditProgress { CurrentStatus = "ファイル一覧を走査中...", ScannedFilesCount = 0, IssueCount = 0 });
 
@@ -48,7 +51,8 @@ namespace FolderMorpher.Services
                     progress?.Report(new AuditProgress { CurrentStatus = status, ScannedFilesCount = count });
                 },
                 ct,
-                excludeFolderPatterns: options.ExcludeFolderPatterns);
+                excludeFolderPatterns: options.ExcludeFolderPatterns,
+                onDiscoveredEntry: treeCapture == null ? null : entry => treeCapture.Add(entry));
 
             summary.TotalFilesScanned = scannedFiles.Count;
             long processedCount = 0;
@@ -481,6 +485,13 @@ namespace FolderMorpher.Services
                 .Sum(item => item.Size);
             items = SortAuditItems(items, "Default", false);
 
+            if (treeCapture != null)
+            {
+                try { await treeCapture.PublishIfCompleteAsync(coverage, ct); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"Audit tree cache capture failed: {ex}"); }
+            }
+            ct.ThrowIfCancellationRequested();
             progress?.Report(new AuditProgress { CurrentStatus = "監査完了", ScannedFilesCount = summary.TotalFilesScanned, IssueCount = items.Count });
             return (summary, items);
         }

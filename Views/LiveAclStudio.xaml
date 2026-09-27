@@ -588,6 +588,7 @@
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/> <!-- Slim 1-Row Metrics Bar -->
+                                    <RowDefinition Height="Auto"/> <!-- ETA immediately below the counts -->
                                     <RowDefinition Height="Auto"/> <!-- Section Title / Filter -->
                                     <RowDefinition Height="*"/>    <!-- DataGrid -->
                                     <RowDefinition Height="Auto"/> <!-- Status / Progress -->
@@ -668,8 +669,11 @@
                                     </Grid>
                                 </Border>
 
+                                <TextBlock x:Name="RevEtaText" Grid.Row="1" Visibility="Collapsed" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="#1D4ED8" Margin="0,0,0,8"/>
+
                                 <!-- Table Header with Quick Filter & Changes Only Toggle -->
-                                <Grid Grid.Row="1" Margin="0,0,0,8">
+                                <Grid Grid.Row="2" Margin="0,0,0,8">
                                     <TextBlock x:Name="RevFoldersTableTitle" Text="📂 監査フォルダー一覧" FontWeight="SemiBold" FontSize="11.5" Foreground="#1E293B" VerticalAlignment="Center"/>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                         <CheckBox x:Name="RevFilterChangesOnlyCheckBox" Content="⚡ 変化点（飛び地・遮断）のみ" IsChecked="True"
@@ -684,7 +688,7 @@
                                 </Grid>
 
                                 <!-- DataGrid -->
-                                <DataGrid x:Name="RevFoldersDataGrid" Grid.Row="2" AutoGenerateColumns="False" IsReadOnly="True"
+                                <DataGrid x:Name="RevFoldersDataGrid" Grid.Row="3" AutoGenerateColumns="False" IsReadOnly="True"
                                           Background="Transparent" BorderThickness="0" GridLinesVisibility="None" RowHeight="28"
                                           HeadersVisibility="Column"
                                           MouseDoubleClick="RevFoldersDataGrid_MouseDoubleClick" SelectionMode="Single">
@@ -715,7 +719,7 @@
                                 </DataGrid>
 
                                 <!-- Progress & Status -->
-                                <Grid Grid.Row="3" Margin="0,8,0,0">
+                                <Grid Grid.Row="4" Margin="0,8,0,0">
                                     <TextBlock x:Name="RevStatusText" Text="準備完了" FontSize="10" Foreground="#64748B" VerticalAlignment="Center"/>
                                     <ProgressBar x:Name="RevProgressBar" Height="4" IsIndeterminate="True" Visibility="Collapsed" VerticalAlignment="Center" Margin="100,0,0,0"/>
                                 </Grid>

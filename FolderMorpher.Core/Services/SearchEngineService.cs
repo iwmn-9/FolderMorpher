@@ -191,6 +191,7 @@ namespace FolderMorpher.Services
                 long totalHitBytes = 0;
                 long lastReportMs = 0;
                 var coverage = new ScanCoverage();
+                await using var treeCapture = await TreeScanCapture.TryStartAsync(targetFolder, ct);
 
                 (int discovered, int completed) DirectoryProgress()
                 {
@@ -424,7 +425,8 @@ namespace FolderMorpher.Services
                             }
                             HandleEntry(entry);
                         },
-                        collectResults: false);
+                        collectResults: false,
+                        onDiscoveredEntry: treeCapture == null ? null : entry => treeCapture.Add(entry));
                 }
                 finally
                 {
@@ -474,6 +476,13 @@ namespace FolderMorpher.Services
                     }
                 }
 
+                if (treeCapture != null)
+                {
+                    try { await treeCapture.PublishIfCompleteAsync(coverage, ct); }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                    catch (Exception ex) { Trace.WriteLine($"Search tree cache capture failed: {ex}"); }
+                }
+                ct.ThrowIfCancellationRequested();
                 sw.Stop();
                 var (finalDiscovered, finalCompleted) = DirectoryProgress();
                 progress?.Report(new SearchProgressReport

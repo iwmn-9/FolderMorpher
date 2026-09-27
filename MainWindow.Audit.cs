@@ -53,6 +53,14 @@ namespace AstraSize
 
         private async void AuditStartButton_Click(object sender, RoutedEventArgs e)
         {
+            if (_auditScanInProgress)
+            {
+                _auditCts?.Cancel();
+                AuditStartButton.IsEnabled = false;
+                AuditStatusText.Text = UiText("中止しています…", "Canceling…");
+                return;
+            }
+
             var target = AuditPathTextBox.Text.Trim();
             if (!string.IsNullOrWhiteSpace(target)) SetActiveFolderScope(target);
             if (string.IsNullOrWhiteSpace(target))
@@ -65,6 +73,8 @@ namespace AstraSize
             _auditCts = new CancellationTokenSource();
             var generation = ++_auditScanGeneration;
             _auditScanInProgress = true;
+            AuditStartButton.Content = UiText("■ 中止", "■ Stop");
+            AuditStartButton.IsEnabled = true;
             var auditToken = _auditCts.Token;
             var partialByPath = new Dictionary<string, AuditItem>(StringComparer.OrdinalIgnoreCase);
             _lastAuditReportId = Guid.Empty;
@@ -111,7 +121,7 @@ namespace AstraSize
 
             void ShowAuditProgress(string s)
             {
-                if (generation != _auditScanGeneration) return;
+                if (generation != _auditScanGeneration || auditToken.IsCancellationRequested) return;
                 AuditStatusText.Text = s;
                 StatusTextBlock.Text = s;
             }
@@ -148,7 +158,7 @@ namespace AstraSize
                     auditToken,
                     onAuditBatch: batch =>
                     {
-                        if (generation != _auditScanGeneration) return;
+                        if (generation != _auditScanGeneration || auditToken.IsCancellationRequested) return;
                         foreach (var dto in batch)
                         {
                             var candidate = FolderMorpher.HostClient.AuditDtoMapper.ToViewItem(dto);
@@ -216,6 +226,8 @@ namespace AstraSize
                 if (generation == _auditScanGeneration)
                 {
                     _auditScanInProgress = false;
+                    AuditStartButton.Content = UiText("🔍 整理候補を発見", "🔍 Discover Candidates");
+                    AuditStartButton.IsEnabled = true;
                     GlobalProgressBar.Visibility = Visibility.Collapsed;
                     AuditItemsDataGrid.CanUserSortColumns = true;
                     bool hasReport = _lastAuditReportId != Guid.Empty;

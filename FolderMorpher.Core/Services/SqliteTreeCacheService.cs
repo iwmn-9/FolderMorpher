@@ -47,7 +47,7 @@ namespace FolderMorpher.Services
     /// 3. 事前集計と単一トランザクション: 直下の遅延ロードとDB保存を両立する。
     /// 4. ポータブル JSON 相互運用: 他 PC やチーム共有向けに JSON エクスポート / インポートを完全保証。
     /// </summary>
-    public sealed class SqliteTreeCacheService
+    public sealed partial class SqliteTreeCacheService
     {
         private static readonly Lazy<SqliteTreeCacheService> _instance = new(() => new SqliteTreeCacheService());
         public static SqliteTreeCacheService Instance => _instance.Value;

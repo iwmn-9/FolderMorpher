@@ -213,6 +213,7 @@
                             <TextBlock x:Name="StorageKpiScannedSizeTitle" Text="スキャン対象 容量" FontSize="11" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,5,0"/>
                             <TextBlock x:Name="ScannedSizeTextBlock" Text="0.00 GB" FontSize="13" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center"/>
                             <TextBlock x:Name="TotalFilesTextBlock" Text="0 ファイル / 0 フォルダ" FontSize="11" Foreground="{StaticResource TextSubtle}" VerticalAlignment="Center" Margin="9,0,0,0"/>
+                            <TextBlock x:Name="StorageEtaText" Visibility="Collapsed" FontSize="11" FontWeight="SemiBold" Foreground="#1D4ED8" VerticalAlignment="Center" Margin="12,0,0,0"/>
                             <Border x:Name="StorageAvailableGroup" Visibility="Collapsed" Background="#FFFBEB" BorderBrush="#FBBF24" BorderThickness="1" CornerRadius="5" Padding="6,3" Margin="10,0,0,0" VerticalAlignment="Center">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock x:Name="StorageAvailableCaption" Text="⚠ 空き容量が少ない" FontSize="11" Foreground="#92400E" VerticalAlignment="Center" Margin="0,0,5,0"/>
@@ -1093,7 +1094,11 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock x:Name="LinkTableTitleText" Grid.Row="0" Text="検出されたショートカット一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" Margin="0,0,0,10"/>
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock x:Name="LinkTableTitleText" Text="検出されたショートカット一覧" FontWeight="Bold" FontSize="12" Foreground="#0F172A" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="LinkResultCountText" Text="0 件" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                            <TextBlock x:Name="LinkEtaText" Visibility="Collapsed" FontSize="11" FontWeight="SemiBold" Foreground="#1D4ED8" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                        </StackPanel>
                         <DataGrid x:Name="LinkItemsDataGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True"
                                   BorderThickness="0" Background="Transparent" GridLinesVisibility="None" RowHeight="30" SelectionMode="Single">
                             <DataGrid.Columns>
@@ -1237,6 +1242,7 @@
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock x:Name="AuditKpiTotalFilesTitle" Text="総走査ファイル数:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
                             <TextBlock x:Name="AuditKpiTotalFiles" Text="0 件" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#0F172A" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="AuditEtaText" Visibility="Collapsed" FontSize="11" FontWeight="SemiBold" Foreground="#1D4ED8" VerticalAlignment="Center" Margin="12,0,0,0"/>
                         </StackPanel>
 
                         <!-- Separator 1 -->
@@ -1565,6 +1571,7 @@
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                             <TextBlock x:Name="MediaKpiImagesCountTitle" Text="走査対象 画像数:" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,6,0"/>
                             <TextBlock x:Name="MediaKpiImagesCount" Text="0 枚" FontSize="14" FontWeight="Bold" Typography.NumeralAlignment="Tabular" Foreground="#0F172A" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="MediaEtaText" Visibility="Collapsed" FontSize="11" FontWeight="SemiBold" Foreground="#1D4ED8" VerticalAlignment="Center" Margin="12,0,0,0"/>
                         </StackPanel>
 
                         <!-- Separator 1 -->
@@ -2598,11 +2605,10 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <Grid Grid.Column="0" VerticalAlignment="Center" Margin="0,0,18,0">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <TextBlock x:Name="StatusTextBlock" Text="準備完了" FontSize="12" Foreground="{StaticResource TextSecondary}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
                     <ProgressBar x:Name="GlobalProgressBar" Grid.Column="1" Height="4" Width="100" Margin="12,0,0,0" Minimum="0" Maximum="100" Value="0"
                                  Visibility="Collapsed" Foreground="{StaticResource AccentSky}" Background="#F1F5F9" BorderThickness="0"/>
-                    <TextBlock x:Name="ScanEtaText" Grid.Column="2" Visibility="Collapsed" FontSize="11" Foreground="#526987" VerticalAlignment="Center" Margin="12,0,0,0"/>
                 </Grid>
                 <TextBlock x:Name="AppVersionText" Grid.Column="1" Text="FolderMorpher" FontSize="11" Foreground="#9AA8BA" VerticalAlignment="Center"/>
             </Grid>

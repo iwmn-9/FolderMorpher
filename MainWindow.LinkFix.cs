@@ -72,6 +72,7 @@ namespace AstraSize
                 }
 
                 LinkItemsDataGrid.ItemsSource = items;
+                LinkResultCountText.Text = UiText($"{items.Count:N0} 件", $"{items.Count:N0} items");
                 ShowToast(UiText($"切断リンクスキャン完了: {items.Count} 件検出", $"Broken link scan complete: {items.Count} found"));
                 linkScanCompleted = true;
             }

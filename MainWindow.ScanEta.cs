@@ -93,8 +93,13 @@ public partial class MainWindow
 
     private void RefreshScanEta()
     {
-        if (ScanEtaText == null || SearchEtaText == null) return;
-        RenderScanEta(ScanEtaText, _scanEtaSessions.LastOrDefault(s => !s.Operation.StartsWith("search-", StringComparison.Ordinal)), false);
+        if (SearchEtaText == null) return;
+        RenderScanEta(StorageEtaText, _scanEtaSessions.LastOrDefault(s => s.Operation == "storage"), true);
+        RenderScanEta(AuditEtaText, _scanEtaSessions.LastOrDefault(s => s.Operation.StartsWith("audit-", StringComparison.Ordinal)), true);
+        RenderScanEta(MediaEtaText, _scanEtaSessions.LastOrDefault(s => s.Operation == "media-scan"), true);
+        RenderScanEta(LinkEtaText, _scanEtaSessions.LastOrDefault(s => s.Operation.StartsWith("link-", StringComparison.Ordinal)), true);
+        RenderScanEta(LiveAclStudioControl.ReverseScanEtaText,
+            _scanEtaSessions.LastOrDefault(s => s.Operation == "acl-reverse"), true);
         RenderScanEta(SearchEtaText, _scanEtaSessions.LastOrDefault(s => s.Operation.StartsWith("search-", StringComparison.Ordinal)), true);
         SearchEtaBadge.Visibility = SearchEtaText.Visibility;
     }
@@ -140,6 +145,15 @@ public partial class MainWindow
                 double pendingDirectories = session.DiscoveredDirectories - session.ProcessedDirectories;
                 remaining = Math.Max(remaining.Value, elapsed / session.ProcessedDirectories * pendingDirectories * 16);
             }
+            source = "first-run";
+        }
+        else if (elapsed >= 30 && session.CompletedItems == 0 &&
+            (session.Operation == "media-scan" || session.Operation.StartsWith("link-", StringComparison.Ordinal) ||
+             session.Operation == "acl-reverse"))
+        {
+            // These older RPCs report status text but no numeric work units. Until the
+            // contract exposes counts, show a deliberately broad first-run estimate.
+            remaining = Math.Max(session.IsNetworkScope ? 7200 : 1800, elapsed * 24);
             source = "first-run";
         }
 

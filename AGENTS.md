@@ -66,7 +66,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 
 | 機能領域 / タブ | XAML (MainWindow / View) | C# コードビハインド | 関連 Service / Model | 責務と概要 |
 | :--- | :--- | :--- | :--- | :--- |
-| **全体共通 / モード・作業スコープ・フォルダー操作** | `MainWindow.xaml` の `AdminSidebar`、`NavTab*`、`ScopePopup`、`CleanupSectionBar` | `MainWindow.Scope.cs`<br>`MainWindow.Localization.cs`<br>`MainWindow.ScanEta.cs`<br>`FolderMorpher.UI/Dialogs/AppDialog.cs` | `AppSettingsDto`<br>`HostService.BrowseChildFoldersAsync` | 情シス向け左バーはヘッダーボタンで全収納でき、既定は収納。一般向けは常に非表示。参照フォルダーの選択欄は名称に依存しない固定幅で長い名称を省略し、全パスはツールチップで見せる。追加は展開した一覧内のみ、手入力欄は置かない。展開中の最近の場所だけホバー行の×で登録解除し、原本とTreeCacheは保つ。検索・容量・整理はフォルダー下の切替。整理の完全削除だけ離す。走査の見込みは `MainWindow.ScanEta.cs` が扱い、検索は経過時間の隣、他の作業はフッターに表示する。初回は十分な進捗後に安全側へ見積もり、根拠がなければ見積もり中と表示する。容量では未処理ディレクトリ数、MFT利用時は総レコード数も観測し、2回目以降は前回の所要時間や件数を補正に使う。表示済みの予定時刻は前倒しだけで更新し、超過したら明示する。見積り目的の追加走査は行わない。設定の `AdminSidebarCollapsed/ScanDurationsSeconds` はHostが永続化する（ADR 116〜122）。 |
+| **全体共通 / モード・作業スコープ・フォルダー操作** | `MainWindow.xaml` の `AdminSidebar`、`NavTab*`、`ScopePopup`、`CleanupSectionBar` | `MainWindow.Scope.cs`<br>`MainWindow.Localization.cs`<br>`MainWindow.ScanEta.cs`<br>`FolderMorpher.UI/Dialogs/AppDialog.cs` | `AppSettingsDto`<br>`HostService.BrowseChildFoldersAsync` | 情シス向け左バーはヘッダーボタンで全収納でき、既定は収納。一般向けは常に非表示。参照フォルダーの選択欄は名称に依存しない固定幅で長い名称を省略し、全パスはツールチップで見せる。追加は展開した一覧内のみ、手入力欄は置かない。展開中の最近の場所だけホバー行の×で登録解除し、原本とTreeCacheは保つ。検索・容量・整理はフォルダー下の切替。整理の完全削除だけ離す。走査の見込みは `MainWindow.ScanEta.cs` が扱い、検索は経過時間の隣、容量・整理・メディアは件数の隣、リンクは検出件数の隣、ACL逆引きは件数帯の直下に表示する。初回は十分な進捗後に安全側へ見積もり、根拠がなければ見積もり中と表示する。容量では未処理ディレクトリ数、MFT利用時は総レコード数も観測し、2回目以降は前回の所要時間や件数を補正に使う。表示済みの予定時刻は前倒しだけで更新し、超過したら明示する。見積り目的の追加走査は行わない。設定の `AdminSidebarCollapsed/ScanDurationsSeconds` はHostが永続化する（ADR 116〜122）。 |
 | **Tab 1: 容量分析**<br>(Storage Explorer) | `StorageTabPanel`<br>`HistoryWindow.xaml` | `MainWindow.Storage.cs`<br>`HistoryWindow.xaml.cs` | `DiskScanService.cs`<br>`StorageAvailableSpaceService.cs`<br>`SqliteTreeCacheService.cs`<br>`StorageHistoryService.cs`<br>`ScanTabModel.cs`<br>`FileItemNode.cs` | Hostからルートと直下だけを取得し、フォルダー展開時に子の一階層を取得する。接続ユーザーの残量が10%以下なら警告。容量上位Top10と直下シェアは詳細を開いた時に表示。複数タブ、容量推移、予測を提供 |
 | **Tab 2: ファイル検索**<br>(Search Studio) | `SearchTabPanel`<br>(`MainWindow.xaml`) | `MainWindow.Search.cs` | `SearchEngineService.cs`<br>`ServerSearchAccelerator.cs`<br>`WindowsSearchProvider.cs`<br>`TreeCachePruningIndex.cs`<br>`PathCanonicalizer.cs`<br>`SharedIoGovernor.cs`<br>`ContentExtractionService.cs`<br>`SearchQueryParser.cs`<br>`PdfSearchHelper.cs`<br>`SearchModels.cs` | **検索専用DBなし（現行スキャンツリーのメモリ照合・ローカルTreeCache逐次照合・未スキャン対象のLive直接走査）**、**サーバー側インデックス拝借＆候補ピンポイント原本確認（ServerSearchAccelerator: WSP / Synology 等）**、**Producer-Consumer Channel パイプライン（最大12並行）**、ripgrep流 64KBスライディングバッファ直接走査、Office/PDF 境界分割保護＆二重解析根絶、UNCルート単位 I/O ガバナー（`SharedIoGovernor` AIMD）、パス正規化エンジン（`PathCanonicalizer`: Z:\ ⇄ UNC 自動解決）、Tabler File-Type バッジ、高機能検索クエリ構文（ワイルドカード・論理演算・属性指定）、右クリック連携およびExcel/CSV出力 |
 | **Tab 3: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `Views/LiveAclStudio.xaml`<br>(`LiveAclFolderView`, `LiveAclReverseView`, `LiveAclDiffModalOverlay`, `NewFolderModalOverlay`) | `Views/LiveAclStudio.xaml.cs` | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACL可視化・編集、**Dry-Run差分チェックモーダル（AclChangePlan貫通・継承変更警告・セマンティックVerify・SDDLロールバック）**、AD逆引き権限監査、均一幅ADアカウントカード、ADパレットUI統一、ADバックグラウンド自動同期、ツリーインライン新規フォルダー作成 |
@@ -80,7 +80,9 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 
 **検索の現行入口**: `MainWindow.Search.cs` → `HostJobClient` → `HostService.Jobs.cs` / `HostService.cs` → `SearchEngineService`。直接走査は `SafeFileEnumerator.EnumerateFileEntriesParallelAsync(..., collectResults: false)` のコールバックで逐次処理する。ファイル名・パス・本文条件の共通判定は `SearchEngineService.MatchesSearchTerms` が正本。`TreeCachePruningIndex` はフォルダー時刻だけでは検索の完全性を保証できないため、通常画面の直接走査では構築しない。
 
-**走査見込みと整理帯域（ADR 122）**: 検索のETAは結果見出しの経過時間の隣に、他の走査は共通フッターに表示する。`MainWindow.ScanEta.cs` は件数・前回所要時間・初回の大きめの母数を用いて安全側に見積もる。進捗根拠のない初回走査は数値を捏造せず「見積もり中」とする。MFTの総レコード数は確定母数として扱う。整理の帯域選択UIは撤去した。`AuditReportService` はローカルのSHA-256読み取りを制限せず、UNC・ネットワークドライブのみ実測p95遅延を見て8〜100MiB/sの範囲で調整する。並列度2は維持する。旧IPCの帯域指定値は互換のため残す。
+**初回Live走査からのTreeCache形成（ADR 125）**: TreeCacheにルートがないとき、検索と除外なしの整理は `SafeFileEnumerator` の同じ列挙結果を `TreeScanCapture.cs` へ流す。フォルダーを検索結果に含めない場合もキャッシュにはディレクトリを記録する。有界Channel・ローカル一時SQLiteの後、完走した完全カバレッジだけ `SqliteTreeCacheService.Capture.cs` が既存の `ParentId + Name` スキーマへ原子的に公開する。中止・アクセス拒否・除外付き整理では公開しない。既存キャッシュを上書きせず、UNCを再走査しない。整理ボタンは実行中のみ「中止」になり、Host Jobのキャンセルを待って開始状態へ戻る。
+
+**走査見込みと整理帯域（ADR 122）**: 検索のETAは結果見出しの経過時間の隣に、容量・整理・メディアは件数の隣、リンクは検出件数の隣、ACL逆引きは件数帯の直下に表示する。`MainWindow.ScanEta.cs` は件数・前回所要時間・初回の大きめの母数を用いて安全側に見積もる。進捗根拠のない初回走査はまず「見積もり中」とし、件数を返さない旧RPCだけ30秒後から広い暫定値を出す。MFTの総レコード数は確定母数として扱う。整理の帯域選択UIは撤去した。`AuditReportService` はローカルのSHA-256読み取りを制限せず、UNC・ネットワークドライブのみ実測p95遅延を見て8〜100MiB/sの範囲で調整する。並列度2は維持する。旧IPCの帯域指定値は互換のため残す。
 
 **参照先・検索入力・容量詳細（ADR 123）**: 閉じた参照フォルダー選択欄は `ScopeSelectorButtonStyle` の単一面で輪郭・ホバーを描く。展開一覧の行は別の `ScopePickerButtonStyle` を使い、選択欄の輪郭を流用しない。下向きマークは丸い曲線のPath。検索入力の左余白は8px、案内文は9pxで、カーソルと案内文を揃える。容量分析はツリー全幅を初期表示とし、上位ファイル・選択フォルダー内訳は「詳細を表示」で右ペインを開く。右ペインを閉じている間は詳細取得RPCを起動しない。推移グラフは従来の別操作を維持する。
 
@@ -115,13 +117,13 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの設計判断記録（ADR 1〜119）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの設計判断記録（ADR 1〜125）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 
 #### 主要な中核原則サマリー（詳細は `.agents/ADR.md` 参照）
 
-設計判断（ADR 1〜116）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
+設計判断（ADR 1〜125）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
 
 1. **全体占有率メーター & 2連カード（Storage / ADR 61）**:
    - 親フォルダーに対する直下シェア（右ペイン「選択フォルダーの内訳」）と、スキャン対象ルート総容量に対する全体占有率を二重加算防止のため厳格分離。ルート行は `―`（ハイフン）表示。メトリクスカードは「スキャン対象 容量」「前回差分推移」の2連カード化。

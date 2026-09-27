@@ -161,7 +161,8 @@ namespace FolderMorpher.Services
             bool includeDirectories = false,
             Action<ScannedFileEntry>? onEntryFound = null,
             TreeCachePruningIndex? pruningIndex = null,
-            bool collectResults = true)
+            bool collectResults = true,
+            Action<ScannedFileEntry>? onDiscoveredEntry = null)
         {
             var resultFiles = collectResults ? new System.Collections.Concurrent.ConcurrentBag<ScannedFileEntry>() : null;
             if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath)) return new List<ScannedFileEntry>();
@@ -215,6 +216,7 @@ namespace FolderMorpher.Services
                         f.LastWriteTimeUtc.ToLocalTime(),
                         f.LastAccessTimeUtc.ToLocalTime(),
                         f.Attributes);
+                    onDiscoveredEntry?.Invoke(entry);
                     resultFiles?.Add(entry);
                     onEntryFound?.Invoke(entry);
 
@@ -263,7 +265,7 @@ namespace FolderMorpher.Services
 
                         folderQueue.Enqueue(dirPath);
                         if (coverage != null) { lock (coverage) coverage.DiscoveredFolders++; }
-                        if (includeDirectories)
+                        if (includeDirectories || onDiscoveredEntry != null)
                         {
                             var dirEntry = new ScannedFileEntry(
                                 dirPath,
@@ -274,8 +276,12 @@ namespace FolderMorpher.Services
                                 sd.LastWriteTimeUtc.ToLocalTime(),
                                 sd.LastAccessTimeUtc.ToLocalTime(),
                                 sd.Attributes | FileAttributes.Directory);
-                            resultFiles?.Add(dirEntry);
-                            onEntryFound?.Invoke(dirEntry);
+                            onDiscoveredEntry?.Invoke(dirEntry);
+                            if (includeDirectories)
+                            {
+                                resultFiles?.Add(dirEntry);
+                                onEntryFound?.Invoke(dirEntry);
+                            }
                         }
                     }
                 }
@@ -407,7 +413,7 @@ namespace FolderMorpher.Services
                                 }
                                 if (coverage != null) { lock (coverage) coverage.DiscoveredFolders++; }
 
-                                if (includeDirectories)
+                                if (includeDirectories || onDiscoveredEntry != null)
                                 {
                                     var dirEntry = new ScannedFileEntry(
                                         dirPath,
@@ -418,8 +424,12 @@ namespace FolderMorpher.Services
                                         sd.LastWriteTimeUtc.ToLocalTime(),
                                         sd.LastAccessTimeUtc.ToLocalTime(),
                                         sd.Attributes | FileAttributes.Directory);
-                                    resultFiles?.Add(dirEntry);
-                                    onEntryFound?.Invoke(dirEntry);
+                                    onDiscoveredEntry?.Invoke(dirEntry);
+                                    if (includeDirectories)
+                                    {
+                                        resultFiles?.Add(dirEntry);
+                                        onEntryFound?.Invoke(dirEntry);
+                                    }
                                 }
                             }
 
@@ -440,6 +450,7 @@ namespace FolderMorpher.Services
                                     f.LastWriteTimeUtc.ToLocalTime(),
                                     f.LastAccessTimeUtc.ToLocalTime(),
                                     f.Attributes);
+                                onDiscoveredEntry?.Invoke(entry);
                                 resultFiles?.Add(entry);
                                 onEntryFound?.Invoke(entry);
 

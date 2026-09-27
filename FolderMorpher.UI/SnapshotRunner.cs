@@ -205,6 +205,29 @@ public static class SnapshotRunner
                                 if (mw.SearchEtaBadge.Parent != mw.SearchKpiElapsedText.Parent)
                                     throw new InvalidOperationException("Search ETA is not adjacent to elapsed time.");
                             }
+                            else if (selectTab == 24)
+                            {
+                                mw.Width = 1100;
+                                mw.Height = 720;
+                                mw.NavTabStorage.IsChecked = true;
+                                mw.ScanButton.Visibility = Visibility.Collapsed;
+                                mw.CancelButton.Visibility = Visibility.Visible;
+                                mw.StorageEtaText.Text = "残り約35分";
+                                mw.StorageEtaText.Visibility = Visibility.Visible;
+                                if (mw.StorageEtaText.Parent != mw.TotalFilesTextBlock.Parent)
+                                    throw new InvalidOperationException("Storage ETA is not beside the scan count.");
+                            }
+                            else if (selectTab == 25)
+                            {
+                                mw.Width = 1100;
+                                mw.Height = 720;
+                                mw.NavTabAudit.IsChecked = true;
+                                mw.AuditStartButton.Content = "■ 中止";
+                                mw.AuditEtaText.Text = "残り約35分";
+                                mw.AuditEtaText.Visibility = Visibility.Visible;
+                                if (mw.AuditEtaText.Parent != mw.AuditKpiTotalFiles.Parent)
+                                    throw new InvalidOperationException("Audit ETA is not beside the scan count.");
+                            }
                             else if (selectTab == 21)
                             {
                                 mw.Width = 1100;

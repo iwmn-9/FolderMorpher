@@ -31,6 +31,7 @@ namespace AstraSize.Views
         public event Action<string>? ToastRequested;
         public event Action<string>? ScanEtaStarted;
         public event Action<bool>? ScanEtaFinished;
+        public TextBlock ReverseScanEtaText => RevEtaText;
         public event Action<SimAclEntry, string, string, Action>? EditSecurityRequested;
 
         // フォルダ別権限エディタ 状態管理

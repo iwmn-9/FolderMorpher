@@ -296,6 +296,22 @@ namespace AstraSize
                             if (!results.Any(item => string.Equals(item.FullPath, matchFile, StringComparison.OrdinalIgnoreCase)))
                                 throw new InvalidOperationException("Search DTO roundtrip did not return the fixture file.");
                             Console.WriteLine($"[TEST-IPC] Search: {results.Count} result(s)");
+                            var coldSearchRoot = Path.Combine(testRoot, "cold-search-cache");
+                            var coldSearchChild = Path.Combine(coldSearchRoot, "nested");
+                            Directory.CreateDirectory(coldSearchChild);
+                            var coldSearchFile = Path.Combine(coldSearchChild, "plain.txt");
+                            await File.WriteAllTextAsync(coldSearchFile, "cold-cache-content-token", testCts.Token);
+                            var coldContentQuery = new FolderMorpher.Contracts.SearchQueryDto
+                            {
+                                RawQuery = "content:cold-cache-content-token",
+                                ContentKeyword = "cold-cache-content-token"
+                            };
+                            var coldHits = await host.SearchAsync(coldSearchRoot, coldContentQuery, null, testCts.Token);
+                            var coldTree = await host.LoadCachedTreeAsync(coldSearchRoot);
+                            if (!coldHits.Any(item => item.FullPath == coldSearchFile) ||
+                                !await host.HasCachedTreeAsync(coldSearchRoot) || coldTree?.FileCount != 1 || coldTree.FolderCount != 1)
+                                throw new InvalidOperationException("Cold content search did not populate TreeCache through IPC.");
+                            Console.WriteLine("[TEST-IPC] Cold search to TreeCache: SUCCESS");
                             var searchCsv = Path.Combine(testRoot, "ipc-search.csv");
                             var searchExcel = Path.Combine(testRoot, "ipc-search.xlsx");
                             await host.ExportSearchResultsAsync(searchCsv, results, testCts.Token);
@@ -472,6 +488,48 @@ namespace AstraSize
                                 throw new InvalidOperationException("Audit ignore list/count DTO roundtrip failed.");
                             Console.WriteLine($"[TEST-IPC] Audit Job: {completedAuditReport.Summary.TotalFilesScanned} file(s)");
                             await host.ReleaseJobAsync(auditJobId);
+                            var coldAuditRoot = Path.Combine(testRoot, "cold-audit-cache");
+                            Directory.CreateDirectory(coldAuditRoot);
+                            await File.WriteAllTextAsync(Path.Combine(coldAuditRoot, "note.txt"), "audit cache fixture", testCts.Token);
+                            await host.RunAuditScanAsync(new FolderMorpher.Contracts.AuditScanRequestDto
+                            {
+                                TargetPath = coldAuditRoot,
+                                CheckDuplicates = false,
+                                CheckDormant = false,
+                                CheckPathLimits = false
+                            }, null, testCts.Token);
+                            var coldAuditTree = await host.LoadCachedTreeAsync(coldAuditRoot);
+                            if (!await host.HasCachedTreeAsync(coldAuditRoot) || coldAuditTree?.FileCount != 1)
+                                throw new InvalidOperationException("Cold audit did not populate TreeCache through IPC.");
+                            Console.WriteLine("[TEST-IPC] Cold audit to TreeCache: SUCCESS");
+
+                            MainWindow? auditCancelWindow = null;
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                auditCancelWindow = new MainWindow();
+                                FindControl<TextBox>(auditCancelWindow, "AuditPathTextBox").Text = testRoot;
+                                var start = FindControl<Button>(auditCancelWindow, "AuditStartButton");
+                                start.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                if (!start.Content.ToString()!.Contains("中止") && !start.Content.ToString()!.Contains("Stop"))
+                                    throw new InvalidOperationException("Audit start did not become a stop action.");
+                                start.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                if (start.IsEnabled)
+                                    throw new InvalidOperationException("Audit stop allowed a concurrent restart before cancellation settled.");
+                            });
+                            while (await Dispatcher.InvokeAsync(() =>
+                                !FindControl<Button>(auditCancelWindow!, "AuditStartButton").IsEnabled))
+                                await Task.Delay(50, testCts.Token);
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                var start = FindControl<Button>(auditCancelWindow!, "AuditStartButton");
+                                if (start.Content.ToString()!.Contains("中止") || start.Content.ToString()!.Contains("Stop"))
+                                    throw new InvalidOperationException("Audit stop did not restore its start action.");
+                                if (FindControl<Button>(auditCancelWindow!, "AuditExportExcelButton").IsEnabled ||
+                                    FindControl<Button>(auditCancelWindow!, "AuditDeleteSelectedButton").IsEnabled)
+                                    throw new InvalidOperationException("Canceled audit exposed an incomplete report for export or deletion.");
+                                auditCancelWindow!.Close();
+                            });
+                            Console.WriteLine("[TEST-IPC] Audit UI stop/cancel: SUCCESS");
 
                             var csvPath = Path.Combine(testRoot, "ipc-audit.csv");
                             await host.ExportAuditCsvAsync(csvPath, completedAuditReport.Items, testCts.Token);

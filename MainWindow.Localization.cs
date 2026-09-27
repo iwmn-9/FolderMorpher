@@ -276,6 +276,8 @@ namespace AstraSize
             LinkOldPatternLabel.Text = isJa ? "旧サーバーパス (置換前)" : "Old Server Path (To Replace)";
             LinkNewPatternLabel.Text = isJa ? "新サーバーパス (置換後)" : "New Server Path (Replacement)";
             LinkTableTitleText.Text = isJa ? "検出された切断リンク一覧" : "Detected Broken Links";
+            var linkResultCount = (LinkItemsDataGrid.ItemsSource as List<LinkFixItem>)?.Count ?? 0;
+            LinkResultCountText.Text = isJa ? $"{linkResultCount:N0} 件" : $"{linkResultCount:N0} items";
 
             LinkGenerateGpoButton.Content = isJa ? "📜 GPOログオンスクリプト生成 (.ps1)" : "📜 Generate GPO Script (.ps1)";
             LinkGenerateGpoButton.ToolTip = isJa ? "全社PCのデスクトップ/マイドキュメント等のショートカットを自動修復するスクリプトを出力" : "Generate logon script (.ps1) to repair shortcuts across client PCs";
@@ -367,7 +369,9 @@ namespace AstraSize
                 AuditSearchPlaceholder.Text = isJa ? "🔍 ファイル名/パス検索..." : "🔍 Search file/path...";
             }
 
-            AuditStartButton.Content = isJa ? "🔍 整理候補を発見" : "🔍 Discover Candidates";
+            AuditStartButton.Content = _auditScanInProgress
+                ? (isJa ? "■ 中止" : "■ Stop")
+                : (isJa ? "🔍 整理候補を発見" : "🔍 Discover Candidates");
             AuditExportExcelButton.Content = isJa ? "📊 Excel台帳出力 (.xlsx)" : "📊 Export Excel (.xlsx)";
             AuditExportExcelButton.ToolTip = isJa ? "整理理由・スコア・最新版パス付きの美麗Excel台帳を出力" : "Generate executive Excel audit report (.xlsx)";
             AuditExportCsvButton.Content = isJa ? "📄 CSV台帳出力" : "📄 Export CSV";

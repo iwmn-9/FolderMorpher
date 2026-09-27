@@ -166,6 +166,19 @@ namespace FolderMorpher.Services.Testing
 
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 var (summary, items) = await auditService.RunAuditAsync(options, null, cts.Token);
+                var capturedRoot = await SqliteTreeCacheService.Instance.LoadBranchAsync(tempDir, tempDir);
+                if (capturedRoot == null || capturedRoot.FileCount != summary.TotalFilesScanned)
+                    throw new InvalidOperationException("Cold audit did not publish its complete traversal to TreeCache.");
+                var excludedRoot = Path.Combine(tempDir, "excluded_capture_case");
+                var excludedChild = Path.Combine(excludedRoot, "skip_this_folder");
+                Directory.CreateDirectory(excludedChild);
+                File.WriteAllText(Path.Combine(excludedChild, "hidden.txt"), "excluded from audit");
+                var excludedOptions = new AuditOptions { TargetDirectory = excludedRoot,
+                    CheckDuplicates = false, CheckDormant = false, CheckPathLimits = false };
+                excludedOptions.ExcludeFolderPatterns.Add("skip_this_folder");
+                await auditService.RunAuditAsync(excludedOptions, null, cts.Token);
+                if (await SqliteTreeCacheService.Instance.HasRootAsync(excludedRoot))
+                    throw new InvalidOperationException("A filtered audit must not publish a partial TreeCache root.");
 
                 if (summary.DuplicateCount != 2)
                     throw new InvalidOperationException($"DuplicateCount expected 2, got {summary.DuplicateCount}");

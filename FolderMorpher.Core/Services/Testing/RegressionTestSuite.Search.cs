@@ -205,6 +205,7 @@ namespace FolderMorpher.Services.Testing
                     // 5. サブフォルダー (Sol指摘: Direct Search でのフォルダー包含)
                     string subFolder = Path.Combine(tempDir, "SubFolder_ProjectX");
                     Directory.CreateDirectory(subFolder);
+                    File.WriteAllText(Path.Combine(subFolder, "Nested.txt"), "nested cache metadata", Encoding.UTF8);
 
                     // 6. 名前 OR 本文（複数キーワード）テスト用ファイル
                     string filePartial = Path.Combine(tempDir, "予算_計画書.txt");
@@ -216,6 +217,14 @@ namespace FolderMorpher.Services.Testing
                     var batchYield = new Progress<IReadOnlyList<SearchResultItem>>(items => batchResults.AddRange(items));
 
                     var results = await searchEngine.SearchDirectFolderAsync(tempDir, qContent, batchYield, null, CancellationToken.None);
+                    var capturedRoot = await SqliteTreeCacheService.Instance.LoadBranchAsync(tempDir, tempDir);
+                    if (capturedRoot == null || capturedRoot.FileCount != 7 || capturedRoot.FolderCount != 1 ||
+                        !capturedRoot.Children.Any(node => node.Name == "SubFolder_ProjectX" && node.IsDirectory))
+                        throw new Exception("Cold content search did not publish its complete traversal to TreeCache.");
+                    var nestedBranch = await SqliteTreeCacheService.Instance.LoadBranchAsync(tempDir, subFolder);
+                    if (nestedBranch == null || nestedBranch.FileCount != 1 ||
+                        !nestedBranch.Children.Any(node => node.Name == "Nested.txt" && !node.IsDirectory))
+                        throw new Exception("Cold search capture lost a nested file or its parent aggregate.");
 
                     // テキストファイル、PDF、UTF-16ファイルがヒットし、バイナリファイルはEarly Dropで除外されていること
                     bool txtFound = false;
