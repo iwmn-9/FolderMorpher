@@ -103,6 +103,17 @@ namespace FolderMorpher.Host
         // ==========================================
         // 2. Tab 1: Storage Explorer
         // ==========================================
+        public Task<StorageAvailabilityDto?> GetStorageAvailabilityAsync(string targetPath) => Task.Run(() =>
+        {
+            var space = StorageAvailableSpaceService.TryGet(targetPath);
+            return space.HasValue ? new StorageAvailabilityDto
+            {
+                AvailableBytes = space.Value.AvailableBytes,
+                TotalBytes = space.Value.TotalBytes,
+                IsLowSpace = StorageAvailableSpaceService.IsLowSpace(space.Value)
+            } : null;
+        });
+
         public async Task<StorageScanResultDto> ScanStorageAsync(StorageScanRequestDto request, IProgress<StorageScanProgressDto>? progress, CancellationToken ct)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();

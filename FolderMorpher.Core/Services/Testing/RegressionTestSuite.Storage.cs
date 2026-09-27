@@ -23,6 +23,10 @@ namespace FolderMorpher.Services.Testing
         /// </summary>
         public static async Task TestDomain_StorageAndUncTraversalAsync()
         {
+            if (!StorageAvailableSpaceService.IsLowSpace(new StorageAvailableSpace(10, 100)) ||
+                StorageAvailableSpaceService.IsLowSpace(new StorageAvailableSpace(11, 100)) ||
+                StorageAvailableSpaceService.IsLowSpace(new StorageAvailableSpace(0, 0)))
+                throw new InvalidOperationException("Available-space warning threshold is inconsistent.");
             await TestStorageHistoryTreeCacheAndDiffAsync();
             await TestUiBindingContractAndCacheExpansionStateAsync();
             TestStorageSessionAndAuditSortingContracts();

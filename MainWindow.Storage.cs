@@ -26,6 +26,50 @@ namespace AstraSize
         #region Tab 1: Storage Explorer & Multi-Tab Management
         private bool _isInitializingTabs = false;
         private readonly Dictionary<FileItemNode, Task> _storageChildrenLoads = new();
+        private int _availableSpaceRequestId;
+        private FolderMorpher.Contracts.StorageAvailabilityDto? _storageAvailability;
+        private string _storageAvailabilityPath = string.Empty;
+
+        private async Task RefreshAvailableStorageSpaceAsync(ScanTabModel tab, string? selectedPath = null)
+        {
+            var requestId = ++_availableSpaceRequestId;
+            var path = (selectedPath ?? tab.TargetPath)?.Trim() ?? string.Empty;
+            _storageAvailabilityPath = path;
+            _storageAvailability = null;
+            RenderAvailableStorageSpace();
+            if (string.IsNullOrWhiteSpace(path)) return;
+
+            try
+            {
+                // Moving through a large UNC tree should not issue a request for every transient row.
+                await Task.Delay(200);
+                if (requestId != _availableSpaceRequestId || !ReferenceEquals(_currentTab, tab)) return;
+                var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();
+                var availability = await host.GetStorageAvailabilityAsync(path);
+                if (requestId != _availableSpaceRequestId || !ReferenceEquals(_currentTab, tab)) return;
+                _storageAvailability = availability;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Available storage space query failed for {path}: {ex}");
+                if (requestId != _availableSpaceRequestId || !ReferenceEquals(_currentTab, tab)) return;
+            }
+
+            RenderAvailableStorageSpace();
+        }
+
+        private void RenderAvailableStorageSpace()
+        {
+            if (StorageAvailableCaption == null || StorageAvailableValue == null) return;
+            StorageAvailableGroup.Visibility = _storageAvailability?.IsLowSpace == true
+                ? Visibility.Visible : Visibility.Collapsed;
+            if (_storageAvailability is not { } availability) return;
+            StorageAvailableCaption.Text = UiText("⚠ 空き容量が少ない", "⚠ Low free space");
+            StorageAvailableValue.Text = FileItemNode.FormatBytes(availability.AvailableBytes);
+            StorageAvailableGroup.ToolTip = UiText(
+                $"対象: {_storageAvailabilityPath}\nこのユーザーが利用可能: {FileItemNode.FormatBytes(availability.AvailableBytes)} / {FileItemNode.FormatBytes(availability.TotalBytes)}。残り10%以下で表示。フォルダー単位のクォータ上限とは限りません。",
+                $"Path: {_storageAvailabilityPath}\nAvailable to this user: {FileItemNode.FormatBytes(availability.AvailableBytes)} / {FileItemNode.FormatBytes(availability.TotalBytes)}. Shown at 10% free or less. This may not be the folder quota limit.");
+        }
 
         private async Task InitializeStorageTabsAsync()
         {
@@ -141,6 +185,7 @@ namespace AstraSize
             _currentTab = tab;
 
             PathTextBox.Text = tab.TargetPath;
+            _ = RefreshAvailableStorageSpaceAsync(tab);
             FileTreeDataGrid.ItemsSource = tab.VisibleFlatList;
             if (tab.RootNode != null)
             {
@@ -221,6 +266,7 @@ namespace AstraSize
                 {
                     _currentTab.TargetPath = dialog.FolderName;
                     _currentTab.TabTitle = Path.GetFileName(dialog.FolderName);
+                    _ = RefreshAvailableStorageSpaceAsync(_currentTab);
                 }
             }
         }
@@ -265,6 +311,7 @@ namespace AstraSize
             GlobalProgressBar.IsIndeterminate = true;
 
             _currentTab.TargetPath = path;
+            _ = RefreshAvailableStorageSpaceAsync(_currentTab);
             SetActiveFolderScope(path, selectStorageTab: false);
             _currentTab.TabTitle = Path.GetFileName(path.TrimEnd('\\', '/'));
             if (string.IsNullOrEmpty(_currentTab.TabTitle)) _currentTab.TabTitle = path;
@@ -347,6 +394,7 @@ namespace AstraSize
                 FileTreeDataGrid.ItemsSource = _currentTab.VisibleFlatList;
                 UpdateDynamicInsightsForNode(root);
                 UpdateMetricsCards(_currentTab);
+                _ = RefreshAvailableStorageSpaceAsync(_currentTab);
 
                 // Host owns cache and snapshot persistence after the scan.
                 SaveStorageTabSession();
@@ -497,6 +545,13 @@ namespace AstraSize
             if (FileTreeDataGrid.SelectedItem is FileItemNode node)
             {
                 UpdateDynamicInsightsForNode(node);
+                if (_currentTab is { } tab)
+                    _ = RefreshAvailableStorageSpaceAsync(tab,
+                        node.IsDirectory ? node.FullPath : Path.GetDirectoryName(node.FullPath));
+            }
+            else if (_currentTab is { } tab)
+            {
+                _ = RefreshAvailableStorageSpaceAsync(tab);
             }
         }
 

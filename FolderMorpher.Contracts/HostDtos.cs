@@ -27,6 +27,13 @@ namespace FolderMorpher.Contracts
         public int MaxConcurrency { get; set; } = 2;
     }
 
+    public class StorageAvailabilityDto
+    {
+        public long AvailableBytes { get; set; }
+        public long TotalBytes { get; set; }
+        public bool IsLowSpace { get; set; }
+    }
+
     /// <summary>
     /// ストレージスキャン進捗 DTO
     /// </summary>

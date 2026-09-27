@@ -239,6 +239,13 @@ namespace AstraSize
                             Console.WriteLine("[TEST-IPC] Search Clear/Stop UI: SUCCESS");
                             var scan = await host.ScanStorageAsync(
                                 new FolderMorpher.Contracts.StorageScanRequestDto { TargetPath = testRoot }, null, testCts.Token);
+                            var availability = await host.GetStorageAvailabilityAsync(testRoot);
+                            if (availability == null || availability.AvailableBytes < 0 || availability.TotalBytes <= 0)
+                                throw new InvalidOperationException("Available storage space did not roundtrip through IPC.");
+                            if (await host.GetStorageAvailabilityAsync(sourceChildPath) == null)
+                                throw new InvalidOperationException("Nested folder storage availability did not roundtrip through IPC.");
+                            if (await host.GetStorageAvailabilityAsync(Path.Combine(testRoot, "missing-folder")) != null)
+                                throw new InvalidOperationException("Missing storage path reported available space.");
                             if (scan.RootNode == null || scan.TotalFiles < 1 || scan.RootNode.Children.Count < 1)
                                 throw new InvalidOperationException($"Storage DTO roundtrip failed: {scan.ErrorMessage}");
                             if (Math.Abs(scan.RootNode.Children[0].PercentageOfRoot - 100.0) > 0.01)

@@ -31,6 +31,7 @@ namespace FolderMorpher.Contracts
         // 2. Tab 1: Storage Explorer
         // ==========================================
         Task<StorageScanResultDto> ScanStorageAsync(StorageScanRequestDto request, IProgress<StorageScanProgressDto>? progress, CancellationToken ct);
+        Task<StorageAvailabilityDto?> GetStorageAvailabilityAsync(string targetPath);
         Task<StorageNodeDto?> LoadCachedTreeAsync(string targetPath);
         Task<List<StorageNodeDto>> GetStorageChildrenAsync(string rootPath, string folderPath);
         Task<List<string>> BrowseChildFoldersAsync(string folderPath);

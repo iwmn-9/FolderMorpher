@@ -222,7 +222,7 @@ public static class SnapshotRunner
                                 mw.NavTabAudit.IsChecked = true;
                                 mw.CleanupMediaTab.IsChecked = true;
                             }
-                            else if (selectTab is 100 or 102 or 103)
+                            else if (selectTab is 100 or 102 or 103 or 104)
                             {
                                 mw.NavTabStorage.IsChecked = true;
                                 if (selectTab is 100 or 103)
@@ -325,6 +325,12 @@ public static class SnapshotRunner
                                 mw.PathTextBox.Text = @"D:\SharedData";
                                 mw.ScannedSizeTextBlock.Text = "120.00 GB";
                                 mw.TotalFilesTextBlock.Text = "4,500 ファイル / 120 フォルダ";
+                                if (selectTab == 104)
+                                {
+                                    mw.StorageAvailableGroup.Visibility = Visibility.Visible;
+                                    mw.StorageAvailableCaption.Text = "⚠ 空き容量が少ない";
+                                    mw.StorageAvailableValue.Text = "8.00 GB";
+                                }
                             }
                             else if (selectTab == 105)
                             {

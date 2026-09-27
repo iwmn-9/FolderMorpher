@@ -131,6 +131,7 @@ namespace AstraSize
 
             StorageKpiScannedSizeTitle.Text = isJa ? "スキャン対象" : "Scanned";
             StorageKpiDiffTrendTitle.Text = isJa ? "前回差分" : "Previous change";
+            RenderAvailableStorageSpace();
 
             if (InsightsTargetScopeTextBlock.Text == "スコープ: 全体" || InsightsTargetScopeTextBlock.Text == "Scope: Entire Scan")
             {
