@@ -144,6 +144,7 @@ namespace AstraSize.Services.Mft
 
                 ulong currentRecordNum = 0;
                 long lastProgressTime = 0;
+                long totalMftRecords = extents.Sum(extent => extent.ClusterCount) * bytesPerCluster / bytesPerRecord;
 
                 foreach (var extent in extents)
                 {
@@ -197,7 +198,9 @@ namespace AstraSize.Services.Mft
                             {
                                 CurrentPath = $"MFT解析中... ({allNodes.Count:N0} アイテム検出)",
                                 FilesScanned = allNodes.Count,
-                                BytesScanned = 0
+                                BytesScanned = 0,
+                                ProcessedWorkUnits = (long)currentRecordNum,
+                                TotalWorkUnits = totalMftRecords
                             });
                         }
                     }

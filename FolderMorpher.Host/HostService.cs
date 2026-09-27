@@ -122,6 +122,8 @@ namespace FolderMorpher.Host
                         ScannedBytes = p.BytesScanned,
                         DiscoveredDirectories = p.DiscoveredDirectories,
                         ProcessedDirectories = p.ProcessedDirectories,
+                        ProcessedWorkUnits = p.ProcessedWorkUnits,
+                        TotalWorkUnits = p.TotalWorkUnits,
                         IsCompleted = false
                     });
                 }) : null;

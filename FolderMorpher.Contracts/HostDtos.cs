@@ -37,6 +37,8 @@ namespace FolderMorpher.Contracts
         public long ScannedBytes { get; set; }
         public int DiscoveredDirectories { get; set; }
         public int ProcessedDirectories { get; set; }
+        public long ProcessedWorkUnits { get; set; }
+        public long TotalWorkUnits { get; set; }
         public bool IsCompleted { get; set; }
     }
 

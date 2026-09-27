@@ -18,6 +18,8 @@ namespace AstraSize.Services
         public long BytesScanned { get; set; }
         public int DiscoveredDirectories { get; set; }
         public int ProcessedDirectories { get; set; }
+        public long ProcessedWorkUnits { get; set; }
+        public long TotalWorkUnits { get; set; }
     }
 
     public class DiskScanService

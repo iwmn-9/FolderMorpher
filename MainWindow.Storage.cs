@@ -297,7 +297,15 @@ namespace AstraSize
 
             var progress = new Progress<FolderMorpher.Contracts.StorageScanProgressDto>(p =>
             {
-                ReportScanEta(scanEta, p.ScannedFilesCount, p.ProcessedDirectories, p.DiscoveredDirectories);
+                if (p.TotalWorkUnits > 0)
+                {
+                    UpdateScanEtaTotal(scanEta, p.TotalWorkUnits);
+                    ReportScanEta(scanEta, p.ProcessedWorkUnits);
+                }
+                else
+                {
+                    ReportScanEta(scanEta, p.ScannedFilesCount, p.ProcessedDirectories, p.DiscoveredDirectories);
+                }
                 ScannedSizeTextBlock.Text = FileItemNode.FormatBytes(p.ScannedBytes);
                 TotalFilesTextBlock.Text = UiText($"{p.ScannedFilesCount:N0} 項目走査済み", $"{p.ScannedFilesCount:N0} items scanned");
                 StatusTextBlock.Text = UiText($"スキャン中: {p.CurrentDirectory}", $"Scanning: {p.CurrentDirectory}");
