@@ -36,6 +36,18 @@ FolderMorpherの `SearchEngineService.SearchDirectFolderAsync(@"C:\", SearchQuer
 
 したがって「最終版は全Cで約44秒遅い」という因果関係は支持されない。同じ実装でも全Cで約170秒揺れ、部分領域では冷えた実行と温まった実行の差がさらに大きい。主因候補は読み取りキャッシュと他プロセスのI/O競合だが、この計測だけでは個々の原因を分離できない。次に全Cの改善率を確定するなら、同一時点の対象スナップショット、実行順を入れ替えた複数回のA/B、列挙・本文Read・解析・TreeCache公開の段階別時間とディスクI/O量を記録する。
 
+### 他ツールとの目盛り（同日・同じ端末）
+
+インストール済み `ripgrep 15.2.0` を本文Indexなしで実行した。`--no-config -uu -i -F -l --no-messages --glob-case-insensitive` に、FolderMorpherのテキスト拡張子20種の `-g '*.{txt,log,csv,tsv,json,xml,html,htm,md,cs,sql,ps1,bat,cmd,py,ini,cfg,config,yaml,yml}'` を付け、語 `SubtreeEndId`、対象 `C:\` を指定した。`-uu` はignoreと隠しファイルを検索するが、NUL検出時のバイナリ停止は維持する。[ripgrep公式Guide](https://github.com/BurntSushi/ripgrep/blob/master/GUIDE.md)。
+
+| 対象 | ripgrep 1回目 / 2回目 | FolderMorpher現行版の既測定 | 備考 |
+|---|---:|---:|---|
+| `C:\` | 244.857秒 / 253.686秒 | 532.111秒 / 702.063秒 | ripgrep対象のテキスト拡張子303,896件、FolderMorpher本文処理約303,000件。どちらも19件ヒットした直近実行を確認。ripgrepはアクセス拒否で終了コード2。|
+| `C:\Windows` | 14.193秒 / 7.159秒 | 13.342～30.173秒 | ripgrep対象11,076件、FolderMorpher本文処理10,664件。どちらも0件ヒット。|
+| `C:\Users\iwakura\AppData\Local\uv` | 33.868秒 / 7.754秒 | 11.844～101.818秒 | 両者とも対象本文61,201件、0件ヒット。冷温差が大きい。|
+
+拡張子を付けない `rg -uu` の全C検索は1,229.822秒で試験を中断し、完了しなかった。これはFolderMorpherが対象外とする形式まで開く別の負荷であり、製品速度の比較値には使わない。拡張子指定の比較も、ripgrepはOffice/PDFを本文抽出せず、文字コード・バイナリ判定・エラー処理・TreeCache投入がFolderMorpherと同一ではない。ファイル件数とヒット数が近くても、読んだバイト数や仕事量が等しいとは限らない。したがって `約4分対9～12分` は**この端末の生テキスト検索エンジンとの参考目盛り**であり、厳密な速度比・一般的な製品平均ではない。Everythingも公式FAQで本文はインデックスせず検索が遅いと説明しているが、同じC全域の公開測定時間はない。[Everything公式FAQ](https://www.voidtools.com/faq/)。
+
 ### 独立した比較
 
 - **小テキストの非一致検索**: C上の13,329バイトのソースを同じ本文検索関数で各1万回。旧版3.40～3.66秒・約2.78GB割当、新版3.14～3.26秒・約0.56GB割当。60,000バイトでも旧版3.37/4.11秒・約2.78GB、新版2.97/3.48秒・約1.05GB。順序を交互にした。単一ファイル反復なので全Cの代用ではない。
