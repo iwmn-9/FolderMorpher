@@ -37,6 +37,9 @@ namespace FolderMorpher.Services
             (CreationTimeBinary.HasValue ? DateTime.FromBinary(CreationTimeBinary.Value) : null);
     }
 
+    /// <summary>A previously calculated hash and the metadata observed by its audit.</summary>
+    public readonly record struct TreeHashRecord(string Sha256, long Size, DateTime LastModified);
+
     /// <summary>
     /// SQLite ローカル専有ツリーキャッシュ サービス（ADR 98）。
     /// 
@@ -145,21 +148,28 @@ namespace FolderMorpher.Services
             while (reader.Read())
             {
                 ct.ThrowIfCancellationRequested();
-                var id = reader.GetInt64(0);
-                var parentId = reader.IsDBNull(1) ? (long?)null : reader.GetInt64(1);
-                while (ancestors.Count > 0 && ancestors[^1].Id != parentId)
-                    ancestors.RemoveAt(ancestors.Count - 1);
-                if (parentId != null && ancestors.Count == 0)
-                    throw new InvalidDataException("Tree cache rows are not in parent-before-child order.");
+                var path = ReadNodePath(reader, root.Value.OriginalPath, ancestors);
                 var name = reader.GetString(2);
-                var suffix = reader.IsDBNull(7) ? null : reader.GetString(7);
-                var path = parentId == null ? root.Value.OriginalPath : ChildPath(ancestors[^1].Path, name, suffix);
                 var isDirectory = reader.GetInt32(4) == 1;
-                if (isDirectory) ancestors.Add((id, path));
                 yield return new TreeCacheSearchEntry(path, name, reader.GetInt64(3), isDirectory,
                     null, null, reader.IsDBNull(5) ? null : reader.GetInt64(5),
                     reader.IsDBNull(6) ? null : reader.GetInt64(6));
             }
+        }
+
+        private static string ReadNodePath(SqliteDataReader reader, string rootPath,
+            List<(long Id, string Path)> ancestors)
+        {
+            var id = reader.GetInt64(0);
+            var parentId = reader.IsDBNull(1) ? (long?)null : reader.GetInt64(1);
+            while (ancestors.Count > 0 && ancestors[^1].Id != parentId)
+                ancestors.RemoveAt(ancestors.Count - 1);
+            if (parentId != null && ancestors.Count == 0)
+                throw new InvalidDataException("Tree cache rows are not in parent-before-child order.");
+            var suffix = reader.IsDBNull(7) ? null : reader.GetString(7);
+            var path = parentId == null ? rootPath : ChildPath(ancestors[^1].Path, reader.GetString(2), suffix);
+            if (reader.GetInt32(4) == 1) ancestors.Add((id, path));
+            return path;
         }
 
         private static (long Id, string OriginalPath)? FindRoot(SqliteConnection conn, string targetPath)
@@ -270,7 +280,8 @@ namespace FolderMorpher.Services
                     DROP INDEX IF EXISTS idx_treenodes_root;
                     DROP INDEX IF EXISTS idx_treenodes_root_path;
                     CREATE INDEX IF NOT EXISTS idx_treenodes_root_parent ON TreeNodes(RootId, ParentId, Name);
-                    CREATE INDEX IF NOT EXISTS idx_treenodes_root_order ON TreeNodes(RootId, Id);";
+                    CREATE INDEX IF NOT EXISTS idx_treenodes_root_order ON TreeNodes(RootId, Id);
+                    CREATE INDEX IF NOT EXISTS idx_treenodes_hashed ON TreeNodes(RootId, Id) WHERE Sha256 IS NOT NULL;";
                 indexes.ExecuteNonQuery();
 
                 using var version = conn.CreateCommand();
@@ -507,15 +518,19 @@ namespace FolderMorpher.Services
                 {
                     // 1. 既存の RootId を確認し、存在すれば削除
                     long rootId = -1;
+                    var priorHashes = new Dictionary<string, (long Size, long Modified, long Created, string Sha)>(StringComparer.OrdinalIgnoreCase);
                     using (var findCmd = conn.CreateCommand())
                     {
                         findCmd.Transaction = tx;
-                        findCmd.CommandText = "SELECT Id FROM TreeRoots WHERE NormalizedPath = @path;";
+                        findCmd.CommandText = "SELECT Id, OriginalTargetPath FROM TreeRoots WHERE NormalizedPath = @path;";
                         findCmd.Parameters.AddWithValue("@path", canonicalPath);
-                        var existing = findCmd.ExecuteScalar();
-                        if (existing != null && existing != DBNull.Value)
+                        using var existing = findCmd.ExecuteReader();
+                        if (existing.Read())
                         {
-                            rootId = Convert.ToInt64(existing);
+                            rootId = existing.GetInt64(0);
+                            var oldRootPath = existing.GetString(1);
+                            existing.Close();
+                            priorHashes = ReadPriorHashes(conn, tx, rootId, oldRootPath);
                         }
                     }
 
@@ -611,7 +626,17 @@ namespace FolderMorpher.Services
                             pIsDir.Value = node.IsDirectory ? 1 : 0;
                             pMod.Value = node.LastModified.HasValue ? node.LastModified.Value.ToBinary() : DBNull.Value;
                             pCreate.Value = node.CreationTime.HasValue ? node.CreationTime.Value.ToBinary() : DBNull.Value;
-                            var storedSha = ToStoredSha(node.Sha256);
+                            var sha = node.Sha256;
+                            if (sha == null && !node.IsDirectory &&
+                                node.LastModified.HasValue && node.CreationTime.HasValue &&
+                                priorHashes.TryGetValue(node.FullPath, out var prior) &&
+                                prior.Size == node.Size &&
+                                prior.Modified == node.LastModified.Value.ToBinary() &&
+                                prior.Created == node.CreationTime.Value.ToBinary())
+                            {
+                                sha = prior.Sha;
+                            }
+                            var storedSha = ToStoredSha(sha);
                             pSha.SqliteType = storedSha is byte[] ? SqliteType.Blob : SqliteType.Text;
                             pSha.Value = storedSha ?? DBNull.Value;
 
@@ -643,6 +668,36 @@ namespace FolderMorpher.Services
                     throw;
                 }
             });
+        }
+
+        private static Dictionary<string, (long Size, long Modified, long Created, string Sha)> ReadPriorHashes(
+            SqliteConnection conn, SqliteTransaction tx, long rootId, string rootPath)
+        {
+            var hashes = new Dictionary<string, (long, long, long, string)>(StringComparer.OrdinalIgnoreCase);
+            using (var anyCmd = conn.CreateCommand())
+            {
+                anyCmd.Transaction = tx;
+                anyCmd.CommandText = "SELECT 1 FROM TreeNodes WHERE RootId = @rootId AND Sha256 IS NOT NULL LIMIT 1;";
+                anyCmd.Parameters.AddWithValue("@rootId", rootId);
+                if (anyCmd.ExecuteScalar() == null) return hashes;
+            }
+            using var cmd = conn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = @"SELECT Id, ParentId, Name, Size, IsDirectory, LastModified, CreationTime, PathSuffix, Sha256
+                FROM TreeNodes WHERE RootId = @rootId ORDER BY Id;";
+            cmd.Parameters.AddWithValue("@rootId", rootId);
+            using var reader = cmd.ExecuteReader();
+            var ancestors = new List<(long Id, string Path)>();
+            while (reader.Read())
+            {
+                var path = ReadNodePath(reader, rootPath, ancestors);
+                if (reader.GetInt32(4) != 0 || reader.IsDBNull(5) || reader.IsDBNull(6) || reader.IsDBNull(8))
+                    continue;
+                var sha = ReadSha(reader, 8);
+                if (sha != null)
+                    hashes[path] = (reader.GetInt64(3), reader.GetInt64(5), reader.GetInt64(6), sha);
+            }
+            return hashes;
         }
 
         /// <summary>
@@ -952,7 +1007,7 @@ namespace FolderMorpher.Services
         /// キャッシュ内のファイル SHA-256 ハッシュを DB 上で直接一括更新する（Sol提唱 ADR 92/98）。
         /// メモリを浪費せず、指定パスのレコードだけを高速に UPDATE。
         /// </summary>
-        public async Task UpdateSha256Async(string targetPath, IDictionary<string, string> hashMap)
+        public async Task UpdateSha256Async(string targetPath, IDictionary<string, TreeHashRecord> hashMap)
         {
             if (string.IsNullOrWhiteSpace(targetPath) || hashMap == null || hashMap.Count == 0) return;
 
@@ -976,10 +1031,13 @@ namespace FolderMorpher.Services
                     updateCmd.CommandText = @"
                         UPDATE TreeNodes
                         SET Sha256 = @sha
-                        WHERE RootId = @rootId AND Id = @id;
+                        WHERE RootId = @rootId AND Id = @id AND IsDirectory = 0
+                            AND Size = @size AND LastModified = @modified;
                     ";
                     var pSha = updateCmd.Parameters.Add("@sha", SqliteType.Blob);
                     var pId = updateCmd.Parameters.Add("@id", SqliteType.Integer);
+                    var pSize = updateCmd.Parameters.Add("@size", SqliteType.Integer);
+                    var pModified = updateCmd.Parameters.Add("@modified", SqliteType.Integer);
                     updateCmd.Parameters.AddWithValue("@rootId", root.Value.Id);
                     var pathIds = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
@@ -987,10 +1045,12 @@ namespace FolderMorpher.Services
                     {
                         var id = FindNodeId(conn, root.Value.Id, root.Value.OriginalPath, kvp.Key, pathIds, tx);
                         if (id == null) continue;
-                        var storedSha = ToStoredSha(kvp.Value);
+                        var storedSha = ToStoredSha(kvp.Value.Sha256);
                         pSha.SqliteType = storedSha is byte[] ? SqliteType.Blob : SqliteType.Text;
                         pSha.Value = storedSha ?? DBNull.Value;
                         pId.Value = id.Value;
+                        pSize.Value = kvp.Value.Size;
+                        pModified.Value = kvp.Value.LastModified.ToBinary();
                         updateCmd.ExecuteNonQuery();
                     }
 

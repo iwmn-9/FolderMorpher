@@ -1116,14 +1116,24 @@ namespace FolderMorpher.Services.Testing
                 // 検証 9: ADR 92 UpdateTreeCacheSha256Async によるハッシュ書き戻し検証
                 var rootNode = new AstraSize.Models.FileItemNode { FullPath = testDir, Name = Path.GetFileName(testDir), IsDirectory = true };
                 var versionFolder = new AstraSize.Models.FileItemNode { FullPath = vDir, Name = "Versions", IsDirectory = true, Parent = rootNode };
-                var childFile = new AstraSize.Models.FileItemNode { FullPath = testFilePath, Name = Path.GetFileName(testFilePath), IsDirectory = false };
+                var childFile = new AstraSize.Models.FileItemNode
+                {
+                    FullPath = testFilePath, Name = Path.GetFileName(testFilePath), IsDirectory = false,
+                    Size = new FileInfo(testFilePath).Length,
+                    LastModified = File.GetLastWriteTime(testFilePath)
+                };
                 childFile.Parent = versionFolder;
                 versionFolder.Children.Add(childFile);
                 rootNode.Children.Add(versionFolder);
                 var historyService = AstraSize.Services.StorageHistoryService.Instance;
                 await historyService.SaveTreeCacheAsync(rootNode);
 
-                var dummyAuditItem = new AuditItem { FullPath = testFilePath, FileName = Path.GetFileName(testFilePath), Sha256Hash = "ABCDEF1234567890" };
+                var dummyAuditItem = new AuditItem
+                {
+                    FullPath = testFilePath, FileName = Path.GetFileName(testFilePath),
+                    Size = childFile.Size, LastWriteTime = childFile.LastModified!.Value,
+                    Sha256Hash = "ABCDEF1234567890"
+                };
                 await historyService.UpdateTreeCacheSha256Async(testDir, new[] { dummyAuditItem });
                 var directBranch = await SqliteTreeCacheService.Instance.LoadBranchAsync(testDir, testFilePath);
                 if (directBranch == null) throw new InvalidOperationException($"Tree cache cannot resolve child path: root={testDir}, child={testFilePath}");

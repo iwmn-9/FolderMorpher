@@ -662,6 +662,8 @@ namespace FolderMorpher.Services.Testing
                 {
                     Parent = subDir,
                     Level = 2,
+                    LastModified = file1.LastModified,
+                    CreationTime = file1.CreationTime,
                     Sha256 = "BBBB1111222233334444555566667777888899990000AAAABBBBCCCCDDDDEEEEFFFF"
                 };
                 subDir.Children.Add(file2);
@@ -748,9 +750,9 @@ namespace FolderMorpher.Services.Testing
 
                 // 4. UpdateSha256Async (DB 直接更新) の検証
                 var newSha = "FFFF0000999988887777666655554444333322221111FFFF00009999888877776666";
-                var updateMap = new Dictionary<string, string>
+                var updateMap = new Dictionary<string, TreeHashRecord>
                 {
-                    { file2.FullPath, newSha }
+                    { file2.FullPath, new TreeHashRecord(newSha, file2.Size, file2.LastModified!.Value) }
                 };
                 await cacheService.UpdateSha256Async(rootPath, updateMap);
 
@@ -791,6 +793,39 @@ namespace FolderMorpher.Services.Testing
                 {
                     throw new InvalidOperationException("SqliteTreeCache: インポート後のツリーで更新済み SHA-256 が一致しません。");
                 }
+
+                // A capacity rescan replaces the tree. Only unchanged metadata may inherit a prior hash.
+                var rescannedRoot = new FileItemNode(rootPath, root.Name, root.Size, true)
+                {
+                    FileCount = root.FileCount, FolderCount = root.FolderCount
+                };
+                var rescannedSub = new FileItemNode(subDir.FullPath, subDir.Name, subDir.Size, true);
+                rescannedRoot.Children.Add(rescannedSub);
+                rescannedSub.Children.Add(new FileItemNode(file1.FullPath, file1.Name, file1.Size, false)
+                {
+                    LastModified = file1.LastModified!.Value.AddSeconds(1), CreationTime = file1.CreationTime
+                });
+                rescannedSub.Children.Add(new FileItemNode(file2.FullPath, file2.Name, file2.Size, false)
+                {
+                    LastModified = file2.LastModified, CreationTime = file2.CreationTime
+                });
+                await cacheService.SaveTreeAsync(rescannedRoot);
+                var afterRescan = await cacheService.LoadTreeAsync(rootPath);
+                var rescanFiles = afterRescan!.Children[0].Children;
+                if (rescanFiles.Single(f => f.Name == file1.Name).Sha256 != null ||
+                    rescanFiles.Single(f => f.Name == file2.Name).Sha256 != newSha)
+                    throw new InvalidOperationException("SqliteTreeCache: 再走査時の SHA 継承条件が不正です。");
+
+                await cacheService.UpdateSha256Async(rootPath, new Dictionary<string, TreeHashRecord>
+                {
+                    [file1.FullPath] = new TreeHashRecord(file1.Sha256!, file1.Size, file1.LastModified.Value),
+                    [file2.FullPath] = new TreeHashRecord(file2.Sha256!, file2.Size + 1, file2.LastModified!.Value)
+                });
+                var afterStaleUpdate = await cacheService.LoadTreeAsync(rootPath);
+                var guardedFiles = afterStaleUpdate!.Children[0].Children;
+                if (guardedFiles.Single(f => f.Name == file1.Name).Sha256 != null ||
+                    guardedFiles.Single(f => f.Name == file2.Name).Sha256 != newSha)
+                    throw new InvalidOperationException("SqliteTreeCache: 古い Audit の SHA が新しいツリーに書き込まれました。");
 
                 // 6. DeleteRootAsync の検証
                 await cacheService.DeleteRootAsync(rootPath);

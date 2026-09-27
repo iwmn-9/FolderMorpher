@@ -610,7 +610,7 @@ namespace AstraSize.Services
 
         /// <summary>
         /// Audit等で計算された SHA-256 ハッシュを既存の TreeCache へ書き戻して永続化する（Sol提唱 ADR 92/98）。
-        /// SQLite DB 上で直接一括更新し、メモリ浪費と再計算コストを劇的に削減。
+        /// SQLite DB 上で直接一括更新する。サイズと更新日時が変わった行には古いハッシュを書かない。
         /// </summary>
         public async Task UpdateTreeCacheSha256Async(string targetPath, IEnumerable<AuditItem> auditItems)
         {
@@ -619,7 +619,8 @@ namespace AstraSize.Services
             var hashMap = auditItems
                 .Where(x => !string.IsNullOrEmpty(x.Sha256Hash) && !string.IsNullOrEmpty(x.FullPath))
                 .GroupBy(x => x.FullPath, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First().Sha256Hash!, StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(g => g.Key, g => new TreeHashRecord(
+                    g.First().Sha256Hash!, g.First().Size, g.First().LastWriteTime), StringComparer.OrdinalIgnoreCase);
 
             if (hashMap.Count == 0) return;
 
@@ -646,11 +647,12 @@ namespace AstraSize.Services
                         int updatedCount = 0;
                         void TraverseAndApply(FileItemNode node)
                         {
-                            if (hashMap.TryGetValue(node.FullPath, out var hash))
+                            if (hashMap.TryGetValue(node.FullPath, out var hash) && !node.IsDirectory &&
+                                node.Size == hash.Size && node.LastModified == hash.LastModified)
                             {
-                                if (node.Sha256 != hash)
+                                if (node.Sha256 != hash.Sha256)
                                 {
-                                    node.Sha256 = hash;
+                                    node.Sha256 = hash.Sha256;
                                     updatedCount++;
                                 }
                             }
