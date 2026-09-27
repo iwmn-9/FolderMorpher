@@ -500,9 +500,33 @@ namespace AstraSize
             }
         }
 
+        private bool _storageDetailsVisible;
+
+        private void StorageDetailsButton_Click(object sender, RoutedEventArgs e)
+        {
+            _storageDetailsVisible = !_storageDetailsVisible;
+            StorageTreeColumn.Width = new GridLength(_storageDetailsVisible ? 6.5 : 1, GridUnitType.Star);
+            StorageDetailsGapColumn.Width = new GridLength(_storageDetailsVisible ? 14 : 0);
+            StorageDetailsColumn.Width = _storageDetailsVisible
+                ? new GridLength(3.5, GridUnitType.Star) : new GridLength(0);
+            StorageDetailsPanel.Visibility = _storageDetailsVisible ? Visibility.Visible : Visibility.Collapsed;
+            StorageDetailsSplitter.Visibility = StorageDetailsPanel.Visibility;
+            UpdateStorageDetailsButtonLabel();
+            if (_storageDetailsVisible && (FileTreeDataGrid.SelectedItem as FileItemNode ?? _currentTab?.RootNode) is { } node)
+                UpdateDynamicInsightsForNode(node);
+        }
+
+        private void UpdateStorageDetailsButtonLabel()
+        {
+            if (StorageDetailsButton == null) return;
+            StorageDetailsButton.Content = _storageDetailsVisible
+                ? UiText("詳細を閉じる", "Hide details") : UiText("詳細を表示", "Show details");
+            StorageDetailsButton.ToolTip = UiText("容量上位ファイルと選択フォルダーの内訳", "Largest files and selected folder breakdown");
+        }
+
         private async void UpdateDynamicInsightsForNode(FileItemNode node)
         {
-            if (InsightsTargetScopeTextBlock == null || TopFilesDataGrid == null || FolderChildSharesDataGrid == null) return;
+            if (!_storageDetailsVisible || InsightsTargetScopeTextBlock == null || TopFilesDataGrid == null || FolderChildSharesDataGrid == null) return;
             var selectedTab = _currentTab;
             InsightsTargetScopeTextBlock.Text = UiText($"スコープ: {node.Name}", $"Scope: {node.Name}");
             if (selectedTab is { } tab && node.HasUnloadedChildren)
@@ -538,6 +562,7 @@ namespace AstraSize
             }
             else
             {
+                TopFilesDataGrid.ItemsSource = null;
                 try
                 {
                     var host = await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.GetServiceAsync();

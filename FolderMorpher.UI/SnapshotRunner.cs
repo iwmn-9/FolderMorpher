@@ -222,9 +222,16 @@ public static class SnapshotRunner
                                 mw.NavTabAudit.IsChecked = true;
                                 mw.CleanupMediaTab.IsChecked = true;
                             }
-                            else if (selectTab == 100)
+                            else if (selectTab is 100 or 102 or 103)
                             {
                                 mw.NavTabStorage.IsChecked = true;
+                                if (selectTab is 100 or 103)
+                                    mw.StorageDetailsButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                if (selectTab == 103)
+                                    mw.StorageDetailsButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                if ((selectTab == 100) != (mw.StorageDetailsPanel.Visibility == Visibility.Visible) ||
+                                    (selectTab != 100 && mw.StorageDetailsColumn.Width.Value != 0))
+                                    throw new InvalidOperationException("Storage detail toggle did not restore the tree layout.");
                                 var rootNode = new AstraSize.Models.FileItemNode
                                 {
                                     Name = "D:\\SharedData",

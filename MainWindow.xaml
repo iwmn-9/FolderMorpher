@@ -72,12 +72,12 @@
                 <StackPanel Orientation="Vertical" VerticalAlignment="Center">
                     <TextBlock x:Name="ScopeCaptionText" Text="参照フォルダー" FontSize="11" FontWeight="SemiBold" Foreground="#637995" Margin="0,0,0,6"/>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border x:Name="ActiveScopeContainer" Width="280" Background="White" BorderBrush="#96B5DC" BorderThickness="1" CornerRadius="9">
-                                <Button x:Name="ScopePickerButton" Width="278" Click="ScopePickerButton_Click" Style="{StaticResource ScopePickerButtonStyle}" ToolTip="参照フォルダーを切り替える" Padding="12,7,12,7">
+                        <Border x:Name="ActiveScopeContainer" Width="280" Background="Transparent">
+                                <Button x:Name="ScopePickerButton" Width="280" Click="ScopePickerButton_Click" Style="{StaticResource ScopeSelectorButtonStyle}" ToolTip="参照フォルダーを切り替える" Padding="12,7,12,7">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Data="M2,5 L9,5 11,7 22,7 22,19 2,19 Z" Stroke="#2456A6" StrokeThickness="1.8" Width="19" Height="17" Stretch="Uniform" Margin="0,0,9,0" VerticalAlignment="Center"/>
                                         <TextBlock x:Name="ScopePickerText" Text="フォルダーを選択" FontSize="15" FontWeight="SemiBold" Foreground="#1E3559" Width="190" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                        <TextBlock Text="⌄" FontSize="16" Foreground="#667B99" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                        <Path Data="M1,1 C2.5,2.7 4,4.2 5,4.2 C6,4.2 7.5,2.7 9,1" Stroke="#667B99" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="11" Height="7" Stretch="Uniform" Margin="12,0,0,0" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
                         </Border>
@@ -206,6 +206,8 @@
                                     Style="{StaticResource FluentButtonSecondary}" Click="ExportButton_Click"/>
                             <Button x:Name="TabHistoryButton" Content="📈 容量推移グラフ" Height="32"
                                     Style="{StaticResource FluentButtonSecondary}" Click="HistoryButton_Click"/>
+                            <Button x:Name="StorageDetailsButton" Content="詳細を表示" Height="32" Margin="8,0,0,0"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="StorageDetailsButton_Click" ToolTip="容量上位ファイルと選択フォルダーの内訳を表示"/>
                         </WrapPanel>
                         <WrapPanel Grid.Row="1" Margin="0,9,0,0" VerticalAlignment="Center">
                             <TextBlock x:Name="StorageKpiScannedSizeTitle" Text="スキャン対象 容量" FontSize="11" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,5,0"/>
@@ -225,9 +227,9 @@
                 <!-- Storage Split View (Tree & Insights) -->
                 <Grid Grid.Row="2" Margin="20,0,20,12">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="6.5*"/>
-                        <ColumnDefinition Width="14"/>
-                        <ColumnDefinition Width="3.5*"/>
+                        <ColumnDefinition x:Name="StorageTreeColumn" Width="*"/>
+                        <ColumnDefinition x:Name="StorageDetailsGapColumn" Width="0"/>
+                        <ColumnDefinition x:Name="StorageDetailsColumn" Width="0"/>
                     </Grid.ColumnDefinitions>
 
                     <!-- Left: TreeGrid Card -->
@@ -350,10 +352,10 @@
                         </DataGrid>
                     </Border>
 
-                    <GridSplitter Grid.Column="1" Width="10" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE"/>
+                    <GridSplitter x:Name="StorageDetailsSplitter" Grid.Column="1" Width="10" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE" Visibility="Collapsed"/>
 
                     <!-- Right: Insights & Extensions -->
-                    <Border Grid.Column="2" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
+                    <Border x:Name="StorageDetailsPanel" Grid.Column="2" Visibility="Collapsed" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
                             BorderThickness="1" CornerRadius="12" Padding="16">
                         <Border.Effect>
                             <DropShadowEffect BlurRadius="12" ShadowDepth="2" Direction="270" Color="#000000" Opacity="0.03"/>
@@ -1632,11 +1634,11 @@
                         </Grid.RowDefinitions>
                         <Grid Grid.Row="0">
                             <Grid>
-                            <TextBox x:Name="SearchInputBox" Height="48" FontSize="16" Padding="15,0"
+                            <TextBox x:Name="SearchInputBox" Height="48" FontSize="16" Padding="8,0"
                                      VerticalContentAlignment="Center" BorderBrush="#CBD5E1"
                                      TextChanged="SearchInputBox_TextChanged" KeyDown="SearchInputBox_KeyDown"
                                      ToolTip="検索構文を入力 (例: ext:xlsx size:>10MB dormant:>3y content:社外秘 regex:^backup.*\.zip)"/>
-                            <TextBlock x:Name="SearchInputHint" Text="ファイル名や本文から検索" FontSize="15" Foreground="#A2AEC0" Margin="16,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                            <TextBlock x:Name="SearchInputHint" Text="ファイル名や本文から検索" FontSize="15" Foreground="#A2AEC0" Margin="9,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
                             </Grid>
                         </Grid>
                         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,0" VerticalAlignment="Center">

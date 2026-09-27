@@ -247,6 +247,24 @@
                 </Setter.Value></Setter>
             </Style>
 
+            <Style x:Key="ScopeSelectorButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="White"/>
+                <Setter Property="BorderBrush" Value="#96B5DC"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template"><Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="SelectorSurface" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="9" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="SelectorSurface" Property="Background" Value="#F0F5FB"/></Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="SelectorSurface" Property="Background" Value="#E4EEFA"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value></Setter>
+            </Style>
+
             <Style TargetType="TextBox">
                 <Setter Property="BorderBrush" Value="#C9D5E4"/>
                 <Setter Property="BorderThickness" Value="1"/>

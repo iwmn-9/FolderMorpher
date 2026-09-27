@@ -116,6 +116,7 @@ namespace AstraSize
             CancelButton.Content = isJa ? "中止" : "Cancel";
             ExportButton.Content = isJa ? "Excel / CSV 出力" : "Export Excel/CSV";
             TabHistoryButton.Content = isJa ? "📈 容量推移グラフ" : "📈 History Graph";
+            UpdateStorageDetailsButtonLabel();
 
             if (CtxTreeOpenExplorer != null) CtxTreeOpenExplorer.Header = isJa ? "📂 エクスプローラーで開く" : "📂 Open in Explorer";
             if (CtxTreeCopyPath != null) CtxTreeCopyPath.Header = isJa ? "📋 パスをコピー" : "📋 Copy Path";
