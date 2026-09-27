@@ -87,12 +87,6 @@ namespace AstraSize
             GlobalProgressBar.IsIndeterminate = true;
             AuditStatusText.Text = UiText("監査スキャン中...", "Scanning for cleanup candidates...");
 
-            var limit = AuditBandwidthLimit.Standard50MB;
-            if (AuditBandwidthComboBox != null && AuditBandwidthComboBox.SelectedItem is ComboBoxItem cbi && cbi.Tag?.ToString() == "Unlimited")
-            {
-                limit = AuditBandwidthLimit.Unlimited;
-            }
-
             var options = new AuditOptions
             {
                 TargetDirectory = target,
@@ -102,7 +96,7 @@ namespace AstraSize
                 CheckDormant = AuditCheckDormantCheckBox?.IsChecked == true,
                 CheckGraveyardTrees = AuditCheckDormantCheckBox?.IsChecked == true,
                 CheckPathLimits = AuditCheckPathLimitsCheckBox?.IsChecked == true,
-                BandwidthLimit = limit
+                BandwidthLimit = AuditBandwidthLimit.Auto
             };
 
             if (AuditExcludeFoldersTextBox != null && !string.IsNullOrWhiteSpace(AuditExcludeFoldersTextBox.Text))

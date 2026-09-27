@@ -626,7 +626,7 @@ namespace FolderMorpher.Services.Testing
                     CheckDormant = false,
                     CheckPathLimits = false,
                     MinFileSizeBytes = 100 * 1024,
-                    BandwidthLimit = AuditBandwidthLimit.Standard50MB
+                    BandwidthLimit = AuditBandwidthLimit.Auto
                 };
 
                 var (summary, items) = await auditService.RunAuditAsync(options, null, ct);
@@ -659,6 +659,13 @@ namespace FolderMorpher.Services.Testing
                 if (throttler.BytesPerSecond != 10 * 1024 * 1024)
                     throw new InvalidOperationException("BandwidthThrottler BytesPerSecond mismatch.");
                 await throttler.ThrottleAsync(1024, ct); // 微小バイトは遅延なしで通過
+                const long mib = 1024L * 1024;
+                if (new AuditOptions().BandwidthLimit != AuditBandwidthLimit.Auto ||
+                    BandwidthThrottler.SelectAdaptiveRate(50 * mib, 8 * mib, 100 * mib, 12, 10, 50 * mib, true) <= 50 * mib ||
+                    BandwidthThrottler.SelectAdaptiveRate(50 * mib, 8 * mib, 100 * mib, 110, 10, 50 * mib, true) >= 50 * mib ||
+                    BandwidthThrottler.SelectAdaptiveRate(50 * mib, 8 * mib, 100 * mib, 12, 10, 10 * mib, true) != 50 * mib ||
+                    BandwidthThrottler.SelectAdaptiveRate(50 * mib, 8 * mib, 100 * mib, 12, 10, 50 * mib, false) != 50 * mib)
+                    throw new InvalidOperationException("Adaptive audit pacing must rise only under healthy saturation and back off on high p95 latency.");
 
                 // 5. 英語モード時の CJK ゼロ検証
                 var origLang = LocalizationService.Instance.CurrentLanguage;
@@ -667,12 +674,6 @@ namespace FolderMorpher.Services.Testing
                     LocalizationService.Instance.SetLanguage(AppLanguage.English);
                     var japaneseRegex = new System.Text.RegularExpressions.Regex(@"[\p{IsCJKUnifiedIdeographs}\p{IsHiragana}\p{IsKatakana}]");
 
-                    if (japaneseRegex.IsMatch(Strings.AuditBandwidthLimitLabel))
-                        throw new InvalidOperationException($"English AuditBandwidthLimitLabel contains Japanese: '{Strings.AuditBandwidthLimitLabel}'");
-                    if (japaneseRegex.IsMatch(Strings.AuditBandwidthStandard))
-                        throw new InvalidOperationException($"English AuditBandwidthStandard contains Japanese: '{Strings.AuditBandwidthStandard}'");
-                    if (japaneseRegex.IsMatch(Strings.AuditBandwidthUnlimited))
-                        throw new InvalidOperationException($"English AuditBandwidthUnlimited contains Japanese: '{Strings.AuditBandwidthUnlimited}'");
                     if (japaneseRegex.IsMatch(Strings.AuditProgressQuickHash))
                         throw new InvalidOperationException($"English AuditProgressQuickHash contains Japanese: '{Strings.AuditProgressQuickHash}'");
                     if (japaneseRegex.IsMatch(Strings.AuditProgressFullHash))

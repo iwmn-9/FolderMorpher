@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using FolderMorpher.Services;
 
@@ -13,9 +14,11 @@ public partial class MainWindow
     private sealed class ScanEtaSession
     {
         public required string HistoryKey { get; init; }
+        public required string Operation { get; init; }
         public Stopwatch Elapsed { get; } = Stopwatch.StartNew();
         public double? PreviousSeconds { get; init; }
         public long? ExpectedItems { get; set; }
+        public bool HasExactTotal { get; set; }
         public long CompletedItems { get; set; }
         public int DiscoveredDirectories { get; set; }
         public int ProcessedDirectories { get; set; }
@@ -35,10 +38,11 @@ public partial class MainWindow
         var session = new ScanEtaSession
         {
             HistoryKey = key,
+            Operation = operation,
             PreviousSeconds = history != null && history.TryGetValue(key, out double seconds) &&
                 double.IsFinite(seconds) && seconds > 0 ? seconds : null,
             ExpectedItems = expectedItems > 0 ? expectedItems : null,
-            IsNetworkScope = scope.StartsWith(@"\\", StringComparison.Ordinal)
+            IsNetworkScope = PathCanonicalizer.IsNetworkPath(scope)
         };
         _scanEtaSessions.Add(session);
         _scanEtaTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -49,10 +53,11 @@ public partial class MainWindow
         return session;
     }
 
-    private void UpdateScanEtaTotal(ScanEtaSession? session, long? expectedItems)
+    private void UpdateScanEtaTotal(ScanEtaSession? session, long? expectedItems, bool exact = false)
     {
         if (session == null || !_scanEtaSessions.Contains(session) || expectedItems <= 0) return;
         session.ExpectedItems = expectedItems;
+        session.HasExactTotal = exact;
         RefreshScanEta();
     }
 
@@ -88,50 +93,54 @@ public partial class MainWindow
 
     private void RefreshScanEta()
     {
-        if (ScanEtaText == null) return;
-        if (_scanEtaSessions.Count == 0)
+        if (ScanEtaText == null || SearchEtaText == null) return;
+        RenderScanEta(ScanEtaText, _scanEtaSessions.LastOrDefault(s => !s.Operation.StartsWith("search-", StringComparison.Ordinal)), false);
+        RenderScanEta(SearchEtaText, _scanEtaSessions.LastOrDefault(s => s.Operation.StartsWith("search-", StringComparison.Ordinal)), true);
+        SearchEtaBadge.Visibility = SearchEtaText.Visibility;
+    }
+
+    private void RenderScanEta(TextBlock target, ScanEtaSession? session, bool compact)
+    {
+        if (session == null)
         {
-            ScanEtaText.Visibility = Visibility.Collapsed;
+            target.Visibility = Visibility.Collapsed;
             return;
         }
 
-        var session = _scanEtaSessions[^1];
         double elapsed = session.Elapsed.Elapsed.TotalSeconds;
         double? remaining = null;
         string source = string.Empty;
-        if (session.ExpectedItems is > 0 and var total &&
-            session.CompletedItems >= 50 && session.CompletedItems < total &&
-            elapsed >= 5 && (double)session.CompletedItems / total >= 0.05)
+        if (session.ExpectedItems is > 0 and var total && session.CompletedItems < total &&
+            session.CompletedItems >= 200 && elapsed >= 15 &&
+            (double)session.CompletedItems / total >= 0.05 &&
+            (session.HasExactTotal || (double)session.CompletedItems / total <= 0.75))
         {
-            remaining = elapsed * (total - session.CompletedItems) / session.CompletedItems * 1.25;
+            // A cached count may be stale, and the first fast burst does not represent
+            // the slow tail (Office/PDF extraction, large files, access latency).
+            double factor = session.HasExactTotal ? 1.4 : session.Operation == "storage" ? 1.8 : 2.8;
+            remaining = elapsed * (total - session.CompletedItems) / session.CompletedItems * factor;
             source = "measured";
         }
-        else if (elapsed >= 6 && session.PreviousSeconds is double previous && previous > elapsed + 3)
+        else if (elapsed >= 12 && session.PreviousSeconds is double previous && previous > elapsed + 3)
         {
-            remaining = (previous - elapsed) * 1.3;
+            remaining = Math.Max(previous * 2.2 - elapsed, previous - elapsed);
             source = "history";
         }
-        else if (elapsed >= 8 && session.CompletedItems >= 50)
+        else if (elapsed >= 20 && session.CompletedItems >= 500)
         {
-            // With no known total, this is deliberately a broad first-run forecast.
-            // It uses only work already performed by the actual scan; no pre-scan is started.
             double rate = session.CompletedItems / elapsed;
-            double assumedTotal = Math.Max(session.CompletedItems * 8.0, session.IsNetworkScope ? 200_000 : 50_000);
-            remaining = Math.Max(session.IsNetworkScope ? 1800 : 600,
-                (assumedTotal - session.CompletedItems) / rate * 1.5);
+            // Unknown total: keep a deliberately broad upper-side estimate.
+            // Avoid locking a short deadline from a fast startup sample.
+            double assumedTotal = Math.Max(session.CompletedItems * 32.0,
+                session.IsNetworkScope ? 1_000_000 : 250_000);
+            remaining = Math.Max(session.IsNetworkScope ? 3600 : 1200,
+                (assumedTotal - session.CompletedItems) / rate * 2.5);
             if (session.ProcessedDirectories >= 4 && session.DiscoveredDirectories > session.ProcessedDirectories)
             {
                 double pendingDirectories = session.DiscoveredDirectories - session.ProcessedDirectories;
-                remaining = Math.Max(remaining.Value, elapsed / session.ProcessedDirectories * pendingDirectories * 8);
+                remaining = Math.Max(remaining.Value, elapsed / session.ProcessedDirectories * pendingDirectories * 16);
             }
             source = "first-run";
-        }
-        else if (elapsed >= 12)
-        {
-            // Some scanners currently report status text only. Give a cautious first
-            // estimate once the operation has demonstrably continued past startup.
-            remaining = Math.Max(session.IsNetworkScope ? 1800 : 600, elapsed * 16);
-            source = "first-run-status";
         }
 
         if (remaining is double seconds && double.IsFinite(seconds) && seconds >= 3)
@@ -149,17 +158,40 @@ public partial class MainWindow
             double displaySeconds = (deadline - DateTime.Now).TotalSeconds;
             if (displaySeconds <= 0)
             {
-                ScanEtaText.Text = UiText("見込み時刻を超えて走査中", "Scanning beyond estimate");
+                target.Text = UiText("見込み時刻を超えて走査中", "Scanning beyond estimate");
             }
             else
             {
-                string duration = displaySeconds < 60
-                    ? UiText($"約{Math.Ceiling(displaySeconds / 5) * 5:0}秒", $"~{Math.Ceiling(displaySeconds / 5) * 5:0}s")
-                    : UiText($"約{Math.Ceiling(displaySeconds / 60):0}分", $"~{Math.Ceiling(displaySeconds / 60):0}m");
-                ScanEtaText.Text = UiText($"完了目安 {deadline:HH:mm}（残り{duration}）",
-                    $"ETA {deadline:HH:mm} ({duration} left)");
+                string duration;
+                if (displaySeconds < 60)
+                {
+                    double roundedSeconds = Math.Ceiling(displaySeconds / 5) * 5;
+                    duration = UiText($"約{roundedSeconds:0}秒", $"~{roundedSeconds:0}s");
+                }
+                else if (displaySeconds < 3600)
+                {
+                    double minutes = Math.Ceiling(displaySeconds / 60);
+                    duration = UiText($"約{minutes:0}分", $"~{minutes:0}m");
+                }
+                else if (displaySeconds < 86400)
+                {
+                    int tenMinuteBlocks = (int)Math.Ceiling(displaySeconds / 600);
+                    int hours = tenMinuteBlocks / 6;
+                    int minutes = tenMinuteBlocks % 6 * 10;
+                    duration = minutes == 0
+                        ? UiText($"約{hours}時間", $"~{hours}h")
+                        : UiText($"約{hours}時間{minutes}分", $"~{hours}h {minutes}m");
+                }
+                else
+                {
+                    int days = (int)Math.Ceiling(displaySeconds / 86400);
+                    duration = UiText($"約{days}日", $"~{days}d");
+                }
+                target.Text = compact
+                    ? UiText($"残り{duration}", $"{duration} left")
+                    : UiText($"完了目安 {deadline:HH:mm}（残り{duration}）", $"ETA {deadline:HH:mm} ({duration} left)");
             }
-            ScanEtaText.ToolTip = session.EstimateSource switch
+            target.ToolTip = session.EstimateSource switch
             {
                 "measured" => UiText("前回の件数と今回の処理速度から算出した概算です。残り時間の表示は増やさず、早まる時だけ更新します。",
                     "Approximation from previous item count and current throughput. The displayed remaining time only moves down."),
@@ -171,10 +203,10 @@ public partial class MainWindow
         }
         else
         {
-            ScanEtaText.Text = UiText("見積もり中…", "Estimating…");
-            ScanEtaText.ToolTip = UiText("走査の進み具合を観測しています。事前の全件走査は行いません。",
+            target.Text = UiText("見積もり中…", "Estimating…");
+            target.ToolTip = UiText("走査の進み具合を観測しています。事前の全件走査は行いません。",
                 "Observing scan progress without an extra pre-scan.");
         }
-        ScanEtaText.Visibility = Visibility.Visible;
+        target.Visibility = Visibility.Visible;
     }
 }

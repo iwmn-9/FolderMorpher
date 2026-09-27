@@ -344,10 +344,15 @@ namespace FolderMorpher.Services
                     foreach (var batch in readyWithoutHash.Chunk(100)) candidateProgress.Report(batch);
                 }
 
-                // Step 3: フルSHA256による確定検証 (並列度2 & 帯域リミッター)
-                BandwidthThrottler? throttler = options.BandwidthLimit == AuditBandwidthLimit.Standard50MB
-                    ? new BandwidthThrottler(50L * 1024 * 1024)
-                    : null;
+                // Full SHA-256 reads: local disks run freely; shared storage is
+                // paced against observed read latency with a conservative ceiling.
+                BandwidthThrottler? throttler = options.BandwidthLimit switch
+                {
+                    AuditBandwidthLimit.Standard50MB => new BandwidthThrottler(50L * 1024 * 1024),
+                    AuditBandwidthLimit.Auto when PathCanonicalizer.IsNetworkPath(options.TargetDirectory)
+                        => BandwidthThrottler.CreateAdaptiveNetwork(),
+                    _ => null
+                };
 
                 using var semaphore = new SemaphoreSlim(DuplicateConcurrency, DuplicateConcurrency);
                 int dupGroupIndex = 1;
@@ -625,9 +630,12 @@ namespace FolderMorpher.Services
                 byte[] buffer = new byte[65536];
                 await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, true);
 
-                int bytesRead;
-                while ((bytesRead = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), ct)) > 0)
+                while (true)
                 {
+                    long readStart = System.Diagnostics.Stopwatch.GetTimestamp();
+                    int bytesRead = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
+                    if (bytesRead == 0) break;
+                    throttler?.ObserveRead(bytesRead, System.Diagnostics.Stopwatch.GetElapsedTime(readStart).TotalMilliseconds);
                     sha256.TransformBlock(buffer, 0, bytesRead, null, 0);
                     if (throttler != null)
                     {
@@ -637,6 +645,10 @@ namespace FolderMorpher.Services
 
                 sha256.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
                 return Convert.ToHexString(sha256.Hash!).ToLowerInvariant();
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch
             {
@@ -686,22 +698,96 @@ namespace FolderMorpher.Services
     }
 
     /// <summary>
-    /// ネットワーク・ディスク帯域を平滑化制御するスロットラー。
-    /// 複数スレッド（並列度2）からの累積転送量と経過時間を監視し、指定レートを超過した場合にミリ秒待機を挿入する。
+    /// Two-worker SHA-256 read pacer. In adaptive mode it reacts to the p95
+    /// latency of real reads; it never probes the server or changes its settings.
     /// </summary>
     public class BandwidthThrottler
     {
-        private readonly long _bytesPerSecond;
+        private long _bytesPerSecond;
+        private readonly long _maximumBytesPerSecond;
+        private readonly long _minimumBytesPerSecond;
+        private long _safeCeilingBytesPerSecond;
+        private DateTime _increaseAllowedAtUtc;
         private readonly System.Diagnostics.Stopwatch _stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        private readonly System.Diagnostics.Stopwatch _samplingWindow = System.Diagnostics.Stopwatch.StartNew();
         private long _totalBytesTransferred;
+        private long _windowBytes;
+        private readonly Queue<double> _readLatencies = new();
+        private double _baselineP95 = double.PositiveInfinity;
         private readonly object _lock = new();
 
         public BandwidthThrottler(long bytesPerSecond)
         {
             _bytesPerSecond = bytesPerSecond;
+            _minimumBytesPerSecond = bytesPerSecond;
+            _maximumBytesPerSecond = bytesPerSecond;
+            _safeCeilingBytesPerSecond = bytesPerSecond;
         }
 
-        public long BytesPerSecond => _bytesPerSecond;
+        private BandwidthThrottler(long initial, long minimum, long maximum)
+        {
+            _bytesPerSecond = initial;
+            _minimumBytesPerSecond = minimum;
+            _maximumBytesPerSecond = maximum;
+            _safeCeilingBytesPerSecond = maximum;
+        }
+
+        public static BandwidthThrottler CreateAdaptiveNetwork() =>
+            new(50L * 1024 * 1024, 8L * 1024 * 1024, 100L * 1024 * 1024);
+
+        public long BytesPerSecond { get { lock (_lock) return _bytesPerSecond; } }
+
+        public void ObserveRead(int bytesRead, double latencyMilliseconds)
+        {
+            if (_minimumBytesPerSecond == _maximumBytesPerSecond || bytesRead <= 0 ||
+                !double.IsFinite(latencyMilliseconds) || latencyMilliseconds <= 0) return;
+
+            lock (_lock)
+            {
+                _windowBytes += bytesRead;
+                _readLatencies.Enqueue(latencyMilliseconds);
+                if (_readLatencies.Count > 64) _readLatencies.Dequeue();
+                double windowSeconds = _samplingWindow.Elapsed.TotalSeconds;
+                if (windowSeconds < 2 || _readLatencies.Count < 32) return;
+
+                var ordered = _readLatencies.OrderBy(value => value).ToArray();
+                double p95 = ordered[(int)Math.Ceiling(ordered.Length * 0.95) - 1];
+                _baselineP95 = Math.Min(_baselineP95, p95);
+                long nextRate = SelectAdaptiveRate(_bytesPerSecond, _minimumBytesPerSecond,
+                    Math.Min(_maximumBytesPerSecond, _safeCeilingBytesPerSecond), p95,
+                    _baselineP95, _windowBytes / windowSeconds, DateTime.UtcNow >= _increaseAllowedAtUtc);
+
+                if (nextRate != _bytesPerSecond)
+                {
+                    if (nextRate < _bytesPerSecond)
+                    {
+                        // Do not repeatedly test a rate that already hurt the share.
+                        _safeCeilingBytesPerSecond = Math.Min(_safeCeilingBytesPerSecond,
+                            Math.Max(nextRate, (long)(nextRate * 1.2)));
+                        _increaseAllowedAtUtc = DateTime.UtcNow.AddSeconds(30);
+                    }
+                    _bytesPerSecond = nextRate;
+                    _totalBytesTransferred = 0;
+                    _stopwatch.Restart();
+                }
+                _samplingWindow.Restart();
+                _windowBytes = 0;
+                _readLatencies.Clear();
+            }
+        }
+
+        internal static long SelectAdaptiveRate(long current, long minimum, long maximum,
+            double p95Milliseconds, double baselineP95Milliseconds, double achievedBytesPerSecond,
+            bool allowIncrease)
+        {
+            if (p95Milliseconds >= 100 || p95Milliseconds > Math.Max(40, baselineP95Milliseconds * 2))
+                return Math.Max(minimum, (long)(current * 0.7));
+            if (allowIncrease && p95Milliseconds <= 40 &&
+                p95Milliseconds <= Math.Max(5, baselineP95Milliseconds * 1.5) &&
+                achievedBytesPerSecond >= current * 0.75)
+                return Math.Min(maximum, (long)(current * 1.2));
+            return current;
+        }
 
         public async Task ThrottleAsync(int bytesRead, CancellationToken ct)
         {

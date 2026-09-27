@@ -384,9 +384,6 @@ namespace AstraSize
             AuditCheckDormantCheckBox.Content = isJa ? "休眠・墓場 (3年超)" : "Dormant (3+ Yrs)";
             AuditCheckDormantCheckBox.ToolTip = isJa ? "3年以上更新がなく閲覧も途絶えたファイル・フォルダーを検出" : "Find files and folders untouched for over three years";
             AuditCheckPathLimitsCheckBox.Content = isJa ? "パス長/禁則" : "Path / Invalid";
-            if (AuditBandwidthLabel != null) AuditBandwidthLabel.Text = isJa ? "帯域:" : "Bandwidth:";
-            if (AuditBandwidthStandardItem != null) AuditBandwidthStandardItem.Content = Strings.AuditBandwidthStandard;
-            if (AuditBandwidthUnlimitedItem != null) AuditBandwidthUnlimitedItem.Content = Strings.AuditBandwidthUnlimited;
 
             if (ColAuditConfidence != null) ColAuditConfidence.Header = isJa ? "整理優先度" : "Cleanup Priority";
             ColAuditIssueType.Header = isJa ? "問題種別" : "Issue Type";

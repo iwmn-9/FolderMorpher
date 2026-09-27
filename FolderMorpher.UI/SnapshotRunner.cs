@@ -193,6 +193,18 @@ public static class SnapshotRunner
                                 if (mw.AdminSidebar.Visibility != Visibility.Collapsed || mw.AdminSidebarColumn.Width.Value != 0)
                                     throw new InvalidOperationException("The administration sidebar did not start collapsed.");
                             }
+                            else if (selectTab == 23)
+                            {
+                                mw.Width = 1100;
+                                mw.Height = 720;
+                                mw.NavTabSearch.IsChecked = true;
+                                mw.SearchKpiElapsedText.Text = "2:10";
+                                mw.SearchEtaText.Text = "残り約1時間20分";
+                                mw.SearchEtaText.Visibility = Visibility.Visible;
+                                mw.SearchEtaBadge.Visibility = Visibility.Visible;
+                                if (mw.SearchEtaBadge.Parent != mw.SearchKpiElapsedText.Parent)
+                                    throw new InvalidOperationException("Search ETA is not adjacent to elapsed time.");
+                            }
                             else if (selectTab == 21)
                             {
                                 mw.Width = 1100;

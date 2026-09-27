@@ -1172,11 +1172,6 @@
                                     <CheckBox x:Name="AuditCheckDuplicatesCheckBox" Content="完全重複" IsChecked="True" VerticalAlignment="Center" Margin="0,0,10,0" FontSize="12" Foreground="#334155" ToolTip="SHA-256が完全一致する重複ファイルを検出"/>
                                     <CheckBox x:Name="AuditCheckDormantCheckBox" Content="休眠・墓場 (3年超)" IsChecked="True" VerticalAlignment="Center" Margin="0,0,10,0" FontSize="12" Foreground="#334155" ToolTip="3年以上更新がなく閲覧も途絶えたファイル・フォルダーを検出"/>
                                     <CheckBox x:Name="AuditCheckPathLimitsCheckBox" Content="パス長/禁則" IsChecked="True" VerticalAlignment="Center" Margin="0,0,14,0" FontSize="12" Foreground="#334155"/>
-                                    <TextBlock x:Name="AuditBandwidthLabel" Text="帯域:" VerticalAlignment="Center" FontSize="12" Foreground="#64748B" Margin="0,0,6,0"/>
-                                    <ComboBox x:Name="AuditBandwidthComboBox" Height="30" Width="190" VerticalAlignment="Center" FontSize="11.5">
-                                        <ComboBoxItem x:Name="AuditBandwidthStandardItem" Content="通常 50MB/s (保護)" IsSelected="True" Tag="Standard50MB"/>
-                                        <ComboBoxItem x:Name="AuditBandwidthUnlimitedItem" Content="無制限 (夜間最速)" Tag="Unlimited"/>
-                                    </ComboBox>
                                 </WrapPanel>
                             </Grid>
 
@@ -1699,6 +1694,9 @@
                                 <Border Width="1" Height="14" Background="#E2E8F0" Margin="10,0" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="SearchKpiElapsedTitle" Text="時間" FontSize="11" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                 <TextBlock x:Name="SearchKpiElapsedText" Text="0.00s" FontSize="12" FontWeight="SemiBold" Typography.NumeralAlignment="Tabular" Foreground="#059669" VerticalAlignment="Center"/>
+                                <Border x:Name="SearchEtaBadge" Visibility="Collapsed" Background="#EFF6FF" CornerRadius="5" Padding="6,2" Margin="9,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock x:Name="SearchEtaText" FontSize="11" FontWeight="SemiBold" Foreground="#1D4ED8" VerticalAlignment="Center"/>
+                                </Border>
                             </StackPanel>
                             <Grid Grid.Column="2" Margin="15,0,12,0" VerticalAlignment="Center">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>

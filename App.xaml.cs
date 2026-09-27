@@ -429,7 +429,8 @@ namespace AstraSize
                                     CheckVersionFamilies = false,
                                     CheckExtractedArchives = false,
                                     CheckGraveyardTrees = false,
-                                    CheckPathLimits = false
+                                    CheckPathLimits = false,
+                                    BandwidthLimit = 2 // Auto wire value; AuditBandwidthLimit is linked into both UI and Core.
                                 }
                             });
                             FolderMorpher.Contracts.HostJobStatusDto auditJob;

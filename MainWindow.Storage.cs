@@ -299,7 +299,7 @@ namespace AstraSize
             {
                 if (p.TotalWorkUnits > 0)
                 {
-                    UpdateScanEtaTotal(scanEta, p.TotalWorkUnits);
+                    UpdateScanEtaTotal(scanEta, p.TotalWorkUnits, exact: true);
                     ReportScanEta(scanEta, p.ProcessedWorkUnits);
                 }
                 else
