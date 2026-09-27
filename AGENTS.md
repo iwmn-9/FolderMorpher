@@ -52,7 +52,7 @@
   3. **`FolderMorpher.Host`**: `UseWPF=false` のライブラリ。`FolderMorpher.exe --host` で起動し、Coreサービス、SQLite、設定、ジョブを所有する。Named PipeはユーザーSIDとセッションを識別し、`PipeOptions.CurrentUserOnly` を使用。
   4. **`FolderMorpher.UI`**: WPF画面、画面用モデル、DTO変換、IPCクライアントを持ち、プロジェクト参照はContractsのみ。Coreモデルの事実部分は同一ソースをUIでもコンパイルし、分離済みの表示部分はUI partial classで足す。共有ソースの検索構文解析は残存する。
      - `FolderMorpherHostClient` はHost未起動時に同じEXEを `--host` で起動し、切断時に再接続する。GUIより旧版のHostにJobがなければ正常終了を要求して新版Hostを起動し、Job実行中なら止めずに理由を表示する。GUIが旧版ならHostを巻き戻さない。
-     - 通常のウィンドウ終了ではHostのJobを継続する。環境設定の「アプリとHostを終了」は実行中Jobを確認してから `RequestShutdownAsync` でHostを正常終了する。
+     - 通常のウィンドウ終了ではHostのJobを継続する。環境設定の `CloseHostOnWindowClose` は初期値オフで、オンの場合はウィンドウを閉じる際にHostのJobをキャンセルして `RequestShutdownIfRunningAsync` で正常終了する。閉じる操作で新しいHostを起動しない（ADR 118）。
 - **ビルド形態**: `Release win-x64` の **自己完結型（Self-Contained）単一実行可能ファイル (`FolderMorpher.exe`)**
   - 配布出力の正本はリポジトリ直下の `dist/FolderMorpher.exe`。`FolderMorpher.csproj` の `PublishDir` とCI・手元の手順を同じ場所へ統一する。`bin` 内の旧 `AstraSize.*` は現在のビルド成果物ではない（ADR 115）。
   - ネイティブWPFエンジンDLLおよび SQLite ネイティブDLLはEXE内部にバンドルされる。
@@ -66,7 +66,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 
 | 機能領域 / タブ | XAML (MainWindow / View) | C# コードビハインド | 関連 Service / Model | 責務と概要 |
 | :--- | :--- | :--- | :--- | :--- |
-| **全体共通 / モード・作業スコープ・フォルダー操作** | `MainWindow.xaml` の `NavTab*`、`ScopePopup`、`CleanupSectionBar` | `MainWindow.Scope.cs`<br>`MainWindow.Localization.cs`<br>`FolderMorpher.UI/Dialogs/AppDialog.cs` | `AppSettingsDto`<br>`HostService.BrowseChildFoldersAsync` | 上段は一般用途と管理（権限・移行・リンク）。選択フォルダーの下に検索・容量・整理を横並びに配置し、整理内で候補とメディア最適化を切り替える。管理画面では下段操作列を隠す。言語設定は設定パネルに置く。参照フォルダーは最近の場所と遅延展開の階層から選び、検索・容量・整理の対象へ同期する。Host経由で一階層だけ列挙する。確認・エラーは共通ダイアログ、TextBox・ScrollBar・ComboBoxは共通スタイル。OSファイル選択はコモンダイアログを利用（ADR 116、117）。 |
+| **全体共通 / モード・作業スコープ・フォルダー操作** | `MainWindow.xaml` の `NavTab*`、`ScopePopup`、`CleanupSectionBar` | `MainWindow.Scope.cs`<br>`MainWindow.Localization.cs`<br>`FolderMorpher.UI/Dialogs/AppDialog.cs` | `AppSettingsDto`<br>`HostService.BrowseChildFoldersAsync` | 上段は一般用途と管理（権限・移行・リンク）。参照フォルダーは強調した選択ボタン、隣接した追加ボタン、最近の場所のチップで切り替える。ホバー中の×は登録解除のみで原本ファイルもTreeCacheも消さない。下段の検索・容量・整理は一体の切替にし、整理内で候補とメディア最適化を切り替える。管理画面では下段操作列を隠す。言語設定とHost終了設定は設定パネルに置く。参照フォルダーは遅延展開の階層からも選べる。Host経由で一階層だけ列挙する。確認・エラーは共通ダイアログ、TextBox・ScrollBar・ComboBoxは共通スタイル。OSファイル選択はコモンダイアログを利用（ADR 116〜118）。 |
 | **Tab 1: 容量分析**<br>(Storage Explorer) | `StorageTabPanel` (L82-410)<br>`HistoryWindow.xaml` | `MainWindow.Storage.cs`<br>`HistoryWindow.xaml.cs` | `DiskScanService.cs`<br>`SqliteTreeCacheService.cs`<br>`StorageHistoryService.cs`<br>`ScanTabModel.cs`<br>`FileItemNode.cs` | Hostからルートと直下だけを取得し、フォルダー展開時に子の一階層を取得する。容量上位Top10と直下シェアもHostで集計。複数タブ、容量推移、予測を提供 |
 | **Tab 2: ファイル検索**<br>(Search Studio) | `SearchTabPanel`<br>(`MainWindow.xaml`) | `MainWindow.Search.cs` | `SearchEngineService.cs`<br>`ServerSearchAccelerator.cs`<br>`WindowsSearchProvider.cs`<br>`TreeCachePruningIndex.cs`<br>`PathCanonicalizer.cs`<br>`SharedIoGovernor.cs`<br>`ContentExtractionService.cs`<br>`SearchQueryParser.cs`<br>`PdfSearchHelper.cs`<br>`SearchModels.cs` | **検索専用DBなし（現行スキャンツリーのメモリ照合・ローカルTreeCache逐次照合・未スキャン対象のLive直接走査）**、**サーバー側インデックス拝借＆候補ピンポイント原本確認（ServerSearchAccelerator: WSP / Synology 等）**、**Producer-Consumer Channel パイプライン（最大12並行）**、ripgrep流 64KBスライディングバッファ直接走査、Office/PDF 境界分割保護＆二重解析根絶、UNCルート単位 I/O ガバナー（`SharedIoGovernor` AIMD）、パス正規化エンジン（`PathCanonicalizer`: Z:\ ⇄ UNC 自動解決）、Tabler File-Type バッジ、高機能検索クエリ構文（ワイルドカード・論理演算・属性指定）、右クリック連携およびExcel/CSV出力 |
 | **Tab 3: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `Views/LiveAclStudio.xaml`<br>(`LiveAclFolderView`, `LiveAclReverseView`, `LiveAclDiffModalOverlay`, `NewFolderModalOverlay`) | `Views/LiveAclStudio.xaml.cs` | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACL可視化・編集、**Dry-Run差分チェックモーダル（AclChangePlan貫通・継承変更警告・セマンティックVerify・SDDLロールバック）**、AD逆引き権限監査、均一幅ADアカウントカード、ADパレットUI統一、ADバックグラウンド自動同期、ツリーインライン新規フォルダー作成 |
@@ -90,7 +90,7 @@ GUIは `SearchQuery.HasDeepFileIoRequirement` を正本としてLive本文・Off
 
 スキャンツリーがHostメモリにない場合のキャッシュ検索は、TreeCacheを全ツリーへ復元せず `SqliteTreeCacheService.EnumerateSearchEntries` から逐次照合する。再スキャンの前回差分も旧ツリーを復元せずDB行を逐次読む。どちらもローカルDBだけを読むのでUNCへの追加I/Oは発生しない。
 
-GUIの検索実行はLiveとキャッシュの双方をHost Jobとして所有し、停止・クリア・入力変更で旧Jobへキャンセルを伝える。空の検索条件では自動検索を起動しない。Host Jobのキャンセルは `HostJobClient` と `HostService.Jobs.cs` が正本で、GUIは世代番号で遅延応答を破棄する。検索ヒットは `GetSearchJobResultsAsync` の連番カーソルで途中表示し、Hostの途中送信用リングは最大2048件、完了時の `SearchResults` が最終正本。GUIの件数はキャッシュ先行結果とLive結果の重複除去後に数え、Jobごとの進捗件数で上書きしない。列挙不能フォルダーと例外で読めなかった本文ファイルを最終状態に表示する（すべての抽出器内部の失敗を検出できるわけではない）。
+GUIの検索実行はLiveとキャッシュの双方をHost Jobとして所有し、停止・クリア・入力変更で旧Jobへキャンセルを伝える。検索ボタンは実行中だけ同位置の「中止」に変わり、停止・完了で「検索」に戻る。空の検索条件では自動検索を起動しない。Host Jobのキャンセルは `HostJobClient` と `HostService.Jobs.cs` が正本で、GUIは世代番号で遅延応答を破棄する。検索ヒットは `GetSearchJobResultsAsync` の連番カーソルで途中表示し、Hostの途中送信用リングは最大2048件、完了時の `SearchResults` が最終正本。GUIの件数はキャッシュ先行結果とLive結果の重複除去後に数え、Jobごとの進捗件数で上書きしない。列挙不能フォルダーと例外で読めなかった本文ファイルを最終状態に表示する（すべての抽出器内部の失敗を検出できるわけではない）。
 
 UNC/ネットワークドライブの容量スキャンは検索列挙と `SharedIoGovernor.EnumerationController` を共有し、同一共有先の列挙枠を合計2にする。`SafeFileEnumerator` の列挙と巨大ファイル再検査は各コントローラーのリースを1回だけ取得する。権限逆引きの現在ユーザー判定は修飾名の短縮名一致を禁じ、SID一致または完全修飾名一致に限定する（ADR 112）。
 
@@ -109,7 +109,7 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの設計判断記録（ADR 1〜116）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの設計判断記録（ADR 1〜118）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 

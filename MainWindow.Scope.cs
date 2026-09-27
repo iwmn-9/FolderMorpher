@@ -53,7 +53,6 @@ public partial class MainWindow
             ClearSearchResults();
         }
         if (SearchDirectTargetTextBox != null) SearchDirectTargetTextBox.Text = path;
-        if (SearchBreadcrumbScopeText != null) SearchBreadcrumbScopeText.Text = ScopeLeaf(path);
         if (AuditPathTextBox != null) AuditPathTextBox.Text = path;
         if (MediaPathTextBox != null) MediaPathTextBox.Text = path;
         if (LinkSearchScopeTextBox != null) LinkSearchScopeTextBox.Text = path;
@@ -81,10 +80,7 @@ public partial class MainWindow
         ScopePickerText.Text = string.IsNullOrWhiteSpace(_activeScopePath)
             ? UiText("フォルダーを選択", "Choose a folder")
             : ScopeLeaf(_activeScopePath);
-        ScopeFullPathText.Text = _activeScopePath;
-        if (SearchBreadcrumbScopeText != null)
-            SearchBreadcrumbScopeText.Text = string.IsNullOrWhiteSpace(_activeScopePath)
-                ? UiText("参照フォルダー", "Working folder") : ScopeLeaf(_activeScopePath);
+        ScopeRemoveButton.Visibility = Visibility.Hidden;
         ScopePickerButton.ToolTip = string.IsNullOrWhiteSpace(_activeScopePath)
             ? UiText("参照フォルダーを切り替える", "Switch the working folder")
             : _activeScopePath;
@@ -115,9 +111,17 @@ public partial class MainWindow
 
     private void RenderScopeChoices()
     {
-        if (ScopeRecentItems == null || ScopeTree == null) return;
+        if (ScopeRecentItems == null || ScopeTree == null || ScopeQuickAccessPanel == null) return;
         var settings = AppSettingsService.Instance.Current;
-        var paths = (settings.RecentScopePaths ?? new List<string>())
+        var recentPaths = (settings.RecentScopePaths ?? new List<string>())
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        ScopeQuickAccessPanel.Children.Clear();
+        foreach (var path in recentPaths.Where(path => !string.Equals(path, _activeScopePath, StringComparison.OrdinalIgnoreCase)).Take(4))
+            ScopeQuickAccessPanel.Children.Add(CreateScopeQuickChip(path));
+
+        var paths = recentPaths
             .Concat(settings.StorageTabPaths ?? new List<string>())
             .Append(_activeScopePath)
             .Where(path => !string.IsNullOrWhiteSpace(path))
@@ -153,6 +157,108 @@ public partial class MainWindow
         ScopeTree.Items.Clear();
         foreach (var path in visible)
             ScopeTree.Items.Add(CreateScopeTreeItem(path));
+    }
+
+    private Border CreateScopeQuickChip(string path)
+    {
+        var selectButton = new Button
+        {
+            Content = new TextBlock { Text = ScopeLeaf(path), MaxWidth = 150, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center },
+            ToolTip = path,
+            Height = 36,
+            Padding = new Thickness(11, 0, 4, 0),
+            Style = (Style)FindResource("ScopePickerButtonStyle")
+        };
+        selectButton.Click += (_, _) => ChooseScope(path);
+        var removeButton = new Button
+        {
+            Content = "×",
+            ToolTip = UiText("参照一覧から外す（実フォルダーは削除しません）", "Remove from this list (files stay untouched)"),
+            Width = 23,
+            Height = 23,
+            Opacity = 0,
+            IsHitTestVisible = false,
+            VerticalAlignment = VerticalAlignment.Center,
+            Style = (Style)FindResource("ScopePickerButtonStyle")
+        };
+        removeButton.Click += (_, _) => RemoveRegisteredScope(path);
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(25) });
+        Grid.SetColumn(removeButton, 1);
+        grid.Children.Add(selectButton);
+        grid.Children.Add(removeButton);
+        var chip = new Border
+        {
+            Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(218, 229, 242)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Margin = new Thickness(0, 0, 7, 0),
+            Child = grid
+        };
+        chip.MouseEnter += (_, _) => { removeButton.Opacity = 1; removeButton.IsHitTestVisible = true; };
+        chip.MouseLeave += (_, _) => { removeButton.Opacity = 0; removeButton.IsHitTestVisible = false; };
+        return chip;
+    }
+
+    private void ActiveScopeContainer_MouseEnter(object sender, MouseEventArgs e)
+    {
+        if (!string.IsNullOrWhiteSpace(_activeScopePath)) ScopeRemoveButton.Visibility = Visibility.Visible;
+    }
+
+    private void ActiveScopeContainer_MouseLeave(object sender, MouseEventArgs e)
+    {
+        ScopeRemoveButton.Visibility = Visibility.Hidden;
+    }
+
+    private void ScopeRemoveButton_Click(object sender, RoutedEventArgs e) => RemoveRegisteredScope(_activeScopePath);
+
+    private void RemoveRegisteredScope(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        var settings = AppSettingsService.Instance.Current;
+        settings.RecentScopePaths = (settings.RecentScopePaths ?? new List<string>())
+            .Where(saved => !string.Equals(saved, path, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        var removedTabs = StorageTabs.Where(tab => string.Equals(tab.TargetPath, path, StringComparison.OrdinalIgnoreCase)).ToList();
+        bool selectedTabRemoved = _currentTab != null && removedTabs.Contains(_currentTab);
+        foreach (var tab in removedTabs) StorageTabs.Remove(tab);
+
+        if (string.Equals(_activeScopePath, path, StringComparison.OrdinalIgnoreCase))
+        {
+            _activeScopePath = string.Empty;
+            CancelCurrentSearch();
+            ClearSearchResults();
+            var nextTab = StorageTabs.FirstOrDefault(tab => !string.IsNullOrWhiteSpace(tab.TargetPath));
+            if (nextTab != null)
+            {
+                SelectTab(nextTab);
+            }
+            else
+            {
+                if (StorageTabs.Count == 0)
+                    StorageTabs.Add(new ScanTabModel { TabTitle = UiText("新規スキャン", "New Scan"), TargetPath = string.Empty });
+                SelectTab(StorageTabs[0]);
+                SearchDirectTargetTextBox.Text = string.Empty;
+                AuditPathTextBox.Text = string.Empty;
+                MediaPathTextBox.Text = string.Empty;
+                LinkSearchScopeTextBox.Text = string.Empty;
+                SimSourcePathTextBox.Text = string.Empty;
+                settings.ActiveScopePath = string.Empty;
+            }
+        }
+        else if (selectedTabRemoved)
+        {
+            if (StorageTabs.Count == 0)
+                StorageTabs.Add(new ScanTabModel { TabTitle = UiText("新規スキャン", "New Scan"), TargetPath = string.Empty });
+            SelectTab(StorageTabs[0]);
+        }
+
+        SaveStorageTabSession();
+        AppSettingsService.Instance.Save();
+        UpdateScopeCaption();
+        RenderScopeChoices();
     }
 
     private TreeViewItem CreateScopeTreeItem(string path)
@@ -219,7 +325,7 @@ public partial class MainWindow
             item.Items.Clear();
             foreach (var child in children.Take(256)) item.Items.Add(CreateScopeTreeItem(child));
             if (children.Count > 256)
-                item.Items.Add(new TreeViewItem { Header = UiText("続きは「フォルダーを追加」から選択", "Use Add folder to browse more"), IsEnabled = false });
+                item.Items.Add(new TreeViewItem { Header = UiText("続きは「＋ 追加」から選択", "Use + Add to browse more"), IsEnabled = false });
         }
         catch (Exception ex)
         {

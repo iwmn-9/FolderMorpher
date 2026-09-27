@@ -201,24 +201,24 @@
 
             <Style x:Key="FolderActionNavButton" TargetType="RadioButton">
                 <Setter Property="GroupName" Value="FolderActions"/>
-                <Setter Property="Height" Value="42"/>
-                <Setter Property="MinWidth" Value="100"/>
-                <Setter Property="Margin" Value="0,0,8,0"/>
+                <Setter Property="Height" Value="38"/>
+                <Setter Property="MinWidth" Value="108"/>
+                <Setter Property="Margin" Value="0"/>
                 <Setter Property="Padding" Value="18,0"/>
                 <Setter Property="Foreground" Value="#52647F"/>
-                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="FontSize" Value="13.5"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
                 <Setter Property="Cursor" Value="Hand"/>
                 <Setter Property="Template"><Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="ActionSurface" Background="#FFFFFF" BorderBrush="#DCE4EF" BorderThickness="1" CornerRadius="9" Padding="{TemplateBinding Padding}">
+                        <Border x:Name="ActionSurface" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="7" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ActionSurface" Property="BorderBrush" Value="#91AFDA"/></Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ActionSurface" Property="Background" Value="#F6F9FD"/></Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="ActionSurface" Property="Background" Value="#EAF2FD"/>
-                                <Setter TargetName="ActionSurface" Property="BorderBrush" Value="#8CB0E3"/>
+                                <Setter TargetName="ActionSurface" Property="Background" Value="White"/>
+                                <Setter TargetName="ActionSurface" Property="BorderBrush" Value="#D1DEEE"/>
                                 <Setter Property="Foreground" Value="#2456A6"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -253,7 +253,7 @@
                 <Setter Property="Template"><Setter.Value>
                     <ControlTemplate TargetType="TextBox">
                         <Border x:Name="TextBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" SnapsToDevicePixels="True">
-                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="TextBorder" Property="BorderBrush" Value="#3B70C0"/></Trigger>

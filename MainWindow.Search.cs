@@ -30,6 +30,7 @@ namespace AstraSize
         private string _selectedSortType = "Relevance";
 
         private long _searchGeneration = 0;
+        private bool _isSearchRunning;
 
         public void InitializeSearchStudio()
         {
@@ -93,16 +94,16 @@ namespace AstraSize
 
         private void SearchExecuteButton_Click(object sender, RoutedEventArgs e)
         {
+            if (_isSearchRunning)
+            {
+                CancelCurrentSearch();
+                if (SearchStatusText != null)
+                    SearchStatusText.Text = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
+                        ? "検索を中断しました。" : "Search canceled.";
+                return;
+            }
             _searchDebounceTimer?.Stop();
             ExecuteSearch(isIncremental: false);
-        }
-
-        private void SearchCancelButton_Click(object sender, RoutedEventArgs e)
-        {
-            CancelCurrentSearch();
-            if (SearchStatusText != null)
-                SearchStatusText.Text = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
-                    ? "検索を中断しました。" : "Search canceled.";
         }
 
         private void SearchClearButton_Click(object sender, RoutedEventArgs e)
@@ -534,17 +535,24 @@ namespace AstraSize
 
         private void SetSearchLoadingState(bool isLoading)
         {
+            _isSearchRunning = isLoading;
             if (SearchProgressBar != null)
             {
                 SearchProgressBar.Visibility = isLoading ? Visibility.Visible : Visibility.Collapsed;
             }
-            if (SearchCancelButton != null)
-            {
-                SearchCancelButton.Visibility = isLoading ? Visibility.Visible : Visibility.Collapsed;
-            }
+            UpdateSearchActionButton();
+        }
+
+        private void UpdateSearchActionButton()
+        {
             if (SearchExecuteButton != null)
             {
-                SearchExecuteButton.IsEnabled = !isLoading;
+                bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                SearchExecuteButton.Content = _isSearchRunning ? Strings.SearchCancel : Strings.SearchExecute;
+                SearchExecuteButton.ToolTip = _isSearchRunning
+                    ? (isJa ? "実行中の検索を中止" : "Stop the running search")
+                    : (isJa ? "検索を実行 (Enterキーでも実行可能)" : "Run search (or press Enter)");
+                SearchExecuteButton.Style = (Style)FindResource(_isSearchRunning ? "FluentButtonDanger" : "FluentButtonPrimary");
             }
         }
 

@@ -24,6 +24,9 @@ namespace AstraSize
         private static T FindControl<T>(Window window, string name) where T : FrameworkElement =>
             window.FindName(name) as T ?? throw new InvalidOperationException($"UI test control missing: {name}");
 
+        private static bool SearchButtonShowsRun(Button button) => button.Content?.ToString() is "🔍 検索" or "🔍 Search";
+        private static bool SearchButtonShowsStop(Button button) => button.Content?.ToString() is "■ 中止" or "■ Stop";
+
         public App()
         {
             var dir = Path.GetDirectoryName(LogPath)!;
@@ -157,6 +160,12 @@ namespace AstraSize
                         var settings = await host.GetAppSettingsAsync();
                         if (settings.StorageTabPaths == null || settings.Language is not ("ja" or "en"))
                             throw new InvalidOperationException("Settings DTO roundtrip failed.");
+                        settings.CloseHostOnWindowClose = true;
+                        await host.SaveAppSettingsAsync(settings);
+                        if (!(await host.GetAppSettingsAsync()).CloseHostOnWindowClose)
+                            throw new InvalidOperationException("Close-Host setting did not roundtrip over IPC.");
+                        settings.CloseHostOnWindowClose = false;
+                        await host.SaveAppSettingsAsync(settings);
                         await host.SetLanguageAsync(settings.Language);
                         FolderMorpher.UI.PresentationTestRunner.VerifyStorageNodePresentation();
                         FolderMorpher.UI.PresentationTestRunner.VerifyAuditAndSimulationPresentation();
@@ -199,24 +208,24 @@ namespace AstraSize
                                     System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
                                 if (FindControl<TextBox>(searchWindow, "SearchInputBox").Text.Length != 0 ||
                                     searchWindow.SearchResults.Count != 0 ||
-                                    FindControl<Button>(searchWindow, "SearchCancelButton").Visibility != Visibility.Collapsed ||
                                     FindControl<ProgressBar>(searchWindow, "SearchProgressBar").Visibility != Visibility.Collapsed ||
-                                    !FindControl<Button>(searchWindow, "SearchExecuteButton").IsEnabled)
+                                    !SearchButtonShowsRun(FindControl<Button>(searchWindow, "SearchExecuteButton")))
                                     throw new InvalidOperationException("Search clear did not restore an idle UI.");
                             });
                             await Task.Delay(400, testCts.Token);
                             await Dispatcher.InvokeAsync(() =>
                             {
                                 if (searchWindow!.SearchResults.Count != 0 ||
-                                    FindControl<Button>(searchWindow, "SearchCancelButton").Visibility != Visibility.Collapsed)
+                                    !SearchButtonShowsRun(FindControl<Button>(searchWindow, "SearchExecuteButton")))
                                     throw new InvalidOperationException("An empty search restarted after Clear.");
                                 FindControl<TextBox>(searchWindow, "SearchInputBox").Text = "ipc-search-match";
                                 FindControl<Button>(searchWindow, "SearchExecuteButton").RaiseEvent(new RoutedEventArgs(
                                     System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-                                FindControl<Button>(searchWindow, "SearchCancelButton").RaiseEvent(new RoutedEventArgs(
+                                if (!SearchButtonShowsStop(FindControl<Button>(searchWindow, "SearchExecuteButton")))
+                                    throw new InvalidOperationException("Search button did not change to Stop while running.");
+                                FindControl<Button>(searchWindow, "SearchExecuteButton").RaiseEvent(new RoutedEventArgs(
                                     System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-                                if (FindControl<Button>(searchWindow, "SearchCancelButton").Visibility != Visibility.Collapsed ||
-                                    !FindControl<Button>(searchWindow, "SearchExecuteButton").IsEnabled ||
+                                if (!SearchButtonShowsRun(FindControl<Button>(searchWindow, "SearchExecuteButton")) ||
                                     FindControl<TextBlock>(searchWindow, "SearchStatusText").Text is not ("検索を中断しました。" or "Search canceled."))
                                     throw new InvalidOperationException("Search Stop did not respond immediately.");
                                 searchWindow.Close();
@@ -345,7 +354,7 @@ namespace AstraSize
                                     System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
                             });
                             while (await Dispatcher.InvokeAsync(() =>
-                                FindControl<Button>(countWindow!, "SearchCancelButton").Visibility == Visibility.Visible))
+                                SearchButtonShowsStop(FindControl<Button>(countWindow!, "SearchExecuteButton"))))
                                 await Task.Delay(50, testCts.Token);
                             await Dispatcher.InvokeAsync(() =>
                             {
@@ -576,7 +585,7 @@ namespace AstraSize
                         }
                         if (status.ProcessId == FolderMorpher.HostClient.FolderMorpherHostClient.Instance.LaunchedHostProcessId)
                         {
-                            if (!await host.RequestShutdownAsync(cancelActiveJobs: false))
+                            if (!await FolderMorpher.HostClient.FolderMorpherHostClient.Instance.RequestShutdownIfRunningAsync(cancelActiveJobs: false))
                                 throw new InvalidOperationException("Host refused a graceful shutdown with no active jobs.");
                             using var hostProcess = System.Diagnostics.Process.GetProcessById(status.ProcessId);
                             using var shutdownCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(10));

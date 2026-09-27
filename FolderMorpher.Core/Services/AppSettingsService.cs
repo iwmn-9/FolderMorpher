@@ -33,6 +33,7 @@ namespace FolderMorpher.Services
         public int ActiveStorageTabIndex { get; set; } = 0;
         public string ActiveScopePath { get; set; } = string.Empty;
         public List<string> RecentScopePaths { get; set; } = new();
+        public bool CloseHostOnWindowClose { get; set; }
     }
 
     public class AppSettingsService

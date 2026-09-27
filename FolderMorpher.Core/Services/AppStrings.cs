@@ -440,7 +440,7 @@ namespace FolderMorpher.Services
         // Tab 6: 統合ファイル検索 (Search Studio)
         // ==========================================
         public static string SearchExecute => IsJa ? "🔍 検索" : "🔍 Search";
-        public static string SearchCancel => IsJa ? "⏹ 中断" : "⏹ Cancel";
+        public static string SearchCancel => IsJa ? "■ 中止" : "■ Stop";
         public static string SearchClear => IsJa ? "✕ クリア" : "✕ Clear";
         public static string SearchScopeScanned => IsJa ? "⚡ スキャン済みツリー" : "⚡ In-Memory Trees";
         public static string SearchScopeDirect => IsJa ? "🌐 直接走査" : "🌐 Direct Scan";

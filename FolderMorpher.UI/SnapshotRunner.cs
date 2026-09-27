@@ -43,6 +43,22 @@ public static class SnapshotRunner
                                 FolderMorpher.Services.LocalizationService.Instance.SetLanguage(language);
 
                             if (selectTab == 1) mw.NavTabSearch.IsChecked = true;
+                            else if (selectTab == 15)
+                            {
+                                mw.NavTabSearch.IsChecked = true;
+                                FolderMorpher.Services.AppSettingsService.Instance.Current.RecentScopePaths = new List<string>
+                                {
+                                    @"C:\Windows", @"C:\Users"
+                                };
+                                mw.ScopeManualPathBox.Text = @"C:\";
+                                mw.ScopeManualApplyButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                mw.ScopeRemoveButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                if (FolderMorpher.Services.AppSettingsService.Instance.Current.RecentScopePaths.Contains(@"C:\") ||
+                                    mw.StorageTabs.Any(tab => string.Equals(tab.TargetPath, @"C:\", StringComparison.OrdinalIgnoreCase)))
+                                    throw new InvalidOperationException("Removing a scope left the registered folder behind.");
+                                mw.ScopeManualPathBox.Text = @"C:\";
+                                mw.ScopeManualApplyButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                            }
                             else if (selectTab == 12)
                             {
                                 mw.NavTabSearch.IsChecked = true;

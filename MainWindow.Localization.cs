@@ -34,6 +34,7 @@ namespace AstraSize
             if (NavTabLiveAcl != null) NavTabLiveAcl.Visibility = Visibility.Collapsed;
             if (NavTabSimulation != null) NavTabSimulation.Visibility = Visibility.Collapsed;
             if (NavTabLinkFix != null) NavTabLinkFix.Visibility = Visibility.Collapsed;
+            if (NavTabGeneral != null) NavTabGeneral.Visibility = Visibility.Collapsed;
             if (AdminTabsDivider != null) AdminTabsDivider.Visibility = Visibility.Collapsed;
             if (AdminTabsCaption != null) AdminTabsCaption.Visibility = Visibility.Collapsed;
 
@@ -74,7 +75,6 @@ namespace AstraSize
             NavTabGeneral.Content = isJa ? "一般用途" : "Everyday";
             NavTabGeneral.ToolTip = isJa ? "フォルダーで作業" : "Work with folders";
             AdminTabsCaption.Text = isJa ? "管理" : "Admin";
-            FolderActionCaption.Text = isJa ? "このフォルダーで" : "In this folder";
             NavTabStorage.Content = isJa ? "容量" : "Storage";
             NavTabStorage.ToolTip = Strings.TabStorageToolTip;
             NavTabLiveAcl.Content = isJa ? "権限" : "Access";
@@ -94,7 +94,9 @@ namespace AstraSize
                 NavTabSearch.ToolTip = Strings.TabSearchToolTip;
             }
             ScopeCaptionText.Text = isJa ? "参照フォルダー" : "Working folder";
-            ScopeAddButton.Content = isJa ? "＋ フォルダーを追加" : "＋ Add folder";
+            ScopeAddButton.Content = isJa ? "＋ 追加" : "＋ Add";
+            ScopeAddButton.ToolTip = isJa ? "参照フォルダーを追加" : "Add a working folder";
+            ScopeRemoveButton.ToolTip = isJa ? "参照一覧から外す（実フォルダーは削除しません）" : "Remove from this list (files stay untouched)";
             ScopePopupTitle.Text = isJa ? "参照フォルダーを選ぶ" : "Choose a working folder";
             ScopeRecentTitle.Text = isJa ? "最近使った場所" : "Recent locations";
             ScopeTreeTitle.Text = isJa ? "フォルダー一覧" : "Folders";
@@ -102,7 +104,6 @@ namespace AstraSize
             ScopeFilterHint.Text = isJa ? "フォルダーを絞り込む" : "Filter saved folders";
             ScopeManualPathHint.Text = isJa ? "パスを直接入力（UNCにも対応）" : "Enter a local or UNC path";
             SearchInputHint.Text = isJa ? "ファイル名や本文から検索" : "Search filenames or content";
-            SearchBreadcrumbCurrentText.Text = isJa ? "検索" : "Search";
             SearchEmptyTitle.Text = isJa ? "このフォルダーから探す" : "Search this folder";
             SearchEmptyHint.Text = isJa ? "上の欄に検索語を入力すると結果がここに表示されます" : "Enter a query above to see results here";
             UpdateScopeCaption();
@@ -557,16 +558,7 @@ namespace AstraSize
             // ==========================================
             // Tab 6: Search Studio (統合ファイル検索)
             // ==========================================
-            if (SearchExecuteButton != null)
-            {
-                SearchExecuteButton.Content = Strings.SearchExecute;
-                SearchExecuteButton.ToolTip = isJa ? "検索を実行 (Enterキーでも実行可能)" : "Run search (or press Enter)";
-            }
-            if (SearchCancelButton != null)
-            {
-                SearchCancelButton.Content = Strings.SearchCancel;
-                SearchCancelButton.ToolTip = isJa ? "実行中の走査を中断" : "Stop the running search";
-            }
+            UpdateSearchActionButton();
             if (SearchClearButton != null)
             {
                 SearchClearButton.Content = Strings.SearchClear;
@@ -664,7 +656,10 @@ namespace AstraSize
             SettingsBrowseCustomButton.Content = isJa ? "参照..." : "Browse...";
             SettingsCancelButton.Content = isJa ? "キャンセル" : "Cancel";
             SettingsSaveButton.Content = isJa ? "設定を保存" : "Save Settings";
-            SettingsQuitCompletelyButton.Content = isJa ? "アプリとHostを終了" : "Exit app and Host";
+            SettingsCloseHostCheckBox.Content = isJa ? "×で閉じたらHostも終了する" : "Close Host when this window closes";
+            SettingsCloseHostHint.Text = isJa
+                ? "初期値はオフ。オンの場合、実行中のHost処理も中断します。"
+                : "Off by default. When enabled, running Host jobs are cancelled.";
             if (SettingsReadPathTextBox != null)
             {
                 SettingsReadPathTextBox.ToolTip = isJa ? "空の場合はローカル既定値 (%LocalAppData%\\FolderMorpher) を参照します" : "Defaults to local directory (%LocalAppData%\\FolderMorpher) if blank";

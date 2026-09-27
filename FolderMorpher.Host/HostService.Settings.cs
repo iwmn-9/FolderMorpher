@@ -21,7 +21,8 @@ public partial class HostService
             StorageTabPaths = source.StorageTabPaths.ToList(),
             ActiveStorageTabIndex = source.ActiveStorageTabIndex,
             ActiveScopePath = source.ActiveScopePath,
-            RecentScopePaths = source.RecentScopePaths.ToList()
+            RecentScopePaths = source.RecentScopePaths.ToList(),
+            CloseHostOnWindowClose = source.CloseHostOnWindowClose
         });
     }
 
@@ -40,6 +41,7 @@ public partial class HostService
         target.ActiveStorageTabIndex = Math.Max(0, settings.ActiveStorageTabIndex);
         target.ActiveScopePath = settings.ActiveScopePath ?? string.Empty;
         target.RecentScopePaths = settings.RecentScopePaths?.Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList() ?? new();
+        target.CloseHostOnWindowClose = settings.CloseHostOnWindowClose;
         AppSettingsService.Instance.Save();
         return Task.CompletedTask;
     }

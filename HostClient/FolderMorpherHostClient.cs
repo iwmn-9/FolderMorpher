@@ -53,6 +53,24 @@ namespace FolderMorpher.HostClient
             }
         }
 
+        /// <summary>Requests shutdown only from an existing Host; closing the GUI never starts a new Host.</summary>
+        public async Task<bool> RequestShutdownIfRunningAsync(bool cancelActiveJobs)
+        {
+            if (_proxy != null && _pipeStream?.IsConnected == true)
+                return await _proxy.RequestShutdownAsync(cancelActiveJobs).WaitAsync(TimeSpan.FromSeconds(5));
+
+            using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut,
+                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+            using var connectTimeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(800));
+            try { await pipe.ConnectAsync(connectTimeout.Token); }
+            catch (OperationCanceledException) { return true; }
+            catch (IOException) { return true; }
+
+            using var rpc = JsonRpc.Attach(pipe);
+            var service = rpc.Attach<IFolderMorpherHostService>();
+            return await service.RequestShutdownAsync(cancelActiveJobs).WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
         private async Task EnsureHostRunningAndConnectedAsync(CancellationToken ct)
         {
             // まず既存のパイプへ接続試行

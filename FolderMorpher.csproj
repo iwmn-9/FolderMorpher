@@ -12,7 +12,7 @@
     <AssemblyName>FolderMorpher</AssemblyName>
     <RootNamespace>FolderMorpher</RootNamespace>
     <ApplicationTitle>FolderMorpher - Storage &amp; Migration Studio</ApplicationTitle>
-    <Version>2.3.1</Version>
+    <Version>2.3.2</Version>
     <PublishDir>$(MSBuildProjectDirectory)\dist\</PublishDir>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <CodePage>65001</CodePage>

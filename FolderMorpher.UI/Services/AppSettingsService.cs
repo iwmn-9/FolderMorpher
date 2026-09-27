@@ -35,7 +35,8 @@ public sealed class AppSettingsService
             StorageTabPaths = source.StorageTabPaths.ToList(),
             ActiveStorageTabIndex = source.ActiveStorageTabIndex,
             ActiveScopePath = source.ActiveScopePath,
-            RecentScopePaths = source.RecentScopePaths.ToList()
+            RecentScopePaths = source.RecentScopePaths.ToList(),
+            CloseHostOnWindowClose = source.CloseHostOnWindowClose
         };
         lock (_saveLock)
         {
