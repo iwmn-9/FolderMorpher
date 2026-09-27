@@ -319,6 +319,9 @@ namespace FolderMorpher.Services.Testing
 
                 if (rootNode.FolderCount != 3) // SubA, SubB, Deep
                     throw new InvalidOperationException($"DiskScanService rootNode.FolderCount expected 3, got {rootNode.FolderCount}");
+                var scannedRootFile = rootNode.Children.FirstOrDefault(node => node.Name == "root1.txt");
+                if (rootNode.CreationTime == null || scannedRootFile?.CreationTime != rootEntry.CreationTime)
+                    throw new InvalidOperationException("DiskScanService must retain creation times for SHA cache inheritance.");
 
                 // 5. SafeFindHandle RAII 解放検証
                 using (var safeHandle = new SafeFindHandle(IntPtr.Zero))

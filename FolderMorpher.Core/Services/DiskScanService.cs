@@ -178,7 +178,9 @@ namespace AstraSize.Services
                 int maxWorkers = AdaptiveConcurrencyController.MaxConcurrency;
 
                 DateTime rootLastModified = DateTime.MinValue;
+                DateTime rootCreationTime = DateTime.MinValue;
                 try { rootLastModified = rootDir.LastWriteTime; } catch { }
+                try { rootCreationTime = rootDir.CreationTime; } catch { }
 
                 var rootNode = new FileItemNode
                 {
@@ -187,7 +189,8 @@ namespace AstraSize.Services
                     IsDirectory = true,
                     Parent = null,
                     Level = 0,
-                    LastModified = rootLastModified
+                    LastModified = rootLastModified,
+                    CreationTime = rootCreationTime
                 };
 
                 // Sol提唱: 未処理＋処理中ワークアイテム数を Interlocked で厳密追跡（Worker race 完全根絶）
@@ -253,6 +256,7 @@ namespace AstraSize.Services
                                         FolderCount = 0,
                                         IsDirectory = false,
                                         LastModified = f.LastWriteTimeUtc.ToLocalTime(),
+                                        CreationTime = f.CreationTimeUtc.ToLocalTime(),
                                         Parent = node,
                                         Level = depth + 1
                                     };
@@ -274,7 +278,8 @@ namespace AstraSize.Services
                                         IsDirectory = true,
                                         Parent = node,
                                         Level = depth + 1,
-                                        LastModified = sd.LastWriteTimeUtc.ToLocalTime() // ★ 親の列挙から直結（RPCゼロ）
+                                        LastModified = sd.LastWriteTimeUtc.ToLocalTime(), // ★ 親の列挙から直結（RPCゼロ）
+                                        CreationTime = sd.CreationTimeUtc.ToLocalTime()
                                     };
                                     node.Children.Add(subNode);
 

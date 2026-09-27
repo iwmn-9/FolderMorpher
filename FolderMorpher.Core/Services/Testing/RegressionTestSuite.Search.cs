@@ -1569,7 +1569,7 @@ namespace FolderMorpher.Services.Testing
                 Directory.CreateDirectory(probeDir);
                 try
                 {
-                    string largeFilePath = Path.Combine(probeDir, "LargeSparseTest.bin");
+                    string largeFilePath = Path.Combine(probeDir, "LargeSparseTest.txt");
                     // 55MB の巨大ファイルをシミュレート（末尾付近にマーカーを書き込む）
                     long targetSize = 55L * 1024 * 1024;
                     using (var fs = new FileStream(largeFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -1583,6 +1583,11 @@ namespace FolderMorpher.Services.Testing
                         fs.Seek(targetSize / 2, SeekOrigin.Begin);
                         byte[] marker = Encoding.UTF8.GetBytes("Special_Probe_Secret_Marker_2026");
                         fs.Write(marker, 0, marker.Length);
+
+                        // Probe窓から外れた位置は後段の全文走査で必ず拾う。
+                        fs.Seek(targetSize * 3 / 8, SeekOrigin.Begin);
+                        byte[] deferredMarker = Encoding.UTF8.GetBytes("Only_Deferred_Full_Search_2026");
+                        fs.Write(deferredMarker, 0, deferredMarker.Length);
                     }
 
                     var groupsHit = new List<List<string>> { new List<string> { "Special_Probe_Secret_Marker_2026" } };
@@ -1594,6 +1599,19 @@ namespace FolderMorpher.Services.Testing
                     string? snippetMiss = await ContentExtractionService.ProbeLargeFileContentAsync(largeFilePath, targetSize, groupsMiss, CancellationToken.None);
                     if (!string.IsNullOrEmpty(snippetMiss))
                         throw new Exception("ADR 90 failed: ProbeLargeFileContentAsync returned snippet for non-existent keyword.");
+
+                    var deferredQuery = SearchQueryParser.Parse("content:Only_Deferred_Full_Search_2026");
+                    var directDeferred = await new SearchEngineService().SearchDirectFolderAsync(
+                        probeDir, deferredQuery, null, null, CancellationToken.None);
+                    if (directDeferred.Count != 1 || directDeferred[0].FullPath != largeFilePath)
+                        throw new Exception("Deferred direct search missed a match outside all probe windows.");
+
+                    var cachedEntry = new TreeCacheSearchEntry(largeFilePath, Path.GetFileName(largeFilePath),
+                        targetSize, false, File.GetLastWriteTime(largeFilePath), File.GetCreationTime(largeFilePath));
+                    var cachedDeferred = await new SearchEngineService().SearchCachedEntriesAsync(
+                        new[] { cachedEntry }, deferredQuery, null, CancellationToken.None);
+                    if (cachedDeferred.Count != 1 || cachedDeferred[0].FullPath != largeFilePath)
+                        throw new Exception("Deferred cached search missed a match outside all probe windows.");
                 }
                 finally
                 {
@@ -1842,6 +1860,14 @@ namespace FolderMorpher.Services.Testing
 
                     if (snippet == null || !snippet.Contains(kw))
                         throw new Exception("ADR 95 failed: SearchTextContentWithBufferAsync missed keyword across 64KB chunk boundary.");
+
+                    string smallBoundaryFile = Path.Combine(tempDir, "small_boundary_test.txt");
+                    File.WriteAllText(smallBoundaryFile, new string('A', 16380) + kw + new string('B', 12000));
+                    var smallSnippet = await ContentExtractionService.SearchTextContentWithBufferAsync(
+                        smallBoundaryFile, kw, null, null, 1, CancellationToken.None,
+                        knownSize: new FileInfo(smallBoundaryFile).Length);
+                    if (smallSnippet == null || !smallSnippet.Contains(kw))
+                        throw new Exception("Small-file read buffer missed a keyword across the 16 KiB boundary.");
 
                     // C. 安全是正検証: TreeCachePruningIndex の安全化
                     var mockRoot = new FileItemNode

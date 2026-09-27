@@ -74,8 +74,7 @@ public sealed class TreeScanCapture : IAsyncDisposable
             {
                 setup.CommandText = "PRAGMA journal_mode=DELETE; PRAGMA synchronous=OFF; " +
                     "CREATE TABLE Entries (SortPath TEXT NOT NULL, ParentPath TEXT NOT NULL, Name TEXT NOT NULL, " +
-                    "Size INTEGER NOT NULL, IsDirectory INTEGER NOT NULL, Modified INTEGER, Created INTEGER); " +
-                    "CREATE INDEX idx_capture_order ON Entries(SortPath);";
+                    "Size INTEGER NOT NULL, IsDirectory INTEGER NOT NULL, Modified INTEGER, Created INTEGER);";
                 setup.ExecuteNonQuery();
             }
 
@@ -130,6 +129,19 @@ public sealed class TreeScanCapture : IAsyncDisposable
         ct.ThrowIfCancellationRequested();
         if (!coverage.IsCompleteCoverage || coverage.TotalFoldersScanned == 0 ||
             coverage.CompletedFolders != coverage.DiscoveredFolders) return;
+        // Incomplete traversals never publish. Build the temporary sort index only after
+        // coverage is known complete, instead of maintaining it for every captured row.
+        await Task.Run(() =>
+        {
+            using var conn = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = _path, Pooling = false
+            }.ToString());
+            conn.Open();
+            using var command = conn.CreateCommand();
+            command.CommandText = "CREATE INDEX idx_capture_order ON Entries(SortPath);";
+            command.ExecuteNonQuery();
+        }, ct);
         await SqliteTreeCacheService.Instance.ImportCaptureAsync(_path, _root, ct);
     }
 

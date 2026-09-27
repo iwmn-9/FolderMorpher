@@ -426,7 +426,12 @@ namespace FolderMorpher.Services
                             HandleEntry(entry);
                         },
                         collectResults: false,
-                        onDiscoveredEntry: treeCapture == null ? null : entry => treeCapture.Add(entry));
+                        onDiscoveredEntry: treeCapture == null ? null : entry =>
+                        {
+                            // 欠けたツリーは公開できない。最初のアクセス拒否後は
+                            // 原本の検索を続けつつ一時DBへの投入だけ止める。
+                            if (coverage.IsCompleteCoverage) treeCapture.Add(entry);
+                        });
                 }
                 finally
                 {
@@ -436,18 +441,23 @@ namespace FolderMorpher.Services
                 // Consumer ワーカーの完了を待機
                 await Task.WhenAll(consumerTasks);
 
-                // 【ADR 91】通常ファイル走査完了後、Probe未ヒットの巨大ファイル群を順次全文検査（検索漏れゼロ保証）
+                // 小ファイルを先に返してから巨大ファイルを少数並列で全文検査する。
                 if (!deferredLargeFiles.IsEmpty)
                 {
-                    foreach (var dItem in deferredLargeFiles)
+                    await Parallel.ForEachAsync(deferredLargeFiles, new ParallelOptions
                     {
-                        if (ct.IsCancellationRequested) break;
-                        using var lease = await controller.AcquireAsync(ct);
-                        var fileSw = Stopwatch.StartNew();
+                        MaxDegreeOfParallelism = 2,
+                        CancellationToken = ct
+                    }, async (dItem, token) =>
+                    {
+                        using var lease = await controller.AcquireAsync(token);
+                        double measuredIoMs = 0;
                         bool isError = false;
                         try
                         {
-                            var (isHit, _) = await InspectContentItemAsync(dItem, query, hasOfficeLinkReq, officeLinkKeyword, ct, allowDeferred: false, sharedContext: sharedContext);
+                            var (isHit, _) = await InspectContentItemAsync(dItem, query, hasOfficeLinkReq, officeLinkKeyword,
+                                token, allowDeferred: false, sharedContext: sharedContext,
+                                reportIoElapsed: ms => measuredIoMs = ms, skipCompletedProbe: true);
                             if (isHit)
                             {
                                 EmitHit(dItem);
@@ -461,10 +471,9 @@ namespace FolderMorpher.Services
                         }
                         finally
                         {
-                            fileSw.Stop();
-                            lease.Report(fileSw.Elapsed.TotalMilliseconds, isError);
+                            lease.Report(measuredIoMs > 0 ? measuredIoMs : 15.0, isError);
                         }
-                    }
+                    });
                 }
 
                 lock (batchLock)
@@ -876,13 +885,16 @@ namespace FolderMorpher.Services
                 }
             });
 
-            // 【ADR 91】通常ファイル走査完了後、Probe未ヒットの巨大ファイル群を順次全文検査（検索漏れゼロ保証）
+            // キャッシュ候補も同じ少数並列の巨大ファイル処理へ渡す。
             if (!deferredLargeFiles.IsEmpty)
             {
-                foreach (var dItem in deferredLargeFiles)
+                await Parallel.ForEachAsync(deferredLargeFiles, new ParallelOptions
                 {
-                    if (ct.IsCancellationRequested) break;
-                    using var lease = await controller.AcquireAsync(ct);
+                    MaxDegreeOfParallelism = 2,
+                    CancellationToken = ct
+                }, async (dItem, token) =>
+                {
+                    using var lease = await controller.AcquireAsync(token);
                     double measuredIoMs = 0;
                     bool isError = false;
                     try
@@ -892,10 +904,11 @@ namespace FolderMorpher.Services
                             query,
                             hasOfficeLinkReq,
                             officeLinkKeyword,
-                            ct,
+                            token,
                             allowDeferred: false,
                             sharedContext: sharedContext,
-                            reportIoElapsed: ms => measuredIoMs = ms);
+                            reportIoElapsed: ms => measuredIoMs = ms,
+                            skipCompletedProbe: true);
 
                         if (isHit)
                         {
@@ -911,7 +924,7 @@ namespace FolderMorpher.Services
                     {
                         lease.Report(measuredIoMs > 0 ? measuredIoMs : 15.0, isError);
                     }
-                }
+                });
             }
 
             lock (batchLock)
@@ -987,7 +1000,8 @@ namespace FolderMorpher.Services
             CancellationToken token,
             bool allowDeferred = true,
             QuerySearchContext? sharedContext = null,
-            Action<double>? reportIoElapsed = null)
+            Action<double>? reportIoElapsed = null,
+            bool skipCompletedProbe = false)
         {
             string ext = Path.GetExtension(item.FullPath).ToLowerInvariant();
 
@@ -1087,7 +1101,7 @@ namespace FolderMorpher.Services
                 {
                     // 【Large File Pipeline - ADR 90/91】50MB超の巨大ファイルは分散Probeを先行実施
                     const long LargeFileProbeThreshold = 50L * 1024 * 1024;
-                    if (item.SizeBytes > LargeFileProbeThreshold)
+                    if (item.SizeBytes > LargeFileProbeThreshold && !skipCompletedProbe)
                     {
                         var probeSnippet = await ContentExtractionService.ProbeLargeFileContentAsync(item.FullPath, item.SizeBytes, requiredGroups, token);
                         if (probeSnippet != null)

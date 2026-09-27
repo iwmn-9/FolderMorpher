@@ -667,6 +667,33 @@ namespace FolderMorpher.Services.Testing
                 if (dupItems.Any(i => i.FileName == "fileB.dat" || i.FileName == "fileC.dat"))
                     throw new InvalidOperationException("Non-duplicate files (fileB or fileC) were erroneously marked as duplicates.");
 
+                // 同じHead/Tailでも中央が異なる大容量群。Aだけを落とし、B/Cの重複は残す。
+                string prefixDir = Path.Combine(testDir, "prefix-stage");
+                Directory.CreateDirectory(prefixDir);
+                const long prefixFileSize = 33L * 1024 * 1024;
+                foreach (string name in new[] { "middleA.bin", "middleB.bin", "middleC.bin" })
+                {
+                    await using var sparse = new FileStream(Path.Combine(prefixDir, name), FileMode.Create,
+                        FileAccess.Write, FileShare.None);
+                    sparse.SetLength(prefixFileSize);
+                    sparse.Position = 512 * 1024;
+                    sparse.WriteByte(name == "middleA.bin" ? (byte)1 : (byte)2);
+                }
+                var prefixOptions = new AuditOptions
+                {
+                    TargetDirectory = prefixDir,
+                    CheckDuplicates = true,
+                    CheckDormant = false,
+                    CheckPathLimits = false,
+                    MinFileSizeBytes = 100 * 1024,
+                    BandwidthLimit = AuditBandwidthLimit.Auto
+                };
+                var (_, prefixItems) = await auditService.RunAuditAsync(prefixOptions, null, ct);
+                var prefixDuplicates = prefixItems.Where(item => item.IssueType == AuditIssueType.Duplicate)
+                    .Select(item => item.FileName).OrderBy(name => name).ToArray();
+                if (!prefixDuplicates.SequenceEqual(new[] { "middleB.bin", "middleC.bin" }))
+                    throw new InvalidOperationException("Prefix partition must retain B/C duplicates while excluding A.");
+
                 // 4. BandwidthThrottler の単体挙動検証
                 var throttler = new BandwidthThrottler(10 * 1024 * 1024); // 10MB/s
                 if (throttler.BytesPerSecond != 10 * 1024 * 1024)

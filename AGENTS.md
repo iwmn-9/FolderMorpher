@@ -80,9 +80,9 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 
 **検索の現行入口**: `MainWindow.Search.cs` → `HostJobClient` → `HostService.Jobs.cs` / `HostService.cs` → `SearchEngineService`。直接走査は `SafeFileEnumerator.EnumerateFileEntriesParallelAsync(..., collectResults: false)` のコールバックで逐次処理する。ファイル名・パス・本文条件の共通判定は `SearchEngineService.MatchesSearchTerms` が正本。`TreeCachePruningIndex` はフォルダー時刻だけでは検索の完全性を保証できないため、通常画面の直接走査では構築しない。
 
-**初回性能の研究候補**: [`.agents/PERFORMANCE_RESEARCH.md`](.agents/PERFORMANCE_RESEARCH.md) にローカル・UNC双方の列挙、本文検索、容量分析、重複整理の未採用実験と比較条件をまとめる。これはADRの決定事項ではない。測定・検証で採用した内容だけ実装とADRへ移す。
+**初回性能の研究記録**: [`.agents/PERFORMANCE_RESEARCH.md`](.agents/PERFORMANCE_RESEARCH.md) にローカル・UNC双方の実験候補、採否と計測値をまとめる。採用済みの契約はADR 127と実装を正本とし、Cドライブの所要時間からUNC性能を推定しない。
 
-**初回Live走査からのTreeCache形成（ADR 125）**: TreeCacheにルートがないとき、検索と除外なしの整理は `SafeFileEnumerator` の同じ列挙結果を `TreeScanCapture.cs` へ流す。フォルダーを検索結果に含めない場合もキャッシュにはディレクトリを記録する。有界Channel・ローカル一時SQLiteの後、完走した完全カバレッジだけ `SqliteTreeCacheService.Capture.cs` が既存の `ParentId + Name` スキーマへ原子的に公開する。中止・アクセス拒否・除外付き整理では公開しない。既存キャッシュを上書きせず、UNCを再走査しない。整理ボタンは実行中のみ「中止」になり、Host Jobのキャンセルを待って開始状態へ戻る。
+**初回Live走査からのTreeCache形成（ADR 125・127）**: TreeCacheにルートがないとき、検索と除外なしの整理は `SafeFileEnumerator` の同じ列挙結果を `TreeScanCapture.cs` へ流す。フォルダーを検索結果に含めない場合もキャッシュにはディレクトリを記録する。有界Channel・ローカル一時SQLiteの後、完走した完全カバレッジだけ `SqliteTreeCacheService.Capture.cs` が既存の `ParentId + Name` スキーマへ原子的に公開する。最初のアクセス拒否後は検索・監査を続けつつ一時DBへの新規投入を止める。並べ替え索引は完全走査の確認後だけ作る。中止・アクセス拒否・除外付き整理では公開しない。既存キャッシュを上書きせず、UNCを再走査しない。整理ボタンは実行中のみ「中止」になり、Host Jobのキャンセルを待って開始状態へ戻る。
 
 **走査見込みと整理帯域（ADR 122）**: 検索のETAは結果見出しの経過時間の隣に、容量・整理・メディアは件数の隣、リンクは検出件数の隣、ACL逆引きは件数帯の直下に表示する。`MainWindow.ScanEta.cs` は件数・前回所要時間・初回の大きめの母数を用いて安全側に見積もる。進捗根拠のない初回走査はまず「見積もり中」とし、件数を返さない旧RPCだけ30秒後から広い暫定値を出す。MFTの総レコード数は確定母数として扱う。整理の帯域選択UIは撤去した。`AuditReportService` はローカルのSHA-256読み取りを制限せず、UNC・ネットワークドライブのみ実測p95遅延を見て8〜100MiB/sの範囲で調整する。並列度2は維持する。旧IPCの帯域指定値は互換のため残す。
 
@@ -92,9 +92,11 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 
 GUIは `SearchQuery.HasDeepFileIoRequirement` を正本としてLive本文・Officeリンク検索を起動する。`content:` 指定だけでも、対象ツリーがキャッシュ済みなら空結果で終わらせず原本を検索する。本文速度の比較はFolderMorpherのHost経由で同じ検索経路を使い、Cドライブ全体の実在する本文語で測る。Cドライブの結果からUNC固有のSMB効果を断定しない。
 
-テキスト本文走査の64KB文字バッファはプールで再利用し、返却時にクリアする。単一語はバッファ上で直接照合し、ヒット時だけスニペット用文字列を作る。ファイルごとの先頭NUL判定は厳密な非一致証明ではないため、索引なし枝刈りとして一般化しない（ADR 109）。
+テキスト本文走査の文字バッファはプールで再利用し、返却時にクリアする。64KiB以下のファイルかつ短い検索語なら16KiB、その他は64KiB。単一語はバッファ上で直接照合し、ヒット時だけスニペット用文字列を作る。ファイルごとの先頭NUL判定は厳密な非一致証明ではないため、索引なし枝刈りとして一般化しない（ADR 109・127）。
 
-大容量テキストの`FileStream`先読み幅は`AdaptiveTextReadController.cs`が検索セッション内で64/256/512/1024KiBから選ぶ。8MiB未満は64KiB、UNCとネットワークドライブは最大256KiB。文字照合用の64KiBバッファは独立して維持する。Officeの主要本文Entryを先に読み、残りの対象Entryも検査する。検索理由はヒット時だけ作り、先頭判定用byte配列も再利用する（ADR 110）。
+大容量テキストの`FileStream`先読み幅は`AdaptiveTextReadController.cs`が検索セッション内で64/256/512/1024KiBから選ぶ。8MiB未満は64KiBを基本とし、16KiB以下の小ファイルだけ16KiBを使う。UNCとネットワークドライブの大容量読み幅は最大256KiB。64KiB以下では`StreamReader`の内部バッファを8KiBに抑える。Officeの主要本文Entryを先に読み、残りの対象Entryも検査する。検索理由はヒット時だけ作り、先頭判定用byte配列も再利用する（ADR 110・127）。
+
+50MiB超のテキストは分散Probeの後で全文照合が必要な時だけ後回しにし、後段で同じProbeを繰り返さない。後段の並列数は最大2。大きい本文のReadBlock待ちを含むp95をガバナーへ保守的に報告する。`ReadBlockAsync`にはデコード時間も含むため、純粋なSMB READ所要時間とは呼ばない（ADR 127）。
 
 `WindowsSearchProvider.QueryCandidatesAsync`は到達不能な対象にはOLE DBを開かず直接検索へ戻す。存在しないUNCへの接続はCOM最終化時にプロセスを落とす環境があったため、`Directory.Exists`の事前確認と強制GCを含む回帰検証を維持する（ADR 111）。
 
@@ -107,6 +109,8 @@ UNC/ネットワークドライブの容量スキャンは検索列挙と `Share
 整理候補の一覧は各行に点数と「内訳」操作を表示する。`AuditItem.ScoreBreakdown` が内訳の正本で、重複理由は原本以外に95点、原本候補に0点を与える。点数は整理の優先度であり、削除安全性の確率ではない。言語変更時は監査行の表示プロパティも通知する（ADR 113）。
 
 監査候補は `AuditCandidateComposer` で物理パスごとに1行へ統合し、重複・休眠・世代など独立した理由の点を加算する（100点上限なし、重複95＋3年休眠70なら165点）。原本候補も他理由の点は表示するが、`IsOriginalCandidate` を引き継いで削除を拒否する。`AuditItem.IssueTypes` が複数理由の正本で、分類フィルター・一括選択・出力は `HasIssue` を使う。削減見込み容量は同一パスを1回だけ数える。SHA候補グループは容量降順で検証し、`GetAuditJobResultsAsync` の途中結果をGUIへ渡す。途中一覧は容量降順の暫定表示で閲覧・選択でき、削除と出力は最終報告ができてから有効にする（ADR 114）。
+
+重複の初回判定はサイズ→先頭/末尾4KiB→（ローカル32MiB以上の生き残り群だけ）先頭1MiB→完全SHA-256。中間で単独になったファイルの残りは読まず、部分読取に失敗した群は完全SHAへ戻す。部分ハッシュを重複確定や削除許可には使わない。群内処理は最大2並列で、ファイル数ぶんのTaskを同時生成しない。ローカル8MiB以上の完全SHAは256KiB逐次読込・ArrayPool、UNCは64KiBと既存の帯域制御を維持する（ADR 127）。
 
 PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数を保つ（ADR 107）。P/Invoke宣言を変更する時はMicrosoftのシグネチャと照合し、検索回帰でプロセス終了時のCOM最終化も確認する。
 
@@ -156,7 +160,7 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
    - **事前集計と階層単位の取得**: 集計値を各ノードに保存し、GUIへの全件復元・全件IPC送信を避ける。`LoadTreeCacheBranchAsync` と `GetStorageChildrenAsync` はルートまたはクリックされたフォルダーの直下だけ読む。検索・エクスポート用の全ツリー読込は別経路に残る。
    - **親ID・名前による省容量化**: `FullPath/ParentPath` とその索引を廃止し、`RootId, ParentId, Name` を正本にする。例外行だけ `PathSuffix` を保存。日時は整数、正規SHA-256は32バイトBLOB、部分木の連続ID範囲は `SubtreeEndId` に保持する。`IsExpanded/Level` はDBに保存しない。旧DBはトランザクション移行、件数・親リンク検証、VACUUMを行う。実DBコピー約165万ノードで約651MB→198MBを確認。旧HostとのIPCはバージョン不一致を明示して接続を拒む。
    - **単一トランザクション一括コミット**: DB保存は一括トランザクション。数百万ノードの保存所要時間は別途計測し、以前の「0.1〜0.3秒」を保証値と扱わない。
-   - **SHA-256 の保存**: 監査で確認された重複グループの SHA-256 は `UpdateSha256Async` でサイズ・更新日時が一致する行にだけ書き戻す。容量再スキャンでツリーを入れ替える際はパス・サイズ・更新日時・作成日時が一致する旧 SHA を保持する。ただしメタデータ一致は本文不変の証明ではないため、次回監査の重複確定には毎回フル SHA-256 を計算する。削除直前の再照合も維持する（ADR 126）。
+   - **SHA-256 の保存**: 監査で確認された重複グループの SHA-256 は `UpdateSha256Async` でサイズ・更新日時が一致する行にだけ書き戻す。容量再スキャンでツリーを入れ替える際はパス・サイズ・更新日時・作成日時が一致する旧 SHA を保持する。通常の `DiskScanService` も列挙時の作成日時をノードへ入れるため、この条件に届く。ただしメタデータ一致は本文不変の証明ではないため、次回監査の重複確定には毎回フル SHA-256 を計算する。削除直前の再照合も維持する（ADR 126・127）。
    - **ポータブル JSON 相互運用**: `ExportToJsonFileAsync` / `ImportFromJsonFileAsync` により社内配布・共有用には単一 JSON を出力。既存 JSON キャッシュからの自動透過マイグレーション完備。
 8. **UI共通整線 ＆ 深階層ツリー操作性（ADR 65, 66, 69）**:
    - Quiet Fluentの低彩度表示を維持しつつ、検索の件数・容量・時間・状況は結果見出しへ、容量の集計と前回差分は操作列下の短い要約へ置く。整理の詳細な検出条件は開閉可能にして一覧の初期表示を広げる（ADR 120）。

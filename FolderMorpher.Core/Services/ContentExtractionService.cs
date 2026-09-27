@@ -334,6 +334,10 @@ namespace FolderMorpher.Services
             char[]? buffer = null;
             byte[]? head = null;
             int readBufferSize = readController?.SelectBufferSize(knownSize) ?? AdaptiveTextReadController.DefaultBufferSize;
+            // 16 KiB以下なら一度のFileStreamバッファで足りる。小ファイルごとに
+            // 64 KiBを確保する費用を、数十万ファイルの初回検索へ持ち込まない。
+            if (knownSize >= 0 && knownSize <= 16 * 1024)
+                readBufferSize = 16 * 1024;
             double[]? readLatencies = knownSize >= 8L * 1024 * 1024 && readController != null ? new double[64] : null;
             int latencyCount = 0;
             long totalCharsRead = 0;
@@ -371,11 +375,14 @@ namespace FolderMorpher.Services
                 if (!isUtf16Bom && !isUtf16NoBom && nulls >= 2) return null; // 純粋なバイナリは即座に脱落
 
                 Encoding encoding = DetectTextEncoding(fs);
-                using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true, bufferSize: 65536);
+                int readerBufferSize = knownSize >= 0 && knownSize <= 64 * 1024 ? 8192 : 65536;
+                using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: true,
+                    bufferSize: readerBufferSize);
 
-                const int BufferSize = 65536;
                 // ★ ADR 97: クエリ内の最長キーワード長に応じた動的オーバーラップ幅（長大キーワードの境界またぎ漏れ根絶）
                 int maxKeywordLen = Math.Max(singleKeyword?.Length ?? 0, (ac?.Patterns.Count > 0 ? ac.Patterns.Max(p => p.Length) : 0));
+                int BufferSize = knownSize >= 0 && knownSize <= 64 * 1024 && maxKeywordLen <= 1024
+                    ? 16 * 1024 : 65536;
                 int maxOverlap = Math.Clamp(Math.Max(1024, maxKeywordLen * 2), 1024, 16384);
                 buffer = ArrayPool<char>.Shared.Rent(BufferSize);
                 int overlapChars = 0;
@@ -469,12 +476,17 @@ namespace FolderMorpher.Services
             {
                 if (buffer != null) ArrayPool<char>.Shared.Return(buffer, clearArray: true);
                 if (head != null) ArrayPool<byte>.Shared.Return(head, clearArray: true);
-                if (completedMiss && readLatencies != null && latencyCount > 0)
+                if (readLatencies != null && latencyCount > 0)
                 {
                     int count = Math.Min(latencyCount, readLatencies.Length);
                     Array.Sort(readLatencies, 0, count);
                     double p95Ms = readLatencies[(int)Math.Ceiling(count * 0.95) - 1];
-                    readController!.ReportCompletedMiss(readBufferSize, knownSize, totalCharsRead, totalReadMs, p95Ms);
+                    // ReadBlockAsync includes decoding as well as awaited reads. It is a
+                    // conservative latency bound for the I/O governor, unlike the old
+                    // open/1KiB sample which understated full-file read latency.
+                    reportIoElapsed?.Invoke(p95Ms);
+                    if (completedMiss)
+                        readController!.ReportCompletedMiss(readBufferSize, knownSize, totalCharsRead, totalReadMs, p95Ms);
                 }
             }
             return null;
