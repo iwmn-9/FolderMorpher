@@ -122,6 +122,7 @@ namespace AstraSize
         public MainWindow()
         {
             InitializeComponent();
+            ApplyClientModeLayout();
 
             LiveAclStudioControl.InitializeServices();
             LiveAclStudioControl.ToastRequested += ShowToast;

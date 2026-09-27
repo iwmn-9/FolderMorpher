@@ -43,7 +43,7 @@ public static class SnapshotRunner
                                 FolderMorpher.Services.LocalizationService.Instance.SetLanguage(language);
 
                             if (selectTab == 1) mw.NavTabSearch.IsChecked = true;
-                            else if (selectTab == 15)
+                            else if (selectTab is 15 or 16)
                             {
                                 mw.NavTabSearch.IsChecked = true;
                                 FolderMorpher.Services.AppSettingsService.Instance.Current.RecentScopePaths = new List<string>
@@ -52,12 +52,29 @@ public static class SnapshotRunner
                                 };
                                 mw.ScopeManualPathBox.Text = @"C:\";
                                 mw.ScopeManualApplyButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-                                mw.ScopeRemoveButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-                                if (FolderMorpher.Services.AppSettingsService.Instance.Current.RecentScopePaths.Contains(@"C:\") ||
-                                    mw.StorageTabs.Any(tab => string.Equals(tab.TargetPath, @"C:\", StringComparison.OrdinalIgnoreCase)))
-                                    throw new InvalidOperationException("Removing a scope left the registered folder behind.");
-                                mw.ScopeManualPathBox.Text = @"C:\";
-                                mw.ScopeManualApplyButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                mw.ScopePickerButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                var activeRow = mw.ScopeRecentItems.Items.OfType<System.Windows.Controls.Border>().FirstOrDefault()
+                                    ?? throw new InvalidOperationException("Working folder was not listed in the expanded picker.");
+                                var removeButton = ((System.Windows.Controls.Grid)activeRow.Child).Children
+                                    .OfType<System.Windows.Controls.Button>().Last();
+                                if (removeButton.Visibility != Visibility.Hidden)
+                                    throw new InvalidOperationException("Folder removal was visible before hover.");
+                                activeRow.RaiseEvent(new System.Windows.Input.MouseEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0)
+                                {
+                                    RoutedEvent = UIElement.MouseEnterEvent
+                                });
+                                if (removeButton.Visibility != Visibility.Visible)
+                                    throw new InvalidOperationException("Folder removal did not appear on popup row hover.");
+                                if (selectTab == 15)
+                                {
+                                    removeButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                    if (FolderMorpher.Services.AppSettingsService.Instance.Current.RecentScopePaths.Contains(@"C:\") ||
+                                        mw.StorageTabs.Any(tab => string.Equals(tab.TargetPath, @"C:\", StringComparison.OrdinalIgnoreCase)))
+                                        throw new InvalidOperationException("Removing a scope left the registered folder behind.");
+                                    mw.ScopePopup.IsOpen = false;
+                                    mw.ScopeManualPathBox.Text = @"C:\";
+                                    mw.ScopeManualApplyButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                }
                             }
                             else if (selectTab == 12)
                             {
@@ -157,6 +174,12 @@ public static class SnapshotRunner
                             else if (selectTab == 4) mw.NavTabLinkFix.IsChecked = true;
                             else if (selectTab == 5) mw.NavTabAudit.IsChecked = true;
                             else if (selectTab == 14) mw.NavTabAudit.IsChecked = true;
+                            else if (selectTab == 18)
+                            {
+                                mw.Width = 1100;
+                                mw.Height = 720;
+                                mw.NavTabAudit.IsChecked = true;
+                            }
                             else if (selectTab == 6)
                             {
                                 mw.NavTabAudit.IsChecked = true;
@@ -375,7 +398,7 @@ public static class SnapshotRunner
                             if (h <= 0) h = 920;
 
                             System.Windows.Media.Visual visual = mw;
-                            if (selectTab is 12 or 13 && mw.ScopePopup.Child is System.Windows.FrameworkElement popupContent)
+                            if (selectTab is 12 or 13 or 16 && mw.ScopePopup.Child is System.Windows.FrameworkElement popupContent)
                             {
                                 visual = popupContent;
                                 w = (int)Math.Ceiling(popupContent.ActualWidth);

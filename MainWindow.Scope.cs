@@ -80,7 +80,6 @@ public partial class MainWindow
         ScopePickerText.Text = string.IsNullOrWhiteSpace(_activeScopePath)
             ? UiText("フォルダーを選択", "Choose a folder")
             : ScopeLeaf(_activeScopePath);
-        ScopeRemoveButton.Visibility = Visibility.Hidden;
         ScopePickerButton.ToolTip = string.IsNullOrWhiteSpace(_activeScopePath)
             ? UiText("参照フォルダーを切り替える", "Switch the working folder")
             : _activeScopePath;
@@ -111,16 +110,12 @@ public partial class MainWindow
 
     private void RenderScopeChoices()
     {
-        if (ScopeRecentItems == null || ScopeTree == null || ScopeQuickAccessPanel == null) return;
+        if (ScopeRecentItems == null || ScopeTree == null) return;
         var settings = AppSettingsService.Instance.Current;
         var recentPaths = (settings.RecentScopePaths ?? new List<string>())
             .Where(path => !string.IsNullOrWhiteSpace(path))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        ScopeQuickAccessPanel.Children.Clear();
-        foreach (var path in recentPaths.Where(path => !string.Equals(path, _activeScopePath, StringComparison.OrdinalIgnoreCase)).Take(4))
-            ScopeQuickAccessPanel.Children.Add(CreateScopeQuickChip(path));
-
         var paths = recentPaths
             .Concat(settings.StorageTabPaths ?? new List<string>())
             .Append(_activeScopePath)
@@ -131,21 +126,8 @@ public partial class MainWindow
         var visible = paths.Where(path => path.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
 
         ScopeRecentItems.Items.Clear();
-        foreach (var path in visible.Take(5))
-        {
-            var button = new Button
-            {
-                Content = CreateFolderLabel(path, showPath: true),
-                ToolTip = path,
-                Tag = path,
-                Height = 46,
-                Padding = new Thickness(9, 0, 8, 0),
-                HorizontalContentAlignment = HorizontalAlignment.Left,
-                Style = (Style)FindResource("ScopePickerButtonStyle")
-            };
-            button.Click += (_, _) => ChooseScope(path);
-            ScopeRecentItems.Items.Add(button);
-        }
+        foreach (var path in visible)
+            ScopeRecentItems.Items.Add(CreateScopeRecentRow(path));
         if (visible.Count == 0)
             ScopeRecentItems.Items.Add(new TextBlock
             {
@@ -159,14 +141,17 @@ public partial class MainWindow
             ScopeTree.Items.Add(CreateScopeTreeItem(path));
     }
 
-    private Border CreateScopeQuickChip(string path)
+    private Border CreateScopeRecentRow(string path)
     {
         var selectButton = new Button
         {
-            Content = new TextBlock { Text = ScopeLeaf(path), MaxWidth = 150, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center },
+            Content = CreateFolderLabel(path, showPath: true),
             ToolTip = path,
-            Height = 36,
-            Padding = new Thickness(11, 0, 4, 0),
+            Tag = path,
+            Height = 46,
+            Padding = new Thickness(9, 0, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
             Style = (Style)FindResource("ScopePickerButtonStyle")
         };
         selectButton.Click += (_, _) => ChooseScope(path);
@@ -174,45 +159,31 @@ public partial class MainWindow
         {
             Content = "×",
             ToolTip = UiText("参照一覧から外す（実フォルダーは削除しません）", "Remove from this list (files stay untouched)"),
-            Width = 23,
-            Height = 23,
-            Opacity = 0,
-            IsHitTestVisible = false,
+            Width = 25,
+            Height = 25,
+            Visibility = Visibility.Hidden,
             VerticalAlignment = VerticalAlignment.Center,
             Style = (Style)FindResource("ScopePickerButtonStyle")
         };
         removeButton.Click += (_, _) => RemoveRegisteredScope(path);
         var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(25) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
         Grid.SetColumn(removeButton, 1);
         grid.Children.Add(selectButton);
         grid.Children.Add(removeButton);
-        var chip = new Border
+        var row = new Border
         {
-            Background = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(218, 229, 242)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Margin = new Thickness(0, 0, 7, 0),
+            Background = string.Equals(path, _activeScopePath, StringComparison.OrdinalIgnoreCase)
+                ? new SolidColorBrush(Color.FromRgb(237, 244, 253)) : Brushes.Transparent,
+            CornerRadius = new CornerRadius(7),
+            Margin = new Thickness(0, 0, 0, 2),
             Child = grid
         };
-        chip.MouseEnter += (_, _) => { removeButton.Opacity = 1; removeButton.IsHitTestVisible = true; };
-        chip.MouseLeave += (_, _) => { removeButton.Opacity = 0; removeButton.IsHitTestVisible = false; };
-        return chip;
+        row.MouseEnter += (_, _) => removeButton.Visibility = Visibility.Visible;
+        row.MouseLeave += (_, _) => removeButton.Visibility = Visibility.Hidden;
+        return row;
     }
-
-    private void ActiveScopeContainer_MouseEnter(object sender, MouseEventArgs e)
-    {
-        if (!string.IsNullOrWhiteSpace(_activeScopePath)) ScopeRemoveButton.Visibility = Visibility.Visible;
-    }
-
-    private void ActiveScopeContainer_MouseLeave(object sender, MouseEventArgs e)
-    {
-        ScopeRemoveButton.Visibility = Visibility.Hidden;
-    }
-
-    private void ScopeRemoveButton_Click(object sender, RoutedEventArgs e) => RemoveRegisteredScope(_activeScopePath);
 
     private void RemoveRegisteredScope(string path)
     {

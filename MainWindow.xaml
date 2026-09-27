@@ -21,6 +21,10 @@
         SnapsToDevicePixels="True">
 
     <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition x:Name="AdminSidebarColumn" Width="208"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
             <RowDefinition Height="58"/>
             <RowDefinition Height="86"/>
@@ -28,8 +32,7 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Global mode and administration live above the working folder. -->
-        <Border Grid.Row="0" Background="White" BorderBrush="#E4E9F0" BorderThickness="0,0,0,1" Padding="24,0">
+        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="White" BorderBrush="#E4E9F0" BorderThickness="0,0,0,1" Padding="24,0">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -45,46 +48,39 @@
                         <TextBlock x:Name="AppSubtitleText" Text="Storage &amp; Migration Studio" FontSize="10" Foreground="#8390A3"/>
                     </StackPanel>
                 </StackPanel>
-                <ScrollViewer Grid.Column="1" HorizontalAlignment="Center" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" MaxWidth="860">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Stretch">
-                        <RadioButton x:Name="NavTabGeneral" Style="{StaticResource WorkspaceNavButton}" IsChecked="True" Checked="NavTab_Checked" Content="一般用途" ToolTip="フォルダーで作業"/>
-                        <Border x:Name="AdminTabsDivider" Width="1" Height="20" Background="#DCE3EB" Margin="10,0" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="AdminTabsCaption" Text="管理" Foreground="#8A99AC" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="3,0,7,0"/>
-                        <RadioButton x:Name="NavTabLiveAcl" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="権限" ToolTip="権限コントロール"/>
-                        <RadioButton x:Name="NavTabSimulation" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="移行" ToolTip="移行スタジオ"/>
-                        <RadioButton x:Name="NavTabLinkFix" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="リンク" ToolTip="リンク修復"/>
-                    </StackPanel>
-                </ScrollViewer>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="SettingsButton" Content="⚙" Width="34" Height="32" Padding="0" Style="{StaticResource FluentButtonSecondary}" Click="SettingsButton_Click" ToolTip="環境設定"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <Border Grid.Row="1" Background="#F5F8FC" BorderBrush="#DFE8F3" BorderThickness="0,0,0,1" Padding="28,0">
+        <Border x:Name="AdminSidebar" Grid.Row="1" Grid.RowSpan="3" Grid.Column="0" Background="White" BorderBrush="#E4E9F0" BorderThickness="0,0,1,0" Padding="14,24">
+            <StackPanel>
+                <TextBlock x:Name="SidebarGeneralCaption" Text="一般用途" Foreground="#8290A5" FontSize="11" FontWeight="SemiBold" Margin="14,0,0,9"/>
+                <RadioButton x:Name="NavTabGeneral" Style="{StaticResource WorkspaceNavButton}" IsChecked="True" Checked="NavTab_Checked" Content="フォルダー操作" ToolTip="検索・容量・整理"/>
+                <Border Height="1" Background="#E7EDF5" Margin="12,19,12,18"/>
+                <TextBlock x:Name="AdminTabsCaption" Text="管理者用" Foreground="#8290A5" FontSize="11" FontWeight="SemiBold" Margin="14,0,0,9"/>
+                <RadioButton x:Name="NavTabLiveAcl" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="権限コントロール" ToolTip="権限コントロール"/>
+                <RadioButton x:Name="NavTabSimulation" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="移行スタジオ" ToolTip="移行スタジオ"/>
+                <RadioButton x:Name="NavTabLinkFix" Style="{StaticResource WorkspaceNavButton}" Checked="NavTab_Checked" Content="リンク修復" ToolTip="リンク修復"/>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="1" Grid.Column="1" Background="#F5F8FC" BorderBrush="#DFE8F3" BorderThickness="0,0,0,1" Padding="28,0">
             <Grid>
                 <StackPanel Orientation="Vertical" VerticalAlignment="Center">
                     <TextBlock x:Name="ScopeCaptionText" Text="参照フォルダー" FontSize="11" FontWeight="SemiBold" Foreground="#637995" Margin="0,0,0,6"/>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border x:Name="ActiveScopeContainer" Background="White" BorderBrush="#96B5DC" BorderThickness="1" CornerRadius="9"
-                                MouseEnter="ActiveScopeContainer_MouseEnter" MouseLeave="ActiveScopeContainer_MouseLeave">
-                            <Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="26"/></Grid.ColumnDefinitions>
-                                <Button x:Name="ScopePickerButton" Grid.Column="0" Click="ScopePickerButton_Click" Style="{StaticResource ScopePickerButtonStyle}" ToolTip="参照フォルダーを切り替える" Padding="12,7,7,7">
+                        <Border x:Name="ActiveScopeContainer" Background="White" BorderBrush="#96B5DC" BorderThickness="1" CornerRadius="9">
+                                <Button x:Name="ScopePickerButton" Click="ScopePickerButton_Click" Style="{StaticResource ScopePickerButtonStyle}" ToolTip="参照フォルダーを切り替える" Padding="12,7,12,7">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Data="M2,5 L9,5 11,7 22,7 22,19 2,19 Z" Stroke="#2456A6" StrokeThickness="1.8" Width="19" Height="17" Stretch="Uniform" Margin="0,0,9,0" VerticalAlignment="Center"/>
                                         <TextBlock x:Name="ScopePickerText" Text="フォルダーを選択" FontSize="15" FontWeight="SemiBold" Foreground="#1E3559" MaxWidth="290" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                         <TextBlock Text="⌄" FontSize="16" Foreground="#667B99" Margin="12,0,0,0" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
-                                <Button x:Name="ScopeRemoveButton" Grid.Column="1" Content="×" Width="24" Height="24" Visibility="Hidden" VerticalAlignment="Center" HorizontalAlignment="Center"
-                                        Style="{StaticResource ScopePickerButtonStyle}" Click="ScopeRemoveButton_Click" ToolTip="参照一覧から外す"/>
-                            </Grid>
                         </Border>
                         <Button x:Name="ScopeAddButton" Content="＋ 追加" Height="38" Margin="8,0,0,0" VerticalAlignment="Center" Style="{StaticResource FluentButtonSecondary}" Click="ScopeAddButton_Click" ToolTip="参照フォルダーを追加"/>
-                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" MaxWidth="590" Margin="16,0,0,0" VerticalAlignment="Center">
-                            <StackPanel x:Name="ScopeQuickAccessPanel" Orientation="Horizontal"/>
-                        </ScrollViewer>
                     </StackPanel>
                 </StackPanel>
                 <Popup x:Name="ScopePopup" PlacementTarget="{Binding ElementName=ScopePickerButton}" Placement="Bottom" HorizontalOffset="0" VerticalOffset="5" StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
@@ -121,7 +117,7 @@
         </Border>
 
         <!-- Folder actions sit below the scope with enough breathing room to read as the next choice. -->
-        <Border x:Name="FolderActionBar" Grid.Row="2" Height="62" Background="{StaticResource CanvasBackground}" Padding="28,10,28,8">
+        <Border x:Name="FolderActionBar" Grid.Row="2" Grid.Column="1" Height="62" Background="{StaticResource CanvasBackground}" Padding="28,10,28,8">
             <Border Background="#E9EEF5" CornerRadius="10" Padding="4" HorizontalAlignment="Left" VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal">
                     <RadioButton x:Name="NavTabSearch" Style="{StaticResource FolderActionNavButton}" IsChecked="True" Checked="NavTab_Checked" Content="検索" ToolTip="ファイル検索"/>
@@ -131,7 +127,7 @@
             </Border>
         </Border>
 
-        <Grid Grid.Row="3">
+        <Grid Grid.Row="3" Grid.Column="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>    <!-- Tab Views Container -->
                 <RowDefinition Height="Auto"/> <!-- Global Footer / Status Bar -->
@@ -198,22 +194,18 @@
                 <!-- Storage Toolbar -->
                 <Border Grid.Row="1" Background="Transparent" BorderThickness="0" Padding="28,20,28,14">
                     <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <StackPanel Grid.Row="0" VerticalAlignment="Center">
                             <TextBlock x:Name="StoragePageTitleText" Text="容量分析" FontSize="20" FontWeight="SemiBold" Foreground="#1D2E49"/>
                             <TextBlock x:Name="StoragePageHintText" Text="選択したフォルダーの容量と内訳を確認" FontSize="12" Foreground="#7789A1" Margin="0,4,0,0"/>
                             <TextBox x:Name="PathTextBox" Visibility="Collapsed" KeyDown="PathTextBox_KeyDown"/>
                         </StackPanel>
 
-                        <Button x:Name="StorageBrowseButton" Grid.Column="1" Content="参照..." Visibility="Collapsed" Margin="8,0,10,0" Height="32"
+                        <Button x:Name="StorageBrowseButton" Grid.Row="1" Content="参照..." Visibility="Collapsed" Margin="8,0,10,0" Height="32"
                                 Style="{StaticResource FluentButtonSecondary}" Click="BrowseButton_Click"/>
 
-                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <WrapPanel Grid.Row="1" Margin="0,13,0,0" HorizontalAlignment="Left">
                             <Button x:Name="ScanButton" Content="スキャン開始" Height="32" Margin="0,0,8,0"
                                     Style="{StaticResource FluentButtonPrimary}" Click="ScanButton_Click"/>
                             <Button x:Name="CancelButton" Content="中止" Height="32" Margin="0,0,8,0" Background="#E11D48"
@@ -222,7 +214,7 @@
                                     Style="{StaticResource FluentButtonSecondary}" Click="ExportButton_Click"/>
                             <Button x:Name="TabHistoryButton" Content="📈 容量推移グラフ" Height="32"
                                     Style="{StaticResource FluentButtonSecondary}" Click="HistoryButton_Click"/>
-                        </StackPanel>
+                        </WrapPanel>
                     </Grid>
                 </Border>
 
@@ -1226,23 +1218,23 @@
                         </Grid>
 
                         <Grid Grid.Row="2" Margin="0,16,0,0">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock x:Name="AuditStatusText" Text="待機中" FontSize="11" Foreground="#64748B" VerticalAlignment="Center"/>
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <WrapPanel Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
+                                <Button x:Name="AuditStartButton" Content="🔍 整理候補を発見" Height="32" Margin="0,0,8,0"
+                                        Style="{StaticResource FluentButtonPrimary}" Click="AuditStartButton_Click"/>
                                 <Button x:Name="AuditIgnoredListButton" Content="🛡️ 除外リスト (0件)" Height="32" Margin="0,0,8,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="AuditIgnoredListButton_Click" ToolTip="消さない判断をして除外登録したファイルの一覧・解除"/>
                                 <Button x:Name="AuditExportExcelButton" Content="📊 Excel台帳出力 (.xlsx)" Height="32" Margin="0,0,8,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="AuditExportExcelButton_Click" ToolTip="整理理由・スコア・最新版パス付きの美麗Excel台帳を出力"/>
                                 <Button x:Name="AuditExportCsvButton" Content="📄 CSV台帳出力" Height="32" Margin="0,0,8,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="AuditExportCsvButton_Click"/>
-                                <Button x:Name="AuditDeleteSelectedButton" Content="🗑️ 選択ファイルを完全削除" Height="32" Margin="0,0,8,0"
-                                        Background="#EF4444" Foreground="#FFFFFF" FontWeight="Bold" BorderThickness="0"
-                                        Style="{StaticResource FluentButtonPrimary}" Click="AuditDeleteSelectedButton_Click"
-                                        ToolTip="チェックを入れたファイルを直接完全削除します（※復元不可）"/>
-                                <Button x:Name="AuditStartButton" Content="🔍 整理候補を発見" Height="32"
-                                        Style="{StaticResource FluentButtonPrimary}" Click="AuditStartButton_Click"/>
-                            </StackPanel>
+                            </WrapPanel>
+                            <Button x:Name="AuditDeleteSelectedButton" Grid.Row="0" Grid.Column="1" Content="🗑️ 選択ファイルを完全削除" Height="32" Margin="14,0,0,0"
+                                    Background="#EF4444" Foreground="#FFFFFF" FontWeight="Bold" BorderThickness="0"
+                                    Style="{StaticResource FluentButtonPrimary}" Click="AuditDeleteSelectedButton_Click"
+                                    ToolTip="チェックを入れたファイルを直接完全削除します（※復元不可）"/>
+                            <TextBlock x:Name="AuditStatusText" Grid.Row="1" Grid.ColumnSpan="2" Text="待機中" FontSize="11" Foreground="#64748B" Margin="0,9,0,0"/>
                         </Grid>
                     </Grid>
                 </Border>
@@ -1556,20 +1548,19 @@
                         </Grid>
 
                         <Grid Grid.Row="2" Margin="0,16,0,0">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock x:Name="MediaStatusText" Text="待機中" FontSize="11" Foreground="#64748B" VerticalAlignment="Center"/>
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                            <WrapPanel Grid.Row="0" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                <Button x:Name="MediaScanButton" Content="🔍 メディア走査" Height="32" Margin="0,0,8,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="MediaScanButton_Click"/>
+                                <Button x:Name="MediaOptimizeButton" Content="🔍 チェック" Height="32" Margin="0,0,18,0"
+                                        Style="{StaticResource FluentButtonPrimary}" Click="MediaOptimizeButton_Click"
+                                        ToolTip="軽量化対象の写真一覧と設定差分をチェック"/>
                                 <Button x:Name="MediaExportExcelButton" Content="📊 Excelレポート出力 (.xlsx)" Height="32" Margin="0,0,8,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="MediaExportExcelButton_Click"/>
                                 <Button x:Name="MediaGenVideoBatchButton" Content="🎬 大容量動画 夜間圧縮バッチ出力 (.bat)" Height="32" Margin="0,0,8,0"
                                         Style="{StaticResource FluentButtonSecondary}" Click="MediaGenVideoBatchButton_Click" ToolTip="GPUハードウェアエンコード (H.265) で動画を一括軽量化するスクリプトを出力"/>
-                                <Button x:Name="MediaScanButton" Content="🔍 メディア走査" Height="32" Margin="0,0,8,0"
-                                        Style="{StaticResource FluentButtonSecondary}" Click="MediaScanButton_Click"/>
-                                <Button x:Name="MediaOptimizeButton" Content="🔍 チェック" Height="32"
-                                        Style="{StaticResource FluentButtonPrimary}" Click="MediaOptimizeButton_Click"
-                                        ToolTip="軽量化対象の写真一覧と設定差分をチェック"/>
-                            </StackPanel>
+                            </WrapPanel>
+                            <TextBlock x:Name="MediaStatusText" Grid.Row="1" Text="待機中" FontSize="11" Foreground="#64748B" Margin="0,9,0,0"/>
                         </Grid>
                     </Grid>
                 </Border>
@@ -1666,10 +1657,6 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <Grid Grid.Row="0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
                             <Grid>
                             <TextBox x:Name="SearchInputBox" Height="48" FontSize="16" Padding="15,0"
                                      VerticalContentAlignment="Center" BorderBrush="#CBD5E1"
@@ -1677,27 +1664,23 @@
                                      ToolTip="検索構文を入力 (例: ext:xlsx size:>10MB dormant:>3y content:社外秘 regex:^backup.*\.zip)"/>
                             <TextBlock x:Name="SearchInputHint" Text="ファイル名や本文から検索" FontSize="15" Foreground="#A2AEC0" Margin="16,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"/>
                             </Grid>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0">
-                                <Button x:Name="SearchExecuteButton" Content="🔍 検索" Height="48" Padding="21,0"
-                                        Style="{StaticResource FluentButtonPrimary}" Click="SearchExecuteButton_Click"
-                                        ToolTip="検索を実行 (Enterキーでも実行可能)"/>
-                                <Button x:Name="SearchClearButton" Content="✕ クリア" Height="48" Padding="16,0" Margin="8,0,0,0"
-                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchClearButton_Click"
-                                        ToolTip="入力内容と結果をクリア"/>
-                            </StackPanel>
                         </Grid>
-                        <Grid Grid.Row="1" Margin="0,13,0,0">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,0" VerticalAlignment="Center">
+                            <Button x:Name="SearchExecuteButton" Content="🔍 検索" Height="38" MinWidth="100" Padding="17,0"
+                                    Style="{StaticResource FluentButtonPrimary}" Click="SearchExecuteButton_Click"
+                                    ToolTip="検索を実行 (Enterキーでも実行可能)"/>
+                            <Button x:Name="SearchClearButton" Content="✕ クリア" Height="38" Padding="15,0" Margin="8,0,0,0"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchClearButton_Click"
+                                    ToolTip="入力内容と結果をクリア"/>
+                            <Button x:Name="SearchRefreshButton" Content="↻  更新" Height="38" Padding="15,0" Margin="8,0,0,0" Style="{StaticResource FluentButtonSecondary}" Click="SearchRefreshButton_Click" ToolTip="検索結果を更新"/>
+                            <Border Width="1" Height="22" Background="#DCE5F0" Margin="18,0" VerticalAlignment="Center"/>
                                 <CheckBox x:Name="SearchIncludeFoldersCheckBox" Content="📁 フォルダも含める"
-                                          FontSize="13" Foreground="#52657F" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,20,0"
+                                          FontSize="13" Foreground="#52657F" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,18,0"
                                           ToolTip="検索結果にフォルダーも含めます"/>
                                 <CheckBox x:Name="SearchContentCheckBox" Content="📄 本文も検索"
                                           FontSize="13" Foreground="#285AA7" FontWeight="SemiBold" VerticalAlignment="Center"
                                           ToolTip="ファイル本文（Office/PDF/テキスト等）も探索します"/>
-                            </StackPanel>
-                            <Button x:Name="SearchRefreshButton" Grid.Column="1" Content="↻  更新" Height="30" Padding="12,0" Style="{StaticResource FluentButtonSecondary}" Click="SearchRefreshButton_Click" ToolTip="検索結果を更新"/>
-                        </Grid>
+                        </StackPanel>
                         <StackPanel Visibility="Collapsed">
                             <TextBlock x:Name="SearchTargetFolderLabel" Text="対象フォルダー:"/>
                             <TextBox x:Name="SearchDirectTargetTextBox"/>

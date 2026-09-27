@@ -30,13 +30,9 @@ namespace AstraSize
         {
             if (!ClientModeState.IsClientMode) return;
 
-            // クライアントモード（FolderCleaner）では管理者専用タブを非表示
-            if (NavTabLiveAcl != null) NavTabLiveAcl.Visibility = Visibility.Collapsed;
-            if (NavTabSimulation != null) NavTabSimulation.Visibility = Visibility.Collapsed;
-            if (NavTabLinkFix != null) NavTabLinkFix.Visibility = Visibility.Collapsed;
-            if (NavTabGeneral != null) NavTabGeneral.Visibility = Visibility.Collapsed;
-            if (AdminTabsDivider != null) AdminTabsDivider.Visibility = Visibility.Collapsed;
-            if (AdminTabsCaption != null) AdminTabsCaption.Visibility = Visibility.Collapsed;
+            // FolderCleanerには管理用ナビゲーションを作業面として見せない。
+            AdminSidebar.Visibility = Visibility.Collapsed;
+            AdminSidebarColumn.Width = new GridLength(0);
 
             Title = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
                 ? "FolderCleaner - 容量分析 & ファイル監査・写真軽量化 クライアント"
@@ -71,17 +67,18 @@ namespace AstraSize
 
             ApplyClientModeLayout();
 
-            // Global mode and folder actions are separate navigation levels.
-            NavTabGeneral.Content = isJa ? "一般用途" : "Everyday";
-            NavTabGeneral.ToolTip = isJa ? "フォルダーで作業" : "Work with folders";
-            AdminTabsCaption.Text = isJa ? "管理" : "Admin";
+            // 管理者用は左ナビ、一般用途の作業種別は参照フォルダーの下に置く。
+            SidebarGeneralCaption.Text = isJa ? "一般用途" : "Everyday";
+            NavTabGeneral.Content = isJa ? "フォルダー操作" : "Folder tools";
+            NavTabGeneral.ToolTip = isJa ? "検索・容量・整理" : "Search, storage, and cleanup";
+            AdminTabsCaption.Text = isJa ? "管理者用" : "Administration";
             NavTabStorage.Content = isJa ? "容量" : "Storage";
             NavTabStorage.ToolTip = Strings.TabStorageToolTip;
-            NavTabLiveAcl.Content = isJa ? "権限" : "Access";
+            NavTabLiveAcl.Content = isJa ? "権限コントロール" : "Access control";
             NavTabLiveAcl.ToolTip = Strings.TabLiveAclToolTip;
-            NavTabSimulation.Content = isJa ? "移行" : "Migration";
+            NavTabSimulation.Content = isJa ? "移行スタジオ" : "Migration studio";
             NavTabSimulation.ToolTip = Strings.TabSimulationToolTip;
-            NavTabLinkFix.Content = isJa ? "リンク" : "Links";
+            NavTabLinkFix.Content = isJa ? "リンク修復" : "Link repair";
             NavTabLinkFix.ToolTip = Strings.TabLinkFixToolTip;
             NavTabAudit.Content = isJa ? "整理" : "Cleanup";
             NavTabAudit.ToolTip = Strings.TabAuditToolTip;
@@ -96,7 +93,6 @@ namespace AstraSize
             ScopeCaptionText.Text = isJa ? "参照フォルダー" : "Working folder";
             ScopeAddButton.Content = isJa ? "＋ 追加" : "＋ Add";
             ScopeAddButton.ToolTip = isJa ? "参照フォルダーを追加" : "Add a working folder";
-            ScopeRemoveButton.ToolTip = isJa ? "参照一覧から外す（実フォルダーは削除しません）" : "Remove from this list (files stay untouched)";
             ScopePopupTitle.Text = isJa ? "参照フォルダーを選ぶ" : "Choose a working folder";
             ScopeRecentTitle.Text = isJa ? "最近使った場所" : "Recent locations";
             ScopeTreeTitle.Text = isJa ? "フォルダー一覧" : "Folders";
