@@ -46,7 +46,29 @@ FolderMorpherの `SearchEngineService.SearchDirectFolderAsync(@"C:\", SearchQuer
 | `C:\Windows` | 14.193秒 / 7.159秒 | 13.342～30.173秒 | ripgrep対象11,076件、FolderMorpher本文処理10,664件。どちらも0件ヒット。|
 | `C:\Users\iwakura\AppData\Local\uv` | 33.868秒 / 7.754秒 | 11.844～101.818秒 | 両者とも対象本文61,201件、0件ヒット。冷温差が大きい。|
 
-拡張子を付けない `rg -uu` の全C検索は1,229.822秒で試験を中断し、完了しなかった。これはFolderMorpherが対象外とする形式まで開く別の負荷であり、製品速度の比較値には使わない。拡張子指定の比較も、ripgrepはOffice/PDFを本文抽出せず、文字コード・バイナリ判定・エラー処理・TreeCache投入がFolderMorpherと同一ではない。ファイル件数とヒット数が近くても、読んだバイト数や仕事量が等しいとは限らない。したがって `約4分対9～12分` は**この端末の生テキスト検索エンジンとの参考目盛り**であり、厳密な速度比・一般的な製品平均ではない。Everythingも公式FAQで本文はインデックスせず検索が遅いと説明しているが、同じC全域の公開測定時間はない。[Everything公式FAQ](https://www.voidtools.com/faq/)。
+拡張子を付けない `rg -uu` の全C検索は1,229.822秒で試験を中断し、完了しなかった。これはFolderMorpherが対象外とする形式まで開く別の負荷であり、製品速度の比較値には使わない。拡張子指定の比較も、ripgrepはOffice/PDFを本文抽出せず、文字コード・バイナリ判定・エラー処理・TreeCache投入がFolderMorpherと同一ではない。ファイル件数とヒット数が近くても、読んだバイト数や仕事量が等しいとは限らない。したがって `約4分対9～12分` は**この端末の生テキスト検索エンジンとの参考目盛り**であり、厳密な速度比・一般的な製品平均ではない。Everythingについては次の索引なし試験の境界を参照する。
+
+### 索引・既存アプリキャッシュなしの競合試験（2026-09-27）
+
+通常権限の同一端末で、`C:\` 全体から本文の `SubtreeEndId` を大文字小文字を区別せず検索した。対象はFolderMorpherの対応するテキスト19拡張子（txt/log/csv/tsv/json/xml/html/htm/md/cs/sql/ps1/bat/cmd/py/ini/cfg/yaml/yml）。ファイル名検索ではない。試験本体とログは `%TEMP%\FolderMorpher-CompetitorBench-20260927` の一か所に隔離し、ログ拡張子を検索対象外の `.out` とした。
+
+- **rga 0.9.6**: `--rga-no-cache --no-config -uu -i -F -l --no-messages` と同じ拡張子globを指定。内部では端末の `ripgrep 15.2.0` を呼んだ。このテキスト試験では文書変換器を使わない。
+- **dnGrep 5.0.57.0 portable**: Everything連携ではなく `Asterisk` 列挙、本文 `PlainText`。隔離設定で `.gitignore` 利用とアーカイブ内部検索を無効化し、`Global=False` で各ファイルの最初の一致で止めた。19拡張子だけなので文書プラグインのキャッシュも対象外。隠しファイルとサブフォルダーは対象にした。
+- **FolderMorpher**: 実際の `SearchEngineService.SearchDirectFolderAsync` を試験用ヘッドレスプロセスから呼んだ。各回に新しい空の試験用TreeCache DBを割り当て、通常利用のDBを読まない。試験プロセス内だけで任意のWindows Search候補プロバイダーを0件にし、`INDEX_PROVIDERS=0` を出力で確認した。実装が冷間走査中に作る一時TreeCacheへのメタデータ捕捉は実動作として時間に含めた。GUI/Host IPCは含まない。
+
+| ツール | 全完了 | 本文検索数 | 一致ファイル | 読取不能 | 備考 |
+|---|---:|---:|---:|---:|---|
+| rga 0.9.6 | 251.574秒 | 未取得 | 20 | 未取得 | `--rga-no-cache`、終了コード0。`--no-messages` のためアクセス不能件数は追跡できない。 |
+| dnGrep 5.0.57.0 | 289.415秒 | 303,192 | 23 | 31 | 本体ログ上の検索処理は4分47.96秒、最大並行タスク54。壁時計は起動・結果出力も含む。 |
+| FolderMorpher | 603.191秒 | 303,242 | 22 | 31 | 列挙1,220,779、アクセス不能フォルダー1,239、最大Working Set約123 MiB。 |
+
+3ツール共通の20パスは完全一致（ソートしたパスのSHA-256: `97B9F78DDFDF9794DA00EA20ADC3CA24D5FC5992F6BF12B824116C09826EF95B`）。FolderMorpherにだけ加わった2件はrga終了後に作った試験スクリプト。dnGrepにだけ加わった3件はその2件とdnGrep自身が後で作ったログ。したがって、今回の差は既存ファイルの取りこぼしとは確認されなかった。
+
+rgaのWindows配布物0.10.9は `--rga-no-cache` でPDF/DOCX前処理が `No cache?` と失敗したため、この条件で動く0.9.6を採用した（[上流の報告](https://github.com/phiresky/ripgrep-all/issues/343)）。0.9.6と対応するPandoc 2.19.2・Popplerでは、隔離したTXT/PDF/DOCX試料の本文語をキャッシュなしで3/3検出した。Cドライブ全体のPDF/Office性能はこのテキスト試験からは判断しない。
+
+[Everything公式の検索仕様](https://www.voidtools.com/support/everything/search_functions/)では本文をその場で読む検索も、候補ファイルの一覧はEverythingの索引を使う。ポータブル版でも索引なしの同条件検索にならないため速度順位から外した。試験後にEverythingプロセス・サービス・索引DBが残っていないことを確認した。
+
+実行順はrga→FolderMorpher→dnGrepで、WindowsのファイルキャッシュやCドライブ上のファイル変化を固定していない。対象ファイルの符号化・バイナリ判定・エラー表示・メタデータ保存も完全同一ではない。単発の時間を恒常的な速度比や「C#だから遅い」という因果に使わない。UNCにも外挿しない。今回の値は、次に列挙・Open/Read・デコード/照合・一時DB待ちを分離して、ローカルの並列度とメモリ予算を比較する基準とする。
 
 ### ripgrep / ripgrep-all から取り込む範囲
 
