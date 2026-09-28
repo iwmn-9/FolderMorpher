@@ -61,11 +61,10 @@ namespace AstraSize
 
         private void SearchRefreshButton_Click(object sender, RoutedEventArgs e)
         {
-            // 現在の入力条件で検索を再実行（最新化）
+            // 更新はキャッシュの再照合ではなく、原本を再走査する。
             if (SearchQueryParser.Parse(SearchInputBox?.Text?.Trim() ?? string.Empty).IsEmpty) return;
-            ExecuteSearch(isIncremental: false);
-            bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
-            ShowToast(isJa ? "🔄 検索結果を最新化しました" : "🔄 Refreshed search results");
+            _searchDebounceTimer?.Stop();
+            ExecuteSearch(isIncremental: false, forceLive: true);
         }
 
         #region Search Input & Debounce
@@ -88,7 +87,7 @@ namespace AstraSize
             if (e.Key == Key.Enter)
             {
                 _searchDebounceTimer?.Stop();
-                ExecuteSearch(isIncremental: false);
+                ExecuteSearch(isIncremental: false, forceLive: true);
             }
         }
 
@@ -103,7 +102,7 @@ namespace AstraSize
                 return;
             }
             _searchDebounceTimer?.Stop();
-            ExecuteSearch(isIncremental: false);
+            ExecuteSearch(isIncremental: false, forceLive: true);
         }
 
         private void SearchClearButton_Click(object sender, RoutedEventArgs e)
@@ -201,7 +200,7 @@ namespace AstraSize
 
         #region Search Execution Core (Smart Auto-Routing)
 
-        private async void ExecuteSearch(bool isIncremental)
+        private async void ExecuteSearch(bool isIncremental, bool forceLive = false)
         {
             string rawQuery = SearchInputBox?.Text?.Trim() ?? string.Empty;
             var query = SearchQueryParser.Parse(rawQuery);
@@ -275,7 +274,7 @@ namespace AstraSize
                 if (!r.IsCached) ReportScanEta(scanEta,
                     query.HasDeepFileIoRequirement ? r.ContentProcessedCount : r.ScannedCount,
                     r.ProcessedDirectories, r.DiscoveredDirectories);
-                // Host progress is per job. Cached name hits from the preceding job remain visible.
+                // Host progress is per job; cache rows are only a provisional preview.
                 if (SearchKpiElapsedText != null) SearchKpiElapsedText.Text = $"{searchTotalSw.Elapsed.TotalSeconds:F2}s";
                 if (SearchStatusText != null && !string.IsNullOrEmpty(r.CurrentPath))
                 {
@@ -331,8 +330,7 @@ namespace AstraSize
                 bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
                 var sw = Stopwatch.StartNew();
 
-                // ⚡ スマートルーティング判定:
-                // スキャン済みツリー（またはディスク/共有のJSONキャッシュ）が存在するか？
+                // スキャン済みツリーまたはローカルTreeCacheから先行表示する。
                 if (!hasScannedTree && hasTarget)
                 {
                     try
@@ -347,8 +345,7 @@ namespace AstraSize
 
                 if (hasScannedTree)
                 {
-                    // 🚀 ルート1: スキャン済みツリー対象 (0秒インメモリ検索 ＋ 本文ストリーミング)
-                    // Step 1: まずツリーからファイル名・属性一致を超高速（0秒インメモリ）で先行表示！
+                    // 前回の走査情報で先行表示。最新の原本を確認した結果とは区別する。
                     var treeResults = new List<SearchResultItem>();
                     if (string.IsNullOrEmpty(query.ContentKeyword) &&
                         !query.HasOfficeLinkOnly &&
@@ -367,52 +364,35 @@ namespace AstraSize
                             long totalBytes = _searchResults.Sum(h => h.SizeBytes);
                             UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
 
-                            if (query.HasDeepFileIoRequirement && SearchStatusText != null)
+                            if (SearchStatusText != null)
                             {
-                                SearchStatusText.Text = isJa
-                                    ? $"⚡ ツリーから即時表示: {_searchResults.Count:N0} 件 ({sw.ElapsedMilliseconds} ms) ―― 📄 本文を走査中..."
-                                    : $"⚡ Instant tree matches: {_searchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms) ―― 📄 Searching content...";
+                                SearchStatusText.Text = Strings.SearchSnapshotStatus(_searchResults.Count,
+                                    forceLive || query.HasDeepFileIoRequirement);
                             }
                         }
                     }
 
-                    if (query.HasDeepFileIoRequirement && hasTarget)
+                    if ((forceLive || query.HasDeepFileIoRequirement) && hasTarget)
                     {
-                        // Step 2: 本文・Officeリンク条件は、キャッシュがあっても原本をLive走査する。
-                        scanEta = BeginScanEta("search-content", targetFolder, scopedRoots.Sum(root => (long)root.FileCount));
+                        ct.ThrowIfCancellationRequested();
+                        // 手動検索と本文・Officeリンク条件は、キャッシュがあっても原本を確認する。
+                        scanEta = BeginScanEta(query.HasDeepFileIoRequirement ? "search-content" : "search-name",
+                            targetFolder, scopedRoots.Sum(root => (long)root.FileCount));
                         var liveOutcome = await RunSearchJobAsync(targetFolder, query, progress, ReceiveBatch, cached: false, ct);
                         liveSearchCompleted = true;
                         var liveHits = liveOutcome.Results
                             .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                         if (currentGen == Volatile.Read(ref _searchGeneration))
                         {
-                            // treeResults と liveHits をマージ（同一パスならスニペットありを優先）
-                            var mergedMap = new Dictionary<string, SearchResultItem>(StringComparer.OrdinalIgnoreCase);
-                            foreach (var item in treeResults) mergedMap[item.FullPath] = item;
-                            foreach (var item in liveHits)
-                            {
-                                if (mergedMap.TryGetValue(item.FullPath, out var existing))
-                                {
-                                    if (string.IsNullOrEmpty(existing.ContentSnippet) && !string.IsNullOrEmpty(item.ContentSnippet))
-                                    {
-                                        mergedMap[item.FullPath] = item;
-                                    }
-                                }
-                                else
-                                {
-                                    mergedMap[item.FullPath] = item;
-                                }
-                            }
-
-                            SetSearchResults(mergedMap.Values);
+                            // 完了後は今回のLive結果だけが正本。消失した行や古い属性を残さない。
+                            SetSearchResults(liveHits);
                             long totalBytes = _searchResults.Sum(h => h.SizeBytes);
                             UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
 
                             if (SearchStatusText != null)
                             {
-                                SearchStatusText.Text = isJa
-                                    ? $"🔍 全文走査完了: {_allSearchResults.Count:N0} 件ヒット ({sw.ElapsedMilliseconds} ms){FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles)}"
-                                    : $"🔍 Full content scan complete: {_allSearchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms){FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles)}";
+                                SearchStatusText.Text = Strings.SearchLiveComplete(_searchResults.Count,
+                                    sw.ElapsedMilliseconds) + FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles);
                             }
                         }
                     }
@@ -420,9 +400,7 @@ namespace AstraSize
                     {
                         if (SearchStatusText != null)
                         {
-                            SearchStatusText.Text = isJa
-                                ? $"⚡ 0秒インメモリ検索完了: {_searchResults.Count:N0} 件ヒット ({sw.ElapsedMilliseconds} ms)"
-                                : $"⚡ Instant in-memory search complete: {_searchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms)";
+                            SearchStatusText.Text = Strings.SearchSnapshotStatus(_searchResults.Count, false);
                         }
                     }
                 }
@@ -470,6 +448,7 @@ namespace AstraSize
                 if (currentGen == Volatile.Read(ref _searchGeneration))
                 {
                     bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
+                    if (SearchStatusText != null) SearchStatusText.Text = Strings.SearchFailed;
                     AppDialog.Show(
                         (isJa ? "検索中にエラーが発生しました: " : "Error occurred during search: ") + ex.Message,
                         isJa ? "検索エラー" : "Search Error",

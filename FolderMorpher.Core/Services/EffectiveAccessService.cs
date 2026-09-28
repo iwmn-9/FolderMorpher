@@ -544,15 +544,9 @@ namespace FolderMorpher.Services
         }
 
         /// <summary>
-        /// Core evaluation logic adhering to Windows Canonical DACL Ordering:
-        /// 1. Explicit Deny ACEs
-        /// 2. Explicit Allow ACEs
-        /// 3. Inherited Deny ACEs
-        /// 4. Inherited Allow ACEs
-        /// 
-        /// Under Windows AccessCheck rules:
-        /// - Explicit Allow rules precede Inherited Deny rules (explicit child permissions take precedence over inherited parent denies).
-        /// - Explicit Deny rules override all Allow rules for matching rights bits.
+        /// Evaluate matching rights in the stored DACL order. Canonical inherited
+        /// ACEs retain their generation order (parent before grandparent); grouping
+        /// all inherited denies first would incorrectly revoke an earlier grant.
         /// </summary>
         public EffectiveFolderAccessItem? EvaluateEffectiveAccessOnAcl(
             FileSystemSecurity sec,
@@ -564,10 +558,11 @@ namespace FolderMorpher.Services
         {
             var rawRules = sec.GetAccessRules(true, true, typeof(NTAccount));
 
-            var explicitDenyRules = new List<FileSystemAccessRule>();
-            var explicitAllowRules = new List<FileSystemAccessRule>();
-            var inheritedDenyRules = new List<FileSystemAccessRule>();
-            var inheritedAllowRules = new List<FileSystemAccessRule>();
+            FileSystemRights totalDenied = 0;
+            FileSystemRights explicitAllowed = 0;
+            FileSystemRights inheritedAllowed = 0;
+            var grantSources = new List<string>();
+            var grantTraces = new List<string>();
 
             foreach (FileSystemAccessRule rule in rawRules)
             {
@@ -615,65 +610,19 @@ namespace FolderMorpher.Services
                     continue;
                 }
 
-                if (!rule.IsInherited)
+                var granted = explicitAllowed | inheritedAllowed;
+                if (rule.AccessControlType == AccessControlType.Deny)
                 {
-                    if (rule.AccessControlType == AccessControlType.Deny) explicitDenyRules.Add(rule);
-                    else explicitAllowRules.Add(rule);
+                    // AccessCheck has already satisfied earlier allowed bits.
+                    totalDenied |= rule.FileSystemRights & ~granted;
                 }
                 else
                 {
-                    if (rule.AccessControlType == AccessControlType.Deny) inheritedDenyRules.Add(rule);
-                    else inheritedAllowRules.Add(rule);
-                }
-            }
-
-            if (explicitDenyRules.Count == 0 && explicitAllowRules.Count == 0 &&
-                inheritedDenyRules.Count == 0 && inheritedAllowRules.Count == 0)
-            {
-                return null;
-            }
-
-            // Step 1: Explicit Deny
-            FileSystemRights explicitDenied = 0;
-            foreach (var r in explicitDenyRules)
-            {
-                explicitDenied |= r.FileSystemRights;
-            }
-
-            // Step 2: Explicit Allow (Rights not blocked by Explicit Deny)
-            FileSystemRights explicitAllowed = 0;
-            var grantSources = new List<string>();
-            var grantTraces = new List<string>();
-
-            foreach (var r in explicitAllowRules)
-            {
-                var effectiveBits = r.FileSystemRights & ~explicitDenied;
-                if (effectiveBits != 0)
-                {
-                    explicitAllowed |= effectiveBits;
-                    RecordGrantTrace(r, targetNames, groupMap, grantSources, grantTraces, isInherited: false);
-                }
-            }
-
-            // Step 3: Inherited Deny
-            // CRUCIAL: Inherited Deny cannot revoke permissions explicitly granted on this object
-            FileSystemRights effectiveInheritedDenied = 0;
-            foreach (var r in inheritedDenyRules)
-            {
-                effectiveInheritedDenied |= (r.FileSystemRights & ~explicitAllowed);
-            }
-
-            FileSystemRights totalDenied = explicitDenied | effectiveInheritedDenied;
-
-            // Step 4: Inherited Allow (Rights not blocked by totalDenied)
-            FileSystemRights inheritedAllowed = 0;
-            foreach (var r in inheritedAllowRules)
-            {
-                var effectiveBits = r.FileSystemRights & ~totalDenied;
-                if (effectiveBits != 0)
-                {
-                    inheritedAllowed |= effectiveBits;
-                    RecordGrantTrace(r, targetNames, groupMap, grantSources, grantTraces, isInherited: true);
+                    var effectiveBits = rule.FileSystemRights & ~totalDenied & ~granted;
+                    if (effectiveBits == 0) continue;
+                    if (rule.IsInherited) inheritedAllowed |= effectiveBits;
+                    else explicitAllowed |= effectiveBits;
+                    RecordGrantTrace(rule, targetNames, groupMap, grantSources, grantTraces, rule.IsInherited);
                 }
             }
 

@@ -117,10 +117,10 @@ namespace FolderMorpher.Services
 
         private static string ComputeFileSha256(string filePath)
         {
-            using var sha = System.Security.Cryptography.SHA256.Create();
-            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            var hash = sha.ComputeHash(stream);
-            return Convert.ToHexString(hash);
+            bool network = PathCanonicalizer.IsNetworkPath(filePath);
+            using var reader = new DuplicateHashReader(network ? 64 * 1024 : DuplicateHashPipeline.LocalReadBytes, network);
+            return reader.HashAsync(filePath, -1, DuplicateHashMode.Full, null, CancellationToken.None).GetAwaiter().GetResult()
+                ?? throw new IOException("Full SHA-256 verification could not read the file: " + filePath);
         }
 
         /// <summary>
@@ -182,7 +182,7 @@ namespace FolderMorpher.Services
                             }
                         }
 
-                        // Sol指摘: 重複削除直前に、原本と削除対象のSHA-256ハッシュを再計算・照合（誤削除ゼロ保証）
+                        // 削除直前に原本と対象を全文再照合する。照合後の外部変更まで保証するものではない。
                         try
                         {
                             string origHash = ComputeFileSha256(plan.OriginalCandidatePath);

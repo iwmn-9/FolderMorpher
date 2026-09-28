@@ -29,9 +29,9 @@ Settings, history, and metadata caches are written to the running computer. Clos
 
 - Search names by default; enable **Search contents** or use `content:` for supported text, Office, and PDF contents. Include folders when needed.
 - Filters include `ext:xlsx,docx`, `size:>100MB`, `dormant:>3y`, `pathlen:>240`, and `chars:illegal`, plus logical expressions and wildcards.
-- Existing metadata answers name/attribute queries from memory or the local TreeCache. Content queries read original files; there is **no persistent full-text search database**.
+- While typing, memory or the local TreeCache previews the previous scan. Search, Enter, and Refresh scan the originals, then replace the final list with verified live hits. There is **no persistent full-text search database**.
 - Direct traversal streams entries without keeping a second complete file list. Text scanning uses pooled buffers, an ASCII/UTF-8 fast path when applicable, and adaptive read sizes. Office reads text entries without expanding media assets.
-- The same search button becomes **Stop** during execution. Clear cancels the job; an empty query does not restart it. Results arrive during scanning, and counts include deduplicated cache and live hits.
+- The same search button becomes **Stop** during execution. Clear cancels the job; an empty query does not restart it. Cached previews are provisional. Final counts include deduplicated name and content hits verified during the live scan.
 - Elapsed time and approximate remaining time appear with the result counts. Estimates initially say “Estimating” and report overruns. Inaccessible folders and detected content-read failures are reported at completion.
 
 ## Storage

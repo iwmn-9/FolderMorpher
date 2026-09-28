@@ -24,6 +24,91 @@ namespace FolderMorpher.Services.Testing
         {
             await TestMediaOptimizerPngPreservationAsync();
             await TestOfficeLinkFixMixedXmlAndVbaPartialSuccessAsync();
+            await TestShortcutRestoreOutcomesAsync();
+        }
+
+        public static async Task TestShortcutRestoreOutcomesAsync()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "FM_RegTest_ShortcutRestore_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            try
+            {
+                string target = Path.Combine(root, "restore.lnk");
+                string snapshot = target + ".rollback";
+                File.WriteAllText(snapshot, "previous-state");
+                File.WriteAllText(target, "changed-state");
+                var result = LinkFixService.RestoreShortcutSnapshot(target, snapshot);
+                if (result.State != ShortcutRestoreState.Restored || File.Exists(snapshot) || File.ReadAllText(target) != "previous-state")
+                    throw new InvalidOperationException("Shortcut rollback did not restore and verify its snapshot.");
+
+                File.WriteAllText(snapshot, "previous-state");
+                File.WriteAllText(target, "changed-state");
+                using (var lockedTarget = new FileStream(target, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    result = LinkFixService.RestoreShortcutSnapshot(target, snapshot);
+                    if (result.State != ShortcutRestoreState.Failed || result.RecoveryPath != snapshot || !File.Exists(snapshot))
+                        throw new InvalidOperationException("Failed rollback was reported as restored or discarded its recovery copy.");
+                }
+                if (File.ReadAllText(target) != "changed-state")
+                    throw new InvalidOperationException("Failed rollback unexpectedly changed the locked target.");
+
+                if (LinkFixService.RestoreShortcutSnapshot(target, null).State != ShortcutRestoreState.NotAttempted ||
+                    LinkFixService.RestoreShortcutSnapshot(target, snapshot + ".missing").State != ShortcutRestoreState.Failed)
+                    throw new InvalidOperationException("Missing and unattempted shortcut restoration were not distinguished.");
+
+                using (var lockedSnapshot = new FileStream(snapshot, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    result = LinkFixService.RestoreShortcutSnapshot(target, snapshot);
+                    if (result.State != ShortcutRestoreState.Restored || result.RecoveryPath != snapshot || !File.Exists(snapshot))
+                        throw new InvalidOperationException("Snapshot cleanup failure incorrectly changed the restore outcome.");
+                }
+
+                // Exercise the actual WSH save and the outer failure-reporting path.
+                dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell")!)!;
+                string shortcutPath = Path.Combine(root, "repair.lnk");
+                string oldTarget = Path.Combine(root, "old.exe");
+                string newTarget = Path.Combine(root, "new.exe");
+                dynamic shortcut = shell.CreateShortcut(shortcutPath);
+                shortcut.TargetPath = oldTarget;
+                shortcut.Save();
+                var item = new LinkFixItem
+                {
+                    FilePath = shortcutPath, FileType = "Localized display label", OldTarget = oldTarget, NewTarget = newTarget
+                };
+                var service = new LinkFixService();
+                int successes = await service.ExecuteFixAsync(new List<LinkFixItem> { item }, null, CancellationToken.None);
+                if (successes != 1 || !item.IsFixed || (string)shell.CreateShortcut(shortcutPath).TargetPath != newTarget)
+                    throw new InvalidOperationException("Shortcut repair depended on its display label or failed verification.");
+
+                item.IsFixed = false;
+                item.OldTarget = newTarget;
+                item.NewTarget = oldTarget;
+                using (var lockedShortcut = new FileStream(shortcutPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    successes = await service.ExecuteFixAsync(new List<LinkFixItem> { item }, null, CancellationToken.None);
+                    if (successes != 0 || item.IsFixed || item.Status.Contains(Strings.ShortcutRestored, StringComparison.Ordinal) ||
+                        !item.Status.Contains(Strings.ShortcutRecoveryFile(shortcutPath), StringComparison.Ordinal) ||
+                        !Directory.EnumerateFiles(root, "repair.lnk.rollback_*").Any())
+                        throw new InvalidOperationException("Locked shortcut reported repair/restore success or lost its recovery path: " + item.Status);
+                }
+                if ((string)shell.CreateShortcut(shortcutPath).TargetPath != newTarget)
+                    throw new InvalidOperationException("Failed shortcut repair changed the locked original.");
+
+                string prewritePath = Path.Combine(root, "backup-blocked.lnk");
+                dynamic prewrite = shell.CreateShortcut(prewritePath);
+                prewrite.TargetPath = oldTarget;
+                prewrite.Save();
+                Directory.CreateDirectory(prewritePath + ".bak");
+                var blocked = new LinkFixItem { FilePath = prewritePath, OldTarget = oldTarget, NewTarget = newTarget };
+                successes = await service.ExecuteFixAsync(new List<LinkFixItem> { blocked }, null, CancellationToken.None);
+                if (successes != 0 || blocked.IsFixed || !blocked.Status.Contains(Strings.ShortcutRestoreNotAttempted, StringComparison.Ordinal) ||
+                    (string)shell.CreateShortcut(prewritePath).TargetPath != oldTarget)
+                    throw new InvalidOperationException("Backup creation failure falsely reported a restored shortcut.");
+                System.Runtime.InteropServices.Marshal.FinalReleaseComObject(prewrite);
+                System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shortcut);
+                System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shell);
+            }
+            finally { Directory.Delete(root, true); }
         }
 
         public static async Task TestMediaOptimizerPngPreservationAsync()

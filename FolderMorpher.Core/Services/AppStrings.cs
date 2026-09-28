@@ -455,6 +455,26 @@ namespace FolderMorpher.Services
         public static string SearchUnverifiedTargets(int deniedFolders, int unreadFiles) => IsJa
             ? $" ⚠️ 確認できなかった対象: フォルダー {deniedFolders:N0}、ファイル {unreadFiles:N0}"
             : $" ⚠️ Could not inspect: {deniedFolders:N0} folders, {unreadFiles:N0} files";
+        public static string SearchSnapshotStatus(int count, bool checkingOriginals) => IsJa
+            ? $"キャッシュ（前回の走査情報）: {count:N0} 件 ―― " + (checkingOriginals ? "原本を確認中（暫定表示）" : "検索・更新で原本を確認")
+            : $"Cached snapshot: {count:N0} hits ―― " + (checkingOriginals ? "Checking originals (provisional)" : "Search or Refresh to check originals");
+        public static string SearchLiveComplete(int count, long milliseconds) => IsJa
+            ? $"🔍 原本走査完了: {count:N0} 件ヒット ({milliseconds} ms)"
+            : $"🔍 Live scan complete: {count:N0} hits ({milliseconds} ms)";
+        public static string SearchFailed => IsJa ? "検索失敗（結果は未確定）" : "Search failed (results are incomplete)";
+        public static string ShortcutRepairSucceeded => IsJa ? "修復完了（検証済・バックアップ済）" : "Repaired (verified, backed up)";
+        public static string ShortcutRepairUnavailable => IsJa ? "ショートカット処理を利用できません。" : "Shortcut processing is unavailable.";
+        public static string ShortcutExternalChange(string target) => IsJa
+            ? $"外部変更検知のためスキップ（現在値: {target}）" : $"Skipped: target changed externally ({target})";
+        public static string ShortcutVerificationFailed(string target) => IsJa
+            ? $"保存後のリンク先が一致しません（書込値: {target}）" : $"Saved target does not match ({target})";
+        public static string ShortcutRestoreNotAttempted => IsJa ? "復元未実施" : "Restore not attempted";
+        public static string ShortcutRestored => IsJa ? "直前状態を復元・検証済" : "Previous state restored and verified";
+        public static string ShortcutRecoveryFile(string path) => IsJa ? $"復旧用ファイル: {path}" : $"Recovery file: {path}";
+        public static string ShortcutRestoreFailed(string path, string error) => IsJa
+            ? $"復元失敗。{ShortcutRecoveryFile(path)}。{error}" : $"Restore failed. {ShortcutRecoveryFile(path)}. {error}";
+        public static string ShortcutRepairFailed(string reason, string restore) => IsJa
+            ? $"修復失敗（{restore}）: {reason}" : $"Repair failed ({restore}): {reason}";
         public static string SearchQuickPresets => IsJa ? "クイック検索:" : "Quick Presets:";
         public static string SearchChipLargeText => IsJa ? "🐘 1GB超 (size:>1GB)" : "🐘 >1GB (size:>1GB)";
         public static string SearchChipDormantText => IsJa ? "💤 3年休眠 (dormant:3y)" : "💤 Dormant 3Y (dormant:3y)";

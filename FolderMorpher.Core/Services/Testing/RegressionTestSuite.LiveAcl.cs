@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Threading;
@@ -12,6 +14,7 @@ using AstraSize.Services;
 using AstraSize.Services.Mft;
 using FolderMorpher.Models;
 using FolderMorpher.Services;
+using Microsoft.Win32.SafeHandles;
 
 namespace FolderMorpher.Services.Testing
 {
@@ -26,6 +29,7 @@ namespace FolderMorpher.Services.Testing
             TestLiveAclSpecialInheritanceFlags();
             TestAclUiBindingAndHelper();
             await TestEffectiveAccessCanonicalDaclAndNestingAsync();
+            TestEffectiveAccessInheritedGenerationOrder();
             await TestLiveAclRollbackAndSkeletonEmptyAclInheritanceAsync();
             await TestLiveAclDeltaApplyAndAuditHygieneThresholdsAsync();
             await TestAclMultisetDeltaAndInheritancePreservationAsync();
@@ -34,6 +38,101 @@ namespace FolderMorpher.Services.Testing
             await TestOptimisticLockAndEffectiveAccessChangePointsAsync();
             await TestLiveAclSnapshotPersistenceFailureRejectionAsync();
             TestSimAclEntrySidFirstMatching();
+        }
+
+        public static void TestEffectiveAccessInheritedGenerationOrder()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "FM_RegTest_InheritedOrder_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            using var identity = WindowsIdentity.GetCurrent(TokenAccessLevels.Query | TokenAccessLevels.Duplicate);
+            var sid = identity.User!;
+            string account = identity.Name;
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { account, sid.Value };
+            var groups = new Dictionary<string, PrincipalGroupMembership>(StringComparer.OrdinalIgnoreCase);
+            var service = new EffectiveAccessService();
+            try
+            {
+                foreach (bool parentAllows in new[] { true, false })
+                {
+                    string grandparent = Path.Combine(root, parentAllows ? "grandparent-deny" : "grandparent-allow");
+                    string parent = Path.Combine(grandparent, "parent");
+                    string child = Path.Combine(parent, "child");
+                    Directory.CreateDirectory(child);
+
+                    var grandAcl = new DirectorySecurity();
+                    grandAcl.SetAccessRuleProtection(true, false);
+                    grandAcl.SetOwner(sid);
+                    grandAcl.SetGroup(sid);
+                    grandAcl.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.FullControl, AccessControlType.Allow));
+                    var inherited = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+                    // Permit inspection, ACL restoration and deletion on all test descendants.
+                    grandAcl.AddAccessRule(new FileSystemAccessRule(sid,
+                        FileSystemRights.ReadAndExecute | FileSystemRights.ChangePermissions | FileSystemRights.Delete,
+                        inherited, PropagationFlags.None, AccessControlType.Allow));
+                    grandAcl.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.WriteData,
+                        inherited, PropagationFlags.None, parentAllows ? AccessControlType.Deny : AccessControlType.Allow));
+                    new DirectoryInfo(grandparent).SetAccessControl(grandAcl);
+
+                    var parentInfo = new DirectoryInfo(parent);
+                    var parentAcl = parentInfo.GetAccessControl(AccessControlSections.Access);
+                    parentAcl.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.WriteData,
+                        inherited, PropagationFlags.None, parentAllows ? AccessControlType.Allow : AccessControlType.Deny));
+                    parentInfo.SetAccessControl(parentAcl);
+
+                    var childAcl = new DirectoryInfo(child).GetAccessControl(
+                        AccessControlSections.Access | AccessControlSections.Owner | AccessControlSections.Group);
+                    var relevant = childAcl.GetAccessRules(true, true, typeof(SecurityIdentifier)).Cast<FileSystemAccessRule>()
+                        .Where(rule => rule.IdentityReference.Equals(sid) && (rule.FileSystemRights & FileSystemRights.WriteData) != 0).ToList();
+                    if (relevant.Count != 2 || relevant.Any(rule => !rule.IsInherited) ||
+                        relevant[0].AccessControlType != (parentAllows ? AccessControlType.Allow : AccessControlType.Deny))
+                        throw new InvalidOperationException("Three-generation fixture did not retain parent-before-grandparent ACE order.");
+
+                    var evaluated = service.EvaluateEffectiveAccessOnAcl(childAcl, account, names, groups, child, "child");
+                    foreach (var right in new[] { FileSystemRights.WriteData, FileSystemRights.ReadData, FileSystemRights.Delete })
+                    {
+                        bool actualWindows = CheckTestAccessWithWindows(childAcl, identity.Token, right);
+                        bool reported = evaluated != null && (evaluated.AllowedRights & right) == right;
+                        if (actualWindows != reported || (right == FileSystemRights.WriteData && actualWindows != parentAllows))
+                            throw new InvalidOperationException($"Inherited ACL order differs from Windows AccessCheck: {right}, parentAllows={parentAllows}, Windows={actualWindows}, audit={reported}.");
+                    }
+                    if (evaluated?.IsInherited != true ||
+                        (!parentAllows && (evaluated.DeniedRights & FileSystemRights.WriteData) == 0))
+                        throw new InvalidOperationException("Inherited grant/deny presentation lost its effective provenance.");
+                }
+            }
+            finally { Directory.Delete(root, true); }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct TestAccessGenericMapping
+        {
+            public uint Read, Write, Execute, All;
+        }
+
+        [DllImport("advapi32.dll", EntryPoint = "DuplicateToken", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DuplicateTestAccessToken(IntPtr existingToken, int impersonationLevel, out SafeAccessTokenHandle duplicate);
+
+        [DllImport("advapi32.dll", EntryPoint = "AccessCheck", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool NativeTestAccessCheck(byte[] descriptor, SafeAccessTokenHandle token, uint desiredAccess,
+            ref TestAccessGenericMapping mapping, [Out] byte[] privilegeSet, ref uint privilegeBytes,
+            out uint grantedAccess, [MarshalAs(UnmanagedType.Bool)] out bool allowed);
+
+        private static bool CheckTestAccessWithWindows(DirectorySecurity security, IntPtr token, FileSystemRights right)
+        {
+            if (!DuplicateTestAccessToken(token, 2 /* SecurityImpersonation */, out var impersonation))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            using (impersonation)
+            {
+                var mapping = new TestAccessGenericMapping { Read = 0x120089, Write = 0x120116, Execute = 0x1200a0, All = 0x1f01ff };
+                var privileges = new byte[1024];
+                uint privilegeBytes = (uint)privileges.Length;
+                if (!NativeTestAccessCheck(security.GetSecurityDescriptorBinaryForm(), impersonation, (uint)right,
+                    ref mapping, privileges, ref privilegeBytes, out _, out bool allowed))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                return allowed;
+            }
         }
 
         public static void TestLiveAclDenyAndInheritance()

@@ -400,6 +400,85 @@ namespace AstraSize
                             });
                             Console.WriteLine("[TEST-IPC] Cached name + live search UI count: SUCCESS");
 
+                            // Keep an old snapshot, then change the original files behind it.
+                            var freshnessRoot = Path.Combine(testRoot, "freshness");
+                            Directory.CreateDirectory(freshnessRoot);
+                            var deletedHit = Path.Combine(freshnessRoot, "fresh-match-deleted.txt");
+                            var oldRename = Path.Combine(freshnessRoot, "fresh-match-before-rename.txt");
+                            var renamedHit = Path.Combine(freshnessRoot, "fresh-match-after-rename.txt");
+                            var retainedHit = Path.Combine(freshnessRoot, "fresh-match-retained.txt");
+                            var addedHit = Path.Combine(freshnessRoot, "fresh-match-added.txt");
+                            await File.WriteAllTextAsync(deletedHit, "old", testCts.Token);
+                            await File.WriteAllTextAsync(oldRename, "old", testCts.Token);
+                            await File.WriteAllTextAsync(retainedHit, "old", testCts.Token);
+                            await host.ScanStorageAsync(new FolderMorpher.Contracts.StorageScanRequestDto
+                                { TargetPath = freshnessRoot }, null, testCts.Token);
+                            File.Delete(deletedHit);
+                            File.Move(oldRename, renamedHit);
+                            await File.WriteAllTextAsync(retainedHit, new string('x', 300), testCts.Token);
+                            await File.WriteAllTextAsync(addedHit, "name-only hit", testCts.Token);
+
+                            MainWindow? freshnessWindow = null;
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                freshnessWindow = new MainWindow();
+                                FindControl<TextBox>(freshnessWindow, "SearchDirectTargetTextBox").Text = freshnessRoot;
+                                FindControl<TextBox>(freshnessWindow, "SearchInputBox").Text = "fresh-match";
+                            });
+                            try
+                            {
+                                // Debounced typing retains the fast, explicitly labeled snapshot preview.
+                                await Task.Delay(400, testCts.Token);
+                                while (await Dispatcher.InvokeAsync(() =>
+                                    SearchButtonShowsStop(FindControl<Button>(freshnessWindow!, "SearchExecuteButton"))))
+                                    await Task.Delay(50, testCts.Token);
+                                await Dispatcher.InvokeAsync(() =>
+                                {
+                                    if (freshnessWindow!.SearchResults.Count != 3 ||
+                                        !freshnessWindow.SearchResults.Any(item => item.FullPath == deletedHit))
+                                        throw new InvalidOperationException("Cached search preview was lost or was presented as current data.");
+                                    FolderMorpher.UI.PresentationTestRunner.VerifySearchSnapshotStatus(freshnessWindow, 3);
+                                    FindControl<Button>(freshnessWindow, "SearchRefreshButton").RaiseEvent(new RoutedEventArgs(
+                                        System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                });
+                                while (await Dispatcher.InvokeAsync(() =>
+                                    SearchButtonShowsStop(FindControl<Button>(freshnessWindow!, "SearchExecuteButton"))))
+                                    await Task.Delay(50, testCts.Token);
+                                await Dispatcher.InvokeAsync(() =>
+                                {
+                                    var current = freshnessWindow!.SearchResults;
+                                    if (current.Count != 3 || current.Any(item => item.FullPath == deletedHit || item.FullPath == oldRename) ||
+                                        !current.Any(item => item.FullPath == renamedHit) || !current.Any(item => item.FullPath == addedHit) ||
+                                        current.Single(item => item.FullPath == retainedHit).SizeBytes != new FileInfo(retainedHit).Length ||
+                                        !FindControl<TextBlock>(freshnessWindow, "SearchKpiHitCountText").Text.StartsWith("3", StringComparison.Ordinal))
+                                        throw new InvalidOperationException("Refresh retained stale paths/metadata or missed new live files.");
+                                });
+
+                                File.Delete(retainedHit);
+                                File.Delete(renamedHit);
+                                var contentHit = Path.Combine(freshnessRoot, "content-only.txt");
+                                await File.WriteAllTextAsync(contentHit, "fresh-match inside the file", testCts.Token);
+                                await Dispatcher.InvokeAsync(() =>
+                                {
+                                    FindControl<CheckBox>(freshnessWindow!, "SearchContentCheckBox").IsChecked = true;
+                                    FindControl<Button>(freshnessWindow!, "SearchExecuteButton").RaiseEvent(new RoutedEventArgs(
+                                        System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                                });
+                                while (await Dispatcher.InvokeAsync(() =>
+                                    SearchButtonShowsStop(FindControl<Button>(freshnessWindow!, "SearchExecuteButton"))))
+                                    await Task.Delay(50, testCts.Token);
+                                await Dispatcher.InvokeAsync(() =>
+                                {
+                                    var current = freshnessWindow!.SearchResults;
+                                    if (current.Count != 2 || !current.Any(item => item.FullPath == addedHit) ||
+                                        !current.Any(item => item.FullPath == contentHit && !string.IsNullOrEmpty(item.ContentSnippet)) ||
+                                        !FindControl<TextBlock>(freshnessWindow, "SearchKpiHitCountText").Text.StartsWith("2", StringComparison.Ordinal))
+                                        throw new InvalidOperationException("Content search merged stale cache hits or lost verified name/content hits.");
+                                });
+                            }
+                            finally { await Dispatcher.InvokeAsync(() => freshnessWindow?.Close()); }
+                            Console.WriteLine("[TEST-IPC] Search freshness: snapshot, delete, rename, create, metadata, live name/content count SUCCESS");
+
                             var unreadOfficePath = Path.Combine(testRoot, "unread-search-test.docx");
                             await File.WriteAllTextAsync(unreadOfficePath, "not a ZIP document", testCts.Token);
                             var unreadJobId = await host.StartJobAsync(new FolderMorpher.Contracts.HostJobRequestDto

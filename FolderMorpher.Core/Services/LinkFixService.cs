@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,6 +21,9 @@ namespace FolderMorpher.Services
         public OfficeLinkItem? AssociatedOfficeItem { get; set; }
         public bool NeedsFix => !IsFixed && !string.IsNullOrEmpty(NewTarget) && !string.Equals(OldTarget, NewTarget, StringComparison.OrdinalIgnoreCase);
     }
+
+    internal enum ShortcutRestoreState { NotAttempted, Restored, Failed }
+    internal sealed record ShortcutRestoreResult(ShortcutRestoreState State, string? RecoveryPath = null, string? Error = null);
 
     public class LinkFixService
     {
@@ -105,6 +109,7 @@ namespace FolderMorpher.Services
                     if (ct.IsCancellationRequested) break;
                     if (!item.NeedsFix) continue;
 
+                    string? rollbackPath = null;
                     try
                     {
                         if (item.AssociatedOfficeItem != null)
@@ -116,23 +121,22 @@ namespace FolderMorpher.Services
                                 item.IsFixed = true;
                                 item.Status = item.AssociatedOfficeItem.Status;
                                 successCount++;
-                                progress?.Report((item.FilePath, true));
                             }
                             else
                             {
                                 item.Status = item.AssociatedOfficeItem.Status;
-                                progress?.Report((item.FilePath, false));
                             }
                         }
-                        else if (item.FileType.Contains(".lnk") && wsh is not null)
+                        else if (Path.GetExtension(item.FilePath).Equals(".lnk", StringComparison.OrdinalIgnoreCase))
                         {
+                            if (wsh is null) throw new InvalidOperationException(Strings.ShortcutRepairUnavailable);
                             // 1. 楽観ロック (Optimistic Lock): 書き込み直前に現在の実態 TargetPath を再照合
                             dynamic currentShortcut = wsh.CreateShortcut(item.FilePath);
                             string currentTarget = currentShortcut.TargetPath;
                             if (!string.IsNullOrWhiteSpace(item.OldTarget) &&
                                 !string.Equals(currentTarget?.TrimEnd('\\'), item.OldTarget.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
                             {
-                                item.Status = $"外部変更検知のためスキップ (現在値: {currentTarget})";
+                                item.Status = Strings.ShortcutExternalChange(currentTarget ?? string.Empty);
                                 progress?.Report((item.FilePath, false));
                                 continue;
                             }
@@ -144,72 +148,77 @@ namespace FolderMorpher.Services
                                 File.Copy(item.FilePath, bakPath);
                             }
 
-                            // 3. 直前一時ロールバック用スナップショット (世代分離: 過去の.bak巻き戻し事故を完全根絶)
-                            string rollbackPath = item.FilePath + $".rollback_{Guid.NewGuid():N}";
-                            File.Copy(item.FilePath, rollbackPath, overwrite: true);
+                            // 3. 過去の.bakではなく、今回の変更直前の状態を保存する。
+                            string snapshotPath = item.FilePath + $".rollback_{Guid.NewGuid():N}";
+                            File.Copy(item.FilePath, snapshotPath, overwrite: false);
+                            // Only a successfully copied snapshot can restore the previous state.
+                            rollbackPath = snapshotPath;
 
-                            try
+                            currentShortcut.TargetPath = item.NewTarget;
+                            currentShortcut.Save();
+
+                            // 4. 保存したショートカットを開き直して、計画のリンク先と照合する。
+                            dynamic verifyShortcut = wsh.CreateShortcut(item.FilePath);
+                            string verifiedTarget = verifyShortcut.TargetPath;
+                            if (string.Equals(verifiedTarget?.TrimEnd('\\'), item.NewTarget.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
                             {
-                                currentShortcut.TargetPath = item.NewTarget;
-                                currentShortcut.Save();
+                                item.IsFixed = true;
+                                item.Status = Strings.ShortcutRepairSucceeded;
+                                successCount++;
 
-                                // 4. Verify: 保存した .lnk を再度開き直して TargetPath が意図通り更新されたかを本番検証
-                                dynamic verifyShortcut = wsh.CreateShortcut(item.FilePath);
-                                string verifiedTarget = verifyShortcut.TargetPath;
-                                if (string.Equals(verifiedTarget?.TrimEnd('\\'), item.NewTarget.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
-                                {
-                                    item.IsFixed = true;
-                                    item.Status = "修復完了 (検証済・バックアップ済)";
-                                    successCount++;
-                                    progress?.Report((item.FilePath, true));
-
-                                    // Verify 成功時は一時ロールバックファイルを安全に削除
-                                    try { if (File.Exists(rollbackPath)) File.Delete(rollbackPath); } catch { }
-                                }
-                                else
-                                {
-                                    // Verify NG: 意図したパスに書き換わっていないため、直前のスナップショットから原子的復元
-                                    try
-                                    {
-                                        if (File.Exists(rollbackPath))
-                                        {
-                                            File.Copy(rollbackPath, item.FilePath, overwrite: true);
-                                            File.Delete(rollbackPath);
-                                        }
-                                    }
-                                    catch { }
-
-                                    item.Status = $"修復検証失敗 (直前復元済, 書込値: {verifiedTarget})";
-                                    progress?.Report((item.FilePath, false));
-                                }
+                                try { File.Delete(rollbackPath); } catch { }
                             }
-                            catch
+                            else
                             {
-                                // 書き込み中例外発生時も直前のスナップショットから原子的復元
-                                try
-                                {
-                                    if (File.Exists(rollbackPath))
-                                    {
-                                        File.Copy(rollbackPath, item.FilePath, overwrite: true);
-                                        File.Delete(rollbackPath);
-                                    }
-                                }
-                                catch { }
-
-                                throw;
+                                throw new IOException(Strings.ShortcutVerificationFailed(verifiedTarget ?? string.Empty));
                             }
                         }
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        item.Status = "修復失敗 (直前復元済)";
-                        progress?.Report((item.FilePath, false));
+                        var restored = RestoreShortcutSnapshot(item.FilePath, rollbackPath);
+                        item.IsFixed = false;
+                        item.Status = Strings.ShortcutRepairFailed(ex.Message, DescribeRestore(restored));
                     }
+                    // A progress callback is outside the mutation/rollback block.
+                    progress?.Report((item.FilePath, item.IsFixed));
                 }
 
                 return successCount;
             }, ct);
         }
+
+        internal static ShortcutRestoreResult RestoreShortcutSnapshot(string path, string? snapshotPath)
+        {
+            if (snapshotPath is null) return new(ShortcutRestoreState.NotAttempted);
+            try
+            {
+                File.Copy(snapshotPath, path, overwrite: true);
+                using (var snapshot = File.Open(snapshotPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var restored = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(snapshot), SHA256.HashData(restored)))
+                        throw new IOException("Restored shortcut differs from its snapshot.");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Preserve the recovery copy when restoration cannot be verified.
+                return new(ShortcutRestoreState.Failed, snapshotPath, ex.Message);
+            }
+
+            try { File.Delete(snapshotPath); }
+            catch { return new(ShortcutRestoreState.Restored, snapshotPath); }
+            return new(ShortcutRestoreState.Restored);
+        }
+
+        private static string DescribeRestore(ShortcutRestoreResult result) => result.State switch
+        {
+            ShortcutRestoreState.Restored => Strings.ShortcutRestored +
+                (result.RecoveryPath is null ? string.Empty : "; " + Strings.ShortcutRecoveryFile(result.RecoveryPath)),
+            ShortcutRestoreState.Failed => Strings.ShortcutRestoreFailed(result.RecoveryPath!, result.Error!),
+            _ => Strings.ShortcutRestoreNotAttempted
+        };
 
         /// <summary>
         /// GPO（グループポリシー）ログオンスクリプトや社内配布用のPowerShellスクリプトを自動生成する

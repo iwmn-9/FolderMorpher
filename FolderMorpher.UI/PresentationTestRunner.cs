@@ -7,6 +7,13 @@ namespace FolderMorpher.UI;
 
 public static class PresentationTestRunner
 {
+    public static void VerifySearchSnapshotStatus(AstraSize.MainWindow window, int count)
+    {
+        var status = (System.Windows.Controls.TextBlock)window.FindName("SearchStatusText");
+        if (status.Text != Strings.SearchSnapshotStatus(count, false))
+            throw new InvalidOperationException("Cached search results are not labeled as a previous snapshot.");
+    }
+
     public static void VerifyRuntimeLocalization(AstraSize.MainWindow window)
     {
         var language = LocalizationService.Instance;

@@ -25,3 +25,5 @@ jobs:
           dotnet build -c Release
           ./tools/Test-LicenseNotices.ps1
           dotnet run -c Release --no-build -- --test-regression
+      - name: "GUI / Host IPC and Search Freshness"
+        run: dotnet run -c Release --no-build -- --test-ipc
