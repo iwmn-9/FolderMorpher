@@ -59,7 +59,16 @@ namespace AstraSize.Services
                 }
             }
 
-            return await Task.Run(() =>
+            return await ScanStandardPathAsync(targetPath, progress, ct).ConfigureAwait(false);
+        }
+
+        // Regression tests must exercise this path even on an elevated NTFS CI runner.
+        internal Task<(FileItemNode rootNode, ScanSummary summary)> ScanStandardPathAsync(
+            string targetPath,
+            IProgress<ScanProgress>? progress,
+            CancellationToken ct)
+        {
+            return Task.Run(() =>
             {
                 var stopwatch = Stopwatch.StartNew();
                 var cleanTargetPath = targetPath.TrimEnd('\\');

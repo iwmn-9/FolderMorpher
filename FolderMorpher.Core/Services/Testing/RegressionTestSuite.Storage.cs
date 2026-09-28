@@ -87,8 +87,8 @@ namespace FolderMorpher.Services.Testing
                     throw new InvalidOperationException("Missing directory was silently treated as empty.");
 
                 var scanner = new DiskScanService();
-                var (tree, summary) = await scanner.ScanPathAsync(root, null, CancellationToken.None);
-                if (tree.FileCount != 800 || tree.Size != expectedBytes || tree.FolderCount != 25 || summary.IsCancelled)
+                var (tree, summary) = await scanner.ScanStandardPathAsync(root, null, CancellationToken.None);
+                if (tree.FileCount != 800 || tree.Size != expectedBytes || tree.FolderCount != 25 || summary.IsCancelled || summary.IsMftBoosted)
                     throw new InvalidOperationException("Storage workers lost or duplicated files/directories/bytes.");
                 if (!summary.LargestFiles.Select(file => file.Size).SequenceEqual(expectedTopSizes.OrderDescending().Take(10)))
                     throw new InvalidOperationException("Merging worker top files changed the global top ten.");
@@ -135,7 +135,7 @@ namespace FolderMorpher.Services.Testing
                     if (!cancelled) throw new InvalidOperationException("Directory cancellation was swallowed.");
                 }
                 bool scanCancelled = false;
-                try { await scanner.ScanPathAsync(root, null, cancellation.Token); }
+                try { await scanner.ScanStandardPathAsync(root, null, cancellation.Token); }
                 catch (OperationCanceledException) { scanCancelled = true; }
                 if (!scanCancelled) throw new InvalidOperationException("Cancelled storage scan published a successful tree.");
             }

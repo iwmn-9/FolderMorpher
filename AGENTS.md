@@ -82,6 +82,8 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 
 **初回性能の研究記録**: [`.agents/PERFORMANCE_RESEARCH.md`](.agents/PERFORMANCE_RESEARCH.md) にローカル・UNC双方の実験候補、採否と計測値をまとめる。採用済みの契約はADR 127〜130と実装を正本とし、Cドライブの所要時間からUNC性能を推定しない。
 
+容量の通常走査回帰は `DiskScanService.ScanStandardPathAsync` を直接使う。管理者権限で動くCIでもMFTへ自動切替せず、今回の一括列挙・ワーカー集計を検証する。製品の入口 `ScanPathAsync` は従来どおりMFT可否を判断して同じ通常走査へ委譲する。
+
 **容量通常走査と共通列挙（ADR 130）**: `DiskScanService` のローカル走査はCPU数に応じた最大8ワーカーで実行し、UNC用の遅延適応制御を適用しない。UNC・ネットワークドライブは従来の共有列挙枠2を維持する。一枝をワーカー内に残し、兄弟は共通キューへ渡す。容量上位・拡張子・軽量整理候補はワーカー専用に集計して完了後に合成し、進捗件数・容量は256ファイルまたはディレクトリ完了単位で反映する。非公開ツリーの並べ替えはコレクションの初期構築で行い、不要な変更通知を出さない。上位・拡張子の集計済み結果をルートに保持し、DB保存や詳細表示で再走査しない。中止は集計段階まで伝え、正常なツリーとして返さない。`NativeDirectoryEnumerator` はローカルで64KiBの `FileSystemEnumerable<NativeFindEntry>` を使い、名前・属性・サイズ・日時を一括列挙結果から得る。隠し・システム属性は除外せず、アクセス拒否を空フォルダーにしない。UNCおよび非対応環境の既存Win32フォールバックを保つ。`SafeFileEnumerator` も同じ列挙器を使い、ネットワーク判定はルートから引き継ぐ。通常権限・索引なしで比較し、外部CLIは配布へ含めない。
 
 **初回Live走査からのTreeCache形成（ADR 125・127）**: TreeCacheにルートがないとき、検索と除外なしの整理は `SafeFileEnumerator` の同じ列挙結果を `TreeScanCapture.cs` へ流す。フォルダーを検索結果に含めない場合もキャッシュにはディレクトリを記録する。有界Channel・ローカル一時SQLiteの後、完走した完全カバレッジだけ `SqliteTreeCacheService.Capture.cs` が既存の `ParentId + Name` スキーマへ原子的に公開する。最初のアクセス拒否後は検索・監査を続けつつ一時DBへの新規投入を止める。並べ替え索引は完全走査の確認後だけ作る。中止・アクセス拒否・除外付き整理では公開しない。既存キャッシュを上書きせず、UNCを再走査しない。整理ボタンは実行中のみ「中止」になり、Host Jobのキャンセルを待って開始状態へ戻る。
