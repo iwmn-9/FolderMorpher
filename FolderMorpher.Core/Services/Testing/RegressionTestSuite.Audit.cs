@@ -619,7 +619,8 @@ namespace FolderMorpher.Services.Testing
                 if (hashA == hashC)
                     throw new InvalidOperationException("HeadTailHash failed to distinguish different tail content.");
 
-                // 2. 1MB未満ファイルの直接照合ファイルも作成
+                // 2. Small candidates now use partial hashes too. Identical ends
+                // must not hide a differing middle from the final SHA check.
                 byte[] smallData1 = new byte[200 * 1024];
                 byte[] smallData2 = new byte[200 * 1024];
                 new Random(42).NextBytes(smallData1);
@@ -629,6 +630,79 @@ namespace FolderMorpher.Services.Testing
                 string smallFile2 = Path.Combine(testDir, "small2.bin");
                 await File.WriteAllBytesAsync(smallFile1, smallData1);
                 await File.WriteAllBytesAsync(smallFile2, smallData2);
+                smallData2[smallData2.Length / 2] ^= 0xff;
+                await File.WriteAllBytesAsync(Path.Combine(testDir, "small-middle-different.bin"), smallData2);
+
+                if (await AuditReportService.ComputeHeadTailHashAsync(fileA, fileSize + 1, ct) != null)
+                    throw new InvalidOperationException("A changed file size must invalidate its partial hash.");
+                using (var canceled = new CancellationTokenSource())
+                {
+                    canceled.Cancel();
+                    try
+                    {
+                        await AuditReportService.ComputeHeadTailHashAsync(fileA, fileSize, canceled.Token);
+                        throw new InvalidOperationException("A canceled partial hash swallowed cancellation.");
+                    }
+                    catch (OperationCanceledException) when (canceled.IsCancellationRequested) { }
+                }
+
+                // A failed sample keeps every member of its original size group.
+                ScannedFileEntry Entry(string path) => new(path, Path.GetFileName(path), testDir, fileSize,
+                    DateTime.UtcNow, DateTime.UtcNow, DateTime.UtcNow, FileAttributes.Normal);
+                var unreadableGroup = new List<ScannedFileEntry> { Entry(fileA), Entry(fileB), Entry(Path.Combine(testDir, "missing.dat")) };
+                using (var pipeline = new DuplicateHashPipeline(network: false))
+                {
+                    var retained = await pipeline.PrepareCandidatesAsync([unreadableGroup], null, ct);
+                    if (retained.Count != 1 || retained[0].Count != unreadableGroup.Count)
+                        throw new InvalidOperationException("A failed partial read discarded possible duplicate pairs.");
+                }
+
+                var orderedGroups = Enumerable.Range(0, 6).Select(index => index % 2 == 0
+                    ? new List<ScannedFileEntry> { Entry(fileA), Entry(fileD) }
+                    : new List<ScannedFileEntry> { Entry(fileB), Entry(fileC) }).ToList();
+                var expectedHashes = new Dictionary<string, string>
+                {
+                    [fileA] = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(dataA)).ToLowerInvariant(),
+                    [fileD] = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(dataD)).ToLowerInvariant(),
+                    [fileB] = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(dataB)).ToLowerInvariant(),
+                    [fileC] = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(dataC)).ToLowerInvariant()
+                };
+                using (var pipeline = new DuplicateHashPipeline(network: false))
+                {
+                    int received = 0;
+                    await foreach (var (files, hashes) in pipeline.HashGroupsAsync(orderedGroups, null, ct))
+                    {
+                        if (!ReferenceEquals(files, orderedGroups[received++]) ||
+                            files.Where((file, index) => hashes[index] != expectedHashes[file.FullPath]).Any())
+                            throw new InvalidOperationException("Parallel hashing changed group order or leaked SHA state between files.");
+                    }
+                    if (received != orderedGroups.Count)
+                        throw new InvalidOperationException("Hash scheduling dropped an input group.");
+                }
+
+                // Cancellation during a paced read must drain all queued workers
+                // before buffers are disposed and file handles return to callers.
+                foreach (bool network in new[] { false, true })
+                {
+                    using var canceled = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+                    using var pipeline = new DuplicateHashPipeline(network);
+                    var started = System.Diagnostics.Stopwatch.StartNew();
+                    try
+                    {
+                        await foreach (var result in pipeline.HashGroupsAsync(
+                            [new List<ScannedFileEntry> { Entry(fileA), Entry(fileD) },
+                             new List<ScannedFileEntry> { Entry(fileB), Entry(fileC) }],
+                            new BandwidthThrottler(1024), canceled.Token)) { }
+                        throw new InvalidOperationException("Hash workers ignored cancellation during bandwidth pacing.");
+                    }
+                    catch (OperationCanceledException) when (canceled.IsCancellationRequested) { }
+                    if (started.Elapsed > TimeSpan.FromSeconds(5))
+                        throw new InvalidOperationException("Canceled hash workers did not stop promptly.");
+                    foreach (string path in new[] { fileA, fileB, fileC, fileD })
+                    {
+                        using var exclusive = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+                    }
+                }
 
                 // 3. AuditReportService.RunAuditAsync 実行検証 (Standard50MB)
                 var auditService = new AuditReportService();
@@ -664,20 +738,26 @@ namespace FolderMorpher.Services.Testing
                     throw new InvalidOperationException("Large duplicate group (fileA & fileD) was not detected correctly.");
 
                 // fileB と fileC は重複に含まれていないこと
-                if (dupItems.Any(i => i.FileName == "fileB.dat" || i.FileName == "fileC.dat"))
+                if (dupItems.Any(i => i.FileName == "fileB.dat" || i.FileName == "fileC.dat" ||
+                    i.FileName == "small-middle-different.bin"))
                     throw new InvalidOperationException("Non-duplicate files (fileB or fileC) were erroneously marked as duplicates.");
 
                 // 同じHead/Tailでも中央が異なる大容量群。Aだけを落とし、B/Cの重複は残す。
                 string prefixDir = Path.Combine(testDir, "prefix-stage");
                 Directory.CreateDirectory(prefixDir);
                 const long prefixFileSize = 33L * 1024 * 1024;
-                foreach (string name in new[] { "middleA.bin", "middleB.bin", "middleC.bin" })
+                foreach (string name in new[] { "middleA.bin", "middleB.bin", "middleC.bin", "middleD.bin" })
                 {
                     await using var sparse = new FileStream(Path.Combine(prefixDir, name), FileMode.Create,
                         FileAccess.Write, FileShare.None);
                     sparse.SetLength(prefixFileSize);
                     sparse.Position = 512 * 1024;
                     sparse.WriteByte(name == "middleA.bin" ? (byte)1 : (byte)2);
+                    if (name == "middleD.bin")
+                    {
+                        sparse.Position = 16 * 1024 * 1024;
+                        sparse.WriteByte(3);
+                    }
                 }
                 var prefixOptions = new AuditOptions
                 {

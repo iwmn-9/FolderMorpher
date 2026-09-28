@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -231,7 +230,7 @@ namespace FolderMorpher.Services
                 }
             }
 
-            // 4. 重複ファイルチェック（Head-Tail クイックハッシュ ＋ 並列度2 フルSHA256）
+            // 4. サイズ群を有界並行処理し、部分ハッシュで絞って完全SHA-256で確定する。
             if (options.CheckDuplicates)
             {
                 bool isNetworkTarget = PathCanonicalizer.IsNetworkPath(options.TargetDirectory);
@@ -248,101 +247,22 @@ namespace FolderMorpher.Services
                     .GroupBy(f => f.Length)
                     .Where(g => g.Count() > 1)
                     .OrderByDescending(g => g.Key)
+                    .Select(g => g.ToList())
                     .ToList();
 
-                // Step 2: 1MB以上のファイルは Head-Tail ハッシュ (先頭4KB+末尾4KB) で高速ふるい落とし
-                // 1MB未満のファイルはシークオーバーヘッドを避けるため直接フルハッシュ照合へ（ADR 50確定仕様）
-                var fullHashCandidates = new List<List<ScannedFileEntry>>();
-                var smallGroups = sizeGroups.Where(g => g.Key < QuickHashThresholdBytes).ToList();
-                var largeGroups = sizeGroups.Where(g => g.Key >= QuickHashThresholdBytes).ToList();
-
-                // 1MB未満は直接フルハッシュ照合へ引き継ぐ
-                foreach (var sGroup in smallGroups)
+                using var hashPipeline = new DuplicateHashPipeline(isNetworkTarget);
+                var fullHashCandidates = await hashPipeline.PrepareCandidatesAsync(sizeGroups, (current, total) =>
                 {
-                    fullHashCandidates.Add(sGroup.ToList());
-                }
-
-                // 1MB以上は Head-Tail ハッシュでさらに細分化（並列度2 & ファイル単位スムーズ進捗通知）
-                if (largeGroups.Count > 0)
-                {
-                    int totalLargeFiles = largeGroups.Sum(g => g.Count());
-                    int processedLargeFiles = 0;
-                    foreach (var sGroup in largeGroups)
+                    if (current % 10 == 0 || current == total)
                     {
-                        ct.ThrowIfCancellationRequested();
-                        var list = sGroup.ToList();
-
-                        // 巨大な同一サイズ群でも、ファイル数だけTaskを生成しない。
-                        var qResults = new (ScannedFileEntry File, string? Hash)[list.Count];
-                        await Parallel.ForEachAsync(Enumerable.Range(0, list.Count), new ParallelOptions
+                        progress?.Report(new AuditProgress
                         {
-                            MaxDegreeOfParallelism = DuplicateConcurrency,
-                            CancellationToken = ct
-                        }, async (index, token) =>
-                        {
-                            var fi = list[index];
-                            qResults[index] = (fi, await ComputeHeadTailHashAsync(fi.FullPath, fi.Length, token));
-                            var current = Interlocked.Increment(ref processedLargeFiles);
-                            if (current % 10 == 0 || current == totalLargeFiles)
-                            {
-                                progress?.Report(new AuditProgress
-                                {
-                                    CurrentStatus = $"{Strings.AuditProgressQuickHash} ({current:N0}/{totalLargeFiles:N0} 件)",
-                                    ScannedFilesCount = summary.TotalFilesScanned,
-                                    IssueCount = items.Count
-                                });
-                            }
+                            CurrentStatus = $"{Strings.AuditProgressQuickHash} ({current:N0}/{total:N0})",
+                            ScannedFilesCount = summary.TotalFilesScanned,
+                            IssueCount = items.Count
                         });
-
-                        var quickMap = new Dictionary<string, List<ScannedFileEntry>>();
-                        foreach (var (fi, qHash) in qResults)
-                        {
-                            if (string.IsNullOrEmpty(qHash)) continue;
-                            if (!quickMap.TryGetValue(qHash, out var qList))
-                            {
-                                qList = new List<ScannedFileEntry>();
-                                quickMap[qHash] = qList;
-                            }
-                            qList.Add(fi);
-                        }
-
-                        // ローカルの32 MiB以上だけ先頭1 MiBで分ける。UNCへの追加Readは
-                        // 帯域制御の実測が整うまで増やさない。
-                        foreach (var qGroup in quickMap.Values.Where(q => q.Count > 1))
-                        {
-                            if (isNetworkTarget || qGroup[0].Length < PrefixHashThresholdBytes)
-                            {
-                                fullHashCandidates.Add(qGroup);
-                                continue;
-                            }
-
-                            var prefixResults = new (ScannedFileEntry File, string? Hash)[qGroup.Count];
-                            await Parallel.ForEachAsync(Enumerable.Range(0, qGroup.Count), new ParallelOptions
-                            {
-                                MaxDegreeOfParallelism = DuplicateConcurrency,
-                                CancellationToken = ct
-                            }, async (index, token) =>
-                            {
-                                var file = qGroup[index];
-                                prefixResults[index] = (file, await ComputePrefixHashAsync(file.FullPath, token));
-                            });
-
-                            // 読めなかったファイルがあれば群全体を従来のフル照合へ戻す。
-                            // 一時的な読取失敗で他の候補を落とさない。
-                            if (prefixResults.Any(result => result.Hash == null))
-                            {
-                                fullHashCandidates.Add(qGroup);
-                                continue;
-                            }
-
-                            foreach (var prefixGroup in prefixResults.GroupBy(result => result.Hash!)
-                                .Where(group => group.Count() > 1))
-                            {
-                                fullHashCandidates.Add(prefixGroup.Select(result => result.File).ToList());
-                            }
-                        }
                     }
-                }
+                }, ct);
 
                 // Large groups finish first, so a useful partial list appears before the whole audit completes.
                 fullHashCandidates = fullHashCandidates.OrderByDescending(group => group[0].Length).ToList();
@@ -388,31 +308,17 @@ namespace FolderMorpher.Services
                 int dupGroupIndex = 1;
                 int processedCandidateGroups = 0;
 
-                foreach (var group in fullHashCandidates)
+                await foreach (var (group, hashes) in hashPipeline.HashGroupsAsync(fullHashCandidates, throttler, ct))
                 {
                     ct.ThrowIfCancellationRequested();
                     var hashToFiles = new Dictionary<string, List<ScannedFileEntry>>();
-
-                    var results = new (ScannedFileEntry File, string? Hash)[group.Count];
-                    await Parallel.ForEachAsync(Enumerable.Range(0, group.Count), new ParallelOptions
-                    {
-                        MaxDegreeOfParallelism = DuplicateConcurrency,
-                        CancellationToken = ct
-                    }, async (index, token) =>
+                    for (int index = 0; index < group.Count; index++)
                     {
                         var file = group[index];
-                        results[index] = (file, await ComputeSha256WithThrottlingAsync(file.FullPath,
-                            throttler, token, file.Length, allowLargerLocalReads: !isNetworkTarget));
-                    });
-
-                    foreach (var (file, hash) in results)
-                    {
+                        var hash = hashes[index];
                         if (string.IsNullOrEmpty(hash)) continue;
                         if (!hashToFiles.TryGetValue(hash, out var fileList))
-                        {
-                            fileList = new List<ScannedFileEntry>();
-                            hashToFiles[hash] = fileList;
-                        }
+                            hashToFiles[hash] = fileList = new List<ScannedFileEntry>();
                         fileList.Add(file);
                     }
 
@@ -616,121 +522,37 @@ namespace FolderMorpher.Services
             }
         }
 
-        public const long QuickHashThresholdBytes = 1024 * 1024; // 1MB以上をHead-Tailクイック判定対象
-        public const int QuickHashChunkSize = 4096; // 4KB (先頭4KB + 末尾4KB = 計8KB)
-        public const long PrefixHashThresholdBytes = 32L * 1024 * 1024;
-        public const int PrefixHashBytes = 1024 * 1024;
-        public const int DuplicateConcurrency = 2; // 並列度2 (サーバーI/O保護・アイドル解消の黄金律)
+        // Compatibility constants describe the conservative network path.
+        public const long QuickHashThresholdBytes = DuplicateHashPipeline.NetworkPartialThresholdBytes;
+        public const int QuickHashChunkSize = DuplicateHashPipeline.PartialChunkBytes;
+        public const long PrefixHashThresholdBytes = DuplicateHashPipeline.PrefixThresholdBytes;
+        public const int PrefixHashBytes = DuplicateHashPipeline.PrefixBytes;
+        public const int DuplicateConcurrency = DuplicateHashPipeline.NetworkConcurrency;
 
         public static async Task<string?> ComputePrefixHashAsync(string filePath, CancellationToken ct)
         {
-            try
-            {
-                using var sha256 = SHA256.Create();
-                byte[] buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(256 * 1024);
-                try
-                {
-                    await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-                        FileShare.ReadWrite, 256 * 1024, FileOptions.SequentialScan | FileOptions.Asynchronous);
-                    int remaining = PrefixHashBytes;
-                    while (remaining > 0)
-                    {
-                        int read = await stream.ReadAsync(buffer.AsMemory(0, Math.Min(remaining, buffer.Length)), ct);
-                        if (read == 0) return null;
-                        sha256.TransformBlock(buffer, 0, read, null, 0);
-                        remaining -= read;
-                    }
-                    sha256.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
-                    return Convert.ToHexString(sha256.Hash!).ToLowerInvariant();
-                }
-                finally
-                {
-                    System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
-                }
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch { return null; }
+            using var reader = new DuplicateHashReader(256 * 1024, asynchronous: true);
+            return await reader.HashAsync(filePath, -1, DuplicateHashMode.Prefix, null, ct);
         }
 
         public static async Task<string?> ComputeHeadTailHashAsync(string filePath, long fileSize, CancellationToken ct)
         {
-            try
-            {
-                using var sha256 = SHA256.Create();
-                byte[] buffer = new byte[QuickHashChunkSize * 2]; // 8KB
-                int totalRead = 0;
-
-                await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, QuickHashChunkSize, true);
-
-                // 先頭4KB
-                int headRead = await stream.ReadAsync(buffer.AsMemory(0, QuickHashChunkSize), ct);
-                totalRead += headRead;
-
-                // 末尾4KB
-                if (fileSize > QuickHashChunkSize)
-                {
-                    long tailOffset = Math.Max(headRead, fileSize - QuickHashChunkSize);
-                    stream.Seek(tailOffset, SeekOrigin.Begin);
-                    int tailRead = await stream.ReadAsync(buffer.AsMemory(headRead, QuickHashChunkSize), ct);
-                    totalRead += tailRead;
-                }
-
-                var hashBytes = sha256.ComputeHash(buffer, 0, totalRead);
-                return Convert.ToHexString(hashBytes).ToLowerInvariant();
-            }
-            catch
-            {
-                return null; // ロック中やアクセス権なしはスキップ
-            }
+            using var reader = new DuplicateHashReader(2 * QuickHashChunkSize, asynchronous: true);
+            return await reader.HashAsync(filePath, fileSize, DuplicateHashMode.HeadTail, null, ct);
         }
 
         public static async Task<string?> ComputeSha256WithThrottlingAsync(
-            string filePath,
-            BandwidthThrottler? throttler,
-            CancellationToken ct,
-            long knownSize = -1,
-            bool allowLargerLocalReads = false)
+            string filePath, BandwidthThrottler? throttler, CancellationToken ct,
+            long knownSize = -1, bool allowLargerLocalReads = false)
         {
-            try
-            {
-                using var sha256 = SHA256.Create();
-                int readSize = allowLargerLocalReads && knownSize >= 8L * 1024 * 1024 ? 256 * 1024 : 64 * 1024;
-                byte[] buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(readSize);
-                try
-                {
-                    await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read,
-                        FileShare.ReadWrite, readSize, FileOptions.SequentialScan | FileOptions.Asynchronous);
-                    while (true)
-                    {
-                        long readStart = System.Diagnostics.Stopwatch.GetTimestamp();
-                        int bytesRead = await stream.ReadAsync(buffer.AsMemory(0, readSize), ct);
-                        if (bytesRead == 0) break;
-                        throttler?.ObserveRead(bytesRead, System.Diagnostics.Stopwatch.GetElapsedTime(readStart).TotalMilliseconds);
-                        sha256.TransformBlock(buffer, 0, bytesRead, null, 0);
-                        if (throttler != null)
-                        {
-                            await throttler.ThrottleAsync(bytesRead, ct);
-                        }
-                    }
-                    sha256.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
-                    return Convert.ToHexString(sha256.Hash!).ToLowerInvariant();
-                }
-                finally { System.Buffers.ArrayPool<byte>.Shared.Return(buffer); }
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch
-            {
-                return null;
-            }
+            bool local = allowLargerLocalReads && !PathCanonicalizer.IsNetworkPath(filePath);
+            using var reader = new DuplicateHashReader(local ? DuplicateHashPipeline.LocalReadBytes : 64 * 1024,
+                asynchronous: !local);
+            return await reader.HashAsync(filePath, knownSize, DuplicateHashMode.Full, throttler, ct);
         }
 
-        public static async Task<string?> ComputeSha256Async(string filePath, CancellationToken ct)
-        {
-            return await ComputeSha256WithThrottlingAsync(filePath, null, ct);
-        }
+        public static Task<string?> ComputeSha256Async(string filePath, CancellationToken ct) =>
+            ComputeSha256WithThrottlingAsync(filePath, null, ct);
 
         public void ExportAuditCsv(string filePath, IEnumerable<AuditItem> items)
         {

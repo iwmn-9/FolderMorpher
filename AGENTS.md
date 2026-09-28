@@ -72,7 +72,7 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 | **Tab 3: 権限コントロール & 逆引き監査**<br>(Live ACL & Effective Access) | `Views/LiveAclStudio.xaml`<br>(`LiveAclFolderView`, `LiveAclReverseView`, `LiveAclDiffModalOverlay`, `NewFolderModalOverlay`) | `Views/LiveAclStudio.xaml.cs` | `AclService.cs`<br>`EffectiveAccessService.cs`<br>`ActiveDirectoryService.cs`<br>`AclModels.cs`<br>`EffectiveAccessModels.cs` | 実環境NTFS ACL可視化・編集、**Dry-Run差分チェックモーダル（AclChangePlan貫通・継承変更警告・セマンティックVerify・SDDLロールバック）**、AD逆引き権限監査、均一幅ADアカウントカード、ADパレットUI統一、ADバックグラウンド自動同期、ツリーインライン新規フォルダー作成 |
 | **Tab 4: 移行スタジオ**<br>(Simulation Studio) | `SimulationTabPanel` (L608-995) | `MainWindow.Simulation.cs` | `SimulationProjectService.cs`<br>`MigrationPackageService.cs`<br>`MigrationPackageModels.cs`<br>`SimModels.cs` | 現行ファイルサーバーから新環境への仮想ツリー設計（N:1マッピング）、ACL引き継ぎ設計、ADパレット統一、全画面・全出力完全日英両対応、ヘッダーレイアウト整線、ガワ先行作成の実機DACLセマンティックVerify、エンタープライズ移行パッケージ出力（TargetRoot必須検証・Wave分割・Runbook Excel・安全停止手順・多重コピー防止/XD・%~dp0相対ログ・exit /b 1・遅延展開排除・Dry-Run bat同梱） |
 | **Tab 5: リンク修復**<br>(LinkFixer) | `LinkFixTabPanel` (L998-1094) | `MainWindow.LinkFix.cs` | `LinkFixService.cs`<br>`OfficeLinkFixService.cs` | サーバー移行後の切断ショートカット（.lnk）およびOffice内部リンク（.xlsx/.xlsm）検出・修復、**VBAマクロ非破壊保護＆通常XML混在時の部分修復（PartiallyFixed）**、全社配布用GPOログオンスクリプト（.ps1）生成 |
-| **Tab 6: 整理候補発見 ＆ 健全化**<br>(Smart Hygiene & Candidates) | `AuditTabPanel` (L1097-1240) | `MainWindow.Audit.cs` | `AuditReportService.cs`<br>`HygieneCandidateEngine.cs`<br>`AuditIgnoreService.cs`<br>`ExcelReportService.cs`<br>`AuditModels.cs` | **インテリジェント整理候補発見スタジオへのすり替え**、**「このファイルは捨てられる可能性が高い。理由はこれ。」説明責任ヒューリスティクス**、**新Auditの $O(N)$ ボトムアップ集約化（10万階層でも高速・メモリ最小化）**、**整理除外リストの PathCanonicalizer 適用（Z:\ と UNC 同一視）**、**直感的な単語指標（整理推奨/要確認/参考）**、**スコア内訳可視化（クリック/ホバー）**、**表示件数制御（上位100件等）**、**整理除外リスト（自己治癒性スキップ記憶）**、**3大重点候補（①世代・旧版、②展開済ZIP残骸、③墓場フォルダー化石化判定）**、完全重複（SHA256）、休眠ファイル（3年超・1年閲覧保護）、パス長危険域（240字超）・禁則文字検出、フォルダー名部分一致除外。5連スリムメトリクスバー、一括選択プリセット、ハイパーリンク付きExcel/CSVレポート出力、**原本保護＆削除直前SHA-256再照合付き安全完全削除** |
+| **Tab 6: 整理候補発見 ＆ 健全化**<br>(Smart Hygiene & Candidates) | `AuditTabPanel` (L1097-1240) | `MainWindow.Audit.cs` | `AuditReportService.cs`<br>`DuplicateHashPipeline.cs`<br>`HygieneCandidateEngine.cs`<br>`AuditIgnoreService.cs`<br>`ExcelReportService.cs`<br>`AuditModels.cs` | **インテリジェント整理候補発見スタジオへのすり替え**、**「このファイルは捨てられる可能性が高い。理由はこれ。」説明責任ヒューリスティクス**、**新Auditの $O(N)$ ボトムアップ集約化（10万階層でも高速・メモリ最小化）**、**整理除外リストの PathCanonicalizer 適用（Z:\ と UNC 同一視）**、**直感的な単語指標（整理推奨/要確認/参考）**、**スコア内訳可視化（クリック/ホバー）**、**表示件数制御（上位100件等）**、**整理除外リスト（自己治癒性スキップ記憶）**、**3大重点候補（①世代・旧版、②展開済ZIP残骸、③墓場フォルダー化石化判定）**、完全重複（SHA256）、休眠ファイル（3年超・1年閲覧保護）、パス長危険域（240字超）・禁則文字検出、フォルダー名部分一致除外。5連スリムメトリクスバー、一括選択プリセット、ハイパーリンク付きExcel/CSVレポート出力、**原本保護＆削除直前SHA-256再照合付き安全完全削除** |
 | **整理内: メディア最適化**<br>(Media Optimizer) | `MediaTabPanel` | `MainWindow.Media.cs` | `MediaOptimizerService.cs`<br>`ExcelReportService.cs`<br>`MediaOptimizerModels.cs` | 整理画面の内部切替。保護対象（_Master/RAW等）付き写真・画像軽量化（長辺2560px超縮小/85%品質/日時・Exif保持/直接上書き）、大容量動画Topランキング抽出、夜間GPU圧縮（H.265）バッチ生成 |
 | **詳細権限モーダル** | `SecModalOverlay` | `MainWindow.Simulation.cs` | `AclModels.cs` | Windows標準セキュリティ詳細設定（14項目のNTFS詳細パーミッションビット）の完全再現・編集 |
 | **変化点差分モーダル** | `DiffModalOverlay` | `MainWindow.Simulation.cs` | `SimModels.cs` | 移行前後（Before/After）の変化点（新規・移動・統合・ACL差分）の一覧レビューとExcel出力 |
@@ -112,7 +112,7 @@ UNC/ネットワークドライブの容量スキャンは検索列挙と `Share
 
 監査候補は `AuditCandidateComposer` で物理パスごとに1行へ統合し、重複・休眠・世代など独立した理由の点を加算する（100点上限なし、重複95＋3年休眠70なら165点）。原本候補も他理由の点は表示するが、`IsOriginalCandidate` を引き継いで削除を拒否する。`AuditItem.IssueTypes` が複数理由の正本で、分類フィルター・一括選択・出力は `HasIssue` を使う。削減見込み容量は同一パスを1回だけ数える。SHA候補グループは容量降順で検証し、`GetAuditJobResultsAsync` の途中結果をGUIへ渡す。途中一覧は容量降順の暫定表示で閲覧・選択でき、削除と出力は最終報告ができてから有効にする（ADR 114）。
 
-重複の初回判定はサイズ→先頭/末尾4KiB→（ローカル32MiB以上の生き残り群だけ）先頭1MiB→完全SHA-256。中間で単独になったファイルの残りは読まず、部分読取に失敗した群は完全SHAへ戻す。部分ハッシュを重複確定や削除許可には使わない。群内処理は最大2並列で、ファイル数ぶんのTaskを同時生成しない。ローカル8MiB以上の完全SHAは256KiB逐次読込・ArrayPool、UNCは64KiBと既存の帯域制御を維持する（ADR 127）。
+重複の初回判定は `DuplicateHashPipeline.cs` がサイズ→先頭/末尾4KiB→（ローカル32MiB以上の生き残り群だけ）先頭1MiB→完全SHA-256を所有する。部分判定の開始はローカル64KiB・UNC 1MiB。単独候補の残りは読まず、部分読取失敗時は群全体を完全SHAへ戻す。部分ハッシュを重複確定や削除許可には使わない。ローカルはサイズ群を最大4群先行し、全群合計4リーダーで256KiB同期逐次読込・SHA計算器とArrayPoolバッファーを再利用する。UNCは1群ずつ・全体2リーダー・64KiB非同期読込と既存帯域制御を維持し、列挙済みサイズを再照会しない。全文の実読取バイト数と既知サイズが違えば確定しない。結果は入力の容量降順で返し、集計・原本選択・途中表示は従来どおり逐次行う。中止時は先行ワーカーの終了を待つ。公開ハッシュAPIと削除前再照合も同じ `DuplicateHashReader` を使う（ADR 129）。
 
 PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数を保つ（ADR 107）。P/Invoke宣言を変更する時はMicrosoftのシグネチャと照合し、検索回帰でプロセス終了時のCOM最終化も確認する。
 
@@ -125,13 +125,13 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの設計判断記録（ADR 1〜128）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの設計判断記録（ADR 1〜129）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 
 #### 主要な中核原則サマリー（詳細は `.agents/ADR.md` 参照）
 
-設計判断（ADR 1〜128）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
+設計判断（ADR 1〜129）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
 
 1. **全体占有率メーター & 2連カード（Storage / ADR 61）**:
    - 親フォルダーに対する直下シェア（右ペイン「選択フォルダーの内訳」）と、スキャン対象ルート総容量に対する全体占有率を二重加算防止のため厳格分離。ルート行は `―`（ハイフン）表示。メトリクスカードは「スキャン対象 容量」「前回差分推移」の2連カード化。
