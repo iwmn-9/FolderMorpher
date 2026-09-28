@@ -94,6 +94,8 @@ namespace FolderMorpher.Services
 
             bool matchAll = searchPattern == "*.*" || searchPattern == "*";
 
+            bool isNetworkPath = PathCanonicalizer.IsNetworkPath(rootPath);
+
             while (stack.Count > 0)
             {
                 ct.ThrowIfCancellationRequested();
@@ -101,7 +103,7 @@ namespace FolderMorpher.Services
 
                 if (coverage != null) coverage.TotalFoldersScanned++;
 
-                if (!NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, subDirs, files, out var error))
+                if (!NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, subDirs, files, out var error, out _, ct, isNetworkPath))
                 {
                     if (coverage != null) coverage.AccessDeniedFolders++;
                     continue;
@@ -169,6 +171,7 @@ namespace FolderMorpher.Services
 
             var folderQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
             bool matchAll = searchPattern == "*.*" || searchPattern == "*";
+            bool isNetworkPath = PathCanonicalizer.IsNetworkPath(rootPath);
             int scannedFilesCount = 0;
             var governor = SharedIoGovernor.GetGovernor(rootPath);
             var controller = governor.EnumerationController;
@@ -193,7 +196,7 @@ namespace FolderMorpher.Services
             using (var rootLease = await controller.AcquireAsync(ct))
             {
                 var rootSw = Stopwatch.StartNew();
-                rootOk = NativeDirectoryEnumerator.TryEnumerateEntries(rootPath, rootSubDirs, rootFiles, out var rootError, out rootFailureKind);
+                rootOk = NativeDirectoryEnumerator.TryEnumerateEntries(rootPath, rootSubDirs, rootFiles, out var rootError, out rootFailureKind, ct, isNetworkPath);
                 rootSw.Stop();
                 rootLease.Report(rootSw.Elapsed.TotalMilliseconds, rootFailureKind);
             }
@@ -350,7 +353,7 @@ namespace FolderMorpher.Services
                             using (var lease = await controller.AcquireAsync(ct))
                             {
                                 var sw = Stopwatch.StartNew();
-                                ok = NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, localSubDirs, localFiles, out var error, out failureKind);
+                                ok = NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, localSubDirs, localFiles, out var error, out failureKind, ct, isNetworkPath);
                                 sw.Stop();
                                 lease.Report(sw.Elapsed.TotalMilliseconds, failureKind);
                             }

@@ -80,7 +80,9 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 
 **検索の現行入口**: `MainWindow.Search.cs` → `HostJobClient` → `HostService.Jobs.cs` / `HostService.cs` → `SearchEngineService`。直接走査は `SafeFileEnumerator.EnumerateFileEntriesParallelAsync(..., collectResults: false)` のコールバックで逐次処理する。ファイル名・パス・本文条件の共通判定は `SearchEngineService.MatchesSearchTerms` が正本。`TreeCachePruningIndex` はフォルダー時刻だけでは検索の完全性を保証できないため、通常画面の直接走査では構築しない。
 
-**初回性能の研究記録**: [`.agents/PERFORMANCE_RESEARCH.md`](.agents/PERFORMANCE_RESEARCH.md) にローカル・UNC双方の実験候補、採否と計測値をまとめる。採用済みの契約はADR 127・128と実装を正本とし、Cドライブの所要時間からUNC性能を推定しない。
+**初回性能の研究記録**: [`.agents/PERFORMANCE_RESEARCH.md`](.agents/PERFORMANCE_RESEARCH.md) にローカル・UNC双方の実験候補、採否と計測値をまとめる。採用済みの契約はADR 127〜130と実装を正本とし、Cドライブの所要時間からUNC性能を推定しない。
+
+**容量通常走査と共通列挙（ADR 130）**: `DiskScanService` のローカル走査はCPU数に応じた最大8ワーカーで実行し、UNC用の遅延適応制御を適用しない。UNC・ネットワークドライブは従来の共有列挙枠2を維持する。一枝をワーカー内に残し、兄弟は共通キューへ渡す。容量上位・拡張子・軽量整理候補はワーカー専用に集計して完了後に合成し、進捗件数・容量は256ファイルまたはディレクトリ完了単位で反映する。非公開ツリーの並べ替えはコレクションの初期構築で行い、不要な変更通知を出さない。上位・拡張子の集計済み結果をルートに保持し、DB保存や詳細表示で再走査しない。中止は集計段階まで伝え、正常なツリーとして返さない。`NativeDirectoryEnumerator` はローカルで64KiBの `FileSystemEnumerable<NativeFindEntry>` を使い、名前・属性・サイズ・日時を一括列挙結果から得る。隠し・システム属性は除外せず、アクセス拒否を空フォルダーにしない。UNCおよび非対応環境の既存Win32フォールバックを保つ。`SafeFileEnumerator` も同じ列挙器を使い、ネットワーク判定はルートから引き継ぐ。通常権限・索引なしで比較し、外部CLIは配布へ含めない。
 
 **初回Live走査からのTreeCache形成（ADR 125・127）**: TreeCacheにルートがないとき、検索と除外なしの整理は `SafeFileEnumerator` の同じ列挙結果を `TreeScanCapture.cs` へ流す。フォルダーを検索結果に含めない場合もキャッシュにはディレクトリを記録する。有界Channel・ローカル一時SQLiteの後、完走した完全カバレッジだけ `SqliteTreeCacheService.Capture.cs` が既存の `ParentId + Name` スキーマへ原子的に公開する。最初のアクセス拒否後は検索・監査を続けつつ一時DBへの新規投入を止める。並べ替え索引は完全走査の確認後だけ作る。中止・アクセス拒否・除外付き整理では公開しない。既存キャッシュを上書きせず、UNCを再走査しない。整理ボタンは実行中のみ「中止」になり、Host Jobのキャンセルを待って開始状態へ戻る。
 
@@ -145,9 +147,9 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
 4. **メディア最適化の聖域保護（Media Optimizer / ADR 6, 32, 54）**:
    - プロ用聖域フォルダー（`_Master`, `RAW` 等）およびプロ用拡張子（`.psd`, `.ai`, `.raw` 等）の自動スキップ保護。JPEG/PNG の日時・Exif・回転情報の 100% 保持、アトミック置換。メディア走査を `SafeFileEnumerator` へ統合。
 5. **UNC/ネットワーク走査 ＆ 適応並列度ガバナー（Win32 Native & SharedIoGovernor / ADR 8, 36, 45, 80, 90, 91, 98）**:
-   - `FindFirstFileExW` (`FindExInfoBasic` + `FIND_FIRST_EX_LARGE_FETCH`) による巨大バッファ一括取得 & 8.3短縮名スキップ。`SafeFindHandle` (RAII) によるリーク根絶。4段自動フォールバック。
+   - ローカルはBCLの64KiB一括列挙を使う（ADR 130）。UNCは `FindFirstFileExW` (`FindExInfoBasic` + `FIND_FIRST_EX_LARGE_FETCH`) と `SafeFindHandle` を使い、既存の4段フォールバックを保つ。サイズ・日時取得のために各ファイルを再度開かない。
    - フォルダー単位RPCの完全根絶（ゼロI/O化）: 列挙タイムスタンプを子ノード生成時に直結。
-   - `SharedIoGovernor`: UNCは列挙2並列、本文AIMD 2〜12並列。ローカルは列挙4並列、本文8並列の固定上限。両者のコントローラーを分離する（ADR 128）。
+   - `SharedIoGovernor`: UNCは列挙2並列、本文AIMD 2〜12並列。ローカルの検索列挙は4並列、本文は8並列。容量のローカル走査はCPU数に応じた最大8並列の専用ワーカーを使う（ADR 128・130）。
    - 純粋I/O時間計測（CPU展開・パース時間を除外した真のネットワーク遅延）と、再昇格可能な AIMD（不可逆崖落ち永久固定の撤廃）により、サーバーを保護しつつ SMB スループットを最大化。重複 RPC（事前の `File.Exists`、既知サイズの `FileInfo.Length`）を全廃。
 6. **検索スタジオのアーキテクチャ（Search Studio / ADR 87, 90, 93, 94, 95, 96, 97, 99, 108〜112）**:
    - **非管理者権限が通常経路の前提**: 管理者権限が必要なUSN変更ジャーナル等に基本検索や検索結果の完全性を依存させない。ローカル・UNCの双方で一般ユーザー権限による検索を維持する（ADR 108）。

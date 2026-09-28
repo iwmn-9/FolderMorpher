@@ -31,7 +31,118 @@ namespace FolderMorpher.Services.Testing
             await TestUiBindingContractAndCacheExpansionStateAsync();
             TestStorageSessionAndAuditSortingContracts();
             await TestNativeDirectoryEnumeratorAndConcurrency2Async();
+            await TestBatchedDirectoryAndStorageWorkerMergeAsync();
             await TestPathCanonicalizerAndSha256CacheAsync();
+        }
+
+        private static async Task TestBatchedDirectoryAndStorageWorkerMergeAsync()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "FM_StorageBatch_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            try
+            {
+                // Span multiple 64KiB directory batches and distribute files across workers.
+                long expectedBytes = 0;
+                var expectedExtensions = new Dictionary<string, (long bytes, int count)>(StringComparer.OrdinalIgnoreCase);
+                var expectedTopSizes = new List<long>();
+                for (int i = 0; i < 800; i++)
+                {
+                    string parent = i < 600 ? root : Path.Combine(root, $"branch{i % 16}");
+                    Directory.CreateDirectory(parent);
+                    string extension = i % 3 == 0 ? ".LOG" : i % 3 == 1 ? ".tmp" : ".txt";
+                    string path = Path.Combine(parent, $"日本語-資料-{i:D4}{extension}");
+                    int size = i + 1;
+                    await File.WriteAllBytesAsync(path, new byte[size]);
+                    if (i == 0) File.SetAttributes(path, FileAttributes.Hidden | FileAttributes.System);
+                    expectedBytes += size;
+                    expectedTopSizes.Add(size);
+                    expectedExtensions.TryGetValue(extension, out var stat);
+                    expectedExtensions[extension] = (stat.bytes + size, stat.count + 1);
+                }
+                string empty = Path.Combine(root, "empty");
+                Directory.CreateDirectory(empty);
+                string longDirectory = root;
+                for (int i = 0; i < 8; i++)
+                    longDirectory = Path.Combine(longDirectory, new string('a', 32));
+                Directory.CreateDirectory(longDirectory);
+
+                var batchedDirs = new List<NativeFindEntry>();
+                var batchedFiles = new List<NativeFindEntry>();
+                var win32Dirs = new List<NativeFindEntry>();
+                var win32Files = new List<NativeFindEntry>();
+                foreach (string directory in new[] { root, empty, longDirectory })
+                {
+                    if (!NativeDirectoryEnumerator.TryEnumerateEntries(directory, batchedDirs, batchedFiles,
+                            out var batchError, out var batchFailure, isNetworkPath: false) || batchFailure != EnumerationFailureKind.None ||
+                        !NativeDirectoryEnumerator.TryEnumerateEntries(directory, win32Dirs, win32Files,
+                            out var win32Error, out var win32Failure, isNetworkPath: true) || win32Failure != EnumerationFailureKind.None)
+                        throw new InvalidOperationException($"Directory batch/Win32 enumeration failed: {batchError}");
+                    var expected = win32Dirs.Concat(win32Files).OrderBy(entry => entry.Name, StringComparer.Ordinal).ToArray();
+                    var actual = batchedDirs.Concat(batchedFiles).OrderBy(entry => entry.Name, StringComparer.Ordinal).ToArray();
+                    if (!expected.SequenceEqual(actual))
+                        throw new InvalidOperationException("Batched and Win32 names/attributes/sizes/timestamps differ.");
+                }
+                if (NativeDirectoryEnumerator.TryEnumerateEntries(Path.Combine(root, "missing"), batchedDirs, batchedFiles,
+                        out _, out var missing) || missing != EnumerationFailureKind.NotFound)
+                    throw new InvalidOperationException("Missing directory was silently treated as empty.");
+
+                var scanner = new DiskScanService();
+                var (tree, summary) = await scanner.ScanPathAsync(root, null, CancellationToken.None);
+                if (tree.FileCount != 800 || tree.Size != expectedBytes || tree.FolderCount != 25 || summary.IsCancelled)
+                    throw new InvalidOperationException("Storage workers lost or duplicated files/directories/bytes.");
+                if (!summary.LargestFiles.Select(file => file.Size).SequenceEqual(expectedTopSizes.OrderDescending().Take(10)))
+                    throw new InvalidOperationException("Merging worker top files changed the global top ten.");
+                foreach (var stat in summary.ExtensionStats)
+                    if (!expectedExtensions.TryGetValue(stat.Extension, out var expected) ||
+                        expected.bytes != stat.TotalSize || expected.count != stat.FileCount)
+                        throw new InvalidOperationException("Merging worker extension summaries changed bytes/counts.");
+                if (summary.ExtensionStats.Count != expectedExtensions.Count ||
+                    tree.CachedTopFiles != summary.LargestFiles || tree.CachedExtensionStats != summary.ExtensionStats ||
+                    summary.CleanupCandidates.Any(item => !item.FullPath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)))
+                    throw new InvalidOperationException("Storage extension/cleanup semantics changed.");
+                var pending = new Stack<FileItemNode>();
+                pending.Push(tree);
+                while (pending.TryPop(out var parent))
+                {
+                    bool seenFile = false;
+                    long previousDirectorySize = long.MaxValue, previousFileSize = long.MaxValue;
+                    foreach (var child in parent.Children)
+                    {
+                        if (child.Parent != parent || child.Level != parent.Level + 1 || child.CreationTime == null ||
+                            Math.Abs(child.Percentage - (double)child.Size / tree.Size * 100) > 0.001)
+                            throw new InvalidOperationException("Storage parent/level/timestamp/share was damaged.");
+                        if (child.IsDirectory)
+                        {
+                            if (seenFile || child.Size > previousDirectorySize) throw new InvalidOperationException("Directory order changed.");
+                            previousDirectorySize = child.Size;
+                            pending.Push(child);
+                        }
+                        else
+                        {
+                            seenFile = true;
+                            if (child.Size > previousFileSize) throw new InvalidOperationException("File size order changed.");
+                            previousFileSize = child.Size;
+                        }
+                    }
+                }
+                using var cancellation = new CancellationTokenSource();
+                cancellation.Cancel();
+                foreach (bool networkMode in new[] { false, true })
+                {
+                    bool cancelled = false;
+                    try { NativeDirectoryEnumerator.TryEnumerateEntries(root, batchedDirs, batchedFiles, out _, out _, cancellation.Token, networkMode); }
+                    catch (OperationCanceledException) { cancelled = true; }
+                    if (!cancelled) throw new InvalidOperationException("Directory cancellation was swallowed.");
+                }
+                bool scanCancelled = false;
+                try { await scanner.ScanPathAsync(root, null, cancellation.Token); }
+                catch (OperationCanceledException) { scanCancelled = true; }
+                if (!scanCancelled) throw new InvalidOperationException("Cancelled storage scan published a successful tree.");
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
         }
 
         private static async Task TestStorageHistoryTreeCacheAndDiffAsync()

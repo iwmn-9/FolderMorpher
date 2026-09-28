@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -80,90 +81,22 @@ namespace AstraSize.Services
                 int discoveredDirectories = 1;
                 int processedDirectories = 0;
 
-                var largestFiles = new List<LargestFileInfo>(32);
-                long minLargestThreshold = 0;
-                var extensionDict = new Dictionary<string, (long size, int count)>(StringComparer.OrdinalIgnoreCase);
-                var cleanupList = new List<CleanupCandidate>(64);
-
                 var statsLock = new object();
-                void TrackFile(string name, string fullPath, long size, string ext)
+                void ReportProgress(string path)
                 {
+                    if (progress == null || stopwatch.ElapsedMilliseconds - Volatile.Read(ref lastProgressTime) <= 150)
+                        return;
                     lock (statsLock)
                     {
-                        bytesScanned += size;
-                        filesScanned++;
-
-                        // 1. High-Performance Largest Files Tracking (avoid sorting every single file)
-                        if (largestFiles.Count < 30)
-                        {
-                            largestFiles.Add(new LargestFileInfo
-                            {
-                                Name = name,
-                                FullPath = fullPath,
-                                Size = size,
-                                Extension = ext,
-                                Category = GetCategoryForExtension(ext)
-                            });
-                            if (largestFiles.Count == 30)
-                            {
-                                largestFiles.Sort((a, b) => b.Size.CompareTo(a.Size));
-                                minLargestThreshold = largestFiles[^1].Size;
-                            }
-                        }
-                        else if (size > minLargestThreshold)
-                        {
-                            largestFiles.Add(new LargestFileInfo
-                            {
-                                Name = name,
-                                FullPath = fullPath,
-                                Size = size,
-                                Extension = ext,
-                                Category = GetCategoryForExtension(ext)
-                            });
-                            largestFiles.Sort((a, b) => b.Size.CompareTo(a.Size));
-                            largestFiles.RemoveAt(largestFiles.Count - 1);
-                            minLargestThreshold = largestFiles[^1].Size;
-                        }
-
-                        // 2. Extension aggregation
-                        var extKey = string.IsNullOrEmpty(ext) ? "(なし)" : ext.ToLowerInvariant();
-                        if (extensionDict.TryGetValue(extKey, out var stat))
-                        {
-                            extensionDict[extKey] = (stat.size + size, stat.count + 1);
-                        }
-                        else
-                        {
-                            extensionDict[extKey] = (size, 1);
-                        }
-
-                        // 3. Fast Cleanup Detection (check extension first to avoid heavy string allocations)
-                        string extLower = ext;
-                        if (extLower.Equals(".dmp", StringComparison.OrdinalIgnoreCase) ||
-                            extLower.Equals(".tmp", StringComparison.OrdinalIgnoreCase) ||
-                            (extLower.Equals(".log", StringComparison.OrdinalIgnoreCase) && size > 50 * 1024 * 1024))
-                        {
-                            if (cleanupList.Count < 100)
-                            {
-                                cleanupList.Add(new CleanupCandidate
-                                {
-                                    Name = name,
-                                    FullPath = fullPath,
-                                    Size = size,
-                                    Reason = extLower.Equals(".dmp", StringComparison.OrdinalIgnoreCase) ? "クラッシュダンプ" : "一時/巨大ログファイル"
-                                });
-                            }
-                        }
-
-                        // 4. Progress throttle (150ms)
                         var now = stopwatch.ElapsedMilliseconds;
                         if (now - lastProgressTime > 150)
                         {
                             lastProgressTime = now;
                             progress?.Report(new ScanProgress
                             {
-                                CurrentPath = fullPath,
-                                FilesScanned = filesScanned,
-                                BytesScanned = bytesScanned,
+                                CurrentPath = path,
+                                FilesScanned = Volatile.Read(ref filesScanned),
+                                BytesScanned = Volatile.Read(ref bytesScanned),
                                 DiscoveredDirectories = Volatile.Read(ref discoveredDirectories),
                                 ProcessedDirectories = Volatile.Read(ref processedDirectories)
                             });
@@ -172,10 +105,13 @@ namespace AstraSize.Services
                 }
 
                 // Network scans share the same per-share enumeration budget as search.
-                var controller = PathCanonicalizer.IsNetworkPath(targetPath)
+                bool isNetworkPath = PathCanonicalizer.IsNetworkPath(targetPath);
+                var controller = isNetworkPath
                     ? SharedIoGovernor.GetGovernor(targetPath).EnumerationController
-                    : new AdaptiveConcurrencyController();
-                int maxWorkers = AdaptiveConcurrencyController.MaxConcurrency;
+                    : null;
+                int maxWorkers = isNetworkPath
+                    ? AdaptiveConcurrencyController.MaxConcurrency
+                    : Math.Clamp(Environment.ProcessorCount, 1, 8);
 
                 DateTime rootLastModified = DateTime.MinValue;
                 DateTime rootCreationTime = DateTime.MinValue;
@@ -199,17 +135,21 @@ namespace AstraSize.Services
                 Interlocked.Increment(ref pendingWorkCount);
 
                 var workerTasks = new Task[maxWorkers];
+                var workerStats = new ScanWorkerStats[maxWorkers];
 
                 for (int w = 0; w < maxWorkers; w++)
                 {
+                    var stats = new ScanWorkerStats();
+                    workerStats[w] = stats;
                     workerTasks[w] = Task.Run(async () =>
                     {
                         var subDirs = new List<NativeFindEntry>(32);
                         var files = new List<NativeFindEntry>(64);
+                        var localStack = new Stack<(FileItemNode node, string currentPath, int depth)>();
 
                         while (!ct.IsCancellationRequested)
                         {
-                            if (!folderQueue.TryDequeue(out var item))
+                            if (!localStack.TryPop(out var item) && !folderQueue.TryDequeue(out item))
                             {
                                 // pendingWorkCount が 0 なら全フォルダーの探索が完全に終了
                                 if (Volatile.Read(ref pendingWorkCount) == 0)
@@ -220,16 +160,16 @@ namespace AstraSize.Services
                                 continue;
                             }
 
-                            using var lease = await controller.AcquireAsync(ct).ConfigureAwait(false);
+                            using var lease = controller == null ? null : await controller.AcquireAsync(ct).ConfigureAwait(false);
                             try
                             {
                                 var (node, currentPath, depth) = item;
 
                                 var dirSw = Stopwatch.StartNew();
-                                bool ok = NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, subDirs, files, out var error, out var failureKind);
+                                bool ok = NativeDirectoryEnumerator.TryEnumerateEntries(currentPath, subDirs, files, out var error, out var failureKind, ct, isNetworkPath);
                                 dirSw.Stop();
 
-                                lease.Report(dirSw.Elapsed.TotalMilliseconds, failureKind);
+                                lease?.Report(dirSw.Elapsed.TotalMilliseconds, failureKind);
 
                                 if (!ok)
                                 {
@@ -238,14 +178,18 @@ namespace AstraSize.Services
                                 }
 
                                 // 1. 直下ファイルのノード生成 ＆ 統計追跡
+                                long batchBytes = 0;
+                                int batchFiles = 0;
                                 for (int i = 0; i < files.Count; i++)
                                 {
-                                    if (ct.IsCancellationRequested) break;
+                                    ct.ThrowIfCancellationRequested();
                                     var f = files[i];
                                     long fSize = f.Size;
                                     string fPath = Path.Combine(currentPath, f.Name);
                                     string ext = Path.GetExtension(f.Name);
-                                    TrackFile(f.Name, fPath, fSize, ext);
+                                    stats.TrackFile(f.Name, fPath, fSize, ext);
+                                    batchBytes += fSize;
+                                    batchFiles++;
 
                                     var fileNode = new FileItemNode
                                     {
@@ -261,12 +205,22 @@ namespace AstraSize.Services
                                         Level = depth + 1
                                     };
                                     node.Children.Add(fileNode);
+                                    if (batchFiles == 256)
+                                    {
+                                        Interlocked.Add(ref bytesScanned, batchBytes);
+                                        Interlocked.Add(ref filesScanned, batchFiles);
+                                        batchBytes = 0;
+                                        batchFiles = 0;
+                                        ReportProgress(fPath);
+                                    }
                                 }
+                                Interlocked.Add(ref bytesScanned, batchBytes);
+                                Interlocked.Add(ref filesScanned, batchFiles);
 
                                 // 2. サブディレクトリのノード生成 ＆ キュー投入 (Junction / ReparsePoint 除外)
                                 for (int i = 0; i < subDirs.Count; i++)
                                 {
-                                    if (ct.IsCancellationRequested) break;
+                                    ct.ThrowIfCancellationRequested();
                                     var sd = subDirs[i];
                                     if (sd.IsReparsePoint) continue;
 
@@ -285,45 +239,31 @@ namespace AstraSize.Services
 
                                     Interlocked.Increment(ref pendingWorkCount);
                                     Interlocked.Increment(ref discoveredDirectories);
-                                    folderQueue.Enqueue((subNode, subPath, depth + 1));
+                                    // Keep one branch on this worker; siblings remain available to peers.
+                                    if (localStack.Count == 0) localStack.Push((subNode, subPath, depth + 1));
+                                    else folderQueue.Enqueue((subNode, subPath, depth + 1));
                                 }
                             }
                             finally
                             {
                                 Interlocked.Decrement(ref pendingWorkCount);
                                 Interlocked.Increment(ref processedDirectories);
-                                lock (statsLock)
-                                {
-                                    var now = stopwatch.ElapsedMilliseconds;
-                                    if (now - lastProgressTime > 150)
-                                    {
-                                        lastProgressTime = now;
-                                        progress?.Report(new ScanProgress
-                                        {
-                                            CurrentPath = item.currentPath,
-                                            FilesScanned = filesScanned,
-                                            BytesScanned = bytesScanned,
-                                            DiscoveredDirectories = Volatile.Read(ref discoveredDirectories),
-                                            ProcessedDirectories = Volatile.Read(ref processedDirectories)
-                                        });
-                                    }
-                                }
+                                ReportProgress(item.currentPath);
                             }
                         }
                     }, ct);
                 }
 
                 Task.WhenAll(workerTasks).GetAwaiter().GetResult();
+                ct.ThrowIfCancellationRequested();
 
                 // 3. インメモリ・ボトムアップ高速集計（Phase 2: サイズ・ファイル数・フォルダー数の合算と降順ソート）
                 void AggregateNode(FileItemNode node)
                 {
+                    ct.ThrowIfCancellationRequested();
                     long totalSize = 0;
                     int totalFiles = 0;
                     int totalFolders = 0;
-
-                    var dirChildren = new List<FileItemNode>();
-                    var fileChildren = new List<FileItemNode>();
 
                     for (int i = 0; i < node.Children.Count; i++)
                     {
@@ -334,13 +274,11 @@ namespace AstraSize.Services
                             totalSize += child.Size;
                             totalFiles += child.FileCount;
                             totalFolders += child.FolderCount + 1; // 直下のサブフォルダ自身 + その配下のサブフォルダ数
-                            dirChildren.Add(child);
                         }
                         else
                         {
                             totalSize += child.Size;
                             totalFiles++;
-                            fileChildren.Add(child);
                         }
                     }
 
@@ -349,28 +287,37 @@ namespace AstraSize.Services
                     node.FolderCount = totalFolders;
 
                     // 既存規約: ディレクトリ（サイズ降順）➔ ファイル（サイズ降順）
-                    dirChildren.Sort((a, b) => b.Size.CompareTo(a.Size));
-                    fileChildren.Sort((a, b) => b.Size.CompareTo(a.Size));
-
-                    node.Children.Clear();
-                    foreach (var d in dirChildren) node.Children.Add(d);
-                    foreach (var f in fileChildren) node.Children.Add(f);
+                    var orderedChildren = node.Children.ToList();
+                    orderedChildren.Sort(static (a, b) =>
+                    {
+                        int typeOrder = b.IsDirectory.CompareTo(a.IsDirectory);
+                        return typeOrder != 0 ? typeOrder : b.Size.CompareTo(a.Size);
+                    });
+                    // The tree is still private to this scan: no collection notifications are needed.
+                    node.Children = new ObservableCollection<FileItemNode>(orderedChildren);
                 }
 
                 AggregateNode(rootNode);
 
                 // Calculate percentages relative to root
-                CalculatePercentages(rootNode, rootNode.Size > 0 ? rootNode.Size : 1);
+                CalculatePercentages(rootNode, rootNode.Size > 0 ? rootNode.Size : 1, ct);
 
                 stopwatch.Stop();
 
-                // Final sort for largest files
-                largestFiles.Sort((a, b) => b.Size.CompareTo(a.Size));
+                var largestFiles = workerStats.SelectMany(stats => stats.LargestFiles)
+                    .OrderByDescending(file => file.Size).Take(10).ToList();
+                var extensionDict = new Dictionary<string, (long size, int count)>(StringComparer.OrdinalIgnoreCase);
+                foreach (var stats in workerStats)
+                    foreach (var entry in stats.ExtensionStats)
+                    {
+                        extensionDict.TryGetValue(entry.Key, out var existing);
+                        extensionDict[entry.Key] = (existing.size + entry.Value.size, existing.count + entry.Value.count);
+                    }
 
                 var extensionStats = extensionDict
                     .Select(kv => new ExtensionStat
                     {
-                        Extension = kv.Key,
+                        Extension = kv.Key.ToLowerInvariant(),
                         TotalSize = kv.Value.size,
                         FileCount = kv.Value.count,
                         Percentage = rootNode.Size > 0 ? (double)kv.Value.size / rootNode.Size * 100.0 : 0
@@ -389,15 +336,53 @@ namespace AstraSize.Services
                     IsCancelled = ct.IsCancellationRequested,
                     LargestFiles = largestFiles.Take(10).ToList(),
                     ExtensionStats = extensionStats,
-                    CleanupCandidates = cleanupList.Take(10).ToList()
+                    CleanupCandidates = workerStats.SelectMany(stats => stats.CleanupCandidates).Take(10).ToList()
                 };
 
+                rootNode.CachedTopFiles = summary.LargestFiles;
+                rootNode.CachedExtensionStats = summary.ExtensionStats;
+                ct.ThrowIfCancellationRequested();
                 return (rootNode, summary);
             }, ct);
         }
 
-        internal static void CalculatePercentages(FileItemNode node, long rootSize)
+        /// <summary>Owned by one worker; only the completed summaries are merged.</summary>
+        private sealed class ScanWorkerStats
         {
+            public List<LargestFileInfo> LargestFiles { get; } = new(31);
+            public Dictionary<string, (long size, int count)> ExtensionStats { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public List<CleanupCandidate> CleanupCandidates { get; } = new(10);
+
+            public void TrackFile(string name, string path, long size, string extension)
+            {
+                if (LargestFiles.Count < 30 || size > LargestFiles[^1].Size)
+                {
+                    LargestFiles.Add(new LargestFileInfo
+                    {
+                        Name = name, FullPath = path, Size = size, Extension = extension,
+                        Category = GetCategoryForExtension(extension)
+                    });
+                    LargestFiles.Sort(static (a, b) => b.Size.CompareTo(a.Size));
+                    if (LargestFiles.Count > 30) LargestFiles.RemoveAt(30);
+                }
+                string key = string.IsNullOrEmpty(extension) ? "(なし)" : extension;
+                ExtensionStats.TryGetValue(key, out var stat);
+                ExtensionStats[key] = (stat.size + size, stat.count + 1);
+
+                bool isDump = extension.Equals(".dmp", StringComparison.OrdinalIgnoreCase);
+                if (CleanupCandidates.Count < 10 && (isDump || extension.Equals(".tmp", StringComparison.OrdinalIgnoreCase) ||
+                    (extension.Equals(".log", StringComparison.OrdinalIgnoreCase) && size > 50 * 1024 * 1024)))
+                    CleanupCandidates.Add(new CleanupCandidate
+                    {
+                        Name = name, FullPath = path, Size = size,
+                        Reason = isDump ? "クラッシュダンプ" : "一時/巨大ログファイル"
+                    });
+            }
+        }
+
+        internal static void CalculatePercentages(FileItemNode node, long rootSize, CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
             if (rootSize > 0)
             {
                 node.Percentage = Math.Min(100.0, (double)node.Size / rootSize * 100.0);
@@ -410,7 +395,7 @@ namespace AstraSize.Services
             foreach (var child in node.Children)
             {
                 child.Parent = node;
-                CalculatePercentages(child, rootSize);
+                CalculatePercentages(child, rootSize, ct);
             }
         }
 
