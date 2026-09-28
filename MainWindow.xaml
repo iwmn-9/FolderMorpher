@@ -2487,7 +2487,7 @@
                     <!-- Title -->
                     <StackPanel Grid.Row="0" Margin="0,0,0,12">
                         <TextBlock x:Name="SettingsTitleText" Text="⚙️ 環境設定 (Settings)" FontSize="16" FontWeight="Bold" Foreground="#0F172A"/>
-                        <TextBlock x:Name="SettingsDescText" Text="キャッシュ、スナップショット履歴、監査レポートの参照先および保存先を構成します。" FontSize="11.5" Foreground="#64748B" Margin="0,4,0,0"/>
+                        <TextBlock x:Name="SettingsDescText" Text="表示言語、共有データの参照・保存先、終了時の動作を設定します。" FontSize="11.5" Foreground="#64748B" Margin="0,4,0,0"/>
                     </StackPanel>
 
                     <!-- Settings Body -->
@@ -2509,7 +2509,7 @@
                         <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,12">
                             <StackPanel>
                                 <TextBlock x:Name="SettingsReadTitleText" Text="📂 キャッシュ・スナップショット 参照先 (読み込み)" FontWeight="Bold" FontSize="12.5" Foreground="#1E293B"/>
-                                <TextBlock x:Name="SettingsReadDescText" Text="共有ファイルサーバー上のマスターキャッシュ（UNCパス等）を指定すると、チーム共通の0秒ツリーや推移履歴を参照できます。" FontSize="11" Foreground="#64748B" Margin="0,2,0,8" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="SettingsReadDescText" Text="共有先のJSONツリーと容量履歴を読み込みます。読み込んだツリーは端末内のキャッシュに保存します。" FontSize="11" Foreground="#64748B" Margin="0,2,0,8" TextWrapping="Wrap"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -2530,7 +2530,7 @@
                         <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="14">
                             <StackPanel>
                                 <TextBlock x:Name="SettingsWriteTitleText" Text="💾 キャッシュ・スナップショット 保存先 (書き込み)" FontWeight="Bold" FontSize="12.5" Foreground="#1E293B"/>
-                                <TextBlock x:Name="SettingsWriteDescText" Text="自身がスキャンした結果のツリーキャッシュおよび履歴データの保存場所を選択します。" FontSize="11" Foreground="#64748B" Margin="0,2,0,8" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="SettingsWriteDescText" Text="容量履歴の保存先を選びます。共有先や任意の保存先にはJSONツリーも出力します。SQLiteのキャッシュは端末内に保持します。" FontSize="11" Foreground="#64748B" Margin="0,2,0,8" TextWrapping="Wrap"/>
 
                                 <RadioButton x:Name="SettingsWriteModeLocalRadio" GroupName="WriteMode" IsChecked="True" Margin="0,2,0,4"
                                              Checked="SettingsWriteModeRadio_Checked">
@@ -2574,12 +2574,16 @@
                     </StackPanel>
 
                     <!-- Actions -->
-                    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Button x:Name="SettingsCancelButton" Content="キャンセル" Width="90" Height="32" Margin="0,0,8,0"
-                                Style="{StaticResource FluentButtonSecondary}" Click="SettingsCancelButton_Click"/>
-                        <Button x:Name="SettingsSaveButton" Content="設定を保存" Width="112" Height="32"
-                                Style="{StaticResource FluentButtonPrimary}" Click="SettingsSaveButton_Click"/>
-                    </StackPanel>
+                    <Grid Grid.Row="3">
+                        <Button x:Name="SettingsLicensesButton" Content="ライセンス" MinWidth="96" Height="32" HorizontalAlignment="Left"
+                                Style="{StaticResource FluentButtonSecondary}" Click="SettingsLicensesButton_Click"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="SettingsCancelButton" Content="キャンセル" Width="90" Height="32" Margin="0,0,8,0"
+                                    Style="{StaticResource FluentButtonSecondary}" Click="SettingsCancelButton_Click"/>
+                            <Button x:Name="SettingsSaveButton" Content="設定を保存" Width="112" Height="32"
+                                    Style="{StaticResource FluentButtonPrimary}" Click="SettingsSaveButton_Click"/>
+                        </StackPanel>
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>

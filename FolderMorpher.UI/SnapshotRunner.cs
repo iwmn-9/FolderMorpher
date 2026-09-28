@@ -150,7 +150,9 @@ public static class SnapshotRunner
                                 mw.SearchKpiHitCountText.Text = "4 件";
                                 mw.SearchKpiTotalSizeText.Text = "18.8 MB";
                                 mw.SearchKpiElapsedText.Text = "0.04s";
-                                mw.SearchStatusText.Text = "⚡ インデックス高速検索完了: 4 件ヒット (38 ms)";
+                                mw.SearchStatusText.Text = ForcedLanguage == FolderMorpher.Services.AppLanguage.English
+                                    ? "Cache search complete: 4 hits (38 ms)"
+                                    : "キャッシュ検索完了: 4 件ヒット (38 ms)";
                             }
                             else if (selectTab == 101)
                             {
@@ -448,6 +450,26 @@ public static class SnapshotRunner
                                     hwEnc.Save(fs);
                                 }
                                 hw.Close();
+                                return;
+                            }
+                            else if (selectTab == 106)
+                            {
+                                var viewer = AstraSize.LicenseNotices.CreateWindow(mw);
+                                try
+                                {
+                                    viewer.Show();
+                                    await System.Threading.Tasks.Task.Delay(200);
+                                    viewer.UpdateLayout();
+                                    var noticeBitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                                        (int)viewer.ActualWidth, (int)viewer.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                                    noticeBitmap.Render(viewer);
+                                    var noticeEncoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                                    noticeEncoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(noticeBitmap));
+                                    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(snapshotPath))!);
+                                    using var output = File.Create(snapshotPath);
+                                    noticeEncoder.Save(output);
+                                }
+                                finally { viewer.Close(); }
                                 return;
                             }
                             else if (selectTab == 99)

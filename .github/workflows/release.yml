@@ -30,6 +30,7 @@ jobs:
       - name: "Publish Self-Contained Single EXE"
         run: |
           dotnet publish ./FolderMorpher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o ./dist
+          ./tools/Test-LicenseNotices.ps1 -DepsPath ./bin/Release/net10.0-windows/win-x64/FolderMorpher.deps.json
           $files = @(Get-ChildItem ./dist -File)
           if ($files.Count -ne 1 -or $files[0].Name -ne 'FolderMorpher.exe') { throw "Expected only FolderMorpher.exe in dist: $($files.Name -join ', ')" }
 
@@ -54,13 +55,15 @@ jobs:
             ## 🎉 FolderMorpher ${{ github.ref_name }} Preview Release
 
             ### 📦 Download & Run
-            Download **`FolderMorpher.exe`** from the Assets below and double-click to run on any 64-bit Windows machine (Windows 10/11/Server 2016+). No prerequisites or installations required!
+            Download **`FolderMorpher.exe`** from the Assets below and run on supported 64-bit Windows 10/11 or Windows Server with a desktop. The .NET 10 runtime is included; no separate .NET installation is required. See the README for supported OS editions.
 
             ### ✨ Key Features
-            - **Storage Explorer**: Multi-tab live drive scanning, directory share tree, and capacity inspection.
+            - **Search, Storage & Cleanup**: Choose a reference folder, then switch tasks. Search names or supported file contents without a persistent full-text index.
+            - **Storage Explorer**: Parallel drive/share scanning, folder shares, history, and optional largest-file details.
             - **Live ACL Control**: Inspect and edit NTFS access control lists with instant SDDL rollback snapshot protection.
             - **Simulation Studio**: Virtual tree restructuring (N:1 mapping) and diff verification before physical file transfers.
             - **LinkFixer**: Detect and batch repair severed shortcuts (`.lnk`) and Excel workbooks (`.xlsx`/`.xlsm`).
             - **Audit & Hygiene**: Duplicate file detection (SHA-256), dormant data identification (3+ years), and deep path analyzer.
-            - **Media Optimizer**: Visually lossless image compression with sanctuary folder protection and overnight video batch scripts.
-            - **Bilingual UI**: Seamless real-time switching between English and Japanese (`🌐 EN` / `🌐 JA`).
+            - **Media Optimizer**: Image resizing/compression under Cleanup, with protected folders and video batch scripts that use separately installed FFmpeg.
+            - **Bilingual UI**: Switch between English and Japanese in Settings.
+            - **Licenses**: Full bundled-component license texts are available in Settings → Licenses.

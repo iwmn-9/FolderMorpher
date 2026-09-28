@@ -128,14 +128,16 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
 
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
+**配布ライセンスと説明の正本（ADR 131）**: 本体はMIT、依存の使用版に対応する全文・著作権・NOTICEはルート `THIRD-PARTY-NOTICES.txt` が正本。UIに埋め込み、`FolderMorpher.UI/Dialogs/LicenseNotices.cs` が設定から表示・コピーする。配布は引き続き1 EXE。確認対象・更新手順は `docs/DEPENDENCIES.md`。依存を更新したら直接・間接パッケージ、ネイティブDLL、自己完結ランタイムの実配布版を確認する。`tools/Test-LicenseNotices.ps1` は `.deps.json` に対する表記漏れをCI・配布CIで拒否するが、ライセンス条件の審査は代替しない。README日英は現在のフォルダー中心の操作と実装を説明し、旧画面・全文索引・0秒保証の説明へ戻さない。性能条件の詳細は既存の研究記録を参照する。設定の共有データ説明は `Strings.Settings*Desc` を正本にする。
+
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの設計判断記録（ADR 1〜129）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
+> 本プロジェクトの設計判断記録（ADR 1〜131）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・外部保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 > 新たな設計判断を追加した場合は、`.agents/ADR.md` を最新の状態に同期すること。
 
 #### 主要な中核原則サマリー（詳細は `.agents/ADR.md` 参照）
 
-設計判断（ADR 1〜129）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
+設計判断（ADR 1〜131）は、以下の **8大中核アーキテクチャ原則** に集約される。後続のメンテナは、これらの仕様・制約を安易に巻き戻してはならない。
 
 1. **全体占有率メーター & 2連カード（Storage / ADR 61）**:
    - 親フォルダーに対する直下シェア（右ペイン「選択フォルダーの内訳」）と、スキャン対象ルート総容量に対する全体占有率を二重加算防止のため厳格分離。ルート行は `―`（ハイフン）表示。メトリクスカードは「スキャン対象 容量」「前回差分推移」の2連カード化。
@@ -181,12 +183,14 @@ PDFのネイティブ `LoadIFilter` 呼び出しはWindows APIと同じ3引数�
 ### ビルド（0 警告・0 エラーを維持すること）
 ```powershell
 & "$HOME\.dotnet\dotnet.exe" build
+./tools/Test-LicenseNotices.ps1 -DepsPath ./bin/Debug/net10.0-windows/FolderMorpher.deps.json
 ```
 
 ### 配布用単一EXEの生成（Release self-contained・単一EXE）
 ```powershell
 $env:PATH = "C:\Users\iwakura\.dotnet;" + $env:PATH
 & "$HOME\.dotnet\dotnet.exe" publish ./FolderMorpher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -o ./dist
+./tools/Test-LicenseNotices.ps1 -DepsPath ./bin/Release/net10.0-windows/win-x64/FolderMorpher.deps.json
 # Google Drive同期時は社内互換のため2つとも配置すること
 Copy-Item ./dist/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderMorpher.exe" -Force
 Copy-Item ./dist/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderCleaner.exe" -Force
@@ -236,4 +240,8 @@ Copy-Item ./dist/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderCl
 # 一般向け: 参照先の展開・ホバー×と登録解除／情シス向け最小幅
 & "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\client_scope.png" --tab 16 --client
 & "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\admin_narrow.png" --tab 18
+
+# 設定 / EXEに埋め込んだライセンス全文（--lang enで英語）
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\settings.png" --tab 99 --lang ja
+& "$HOME\.dotnet\dotnet.exe" ".\bin\Debug\net10.0-windows\FolderMorpher.dll" --snapshot ".\licenses.png" --tab 106 --lang ja
 ```

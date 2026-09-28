@@ -21,15 +21,31 @@ public static class PresentationTestRunner
                 window.SearchMenuExportCsv.Header?.ToString() != "📑 Export to CSV (.csv)" ||
                 window.ColMigWaveWarnings.Header?.ToString() != "Warnings" ||
                 window.Resources["MigWave48hBadge"]?.ToString() != "⚠️ >48h" ||
-                window.AuditCheckDuplicatesCheckBox.ToolTip?.ToString() != "Find files with identical SHA-256 hashes")
+                window.AuditCheckDuplicatesCheckBox.ToolTip?.ToString() != "Find files with identical SHA-256 hashes" ||
+                window.SettingsLicensesButton.Content?.ToString() != "Licenses")
                 throw new InvalidOperationException("Runtime English labels were not applied to context menus, wave table, or audit controls.");
 
             language.SetLanguage(AppLanguage.Japanese);
             apply.Invoke(window, null);
             if (window.SearchMenuOpen.Header?.ToString() != "📄 ファイルを開く" ||
                 window.ColMigWaveWarnings.Header?.ToString() != "警告・判定" ||
-                window.Resources["MigWave48hBadge"]?.ToString() != "⚠️ 48h超")
+                window.Resources["MigWave48hBadge"]?.ToString() != "⚠️ 48h超" ||
+                window.SettingsLicensesButton.Content?.ToString() != "ライセンス")
                 throw new InvalidOperationException("Runtime Japanese labels were not restored.");
+
+            var notices = AstraSize.LicenseNotices.Read();
+            if (!notices.Contains("Copyright (c) 2026 iwmn-9") ||
+                !notices.Contains("Apache License") || !notices.Contains(".NET runtime THIRD-PARTY-NOTICES.TXT"))
+                throw new InvalidOperationException("The EXE does not carry the required license notices.");
+            var viewer = AstraSize.LicenseNotices.CreateWindow(window);
+            try
+            {
+                var layout = (System.Windows.Controls.Grid)((System.Windows.Controls.Border)viewer.Content).Child;
+                var text = layout.Children.OfType<System.Windows.Controls.TextBox>().Single();
+                if (!text.IsReadOnly || text.Text != notices)
+                    throw new InvalidOperationException("License viewer did not preserve the full notice text.");
+            }
+            finally { viewer.Close(); }
         }
         finally
         {

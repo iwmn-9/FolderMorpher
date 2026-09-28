@@ -331,18 +331,21 @@ namespace FolderMorpher.Services
         // 環境設定モーダル (Settings Modal)
         // ==========================================
         public static string SettingsTitle => IsJa ? "⚙️ 環境設定 (Settings)" : "⚙️ Settings";
-        public static string SettingsDesc => IsJa ? "キャッシュ、スナップショット履歴、監査レポートの参照先および保存先を構成します。" : "Configure read and write locations for tree caches, snapshot histories, and audit reports.";
+        public static string SettingsDesc => IsJa ? "表示言語、共有データの参照・保存先、終了時の動作を設定します。" : "Choose the language, shared data locations, and behavior when closing the window.";
         public static string SettingsReadTitle => IsJa ? "📂 キャッシュ・スナップショット 参照先 (読み込み)" : "📂 Cache & Snapshot Read Source";
-        public static string SettingsReadDesc => IsJa ? "共有ファイルサーバー上のマスターキャッシュ（UNCパス等）を指定すると、チーム共通の0秒ツリーや推移履歴を参照できます。" : "Specify a master cache folder on a shared file server (e.g. UNC path) to access team-wide 0-second trees and histories.";
+        public static string SettingsReadDesc => IsJa ? "共有先のJSONツリーと容量履歴を読み込みます。読み込んだツリーは端末内のキャッシュに保存します。" : "Read shared JSON trees and storage history. Imported trees are cached on this computer.";
         public static string SettingsFallbackText => IsJa ? "共有参照先にアクセスできない場合は自動でローカルキャッシュを参照する" : "Automatically fall back to local cache if shared source is unreachable";
         public static string SettingsWriteTitle => IsJa ? "💾 キャッシュ・スナップショット 保存先 (書き込み)" : "💾 Cache & Snapshot Write Destination";
-        public static string SettingsWriteDesc => IsJa ? "自身がスキャンした結果のツリーキャッシュおよび履歴データの保存場所を選択します。" : "Select where your local scans save tree cache and historical data.";
+        public static string SettingsWriteDesc => IsJa ? "容量履歴の保存先を選びます。共有先や任意の保存先にはJSONツリーも出力します。SQLiteのキャッシュは端末内に保持します。" : "Choose where to save storage history. Shared or custom destinations also receive JSON trees. The SQLite cache stays on this computer.";
         public static string SettingsWriteLocal => IsJa ? "ローカルに保存" : "Save to Local";
         public static string SettingsWriteLocalSub => IsJa ? " (推奨: マスターキャッシュを上書きしない安全設定)" : " (Recommended: Safe, won't overwrite master cache)";
         public static string SettingsWriteSame => IsJa ? "参照先と同じフォルダーに保存" : "Save to same folder as read source";
         public static string SettingsWriteSameSub => IsJa ? " (管理者・マスター更新者用)" : " (For administrators / master publishers)";
         public static string SettingsWriteCustom => IsJa ? "任意のカスタムフォルダーを指定" : "Specify custom folder";
         public static string SettingsSaveButton => IsJa ? "設定を保存" : "Save Settings";
+        public static string SettingsLicenses => IsJa ? "ライセンス" : "Licenses";
+        public static string LicensesTitle => IsJa ? "ライセンスと著作権表示" : "Licenses and attributions";
+        public static string LicensesDescription => IsJa ? "本体と同梱コンポーネントのライセンス全文です。文字を選択してコピーできます。" : "Full license texts for FolderMorpher and its bundled components. Select text to copy.";
         public static string SettingsReadPathToolTip => IsJa ? "空の場合はローカル既定値 (%LocalAppData%\\FolderMorpher) を参照します" : "Defaults to local directory (%LocalAppData%\\FolderMorpher) if blank";
 
         // ==========================================

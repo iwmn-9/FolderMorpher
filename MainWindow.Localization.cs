@@ -36,8 +36,8 @@ namespace AstraSize
             AdminSidebarToggleButton.Visibility = Visibility.Collapsed;
 
             Title = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese
-                ? "FolderCleaner - 容量分析 & ファイル監査・写真軽量化 クライアント"
-                : "FolderCleaner - Storage Analyzer & Cleanup Client";
+                ? "FolderCleaner - 検索・容量・整理"
+                : "FolderCleaner - Search, Storage & Cleanup";
         }
 
         private void ApplyLocalization()
@@ -54,7 +54,7 @@ namespace AstraSize
             if (AppVersionText != null)
             {
                 var ver = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version;
-                string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "v2.1.2";
+                string verStr = ver != null ? $"v{ver.Major}.{ver.Minor}.{ver.Build}" : "";
                 AppVersionText.Text = ClientModeState.IsClientMode
                     ? $"FolderCleaner {verStr}"
                     : $"FolderMorpher {verStr}";
@@ -635,21 +635,15 @@ namespace AstraSize
             SettingsLanguageTitle.Text = isJa ? "表示言語" : "Display language";
             SettingsLanguageHint.Text = isJa ? "画面の表示言語を選択" : "Choose the interface language";
             SettingsTitleText.Text = isJa ? "⚙️ 環境設定 (Settings)" : "⚙️ Settings";
-            SettingsDescText.Text = isJa
-                ? "キャッシュ、スナップショット履歴、監査レポートの参照先および保存先を構成します。"
-                : "Configure read and write locations for tree caches, snapshot histories, and audit reports.";
+            SettingsDescText.Text = Strings.SettingsDesc;
             SettingsReadTitleText.Text = isJa ? "📂 キャッシュ・スナップショット 参照先 (読み込み)" : "📂 Cache & Snapshot Read Source";
-            SettingsReadDescText.Text = isJa
-                ? "共有ファイルサーバー上のマスターキャッシュ（UNCパス等）を指定すると、チーム共通の0秒ツリーや推移履歴を参照できます。"
-                : "Specify a master cache folder on a shared file server (e.g. UNC path) to access team-wide 0-second trees and histories.";
+            SettingsReadDescText.Text = Strings.SettingsReadDesc;
             SettingsBrowseReadButton.Content = isJa ? "参照..." : "Browse...";
             SettingsFallbackCheckBox.Content = isJa
                 ? "共有参照先にアクセスできない場合は自動でローカルキャッシュを参照する"
                 : "Automatically fall back to local cache if shared source is unreachable";
             SettingsWriteTitleText.Text = isJa ? "💾 キャッシュ・スナップショット 保存先 (書き込み)" : "💾 Cache & Snapshot Write Destination";
-            SettingsWriteDescText.Text = isJa
-                ? "自身がスキャンした結果のツリーキャッシュおよび履歴データの保存場所を選択します。"
-                : "Select where your local scans save tree cache and historical data.";
+            SettingsWriteDescText.Text = Strings.SettingsWriteDesc;
             SettingsWriteLocalText.Text = isJa ? "ローカルに保存" : "Save to Local";
             SettingsWriteLocalSubText.Text = isJa ? " (推奨: マスターキャッシュを上書きしない安全設定)" : " (Recommended: Safe, won't overwrite master cache)";
             SettingsWriteSameText.Text = isJa ? "参照先と同じフォルダーに保存" : "Save to same folder as read source";
@@ -658,6 +652,7 @@ namespace AstraSize
             SettingsBrowseCustomButton.Content = isJa ? "参照..." : "Browse...";
             SettingsCancelButton.Content = isJa ? "キャンセル" : "Cancel";
             SettingsSaveButton.Content = isJa ? "設定を保存" : "Save Settings";
+            SettingsLicensesButton.Content = Strings.SettingsLicenses;
             SettingsCloseHostCheckBox.Content = isJa ? "×で閉じたらHostも終了する" : "Close Host when this window closes";
             SettingsCloseHostHint.Text = isJa
                 ? "初期値はオフ。オンの場合、実行中のHost処理も中断します。"

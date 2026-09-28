@@ -23,4 +23,5 @@ jobs:
       - name: "Build & Run Regression Test Suite"
         run: |
           dotnet build -c Release
+          ./tools/Test-LicenseNotices.ps1
           dotnet run -c Release --no-build -- --test-regression

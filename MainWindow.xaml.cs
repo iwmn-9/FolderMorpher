@@ -429,6 +429,11 @@ namespace AstraSize
             SettingsModalOverlay.Visibility = Visibility.Collapsed;
         }
 
+        private void SettingsLicensesButton_Click(object sender, RoutedEventArgs e)
+        {
+            LicenseNotices.CreateWindow(this).ShowDialog();
+        }
+
         private async void SettingsSaveButton_Click(object sender, RoutedEventArgs e)
         {
             var settings = AppSettingsService.Instance.Current;
