@@ -25,6 +25,7 @@ namespace FolderMorpher.Services.Testing
         /// </summary>
         public static async Task TestDomain_LiveAclAndEffectiveAccessAsync()
         {
+            TestAclFixtureCleanup();
             TestLiveAclDenyAndInheritance();
             TestLiveAclSpecialInheritanceFlags();
             TestAclUiBindingAndHelper();
@@ -100,7 +101,7 @@ namespace FolderMorpher.Services.Testing
                         throw new InvalidOperationException("Inherited grant/deny presentation lost its effective provenance.");
                 }
             }
-            finally { Directory.Delete(root, true); }
+            finally { AclTestDirectoryCleanup.Delete(root); }
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -237,25 +238,7 @@ namespace FolderMorpher.Services.Testing
             }
             finally
             {
-                // クリーンアップ (Deny Delete を解除してから削除)
-                if (Directory.Exists(tempDir))
-                {
-                    try
-                    {
-                        var dirInfo = new DirectoryInfo(tempDir);
-                        var sec = dirInfo.GetAccessControl(AccessControlSections.Access);
-                        sec.SetAccessRuleProtection(false, false);
-                        var existing = sec.GetAccessRules(true, true, typeof(NTAccount));
-                        foreach (FileSystemAccessRule r in existing)
-                        {
-                            try { sec.RemoveAccessRule(r); } catch { }
-                        }
-                        dirInfo.SetAccessControl(sec);
-                    }
-                    catch { }
-
-                    try { Directory.Delete(tempDir, true); } catch { }
-                }
+                AclTestDirectoryCleanup.Delete(tempDir);
             }
         }
 
@@ -346,7 +329,7 @@ namespace FolderMorpher.Services.Testing
             }
             finally
             {
-                try { Directory.Delete(tempDir, true); } catch { }
+                AclTestDirectoryCleanup.Delete(tempDir);
             }
         }
 
@@ -609,7 +592,7 @@ namespace FolderMorpher.Services.Testing
             }
             finally
             {
-                try { Directory.Delete(tempDir, true); } catch { }
+                AclTestDirectoryCleanup.Delete(tempDir);
             }
         }
 
@@ -694,7 +677,7 @@ namespace FolderMorpher.Services.Testing
             }
             finally
             {
-                try { Directory.Delete(tempDir, true); } catch { }
+                AclTestDirectoryCleanup.Delete(tempDir);
             }
         }
 
@@ -837,7 +820,7 @@ namespace FolderMorpher.Services.Testing
             }
             finally
             {
-                try { Directory.Delete(testDir, recursive: true); } catch { }
+                AclTestDirectoryCleanup.Delete(testDir);
             }
         }
 
@@ -1010,7 +993,7 @@ namespace FolderMorpher.Services.Testing
             }
             finally
             {
-                try { Directory.Delete(testDir, recursive: true); } catch { }
+                AclTestDirectoryCleanup.Delete(testDir);
             }
         }
 
@@ -1155,7 +1138,7 @@ namespace FolderMorpher.Services.Testing
             }
             finally
             {
-                try { Directory.Delete(testDir, recursive: true); } catch { }
+                AclTestDirectoryCleanup.Delete(testDir);
             }
         }
 
@@ -1239,7 +1222,7 @@ namespace FolderMorpher.Services.Testing
             }
             finally
             {
-                try { Directory.Delete(testDir, recursive: true); } catch { }
+                AclTestDirectoryCleanup.Delete(testDir);
             }
         }
 
@@ -1401,20 +1384,7 @@ namespace FolderMorpher.Services.Testing
             }
             finally
             {
-                // クリーンアップ: 後片付け前に Deny ルールを全消去して削除可能にする
-                try
-                {
-                    var clearSec = new DirectorySecurity();
-                    clearSec.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-                    clearSec.AddAccessRule(new FileSystemAccessRule(adminUser, FileSystemRights.FullControl, AccessControlType.Allow));
-                    try { new DirectoryInfo(subSevered).SetAccessControl(clearSec); } catch { }
-                    try { new DirectoryInfo(subRestricted).SetAccessControl(clearSec); } catch { }
-                    try { new DirectoryInfo(subEnclave).SetAccessControl(clearSec); } catch { }
-                    try { new DirectoryInfo(subNoAccess).SetAccessControl(clearSec); } catch { }
-                    try { new DirectoryInfo(subUnknownChild).SetAccessControl(clearSec); } catch { }
-                    Directory.Delete(testRoot, recursive: true);
-                }
-                catch { }
+                AclTestDirectoryCleanup.Delete(testRoot);
             }
 
             // =========================================================================
@@ -1492,7 +1462,7 @@ namespace FolderMorpher.Services.Testing
                 }
                 finally
                 {
-                    try { Directory.Delete(tempDir, recursive: true); } catch { }
+                    AclTestDirectoryCleanup.Delete(tempDir);
                 }
             }
 
@@ -1699,10 +1669,7 @@ namespace FolderMorpher.Services.Testing
             }
             finally
             {
-                if (Directory.Exists(tempDir))
-                {
-                    try { Directory.Delete(tempDir, true); } catch { }
-                }
+                AclTestDirectoryCleanup.Delete(tempDir);
             }
         }
 
