@@ -262,6 +262,7 @@ namespace FolderMorpher.Services
                     new BoundedChannelOptions(2048) { FullMode = BoundedChannelFullMode.Wait, SingleWriter = false, SingleReader = false });
 
                 var ocrCandidates = new ConcurrentBag<SearchResultItem>();
+                var completedOcrPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 bool hasOfficeLinkReq = query.HasOfficeLinkOnly;
                 string? officeLinkKeyword = query.OfficeLinkKeyword;
@@ -270,6 +271,7 @@ namespace FolderMorpher.Services
                 {
                     lock (batchLock)
                     {
+                        if (query.IncludeOcr && OcrWorkerService.IsSupportedOcrExtension(hit.Extension)) completedOcrPaths.Add(hit.FullPath);
                         if (results.Count < MaxRetainedResults)
                         {
                             results.Add(hit);
@@ -575,7 +577,7 @@ namespace FolderMorpher.Services
                     var existingHitPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     lock (batchLock)
                     {
-                        foreach (var r in results) existingHitPaths.Add(r.FullPath);
+                        existingHitPaths.UnionWith(completedOcrPaths);
                     }
 
                     var ocrHits = await ExecuteOcrStageAsync(
