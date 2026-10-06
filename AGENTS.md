@@ -174,4 +174,4 @@ Copy-Item ./dist/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderCl
 - 部分容量走査は `ScanSummary.UnavailableFolders/IsCompleteCoverage` が正本。完全キャッシュ・履歴へ混ぜず、ローカルの部分観測、画面、CSV/Excelへ未知範囲を保つ。
 - 検索の総件数・総容量と上限1万件の保持一覧を区別する。Host DTOの総数を保持件数で上書きしない。OCR候補にも通常のメタデータ条件を適用し、本文条件は共通グループ生成に従う。OCR実行失敗・部分処理は `OcrWarning` へ伝える。
 - `assets/ocr/manifest.json` と圧縮分割資産がPP-OCRv6-small配布の正本。`EmbeddedOcrRuntime` が遅延展開・整合性検査・Host通常終了時の回収を所有し、`OcrWorkerService` は隔離Python子プロセスの終了を所有する。開発用の隣接Filunest探索はしない。再生成は `tools/Prepare-OcrBundle.py`。生成済みPython bytecodeや個人端末パスを含めない。ライセンスは `docs/DEPENDENCIES.md` とEXEに埋め込む `THIRD-PARTY-NOTICES.txt` を同期する。PDF NuGetは公式 `PdfPig 0.1.16`。
-- 回帰の追加項目は `RegressionTestSuite.Review.cs`、実EXEのOCR・部分走査・DTO検証は `App.xaml.cs` の `--test-ipc`。生成移行スクリプトの実行試験には許可済みPowerShell 7を使い、実行ポリシーを変更・回避しない。
+- 回帰の追加項目は `RegressionTestSuite.Review.cs`、実EXEのOCR・部分走査・DTO検証は `App.xaml.cs` の `--test-ipc`。生成移行スクリプトの実行試験には許可済みPowerShell 7を使い、実行ポリシーを変更・回避しない。隔離IPC試験のHostは `DiskScanService(allowMft: false)` を使い、管理者CIでも通常列挙のアクセス拒否・部分観測を検証する。製品Hostの自動MFT選択は維持する。

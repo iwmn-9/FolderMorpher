@@ -45,7 +45,9 @@ namespace FolderMorpher.Host
 
         public HostService()
         {
-            _diskScanService = new DiskScanService();
+            // The isolated IPC suite exercises ordinary-user ACL failures even on elevated CI.
+            // Raw-volume MFT coverage is a separate engine and intentionally bypasses directory listing ACLs.
+            _diskScanService = new DiskScanService(allowMft: string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FOLDERMORPHER_TEST_IPC_ID")));
             _treeCache = new SqliteTreeCacheService();
             _storageHistory = StorageHistoryService.Instance;
             _searchEngine = new SearchEngineService();

@@ -25,13 +25,17 @@ namespace AstraSize.Services
 
     public class DiskScanService
     {
+        private readonly bool _allowMft;
+
+        public DiskScanService(bool allowMft = true) => _allowMft = allowMft;
+
         public async Task<(FileItemNode rootNode, ScanSummary summary)> ScanPathAsync(
             string targetPath,
             IProgress<ScanProgress>? progress,
             CancellationToken ct)
         {
             // ⚡ Hybrid Check: Try Ultra-Fast MFT Engine if supported (Local NTFS + Administrator)
-            if (Mft.MftScanService.CanUseMft(targetPath))
+            if (_allowMft && Mft.MftScanService.CanUseMft(targetPath))
             {
                 try
                 {

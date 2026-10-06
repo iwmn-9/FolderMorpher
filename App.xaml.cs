@@ -770,7 +770,7 @@ namespace AstraSize
                                 System.IO.FileSystemAclExtensions.SetAccessControl(blockedDirectory, blockedAcl);
                                 var partial = await host.ScanStorageAsync(new FolderMorpher.Contracts.StorageScanRequestDto { TargetPath = testRoot }, null, ocrCts.Token);
                                 if (partial.IsCompleteCoverage || !partial.UnavailableFolders.Contains(blockedPath))
-                                    throw new InvalidOperationException("Unavailable storage branch was reported as complete.");
+                                    throw new InvalidOperationException($"Unavailable storage branch was reported as complete (mode={partial.ScanMode}, complete={partial.IsCompleteCoverage}, unavailable={partial.UnavailableFolders.Count}).");
                                 var afterPartial = await host.GetStorageHistoryAsync(testRoot);
                                 if (afterPartial.Count != baselineHistory.Count)
                                     throw new InvalidOperationException("Partial storage scan overwrote complete history.");
