@@ -16,6 +16,7 @@ dist/
 *.suo
 
 ## Temporary & Log files
+.test-output/
 *.log
 *.tmp
 *.ps1
