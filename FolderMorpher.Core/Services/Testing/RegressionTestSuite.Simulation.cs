@@ -626,7 +626,7 @@ namespace FolderMorpher.Services.Testing
 
                 int fixedCount = await officeService.ExecuteOfficeFixAsync(officeItems, null, CancellationToken.None);
                 if (fixedCount != 1)
-                    throw new InvalidOperationException($"Expected 1 fixed Office link, got {fixedCount}");
+                    throw new InvalidOperationException($"Expected 1 fixed Office link, got {fixedCount}: {officeItems[0].Status}");
 
                 // バックアップファイル (.bak) が生成されていること
                 string bakFile = testXlsx + ".bak";
