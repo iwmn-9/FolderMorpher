@@ -1,0 +1,740 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using FolderMorpher.Models;
+
+namespace FolderMorpher.Services
+{
+    public class AuditReportService
+    {
+        private const int DuplicateCandidateScore = 95;
+        // NTFS/Windowsで実際に問題になる地雷文字 (日常記号 # % & { } ~ は過剰警告防止のため除外)
+        private static readonly char[] NtfsInvalidChars = new[] { '*', ':', '<', '>', '?', '/', '\\', '|', '"' };
+
+        public async Task<(AuditSummary Summary, List<AuditItem> Items)> RunAuditAsync(
+            AuditOptions options,
+            IProgress<AuditProgress>? progress,
+            CancellationToken ct,
+            IProgress<IReadOnlyList<AuditItem>>? candidateProgress = null)
+        {
+            var summary = new AuditSummary();
+            var items = new List<AuditItem>();
+            var scannedFiles = new List<ScannedFileEntry>();
+
+            if (!string.IsNullOrWhiteSpace(options.TargetDirectory))
+            {
+                options.TargetDirectory = PathCanonicalizer.Normalize(options.TargetDirectory);
+            }
+
+            if (string.IsNullOrWhiteSpace(options.TargetDirectory) || !Directory.Exists(options.TargetDirectory))
+            {
+                throw new DirectoryNotFoundException($"対象ディレクトリが見つかりません: {options.TargetDirectory}");
+            }
+
+            // 1. ファイル列挙（SafeFileEnumerator に一本化・ScannedFileEntry で stat 再問い合わせゼロ）
+            var coverage = new ScanCoverage();
+            await using var treeCapture = options.ExcludeFolderPatterns.Count == 0
+                ? await TreeScanCapture.TryStartAsync(options.TargetDirectory, ct)
+                : null;
+            summary.Coverage = coverage;
+            progress?.Report(new AuditProgress { CurrentStatus = "ファイル一覧を走査中...", ScannedFilesCount = 0, IssueCount = 0 });
+
+            scannedFiles = await SafeFileEnumerator.EnumerateFileEntriesParallelAsync(
+                options.TargetDirectory,
+                "*.*",
+                coverage,
+                onProgress: count =>
+                {
+                    string status = coverage.AccessDeniedFolders > 0
+                        ? $"ファイル走査中 ({count:N0} 件 / ⚠️アクセス拒否: {coverage.AccessDeniedFolders} 箇所)..."
+                        : $"ファイル走査中 ({count:N0} 件)...";
+                    progress?.Report(new AuditProgress { CurrentStatus = status, ScannedFilesCount = count });
+                },
+                ct,
+                excludeFolderPatterns: options.ExcludeFolderPatterns,
+                onDiscoveredEntry: treeCapture == null ? null : entry =>
+                {
+                    if (coverage.IsCompleteCoverage) treeCapture.Add(entry);
+                });
+
+            summary.TotalFilesScanned = scannedFiles.Count;
+            long processedCount = 0;
+
+            // 2. パス長・禁則文字・休眠のチェック
+            var now = DateTime.Now;
+            var dormantCutoff = now.AddDays(-365.25 * options.DormantYearsThreshold);
+            var recentAccessCutoff = now.AddDays(-365.25); // 過去1年以内に閲覧されたファイルは休眠から除外 (現場の参照ファイルを救済)
+
+            progress?.Report(new AuditProgress { CurrentStatus = "パス長・休眠ファイルを点検中...", ScannedFilesCount = summary.TotalFilesScanned, IssueCount = items.Count });
+
+            foreach (var fi in scannedFiles)
+            {
+                ct.ThrowIfCancellationRequested();
+                processedCount++;
+
+                // 整理除外（保持マーク）済みで変更のないファイルは候補から除外
+                if (AuditIgnoreService.Instance.IsIgnored(fi.FullPath, fi.Length, fi.LastWriteTime))
+                {
+                    continue;
+                }
+
+                // パス長チェック (移行先での長大化＆Excel保存不能リスクを未然に防ぐため >= 240 を危険域とする)
+                if (options.CheckPathLimits && fi.FullPath.Length >= 240)
+                {
+                    summary.PathTooLongCount++;
+                    items.Add(new AuditItem
+                    {
+                        FullPath = fi.FullPath,
+                        FileName = fi.Name,
+                        DirectoryPath = fi.DirectoryPath,
+                        Size = fi.Length,
+                        LastWriteTime = fi.LastWriteTime,
+                        LastAccessTime = fi.LastAccessTime,
+                        IssueType = AuditIssueType.PathTooLong,
+                        Detail = $"文字数: {fi.FullPath.Length} 文字 (移行危険域: 240文字以上)",
+                        WasteScore = 40,
+                        ScoreBreakdown = new List<ScoreFactorItem>
+                        {
+                            new ScoreFactorItem { NameJa = "パス長240文字超の移行リスク", NameEn = "Path length >240 chars migration risk", Points = 40 }
+                        }
+                    });
+                }
+
+                // 禁則文字・地雷文字チェック (末尾空白・末尾ドット・制御文字・NTFS不正文字)
+                if (options.CheckPathLimits)
+                {
+                    var reasons = new List<string>();
+
+                    if (fi.Name.EndsWith(' '))
+                        reasons.Add("末尾スペース (Windowsで開けない・削除不能地雷)");
+                    if (fi.Name.EndsWith('.'))
+                        reasons.Add("末尾ピリオド (Windowsで開けない・削除不能地雷)");
+                    if (fi.Name.Any(c => c < 32))
+                        reasons.Add("制御文字(改行等)を含む");
+
+                    var invalidInName = fi.Name.Where(c => NtfsInvalidChars.Contains(c)).Distinct().ToArray();
+                    if (invalidInName.Length > 0)
+                        reasons.Add($"NTFS不正文字: {string.Join(" ", invalidInName)}");
+
+                    if (reasons.Count > 0)
+                    {
+                        summary.InvalidCharCount++;
+                        items.Add(new AuditItem
+                        {
+                            FullPath = fi.FullPath,
+                            FileName = fi.Name,
+                            DirectoryPath = fi.DirectoryPath,
+                            Size = fi.Length,
+                            LastWriteTime = fi.LastWriteTime,
+                            LastAccessTime = fi.LastAccessTime,
+                            IssueType = AuditIssueType.InvalidChar,
+                            Detail = string.Join(" / ", reasons),
+                            WasteScore = 40,
+                            ScoreBreakdown = new List<ScoreFactorItem>
+                            {
+                                new ScoreFactorItem { NameJa = "NTFS不正文字・地雷文字の含有", NameEn = "Contains invalid/risky characters", Points = 40 }
+                            }
+                        });
+                    }
+                }
+
+                // 休眠ファイルチェック (指定年数以上前未更新、かつ過去1年間閲覧されていない)
+                if (options.CheckDormant && fi.LastWriteTime < dormantCutoff)
+                {
+                    // 過去1年以内に閲覧（アクセス）された形跡があるファイルは休眠とみなさない（現場の参照ファイルを保護）
+                    if (fi.LastAccessTime >= recentAccessCutoff && fi.LastAccessTime <= now.AddDays(1))
+                    {
+                        continue;
+                    }
+
+                    var yearsOld = (now - fi.LastWriteTime).TotalDays / 365.25;
+                    summary.DormantCount++;
+                    summary.DormantBytes += fi.Length;
+
+                    string detailText = fi.LastAccessTime > DateTime.MinValue && fi.LastAccessTime < dormantCutoff
+                        ? $"最終更新: {fi.LastWriteTime:yyyy/MM/dd} ({yearsOld:F1}年前) / 最終閲覧: {fi.LastAccessTime:yyyy/MM/dd}"
+                        : $"最終更新: {fi.LastWriteTime:yyyy/MM/dd} ({yearsOld:F1}年前)";
+
+                    int dScore = 70;
+                    var dBreakdown = new List<ScoreFactorItem>
+                    {
+                        new ScoreFactorItem { NameJa = $"3年以上未更新 ({yearsOld:F1}年前)", NameEn = $"Unmodified for >3 years ({yearsOld:F1} yrs)", Points = 60 },
+                        new ScoreFactorItem { NameJa = "直近1年間の閲覧ゼロ", NameEn = "No read access for past 1 year", Points = 10 }
+                    };
+                    if (yearsOld > 5.0)
+                    {
+                        dScore += 10;
+                        dBreakdown.Add(new ScoreFactorItem { NameJa = "5年以上完全休眠", NameEn = "Dormant for >5 years", Points = 10 });
+                    }
+
+                    items.Add(new AuditItem
+                    {
+                        FullPath = fi.FullPath,
+                        FileName = fi.Name,
+                        DirectoryPath = fi.DirectoryPath,
+                        Size = fi.Length,
+                        LastWriteTime = fi.LastWriteTime,
+                        LastAccessTime = fi.LastAccessTime,
+                        IssueType = AuditIssueType.Dormant,
+                        Detail = detailText,
+                        WasteScore = dScore,
+                        ScoreBreakdown = dBreakdown
+                    });
+                }
+
+                if (processedCount % 500 == 0)
+                {
+                    progress?.Report(new AuditProgress
+                    {
+                        CurrentStatus = $"監査中... ({processedCount}/{scannedFiles.Count})",
+                        ScannedFilesCount = processedCount,
+                        IssueCount = items.Count
+                    });
+                }
+            }
+
+            // 3. Metadata-only candidates are known before expensive full hashes.
+            if (options.CheckVersionFamilies || options.CheckExtractedArchives || options.CheckGraveyardTrees)
+            {
+                progress?.Report(new AuditProgress
+                {
+                    CurrentStatus = "世代・旧版、展開済ZIP、墓場フォルダーを分析中...",
+                    ScannedFilesCount = summary.TotalFilesScanned,
+                    IssueCount = items.Count
+                });
+
+                var smartCandidates = HygieneCandidateEngine.DiscoverCandidates(
+                    scannedFiles, now, options.DormantYearsThreshold,
+                    options.CheckVersionFamilies, options.CheckExtractedArchives,
+                    options.CheckGraveyardTrees, options.TargetDirectory);
+
+                foreach (var cand in smartCandidates)
+                {
+                    if (AuditIgnoreService.Instance.IsIgnored(cand.FullPath, cand.Size, cand.LastWriteTime))
+                        continue;
+                    items.Add(cand);
+                    if (cand.IssueType == AuditIssueType.VersionFamily)
+                    {
+                        summary.VersionFamilyCount++;
+                        summary.VersionFamilyBytes += cand.Size;
+                    }
+                    else if (cand.IssueType == AuditIssueType.ExtractedArchive)
+                    {
+                        summary.ExtractedArchiveCount++;
+                        summary.ExtractedArchiveBytes += cand.Size;
+                    }
+                    else if (cand.IssueType == AuditIssueType.GraveyardTree)
+                    {
+                        summary.GraveyardTreeCount++;
+                        summary.GraveyardTreeBytes += cand.Size;
+                    }
+                }
+            }
+
+            // 4. サイズ群を有界並行処理し、部分ハッシュで絞って完全SHA-256で確定する。
+            if (options.CheckDuplicates)
+            {
+                bool isNetworkTarget = PathCanonicalizer.IsNetworkPath(options.TargetDirectory);
+                progress?.Report(new AuditProgress
+                {
+                    CurrentStatus = Strings.AuditProgressQuickHash,
+                    ScannedFilesCount = summary.TotalFilesScanned,
+                    IssueCount = items.Count
+                });
+
+                // Step 1: サイズによる初期グルーピング (同一サイズが2個以上あるもの)
+                var sizeGroups = scannedFiles
+                    .Where(f => f.Length >= options.MinFileSizeBytes)
+                    .GroupBy(f => f.Length)
+                    .Where(g => g.Count() > 1)
+                    .OrderByDescending(g => g.Key)
+                    .Select(g => g.ToList())
+                    .ToList();
+
+                using var hashPipeline = new DuplicateHashPipeline(isNetworkTarget);
+                var fullHashCandidates = await hashPipeline.PrepareCandidatesAsync(sizeGroups, (current, total) =>
+                {
+                    if (current % 10 == 0 || current == total)
+                    {
+                        progress?.Report(new AuditProgress
+                        {
+                            CurrentStatus = $"{Strings.AuditProgressQuickHash} ({current:N0}/{total:N0})",
+                            ScannedFilesCount = summary.TotalFilesScanned,
+                            IssueCount = items.Count
+                        });
+                    }
+                }, ct);
+
+                // Large groups finish first, so a useful partial list appears before the whole audit completes.
+                fullHashCandidates = fullHashCandidates.OrderByDescending(group => group[0].Length).ToList();
+                Dictionary<string, List<AuditItem>>? reasonsByPath = null;
+                if (candidateProgress != null)
+                {
+                    var pendingPaths = fullHashCandidates.SelectMany(group => group)
+                        .Select(file => file.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    reasonsByPath = items.Where(item => pendingPaths.Contains(item.FullPath))
+                        .GroupBy(item => item.FullPath, StringComparer.OrdinalIgnoreCase)
+                        .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+                    var topPaths = new PriorityQueue<(string Path, long Size), long>();
+                    var selectedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var item in items)
+                    {
+                        if (pendingPaths.Contains(item.FullPath) || selectedPaths.Contains(item.FullPath)) continue;
+                        if (topPaths.Count == 300)
+                        {
+                            topPaths.TryPeek(out var smallest, out long smallestSize);
+                            if (item.Size <= smallestSize) continue;
+                            topPaths.Dequeue();
+                            selectedPaths.Remove(smallest.Path);
+                        }
+                        topPaths.Enqueue((item.FullPath, item.Size), item.Size);
+                        selectedPaths.Add(item.FullPath);
+                    }
+                    var readyWithoutHash = AuditCandidateComposer.CombineByPath(
+                            items.Where(item => selectedPaths.Contains(item.FullPath)))
+                        .OrderByDescending(item => item.Size).ToList();
+                    foreach (var batch in readyWithoutHash.Chunk(100)) candidateProgress.Report(batch);
+                }
+
+                // Full SHA-256 reads: local disks run freely; shared storage is
+                // paced against observed read latency with a conservative ceiling.
+                BandwidthThrottler? throttler = options.BandwidthLimit switch
+                {
+                    AuditBandwidthLimit.Standard50MB => new BandwidthThrottler(50L * 1024 * 1024),
+                    AuditBandwidthLimit.Auto when isNetworkTarget
+                        => BandwidthThrottler.CreateAdaptiveNetwork(),
+                    _ => null
+                };
+
+                int dupGroupIndex = 1;
+                int processedCandidateGroups = 0;
+
+                await foreach (var (group, hashes) in hashPipeline.HashGroupsAsync(fullHashCandidates, throttler, ct))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var hashToFiles = new Dictionary<string, List<ScannedFileEntry>>();
+                    for (int index = 0; index < group.Count; index++)
+                    {
+                        var file = group[index];
+                        var hash = hashes[index];
+                        if (string.IsNullOrEmpty(hash)) continue;
+                        if (!hashToFiles.TryGetValue(hash, out var fileList))
+                            hashToFiles[hash] = fileList = new List<ScannedFileEntry>();
+                        fileList.Add(file);
+                    }
+
+                    // 同一ハッシュが複数あれば重複確定
+                    foreach (var kvp in hashToFiles.Where(k => k.Value.Count > 1))
+                    {
+                        var groupNum = dupGroupIndex++;
+                        var groupId = $"DUP-{groupNum:D4}";
+
+                        var fileList = kvp.Value
+                            .OrderBy(f => HasCopyKeywords(f.Name) ? 1 : 0)
+                            .ThenBy(f => f.FullPath.Count(c => c == '\\' || c == '/'))
+                            .ThenBy(f => f.FullPath.Length)
+                            .ThenBy(f => f.CreationTime)
+                            .ThenBy(f => f.LastWriteTime)
+                            .ToList();
+
+                        var seenPhysicalIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        string? originalPhysicalId = null;
+
+                        for (int i = 0; i < fileList.Count; i++)
+                        {
+                            var fi = fileList[i];
+                            var isOriginal = (i == 0);
+                            string? physicalId = NtfsFileIdentityHelper.TryGetFileIdentity(fi.FullPath);
+                            bool isHardlinkDuplicate = false;
+
+                            if (isOriginal)
+                            {
+                                originalPhysicalId = physicalId;
+                                if (physicalId != null) seenPhysicalIds.Add(physicalId);
+                            }
+                            else
+                            {
+                                summary.DuplicateCount++;
+                                // Filunest流 ハードリンク重複加算防止:
+                                // 原本または別の重複と同一物理実体（ハードリンク）である場合、
+                                // ディスク容量は重複消費されていないため WastedBytes に二重加算しない
+                                isHardlinkDuplicate = physicalId != null &&
+                                    (string.Equals(physicalId, originalPhysicalId, StringComparison.OrdinalIgnoreCase) ||
+                                     !seenPhysicalIds.Add(physicalId));
+
+                                if (!isHardlinkDuplicate)
+                                {
+                                    summary.DuplicateWastedBytes += fi.Length;
+                                }
+                            }
+
+                            var dupBreakdown = new List<ScoreFactorItem>
+                            {
+                                isOriginal
+                                    ? new ScoreFactorItem { NameJa = "グループ内の原本候補 (整理対象外)", NameEn = "Original candidate in duplicate group (protected)", Points = 0 }
+                                    : new ScoreFactorItem { NameJa = isHardlinkDuplicate ? "ハードリンク同一実体 (実容量消費なし)" : "SHA-256完全一致 (原本候補を除く)", NameEn = isHardlinkDuplicate ? "Hardlink identical entity (no wasted space)" : "SHA-256 exact duplicate (excluding original candidate)", Points = isHardlinkDuplicate ? 0 : DuplicateCandidateScore }
+                            };
+
+                            var duplicateReason = new AuditItem
+                            {
+                                FullPath = fi.FullPath,
+                                FileName = fi.Name,
+                                DirectoryPath = fi.DirectoryPath,
+                                Size = fi.Length,
+                                LastWriteTime = fi.LastWriteTime,
+                                LastAccessTime = fi.LastAccessTime,
+                                IssueType = AuditIssueType.Duplicate,
+                                Detail = isOriginal
+                                    ? $"[原本候補] ハッシュ: {kvp.Key[..12]}..."
+                                    : (isHardlinkDuplicate ? $"[ハードリンク] ハッシュ: {kvp.Key[..12]}..." : $"[重複] ハッシュ: {kvp.Key[..12]}..."),
+                                Sha256Hash = kvp.Key,
+                                DuplicateGroupId = groupId,
+                                DuplicateGroupIndex = groupNum,
+                                DuplicateGroupColorIndex = (groupNum - 1) % AuditReportPalette.GroupColorCount,
+                                IsOriginalCandidate = isOriginal,
+                                IsPhysicalAlias = isHardlinkDuplicate,
+                                PhysicalFileId = physicalId,
+                                IsIgnored = AuditIgnoreService.Instance.IsIgnored(fi.FullPath, fi.Length, fi.LastWriteTime),
+                                WasteScore = isOriginal ? 0 : (isHardlinkDuplicate ? 0 : DuplicateCandidateScore),
+                                ScoreBreakdown = dupBreakdown
+                            };
+                            items.Add(duplicateReason);
+                            if (reasonsByPath != null)
+                            {
+                                if (!reasonsByPath.TryGetValue(fi.FullPath, out var reasons))
+                                    reasonsByPath[fi.FullPath] = reasons = new List<AuditItem>();
+                                reasons.Add(duplicateReason);
+                            }
+                        }
+                    }
+
+                    if (candidateProgress != null && reasonsByPath != null)
+                    {
+                        var completedReasons = group.SelectMany(file => reasonsByPath.TryGetValue(file.FullPath, out var reasons)
+                            ? reasons : Enumerable.Empty<AuditItem>());
+                        var completed = AuditCandidateComposer.CombineByPath(completedReasons)
+                            .OrderByDescending(item => item.Size).ToList();
+                        foreach (var batch in completed.Chunk(100)) candidateProgress.Report(batch);
+                    }
+
+                    processedCandidateGroups++;
+                    if (processedCandidateGroups % 10 == 0 || processedCandidateGroups == fullHashCandidates.Count)
+                    {
+                        progress?.Report(new AuditProgress
+                        {
+                            CurrentStatus = $"{Strings.AuditProgressFullHash} ({processedCandidateGroups}/{fullHashCandidates.Count})",
+                            ScannedFilesCount = summary.TotalFilesScanned,
+                            IssueCount = items.Count
+                        });
+                    }
+                }
+            }
+
+            // A file can have several independent reasons. Keep one candidate per physical path.
+            items = AuditCandidateComposer.CombineByPath(items);
+            // ★ ADR 140: ハードリンク別名（IsPhysicalAlias）の0B実体を容量削減扱いにしない。ReclaimableBytes を正本として合算。
+            summary.ReadyToCleanBytes = items
+                .Where(item => item.IsCleanable && !item.IsIgnored &&
+                    (item.HasIssue(AuditIssueType.Duplicate) || item.HasIssue(AuditIssueType.VersionFamily) ||
+                     item.HasIssue(AuditIssueType.ExtractedArchive)))
+                .Sum(item => item.ReclaimableBytes);
+            items = SortAuditItems(items, "Default", false);
+
+            if (treeCapture != null)
+            {
+                try { await treeCapture.PublishIfCompleteAsync(coverage, ct); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"Audit tree cache capture failed: {ex}"); }
+            }
+            ct.ThrowIfCancellationRequested();
+            progress?.Report(new AuditProgress { CurrentStatus = "監査完了", ScannedFilesCount = summary.TotalFilesScanned, IssueCount = items.Count });
+            return (summary, items);
+        }
+
+        /// <summary>
+        /// 監査アイテム一覧を指定列で階層ソートする。
+        /// 【重要】容量ソート時、重複グループは同一セットとして固まり、原本候補が必ず先頭に配置される。
+        /// </summary>
+        public static List<AuditItem> SortAuditItems(IEnumerable<AuditItem> source, string sortProperty, bool descending)
+        {
+            var list = source.ToList();
+            if (list.Count <= 1) return list;
+
+            switch (sortProperty)
+            {
+                case "Size":
+                    // 容量ソート:
+                    // 1. ファイルサイズ
+                    // 2. 重複グループ（DUP-0001等）で必ず1つに束ねる
+                    // 3. グループ内では原本候補が必ず最優先（先頭）
+                    // 4. ファイル名順
+                    return descending
+                        ? list.OrderByDescending(x => x.Size)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ThenBy(x => x.FileName, StringComparer.OrdinalIgnoreCase)
+                              .ToList()
+                        : list.OrderBy(x => x.Size)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ThenBy(x => x.FileName, StringComparer.OrdinalIgnoreCase)
+                              .ToList();
+
+                case "LastWriteTime":
+                    return descending
+                        ? list.OrderByDescending(x => x.LastWriteTime)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList()
+                        : list.OrderBy(x => x.LastWriteTime)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList();
+
+                case "FileName":
+                    return descending
+                        ? list.OrderByDescending(x => x.FileName, StringComparer.OrdinalIgnoreCase)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList()
+                        : list.OrderBy(x => x.FileName, StringComparer.OrdinalIgnoreCase)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList();
+
+                case "IssueType":
+                    return descending
+                        ? list.OrderByDescending(x => x.IssueType)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList()
+                        : list.OrderBy(x => x.IssueType)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList();
+
+                case "DuplicateGroupIndex":
+                    return descending
+                        ? list.OrderByDescending(x => x.DuplicateGroupIndex)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList()
+                        : list.OrderBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList();
+
+                case "FullPath":
+                    return descending
+                        ? list.OrderByDescending(x => x.FullPath, StringComparer.OrdinalIgnoreCase).ToList()
+                        : list.OrderBy(x => x.FullPath, StringComparer.OrdinalIgnoreCase).ToList();
+
+                case "Detail":
+                    return descending
+                        ? list.OrderByDescending(x => x.Detail, StringComparer.OrdinalIgnoreCase)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList()
+                        : list.OrderBy(x => x.Detail, StringComparer.OrdinalIgnoreCase)
+                              .ThenBy(x => x.DuplicateGroupIndex > 0 ? x.DuplicateGroupIndex : int.MaxValue)
+                              .ThenByDescending(x => x.IsOriginalCandidate)
+                              .ToList();
+
+                default:
+                    // The default report order is cleanup priority; protected originals come last.
+                    return list
+                        .OrderByDescending(it => it.IsCleanable)
+                        .ThenByDescending(it => it.WasteScore)
+                        .ThenByDescending(it => it.Size)
+                        .ThenBy(it => it.FileName, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+            }
+        }
+
+        // Compatibility constants describe the conservative network path.
+        public const long QuickHashThresholdBytes = DuplicateHashPipeline.NetworkPartialThresholdBytes;
+        public const int QuickHashChunkSize = DuplicateHashPipeline.PartialChunkBytes;
+        public const long PrefixHashThresholdBytes = DuplicateHashPipeline.PrefixThresholdBytes;
+        public const int PrefixHashBytes = DuplicateHashPipeline.PrefixBytes;
+        public const int DuplicateConcurrency = DuplicateHashPipeline.NetworkConcurrency;
+
+        public static async Task<string?> ComputePrefixHashAsync(string filePath, CancellationToken ct)
+        {
+            using var reader = new DuplicateHashReader(256 * 1024, asynchronous: true);
+            return await reader.HashAsync(filePath, -1, DuplicateHashMode.Prefix, null, ct);
+        }
+
+        public static async Task<string?> ComputeHeadTailHashAsync(string filePath, long fileSize, CancellationToken ct)
+        {
+            using var reader = new DuplicateHashReader(2 * QuickHashChunkSize, asynchronous: true);
+            return await reader.HashAsync(filePath, fileSize, DuplicateHashMode.HeadTail, null, ct);
+        }
+
+        public static async Task<string?> ComputeSha256WithThrottlingAsync(
+            string filePath, BandwidthThrottler? throttler, CancellationToken ct,
+            long knownSize = -1, bool allowLargerLocalReads = false)
+        {
+            bool local = allowLargerLocalReads && !PathCanonicalizer.IsNetworkPath(filePath);
+            using var reader = new DuplicateHashReader(local ? DuplicateHashPipeline.LocalReadBytes : 64 * 1024,
+                asynchronous: !local);
+            return await reader.HashAsync(filePath, knownSize, DuplicateHashMode.Full, throttler, ct);
+        }
+
+        public static Task<string?> ComputeSha256Async(string filePath, CancellationToken ct) =>
+            ComputeSha256WithThrottlingAsync(filePath, null, ct);
+
+        public void ExportAuditCsv(string filePath, IEnumerable<AuditItem> items)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("問題種別,ファイル名,容量,最終更新日時,最終アクセス日時,詳細,重複グループ,完全パス,優先度点数,点数内訳");
+
+            foreach (var item in items)
+            {
+                sb.AppendLine($"\"{EscapeCsv(item.IssueTypeDisplay)}\"," +
+                              $"\"{EscapeCsv(item.FileName)}\"," +
+                              $"\"{EscapeCsv(item.SizeFormatted)}\"," +
+                              $"\"{item.LastWriteTime:yyyy/MM/dd HH:mm:ss}\"," +
+                              $"\"{item.LastAccessTime:yyyy/MM/dd HH:mm:ss}\"," +
+                              $"\"{EscapeCsv(item.Detail)}\"," +
+                              $"\"{EscapeCsv(item.DuplicateGroupId)}\"," +
+                              $"\"{EscapeCsv(item.FullPath)}\"," +
+                              $"{item.WasteScore},\"{EscapeCsv(item.ScoreBreakdownSummary)}\"");
+            }
+
+            File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
+        }
+
+        private static readonly string[] CopyKeywords = {
+            "コピー", "copy", "複写", "バックアップ", "backup", "bak", "複製", "復元", "restore", "最新", "old", "new", "編集"
+        };
+
+        private static bool HasCopyKeywords(string fileName)
+        {
+            var name = fileName.ToLowerInvariant();
+            if (CopyKeywords.Any(k => name.Contains(k, StringComparison.OrdinalIgnoreCase))) return true;
+            if (System.Text.RegularExpressions.Regex.IsMatch(name, @"[\(_\- ]\d+[\)]")) return true;
+            return false;
+        }
+
+        private static string EscapeCsv(string s) => s.Replace("\"", "\"\"");
+    }
+
+    /// <summary>
+    /// Two-worker SHA-256 read pacer. In adaptive mode it reacts to the p95
+    /// latency of real reads; it never probes the server or changes its settings.
+    /// </summary>
+    public class BandwidthThrottler
+    {
+        private long _bytesPerSecond;
+        private readonly long _maximumBytesPerSecond;
+        private readonly long _minimumBytesPerSecond;
+        private long _safeCeilingBytesPerSecond;
+        private DateTime _increaseAllowedAtUtc;
+        private readonly System.Diagnostics.Stopwatch _stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        private readonly System.Diagnostics.Stopwatch _samplingWindow = System.Diagnostics.Stopwatch.StartNew();
+        private long _totalBytesTransferred;
+        private long _windowBytes;
+        private readonly Queue<double> _readLatencies = new();
+        private double _baselineP95 = double.PositiveInfinity;
+        private readonly object _lock = new();
+
+        public BandwidthThrottler(long bytesPerSecond)
+        {
+            _bytesPerSecond = bytesPerSecond;
+            _minimumBytesPerSecond = bytesPerSecond;
+            _maximumBytesPerSecond = bytesPerSecond;
+            _safeCeilingBytesPerSecond = bytesPerSecond;
+        }
+
+        private BandwidthThrottler(long initial, long minimum, long maximum)
+        {
+            _bytesPerSecond = initial;
+            _minimumBytesPerSecond = minimum;
+            _maximumBytesPerSecond = maximum;
+            _safeCeilingBytesPerSecond = maximum;
+        }
+
+        public static BandwidthThrottler CreateAdaptiveNetwork() =>
+            new(50L * 1024 * 1024, 8L * 1024 * 1024, 100L * 1024 * 1024);
+
+        public long BytesPerSecond { get { lock (_lock) return _bytesPerSecond; } }
+
+        public void ObserveRead(int bytesRead, double latencyMilliseconds)
+        {
+            if (_minimumBytesPerSecond == _maximumBytesPerSecond || bytesRead <= 0 ||
+                !double.IsFinite(latencyMilliseconds) || latencyMilliseconds <= 0) return;
+
+            lock (_lock)
+            {
+                _windowBytes += bytesRead;
+                _readLatencies.Enqueue(latencyMilliseconds);
+                if (_readLatencies.Count > 64) _readLatencies.Dequeue();
+                double windowSeconds = _samplingWindow.Elapsed.TotalSeconds;
+                if (windowSeconds < 2 || _readLatencies.Count < 32) return;
+
+                var ordered = _readLatencies.OrderBy(value => value).ToArray();
+                double p95 = ordered[(int)Math.Ceiling(ordered.Length * 0.95) - 1];
+                _baselineP95 = Math.Min(_baselineP95, p95);
+                long nextRate = SelectAdaptiveRate(_bytesPerSecond, _minimumBytesPerSecond,
+                    Math.Min(_maximumBytesPerSecond, _safeCeilingBytesPerSecond), p95,
+                    _baselineP95, _windowBytes / windowSeconds, DateTime.UtcNow >= _increaseAllowedAtUtc);
+
+                if (nextRate != _bytesPerSecond)
+                {
+                    if (nextRate < _bytesPerSecond)
+                    {
+                        // Do not repeatedly test a rate that already hurt the share.
+                        _safeCeilingBytesPerSecond = Math.Min(_safeCeilingBytesPerSecond,
+                            Math.Max(nextRate, (long)(nextRate * 1.2)));
+                        _increaseAllowedAtUtc = DateTime.UtcNow.AddSeconds(30);
+                    }
+                    _bytesPerSecond = nextRate;
+                    _totalBytesTransferred = 0;
+                    _stopwatch.Restart();
+                }
+                _samplingWindow.Restart();
+                _windowBytes = 0;
+                _readLatencies.Clear();
+            }
+        }
+
+        internal static long SelectAdaptiveRate(long current, long minimum, long maximum,
+            double p95Milliseconds, double baselineP95Milliseconds, double achievedBytesPerSecond,
+            bool allowIncrease)
+        {
+            if (p95Milliseconds >= 100 || p95Milliseconds > Math.Max(40, baselineP95Milliseconds * 2))
+                return Math.Max(minimum, (long)(current * 0.7));
+            if (allowIncrease && p95Milliseconds <= 40 &&
+                p95Milliseconds <= Math.Max(5, baselineP95Milliseconds * 1.5) &&
+                achievedBytesPerSecond >= current * 0.75)
+                return Math.Min(maximum, (long)(current * 1.2));
+            return current;
+        }
+
+        public async Task ThrottleAsync(int bytesRead, CancellationToken ct)
+        {
+            if (_bytesPerSecond <= 0 || bytesRead <= 0) return;
+
+            long delayMs = 0;
+            lock (_lock)
+            {
+                _totalBytesTransferred += bytesRead;
+                double elapsedSeconds = _stopwatch.Elapsed.TotalSeconds;
+                if (elapsedSeconds <= 0.001) elapsedSeconds = 0.001;
+
+                double expectedSeconds = (double)_totalBytesTransferred / _bytesPerSecond;
+                if (expectedSeconds > elapsedSeconds)
+                {
+                    delayMs = (long)((expectedSeconds - elapsedSeconds) * 1000);
+                }
+            }
+
+            if (delayMs > 5)
+            {
+                await Task.Delay((int)Math.Min(delayMs, 500), ct);
+            }
+        }
+    }
+}

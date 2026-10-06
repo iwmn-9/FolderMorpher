@@ -1,0 +1,31 @@
+## Visual Studio & .NET build artifacts
+bin/
+obj/
+dist/
+
+## Executables & Binaries (Avoid GitHub 100MB file limit)
+*.exe
+*.dll
+*.pdb
+*.iso
+
+## IDE & Editor
+.vs/
+.vscode/
+*.user
+*.suo
+
+## Temporary & Log files
+*.log
+*.tmp
+*.ps1
+!tools/Test-LicenseNotices.ps1
+*.png
+
+## AI Agent Workspace & Memory
+.agents/*
+!.agents/ADR.md
+!.agents/PERFORMANCE_RESEARCH.md
+
+## Local Specification & User Requirements
+USER_REQUIREMENTS.md

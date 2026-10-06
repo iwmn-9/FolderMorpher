@@ -1,0 +1,69 @@
+name: "🚀 Release Builder"
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: "Build & Publish Single-File EXE"
+    runs-on: windows-latest
+
+    steps:
+      - name: "Checkout Repository"
+        uses: actions/checkout@v4
+
+      - name: "Setup .NET SDK 10.0"
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: "Build & Verify Automated Regression Tests"
+        run: |
+          dotnet build -c Release
+          dotnet run -c Release --no-build -- --test-regression
+
+      - name: "Publish Self-Contained Single EXE"
+        run: |
+          dotnet publish ./FolderMorpher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -o ./dist
+          ./tools/Test-LicenseNotices.ps1 -DepsPath ./bin/Release/net10.0-windows/win-x64/FolderMorpher.deps.json
+          $files = @(Get-ChildItem ./dist -File)
+          if ($files.Count -ne 1 -or $files[0].Name -ne 'FolderMorpher.exe') { throw "Expected only FolderMorpher.exe in dist: $($files.Name -join ', ')" }
+
+      - name: "Verify published EXE over real IPC"
+        run: |
+          $stdout = Join-Path $env:RUNNER_TEMP 'foldermorpher-ipc-stdout.txt'
+          $stderr = Join-Path $env:RUNNER_TEMP 'foldermorpher-ipc-stderr.txt'
+          $process = Start-Process -FilePath (Resolve-Path ./dist/FolderMorpher.exe) -ArgumentList '--test-ipc' -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          Get-Content $stdout
+          if ($process.ExitCode -ne 0) { Get-Content $stderr; throw "IPC integration test failed: exit $($process.ExitCode)" }
+
+      - name: "Create GitHub Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ./dist/FolderMorpher.exe
+          name: "FolderMorpher ${{ github.ref_name }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## 🎉 FolderMorpher ${{ github.ref_name }} Preview Release
+
+            ### 📦 Download & Run
+            Download **`FolderMorpher.exe`** from the Assets below and run on supported 64-bit Windows 10/11 or Windows Server with a desktop. The .NET 10 runtime is included; no separate .NET installation is required. See the README for supported OS editions.
+
+            ### ✨ Key Features
+            - **Search, Storage & Cleanup**: Choose a reference folder, then switch tasks. Search names or supported file contents without a persistent full-text index.
+            - **Storage Explorer**: Parallel drive/share scanning, folder shares, history, and optional largest-file details.
+            - **Live ACL Control**: Inspect and edit NTFS access control lists with instant SDDL rollback snapshot protection.
+            - **Simulation Studio**: Virtual tree restructuring (N:1 mapping) and diff verification before physical file transfers.
+            - **LinkFixer**: Detect and batch repair severed shortcuts (`.lnk`) and Excel workbooks (`.xlsx`/`.xlsm`).
+            - **Audit & Hygiene**: Duplicate file detection (SHA-256), dormant data identification (3+ years), and deep path analyzer.
+            - **Media Optimizer**: Image resizing/compression under Cleanup, with protected folders and video batch scripts that use separately installed FFmpeg.
+            - **Bilingual UI**: Switch between English and Japanese in Settings.
+            - **Licenses**: Full bundled-component license texts are available in Settings → Licenses.

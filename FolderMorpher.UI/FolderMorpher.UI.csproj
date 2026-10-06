@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Library</OutputType>
+    <UseWPF>true</UseWPF>
+    <DefineConstants>$(DefineConstants);FOLDERMORPHER_UI</DefineConstants>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <AssemblyName>FolderMorpher.UI</AssemblyName>
+    <RootNamespace>FolderMorpher.UI</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ClientModeState.cs" />
+    <Compile Include="SnapshotRunner.cs" />
+    <Compile Include="PresentationTestRunner.cs" />
+    <Compile Include="Models\**\*.cs" />
+    <Compile Include="..\FolderMorpher.Core\Models\*.cs" Exclude="..\FolderMorpher.Core\Models\ScanTabModel.cs" Link="Models\%(Filename)%(Extension)" />
+    <Compile Include="Services\AppSettingsService.cs" />
+    <Compile Include="Dialogs\*.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\AppStrings.cs" Link="Services\AppStrings.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\AuditReportPalette.cs" Link="Services\AuditReportPalette.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\EffectiveAccessPalette.cs" Link="Services\EffectiveAccessPalette.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\FormatHelper.cs" Link="Services\FormatHelper.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\LocalizationService.cs" Link="Services\LocalizationService.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\PathCanonicalizer.cs" Link="Services\PathCanonicalizer.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\SearchQueryParser.cs" Link="Services\SearchQueryParser.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\ShellHelper.cs" Link="Services\ShellHelper.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\TablerBadgeHelper.cs" Link="Services\TablerBadgeHelper.cs" />
+    <Compile Include="..\FolderMorpher.Core\Services\WaveDisplayFormat.cs" Link="Services\WaveDisplayFormat.cs" />
+    <Page Include="..\MainWindow.xaml" Link="MainWindow.xaml" />
+    <Page Include="..\HistoryWindow.xaml" Link="HistoryWindow.xaml" />
+    <Page Include="..\Views\**\*.xaml" Link="Views\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\AssemblyInfo.cs" Link="AssemblyInfo.cs" />
+    <Compile Include="..\MainWindow*.cs" Link="%(Filename)%(Extension)" />
+    <Compile Include="..\HistoryWindow.xaml.cs" Link="HistoryWindow.xaml.cs" />
+    <Compile Include="..\Views\**\*.cs" Link="Views\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Converters\**\*.cs" Link="Converters\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\HostClient\**\*.cs" Link="HostClient\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="StreamJsonRpc" Version="2.25.29" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\THIRD-PARTY-NOTICES.txt" LogicalName="FolderMorpher.ThirdPartyNotices.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FolderMorpher.Contracts\FolderMorpher.Contracts.csproj" />
+  </ItemGroup>
+</Project>
