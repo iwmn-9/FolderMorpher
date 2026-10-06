@@ -32,6 +32,8 @@ namespace AstraSize.Models
 
     public partial class ScanSummary
     {
+        public List<string> UnavailableFolders { get; set; } = new();
+        public bool IsCompleteCoverage => UnavailableFolders.Count == 0 && !IsCancelled;
         public string TargetPath { get; set; } = string.Empty;
         public long TotalBytes { get; set; }
         public int TotalFiles { get; set; }

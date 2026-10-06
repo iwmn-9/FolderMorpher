@@ -1,12 +1,12 @@
 # 依存ライブラリと配布表記
 
-2026-09-29に、2.4.3のNuGetパッケージ・自己完結型ランタイム・参照素材を確認した。ライセンス全文、著作権、上流NOTICE、版と出典の正本はルートの [`THIRD-PARTY-NOTICES.txt`](../THIRD-PARTY-NOTICES.txt)。EXEにも同じファイルを埋め込み、**設定 → ライセンス**で表示・コピーできる。別ファイルを配布しなくても表記を保持する。
+2026-10-07に、1.0.1のNuGetパッケージ・自己完結型ランタイム・OCR配布物を確認した。ライセンス全文、著作権、上流NOTICE、版と出典の正本はルートの [`THIRD-PARTY-NOTICES.txt`](../THIRD-PARTY-NOTICES.txt)。EXEにも同じファイルを埋め込み、**設定 → ライセンス**で表示・コピーできる。別ファイルを配布しなくても表記を保持する。
 
 FolderMorpher自身のソースは [`LICENSE`](../LICENSE) のMIT。依存コンポーネントは各自のライセンスを保持する。自分のコードをMITで公開していても、依存側の表示条件がなくなるわけではない。
 
 ## 現在の配布物
 
-実際の `FolderMorpher.deps.json` から24のNuGetパッケージと2つのランタイムパックを確認した。ビルド専用の `Microsoft.NET.ILLink.Tasks` は配布対象に数えない。
+実際の `FolderMorpher.deps.json` に含まれるNuGetパッケージとランタイムパックを表記検証ゲートで確認する。ビルド専用の `Microsoft.NET.ILLink.Tasks` は配布対象に数えない。
 
 | コンポーネント | 使用目的 | 確認したライセンス・収録内容 |
 | --- | --- | --- |
@@ -15,6 +15,10 @@ FolderMorpher自身のソースは [`LICENSE`](../LICENSE) のMIT。依存コン
 | Microsoft.Data.Sqlite、SQLitePCLRaw | ローカルTreeCache | Microsoft側はMIT、SQLitePCLRaw **2.1.12**はApache 2.0とNOTICE。内包するSQLite本体はパブリックドメイン |
 | StreamJsonRpc、Nerdbank、MessagePack、PolyType、Newtonsoft.Json、Visual Studio関連、StringTools | GUI/Host間のRPCとその依存 | MIT、付属NOTICE・THIRD-PARTY-NOTICESも収録 |
 | System.Data.OleDb、.NET / Windows Desktop **10.0.12** | Windows連携と自己完結型実行 | MIT。ランタイムの第三者表記は省略せず収録。DirectoryServices・Drawing等のフレームワークアセンブリもランタイムに含まれる |
+| 公式 NuGet **PdfPig 0.1.16** | PDF本文抽出 | Apache 2.0。Repository commit `a7bb35662bbbf405efddad50aedc9bcdcf515afc` の全文。旧 `1.7.0-custom-5` は配布しない |
+| PP-OCRv6-small、PaddleX由来アダプター、Filunest候補デコーダー | 画像・スキャンPDF OCR | 固定検出／認識ONNXと設定のSHA-256を保持。モデル・改変表記・上流Apache 2.0等を同梱 |
+| Python 3.12、ONNX Runtime、OpenCV、NumPyほかOCR依存 | オフラインOCR実行 | Python/PSF、MIT、Apache 2.0、BSD等。使用版と付属通知を圧縮資産内とEXEのライセンス画面へ収録 |
+| OCRデコーダーのRust依存 | 候補復号・画像処理 | 各MIT/Apache/BSD等の全文、Rust標準ライブラリ表記、MPL対象の原版ソースアーカイブと取得URL・ハッシュを保持 |
 | Tabler Iconsの書類・フォルダー図形のアレンジ | ファイル種別表示 | MIT。図形の参照元として表記。フォントファイルは同梱しない |
 
 MITは著作権と許諾文の保持、Apache 2.0はライセンス全文と適用されるNOTICE等の保持を要する。今回の一覧に本体をAGPLへ変更する依存はない。上流NOTICEにはそのプロジェクトのビルド・試験用ツールの説明も含まれ得るため、NOTICEの登場名をFolderMorpherの同梱一覧と解釈しない。同梱一覧は各 `Package:` 行と配布マニフェストで確認する。
@@ -49,3 +53,11 @@ MITは著作権と許諾文の保持、Apache 2.0はライセンス全文と適�
 - [FFmpegの法的条件](https://ffmpeg.org/legal.html)
 
 各MIT依存の使用版に対応する出典URLと全文は `THIRD-PARTY-NOTICES.txt` に収録している。
+
+## OCR資産の再生成
+
+`assets/ocr/manifest.json` と分割圧縮資産をCoreのリソースに封入する。`tools/Prepare-OcrBundle.py` は監査済み `bundle.json` のサイズ・SHA-256を照合し、生成済み `.pyc` / `.pyo` / `.pdb` を除外して再現可能なtar+gzipを作る。再生成元はFilunestの監査済みOCR配布ディレクトリとライセンス補足ディレクトリを明示する。実環境の絶対パスは記録しない。
+
+OCRを有効にした検索でだけ、Hostがランダムな一時ディレクトリへ展開する。チャンク整合性・展開サイズ・件数・パス境界を検査する。Pythonを隔離モード・bytecode生成なしで起動し、通信や自動モデル取得は行わない。OCR子プロセスを停止した後、Hostの通常終了で一時ディレクトリを回収する。強制終了・OS障害時の残存までは保証しない。
+
+MPL原版ソースは一時OCRディレクトリの `licenses/supplemental/sources` に含み、ライセンス表記の固定取得URLからも入手できる。Filunest本体のEXEやUIは配布しない。OCR関連コード・モデル・依存物だけを利用する。

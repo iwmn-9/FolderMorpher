@@ -903,7 +903,7 @@ namespace AstraSize.Views
         {
             // Low~Medium: 完全に同一のアクセス権ルール（アカウント・権限・適用先）が既に存在する場合は重複防止
             if (panel.CurrentAclEntries.Any(a =>
-                a.AccountName.Equals(p.AccountName, StringComparison.OrdinalIgnoreCase) &&
+                SimAclEntry.IsSameAccount(a, new SimAclEntry { Sid = p.Sid, AccountName = p.FullAccountName }) &&
                 a.Rights == FileSystemRights.ReadAndExecute &&
                 a.AccessType == AccessControlType.Allow &&
                 a.InheritanceFlags == (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit) &&
@@ -913,11 +913,12 @@ namespace AstraSize.Views
                 return;
             }
 
-            bool isAdditional = panel.CurrentAclEntries.Any(a => a.AccountName.Equals(p.AccountName, StringComparison.OrdinalIgnoreCase));
+            bool isAdditional = panel.CurrentAclEntries.Any(a => SimAclEntry.IsSameAccount(a, new SimAclEntry { Sid = p.Sid, AccountName = p.FullAccountName }));
 
             var entry = new SimAclEntry
             {
-                AccountName = p.AccountName,
+                Sid = p.Sid,
+                AccountName = p.FullAccountName,
                 DisplayName = p.DisplayName,
                 PrincipalType = p.PrincipalType,
                 Rights = FileSystemRights.ReadAndExecute

@@ -1,0 +1,28 @@
+{
+  "format": "tar+gzip",
+  "files": 4090,
+  "expandedBytes": 317717700,
+  "sourceInventorySha256": "f0e5612cf4d88b7439fe3235247096cc5c16e994915473b69794b37aefca50f2",
+  "chunks": [
+    {
+      "path": "runtime.part00",
+      "bytes": 41943040,
+      "sha256": "f9f4f910f2b726ad7439f02c7546bc3f19563f6bcaeda0097274fab0352e5c93"
+    },
+    {
+      "path": "runtime.part01",
+      "bytes": 41943040,
+      "sha256": "10d0f0ef8d2e4faef9040afc0592eda07e9dd0bb66322ed221a0de14ace243ea"
+    },
+    {
+      "path": "runtime.part02",
+      "bytes": 41943040,
+      "sha256": "687b645b589d93175d667fda8fc304aeaf37c95c0e449148e968977194d5370d"
+    },
+    {
+      "path": "runtime.part03",
+      "bytes": 1958595,
+      "sha256": "0a3f70c4b23a618c834495348b02d30d2b2e20bdc3b60fa00df9d0b607c0b8cd"
+    }
+  ]
+}

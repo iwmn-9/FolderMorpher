@@ -54,6 +54,8 @@ namespace FolderMorpher.Contracts
     /// </summary>
     public class StorageScanResultDto
     {
+        public List<string> UnavailableFolders { get; set; } = new();
+        public bool IsCompleteCoverage { get; set; } = true;
         public string TargetPath { get; set; } = string.Empty;
         public StorageNodeDto? RootNode { get; set; }
         public List<StorageTopFileDto> Top10Files { get; set; } = new();
@@ -145,6 +147,8 @@ namespace FolderMorpher.Contracts
     /// </summary>
     public class LinkFixApplyResultDto
     {
+        public List<ShortcutLinkDto> UpdatedShortcuts { get; set; } = new();
+        public List<OfficeLinkDto> UpdatedOfficeLinks { get; set; } = new();
         public int RepairedCount { get; set; }
         public int FailedCount { get; set; }
         public List<string> ErrorLog { get; set; } = new();

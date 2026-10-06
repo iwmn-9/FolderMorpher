@@ -932,7 +932,8 @@ namespace AstraSize
             PushUndoSnapshot();
             var entry = new SimAclEntry
             {
-                AccountName = principal.AccountName,
+                Sid = principal.Sid,
+                AccountName = principal.FullAccountName,
                 DisplayName = principal.DisplayName,
                 PrincipalType = principal.PrincipalType,
                 Rights = FileSystemRights.Modify | FileSystemRights.Synchronize

@@ -57,6 +57,12 @@ jobs:
             ### 📦 Download & Run
             Download **`FolderMorpher.exe`** from the Assets below and run on supported 64-bit Windows 10/11 or Windows Server with a desktop. The .NET 10 runtime is included; no separate .NET installation is required. See the README for supported OS editions.
 
+            ### Review corrections
+            - SID-preserving ACL plans, structured Office link repair, image metadata/DACL protection.
+            - Resolved migration union plans prevent sequential-mirror loss; partial storage scans preserve complete history.
+            - PP-OCRv6-small is compressed inside the EXE and extracted only for the Host session. No separate Python or model download.
+            - Total search matches and retained results are separate. See docs/REVIEW_FIXES.md for verification and remaining limits.
+
             ### ✨ Key Features
             - **Search, Storage & Cleanup**: Choose a reference folder, then switch tasks. Search names or supported file contents without a persistent full-text index.
             - **Storage Explorer**: Parallel drive/share scanning, folder shares, history, and optional largest-file details.

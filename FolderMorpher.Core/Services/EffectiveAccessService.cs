@@ -507,6 +507,7 @@ namespace FolderMorpher.Services
                             foundCount++;
                             if (currentItem.PermissionLevel == EffectivePermissionLevel.FullControl) report.FullControlCount++;
                             else if (currentItem.PermissionLevel == EffectivePermissionLevel.Modify) report.ModifyCount++;
+                            else if (currentItem.PermissionLevel == EffectivePermissionLevel.Custom) report.CustomCount++;
                             else report.ReadOnlyCount++;
                         }
                     }
@@ -760,7 +761,7 @@ namespace FolderMorpher.Services
                 (rights & FileSystemRights.ListDirectory) == FileSystemRights.ListDirectory)
                 return EffectivePermissionLevel.Read;
 
-            return EffectivePermissionLevel.None;
+            return (rights & ~FileSystemRights.Synchronize) != 0 ? EffectivePermissionLevel.Custom : EffectivePermissionLevel.None;
         }
 
         private static bool IsSpecialWorldPrincipal(string name)

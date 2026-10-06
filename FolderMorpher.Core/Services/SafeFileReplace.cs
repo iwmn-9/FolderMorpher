@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Security.AccessControl;
 using FolderMorpher.Models;
 
 namespace FolderMorpher.Services
@@ -43,6 +44,15 @@ namespace FolderMorpher.Services
                             $"File was modified externally immediately before commit. Overwrite aborted for data safety: {destinationPath}");
                     }
                 }
+
+                var destinationAcl = new FileInfo(destinationPath).GetAccessControl(AccessControlSections.Access);
+                string expectedDacl = destinationAcl.GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+                var replacementAcl = new FileSecurity();
+                replacementAcl.SetSecurityDescriptorSddlForm(expectedDacl, AccessControlSections.Access);
+                new FileInfo(tempPath).SetAccessControl(replacementAcl);
+                string temporaryDacl = new FileInfo(tempPath).GetAccessControl(AccessControlSections.Access).GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+                if (!string.Equals(expectedDacl, temporaryDacl, StringComparison.Ordinal))
+                    throw new IOException("Replacement DACL could not be preserved; original retained.");
 
                 // 2. Atomic File.Replace (same volume / local filesystem)
                 bool replaced = false;

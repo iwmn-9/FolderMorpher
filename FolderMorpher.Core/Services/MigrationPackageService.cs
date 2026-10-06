@@ -28,6 +28,14 @@ namespace FolderMorpher.Services
             if (nodes.Count == 1 && nodes[0].Children.Count > 1 && options.Policy != MigrationSplitPolicy.SingleBatch)
             {
                 unitNodes = nodes[0].Children.ToList();
+                // Preserve the parent mapping as a residual unit; global source exclusions keep children disjoint.
+                if (nodes[0].MappedSourcePaths.Count > 0)
+                {
+                    var residual = new SimFolderNode { Name = nodes[0].Name, Parent = nodes[0].Parent,
+                        EstimatedSizeBytes = Math.Max(0, nodes[0].EstimatedSizeBytes - nodes[0].Children.Sum(CalculateRecursiveSize)) };
+                    foreach (var source in nodes[0].MappedSourcePaths) residual.MappedSourcePaths.Add(source);
+                    unitNodes.Insert(0, residual);
+                }
             }
             else
             {
@@ -79,6 +87,11 @@ namespace FolderMorpher.Services
                 }
             }
 
+            if (!string.IsNullOrWhiteSpace(options.TargetRoot))
+            {
+                var units = MigrationCopyPlan.Resolve(plans, options.TargetRoot);
+                foreach (var wave in plans) wave.CopyUnits = units.Where(u => u.WaveNumber == wave.WaveNumber).ToList();
+            }
             return plans;
         }
 
@@ -204,7 +217,19 @@ namespace FolderMorpher.Services
                 string logsDir = Path.Combine(packageDir, "Logs");
                 Directory.CreateDirectory(logsDir);
 
+                using (var runner = typeof(MigrationPackageService).Assembly.GetManifestResourceStream("FolderMorpher.MigrationRunner.ps1")!)
+                using (var output = File.Create(Path.Combine(packageDir, "MigrationRunner.ps1"))) runner.CopyTo(output);
+                File.WriteAllText(Path.Combine(packageDir, "MigrationPlan.json"), System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    Units = wavePlans.SelectMany(w => w.CopyUnits), Threads = Math.Clamp(options.Threads, 1, 32), options.CopyAcl
+                }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+
                 progress?.Report("移行バッチ群を生成中...");
+
+                string Csv(string value) => "\"" + value.Replace("\"", "\"\"") + "\"";
+                File.WriteAllLines(Path.Combine(packageDir, "LinkRepairMappings.csv"),
+                    new[] { "OldPrefix,NewPrefix,Wave" }.Concat(wavePlans.SelectMany(w => w.CopyUnits)
+                        .Select(u => $"{Csv(u.Source)},{Csv(u.Destination)},{u.WaveNumber}")), new UTF8Encoding(true));
 
                 var waveBatEntries = new List<(string WaveName, string FullBat, string CutoverBat)>();
 
@@ -234,12 +259,12 @@ namespace FolderMorpher.Services
                         File.WriteAllText(guideDoc, guideDocContent, Encoding.UTF8);
                     }
 
-                    // 4. 04_Final_Cutover_DRYRUN.bat (本番最終ミラー Dry-Run シミュレーション /L) (Sol指摘)
+                    // 4. 04_Final_Cutover_DRYRUN.bat (本番最終計画の非変更確認) (Sol指摘)
                     string dryRunBat = Path.Combine(waveDir, "04_Final_Cutover_DRYRUN.bat");
                     string dryRunContent = GenerateWaveRobocopyBat(wave, targetRoot, options, mode: "CUTOVER", dryRun: true);
                     File.WriteAllText(dryRunBat, dryRunContent, new UTF8Encoding(false));
 
-                    // 5. 04_Final_Cutover_Mirror.bat (本番最終ミラー)
+                    // 5. 04_Final_Cutover_Mirror.bat (本番最終計画)
                     string cutoverBat = Path.Combine(waveDir, "04_Final_Cutover_Mirror.bat");
                     string cutoverContent = GenerateWaveRobocopyBat(wave, targetRoot, options, mode: "CUTOVER", dryRun: false);
                     File.WriteAllText(cutoverBat, cutoverContent, new UTF8Encoding(false));
@@ -291,127 +316,16 @@ namespace FolderMorpher.Services
         {
             var sb = new StringBuilder();
             sb.AppendLine("@echo off");
+            sb.AppendLine("setlocal DisableDelayedExpansion");
             sb.AppendLine("chcp 65001 > nul");
-            sb.AppendLine();
-            sb.AppendLine("rem ==========================================================================");
-            sb.AppendLine($"rem FolderMorpher Enterprise Migration Suite");
-            sb.AppendLine($"rem Wave: {wave.WaveName}");
-            sb.AppendLine($"rem Mode: {mode} ({(mode == "BASELINE" ? "事前フル同期" : mode == "DELTA" ? "中間差分同期" : dryRun ? "最終本番切替 Dry-Run" : "最終本番切替ミラー")})");
-            sb.AppendLine($"rem Target Root: {targetRoot}");
-            sb.AppendLine($"rem Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-            sb.AppendLine("rem ==========================================================================");
-            sb.AppendLine();
-            sb.AppendLine($"echo ==================================================================");
-            sb.AppendLine($"echo   [FolderMorpher] {wave.WaveName}");
-            sb.AppendLine($"echo   実行モード: {mode}{(dryRun ? " 【DRY-RUN (シミュレーション・書き込みなし)】" : "")}");
-            sb.AppendLine($"echo   想定容量  : {FormatHelper.FormatBytes(wave.TotalSizeBytes, 2)} ({WaveDisplayFormat.FormatFileCount(wave.TotalFileCount)})");
-            sb.AppendLine($"echo ==================================================================");
-            sb.AppendLine("echo.");
-            sb.AppendLine("echo 処理を開始するには何かキーを押してください。中断する場合は Ctrl+C を押してください。");
+            sb.AppendLine("echo FolderMorpher migration: Check - Commit - Verify");
+            sb.AppendLine("echo Review MigrationPlan.json and run the DRYRUN before CUTOVER.");
             sb.AppendLine("pause > nul");
-            sb.AppendLine();
-
-            string copyFlag = options.CopyAcl ? "/COPYALL" : "/COPY:DAT";
-            string modeFlag = mode == "CUTOVER" ? "/MIR" : "/E";
-            string dryRunParam = dryRun ? " /L" : "";
-            int retryCount = mode == "BASELINE" ? 1 : 2;
-            int waitSec = mode == "BASELINE" ? 1 : (mode == "DELTA" ? 2 : 3);
-            int threads = mode == "BASELINE" ? Math.Max(16, options.Threads) : 8;
-
-            sb.AppendLine($"set LOG_DIR=%~dp0..\\Logs");
-            sb.AppendLine($"if not exist \"%LOG_DIR%\" mkdir \"%LOG_DIR%\"");
-            sb.AppendLine($"set LOG_FILE=%LOG_DIR%\\Robo_{mode}{(dryRun ? "_DRYRUN" : "")}_Wave{wave.WaveNumber:D2}_%date:~0,4%%date:~5,2%%date:~8,2%_%time:~0,2%%time:~3,2%%time:~6,2%.log");
-            sb.AppendLine($"set LOG_FILE=%LOG_FILE: =0%");
-            sb.AppendLine();
-            sb.AppendLine("set HAS_ERROR=0");
-            sb.AppendLine();
-
-            void CollectDescendants(SimFolderNode parent, List<string> accumulator)
-            {
-                foreach (var child in parent.Children)
-                {
-                    foreach (var s in child.MappedSourcePaths)
-                    {
-                        if (!string.IsNullOrWhiteSpace(s)) accumulator.Add(s);
-                    }
-                    CollectDescendants(child, accumulator);
-                }
-            }
-
-            bool IsSubPath(string parent, string child)
-            {
-                try
-                {
-                    var p = Path.GetFullPath(parent).TrimEnd('\\', '/');
-                    var c = Path.GetFullPath(child).TrimEnd('\\', '/');
-                    return c.StartsWith(p + "\\", StringComparison.OrdinalIgnoreCase);
-                }
-                catch { return false; }
-            }
-
-            void AppendRoboCommands(SimFolderNode node, string currentTarget)
-            {
-                var targetFolder = Path.Combine(currentTarget, node.Name);
-                var descendantSources = new List<string>();
-                CollectDescendants(node, descendantSources);
-
-                foreach (var src in node.MappedSourcePaths)
-                {
-                    if (string.IsNullOrWhiteSpace(src)) continue;
-
-                    var excludedDirs = descendantSources
-                        .Where(ds => IsSubPath(src, ds))
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToList();
-
-                    var escSrc = ScriptEscaper.EscapeBatPath(src);
-                    var escDst = ScriptEscaper.EscapeBatPath(targetFolder);
-                    var xdParam = excludedDirs.Count > 0
-                        ? " /XD " + string.Join(" ", excludedDirs.Select(d => ScriptEscaper.EscapeBatPath(d)))
-                        : "";
-
-                    sb.AppendLine($"echo ------------------------------------------------------------------");
-                    sb.AppendLine($"echo [転送中] {src}  --->  {targetFolder}{(dryRun ? " [DRY-RUN /L]" : "")}");
-                    sb.AppendLine($"echo ------------------------------------------------------------------");
-                    sb.AppendLine($"robocopy {escSrc} {escDst} {modeFlag} {copyFlag} /DCOPY:DAT /R:{retryCount} /W:{waitSec} /NP /MT:{threads}{xdParam}{dryRunParam} /TEE /LOG+:\"%LOG_FILE%\"");
-                    sb.AppendLine($"if errorlevel 8 (");
-                    sb.AppendLine($"    echo [ERROR] 重大なエラーが発生しました。ログを確認してください: %LOG_FILE%");
-                    sb.AppendLine($"    set HAS_ERROR=1");
-                    sb.AppendLine($") else if errorlevel 4 (");
-                    sb.AppendLine($"    echo [WARNING] 一部の不一致・アクセス拒否が検出されました。");
-                    sb.AppendLine($") else (");
-                    sb.AppendLine($"    echo [OK] 転送成功");
-                    sb.AppendLine($")");
-                    sb.AppendLine();
-                }
-
-                foreach (var child in node.Children)
-                {
-                    AppendRoboCommands(child, targetFolder);
-                }
-            }
-
-            foreach (var targetNode in wave.TargetNodes)
-            {
-                string startTarget = targetNode.Parent != null
-                    ? Path.Combine(targetRoot, targetNode.Parent.Name)
-                    : targetRoot;
-                AppendRoboCommands(targetNode, startTarget);
-            }
-
-            sb.AppendLine("echo.");
-            sb.AppendLine("echo ==================================================================");
-            sb.AppendLine("if %HAS_ERROR% equ 0 (");
-            sb.AppendLine($"    echo   [SUCCESS] {wave.WaveName} の {mode}{(dryRun ? " (DRY-RUN)" : "")} 処理が正常に完了しました。");
-            sb.AppendLine(") else (");
-            sb.AppendLine($"    echo   [FAILED] エラーが検出されました。ログを確認してください: %LOG_FILE%");
-            sb.AppendLine(")");
-            sb.AppendLine("echo ==================================================================");
-            sb.AppendLine("pause");
-            sb.AppendLine("if %HAS_ERROR% neq 0 (");
-            sb.AppendLine("    exit /b 1");
-            sb.AppendLine(")");
-
+            // Paths live in JSON, never unquoted echo or cmd expression interpolation.
+            sb.AppendLine("set \"FM_PS=powershell.exe\"");
+            sb.AppendLine("where pwsh.exe >nul 2>nul && set \"FM_PS=pwsh.exe\"");
+            sb.AppendLine($"%FM_PS% -NoProfile -File \"%~dp0..\\MigrationRunner.ps1\" -PlanPath \"%~dp0..\\MigrationPlan.json\" -Wave {wave.WaveNumber} -Mode {mode}{(dryRun ? " -DryRun" : "")}");
+            sb.AppendLine("exit /b %errorlevel%");
             return sb.ToString();
         }
 
@@ -490,6 +404,7 @@ namespace FolderMorpher.Services
         {
             var sb = new StringBuilder();
             sb.AppendLine("@echo off");
+            sb.AppendLine("setlocal DisableDelayedExpansion");
             sb.AppendLine("chcp 65001 > nul");
             sb.AppendLine();
             sb.AppendLine("rem ==========================================================================");
@@ -500,7 +415,7 @@ namespace FolderMorpher.Services
             sb.AppendLine("echo   FolderMorpher - 全Wave 順次移行メニュー");
             sb.AppendLine("echo ==================================================================");
             sb.AppendLine("echo   1. 事前フル同期 (Baseline Sync) を順次実行");
-            sb.AppendLine("echo   2. 本番カットオーバー (Final Cutover /MIR) を順次実行");
+            sb.AppendLine("echo   2. 本番カットオーバー (Final Cutover: union plan) を順次実行");
             sb.AppendLine("echo   3. 終了");
             sb.AppendLine("echo ==================================================================");
             sb.AppendLine("set /p M_CHOICE=\"選択してください [1-3]: \"");
@@ -513,15 +428,15 @@ namespace FolderMorpher.Services
             sb.AppendLine(":RUN_BASELINE");
             foreach (var w in waveBats)
             {
-                var dirName = Path.GetFileName(Path.GetDirectoryName(w.FullBat)!);
+                var dirName = Path.GetFileName(Path.GetDirectoryName(w.FullBat)!).Replace("%", "%%");
                 sb.AppendLine($"echo.");
-                sb.AppendLine($"echo 次のWaveを実行します: {w.WaveName}");
+                sb.AppendLine($"echo 次のWaveを実行します: MigrationPlan.json");
                 sb.AppendLine($"set /p W_EXEC=\"実行しますか？ (Y/N/Skip): \"");
                 sb.AppendLine($"if /i \"%W_EXEC%\"==\"Y\" (");
                 sb.AppendLine($"    call \"%~dp0{dirName}\\{Path.GetFileName(w.FullBat)}\"");
                 sb.AppendLine($"    if errorlevel 1 (");
                 sb.AppendLine($"        echo.");
-                sb.AppendLine($"        echo [ABORT] {w.WaveName} の実行でエラーが検出されたため、後続のWaveを安全停止しました。");
+                sb.AppendLine($"        echo [ABORT] MigrationPlan.json の実行でエラーが検出されたため、後続のWaveを安全停止しました。");
                 sb.AppendLine($"        pause");
                 sb.AppendLine($"        exit /b 1");
                 sb.AppendLine($"    )");
@@ -533,15 +448,15 @@ namespace FolderMorpher.Services
             sb.AppendLine(":RUN_CUTOVER");
             foreach (var w in waveBats)
             {
-                var dirName = Path.GetFileName(Path.GetDirectoryName(w.CutoverBat)!);
+                var dirName = Path.GetFileName(Path.GetDirectoryName(w.CutoverBat)!).Replace("%", "%%");
                 sb.AppendLine($"echo.");
-                sb.AppendLine($"echo 【本番切替】次のWaveを実行します: {w.WaveName}");
+                sb.AppendLine($"echo 【本番切替】次のWaveを実行します: MigrationPlan.json");
                 sb.AppendLine($"set /p W_EXEC=\"実行しますか？ (Y/N/Skip): \"");
                 sb.AppendLine($"if /i \"%W_EXEC%\"==\"Y\" (");
                 sb.AppendLine($"    call \"%~dp0{dirName}\\{Path.GetFileName(w.CutoverBat)}\"");
                 sb.AppendLine($"    if errorlevel 1 (");
                 sb.AppendLine($"        echo.");
-                sb.AppendLine($"        echo [ABORT] {w.WaveName} の本番切替でエラーが検出されたため、後続のWaveを安全停止しました。");
+                sb.AppendLine($"        echo [ABORT] MigrationPlan.json の本番切替でエラーが検出されたため、後続のWaveを安全停止しました。");
                 sb.AppendLine($"        pause");
                 sb.AppendLine($"        exit /b 1");
                 sb.AppendLine($"    )");
@@ -584,10 +499,10 @@ namespace FolderMorpher.Services
             sb.AppendLine("- **参照手順書**: 各Waveフォルダ直下の `03_PreCutover_Freeze_Guide.md`");
             sb.AppendLine("- **内容**: ユーザーが旧環境を誤編集して先祖返りするのを防ぐため、共有アクセス権の変更またはセッション切断により書き込みを安全に停止します。");
             sb.AppendLine();
-            sb.AppendLine("### Phase 4: 最終カットオーバー同期（Final Cutover /MIR）");
+            sb.AppendLine("### Phase 4: 最終カットオーバー同期（Final Cutover: union plan）");
             sb.AppendLine("- **実施時期**: 本番切替当日（旧共有停止完了後）");
             sb.AppendLine("- **実行スクリプト**: `04_Final_Cutover_Mirror.bat`");
-            sb.AppendLine("- **内容**: `/MIR` により旧環境で削除されたファイルも新環境へ反映し、完全一致（ミラー）化します。事前同期済みのため数分〜数十分で終わります。");
+            sb.AppendLine("- **内容**: 全コピー元の期待一覧を確認し、`/E` でコピーした後、期待一覧にない対象だけを削除します。コピー失敗・衝突・原本変更時は削除を止めます。実行には組織で許可されたPowerShellポリシーが必要です。");
             sb.AppendLine();
             sb.AppendLine("### Emergency: 緊急切り戻し（Rollback）");
             sb.AppendLine("- **実施時期**: 万が一新環境への切替を中止し旧環境で業務再開する場合");
@@ -634,10 +549,7 @@ namespace FolderMorpher.Services
 
         private static string SanitizeFileName(string name)
         {
-            foreach (var c in Path.GetInvalidFileNameChars())
-            {
-                name = name.Replace(c, '_');
-            }
+            name = new string(name.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' or ' ' ? c : '_').ToArray());
             return name;
         }
     }

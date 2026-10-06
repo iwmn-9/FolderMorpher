@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -22,6 +22,7 @@ namespace FolderMorpher.Services.Testing
         /// </summary>
         public static async Task TestDomain_MediaOptimizerAndLinkFixerAsync()
         {
+            TestReviewOfficeXmlAndMediaOptions();
             await TestMediaOptimizerPngPreservationAsync();
             await TestOfficeLinkFixMixedXmlAndVbaPartialSuccessAsync();
             await TestShortcutRestoreOutcomesAsync();
@@ -188,7 +189,7 @@ namespace FolderMorpher.Services.Testing
 
                 if (summary.OptimizedImagesCount == 0 && !mediaItem.IsProcessed)
                 {
-                    throw new InvalidOperationException("MediaOptimizer による PNG の最適化処理がスキップまたは失敗しました。");
+                    throw new InvalidOperationException($"MediaOptimizer failed: {mediaItem.Status}");
                 }
 
                 // 1. ファイル先頭の PNG シグネチャ (0x89, 0x50, 0x4E, 0x47) チェック

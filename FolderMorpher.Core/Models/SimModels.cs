@@ -22,6 +22,7 @@ namespace AstraSize.Models
     /// </summary>
     public partial class AdPrincipalItem : INotifyPropertyChanged
     {
+        public string Sid { get; set; } = string.Empty;
         public string AccountName { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
         public AdPrincipalType PrincipalType { get; set; } = AdPrincipalType.Group;
@@ -448,8 +449,13 @@ namespace AstraSize.Models
                 return string.Equals(a.Sid, b.Sid, StringComparison.OrdinalIgnoreCase);
             }
 
-            // 2. フォールバック: アカウント名文字列比較
-            return IsSameAccount(a.AccountName, b.AccountName);
+            try
+            {
+                string sidA = !string.IsNullOrWhiteSpace(a.Sid) ? a.Sid : ((System.Security.Principal.SecurityIdentifier)new System.Security.Principal.NTAccount(a.AccountName).Translate(typeof(System.Security.Principal.SecurityIdentifier))).Value;
+                string sidB = !string.IsNullOrWhiteSpace(b.Sid) ? b.Sid : ((System.Security.Principal.SecurityIdentifier)new System.Security.Principal.NTAccount(b.AccountName).Translate(typeof(System.Security.Principal.SecurityIdentifier))).Value;
+                return string.Equals(sidA, sidB, StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return string.IsNullOrWhiteSpace(a.Sid) && string.IsNullOrWhiteSpace(b.Sid) && IsSameAccount(a.AccountName, b.AccountName); }
         }
 
         /// <summary>
@@ -457,23 +463,15 @@ namespace AstraSize.Models
         /// </summary>
         public static bool IsSameAccount(string? a, string? b)
         {
-            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b))
-                return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
-
-            if (string.Equals(a, b, StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            bool hasDomainA = a.Contains('\\');
-            bool hasDomainB = b.Contains('\\');
-
-            // 両方にドメインがあり、かつ完全一致しなかった場合は別アカウント
-            if (hasDomainA && hasDomainB)
-                return false;
-
-            // 片方にのみドメインがある場合、アカウント名部分を比較
-            var nameA = hasDomainA ? a.Substring(a.IndexOf('\\') + 1) : a;
-            var nameB = hasDomainB ? b.Substring(b.IndexOf('\\') + 1) : b;
-            return string.Equals(nameA, nameB, StringComparison.OrdinalIgnoreCase);
+            if (string.Equals(a, b, StringComparison.OrdinalIgnoreCase)) return true;
+            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+            try
+            {
+                var sidA = new System.Security.Principal.NTAccount(a).Translate(typeof(System.Security.Principal.SecurityIdentifier));
+                var sidB = new System.Security.Principal.NTAccount(b).Translate(typeof(System.Security.Principal.SecurityIdentifier));
+                return sidA.Equals(sidB);
+            }
+            catch { return false; }
         }
 
         /// <summary>

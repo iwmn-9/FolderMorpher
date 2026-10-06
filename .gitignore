@@ -20,6 +20,7 @@ dist/
 *.tmp
 *.ps1
 !tools/Test-LicenseNotices.ps1
+!FolderMorpher.Core/Services/MigrationRunner.ps1
 *.png
 
 ## AI Agent Workspace & Memory

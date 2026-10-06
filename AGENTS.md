@@ -6,6 +6,15 @@
 
 ---
 
+## 公開時の個人情報保護
+
+- ユーザーの実名・苗字・メールアドレス・個人を特定できるユーザー名や端末名・実環境のフルパスを、追跡ファイル、事例、スクリーンショット、コミット本文、Issue、PR、リリース本文へ記載しない。
+- 文書のパスはリポジトリ相対パスまたは環境変数を使い、例は架空の名前・パスにする。検証ログや実データは公開対象へ含めない。
+- コミット前に差分と作者・コミッター情報を確認し、実名や個人メールを使わない。GitHubのnoreplyアドレスとGitHub上のアカウント名はユーザー許可済みで、作者情報に使用してよい。
+- 第三者ライブラリの著作権・ライセンス通知は原文を維持する。ユーザーの個人情報とは区別する。
+
+---
+
 ## 0. AI実装・整線規則（依存関係と正本の施工基準）
 
 > **【哲学：継ぎ足しは許すが、絡ませない】**  
@@ -83,12 +92,12 @@ UI層は `MainWindow.xaml` / `MainWindow.xaml.cs`（機能別に partial class �
 ## 3. 重要な設計判断の記録（Architecture Decisions / ADR）
 
 > ⚠️ **後続のAIメンテナへ**:
-> 本プロジェクトの全設計判断記録（ADR 1〜144）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・保管されている。
+> 本プロジェクトの全設計判断記録（ADR 1〜146）は、トークン消費削減および可読性維持のため [`.agents/ADR.md`](.agents/ADR.md) に体系化・保管されている。
 > **仕様変更・機能改修を行う際は、必ず `.agents/ADR.md` を参照し、過去の設計意図を無視した安易なコード巻き戻しを行ってはならない。**
 
 ### 8大中核アーキテクチャ原則
 
-設計判断（ADR 1〜144）は、以下の **8大中核アーキテクチャ原則** に集約される。
+設計判断（ADR 1〜146）は、以下の **8大中核アーキテクチャ原則** に集約される。
 
 1. **全体占有率メーター & 2連カード（Storage / ADR 61, 124, 130）**:
    - 親フォルダーに対する直下シェア（選択フォルダー内訳）と、ルート総容量に対する全体占有率を二重加算防止のため厳格分離。ルート行は `―`（ハイフン）表示。
@@ -156,3 +165,13 @@ Copy-Item ./dist/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderCl
 
 ### 単一EXEのIPC統合試験
 配布物を生成後、`dist/FolderMorpher.exe --test-ipc` を実行する。試験専用Named Pipe・Mutex・一時SQLite・一時設定で別PIDの `--host` を起動し、普段のHost/DB/設定へ触れず全ドメインのDTO、参照フォルダー、検索Clear/Stop、Host正常終了を確認する。
+
+## レビュー修正後の保守境界（ADR 145・146）
+
+- 移行の正本は `MigrationCopyPlan` が解決する `MigrationCopyUnit` と `MigrationPlan.json`。全ソース包含から除外を決め、親の残余単位でルート直下ファイルを保持する。実行は埋込テンプレート `MigrationRunner.ps1` のCheck→Commit→Verify。N:1のCUTOVERをソース別 `/MIR` へ戻さない。構造衝突・内容衝突・再解析点・原本変更・コピー失敗で削除を止める。生成物は `LinkRepairMappings.csv` とJSON検証記録も含む。通常検証は宛先種別・サイズと原本サイズ・日時で、全文ハッシュ保証ではない。
+- ACLの選択対象は `AdPrincipalItem.Sid` → `AdPrincipalDto.Sid` → `SimAclEntry.Sid` を維持する。Hostの実行計画で旧名前だけのACEもSIDへ固定する。適用時に名前だけで別主体へ解決し直さない。CSVはACE単位でSID・Allow/Deny・全rights bits・継承/伝播範囲を出す。
+- Officeリンクの検出・検索・修復は `OfficeLinkDocument` の構造解釈を共用する。通常セル・XML名前空間を外部リンクと解釈しない。画像は `ImageMetadataPreserver` がコンテナ内メタデータを保持・照合し、`SafeFileReplace` が元DACLを一時ファイルへ設定・検証する。保持不能時に成功扱いで上書きしない。
+- 部分容量走査は `ScanSummary.UnavailableFolders/IsCompleteCoverage` が正本。完全キャッシュ・履歴へ混ぜず、ローカルの部分観測、画面、CSV/Excelへ未知範囲を保つ。
+- 検索の総件数・総容量と上限1万件の保持一覧を区別する。Host DTOの総数を保持件数で上書きしない。OCR候補にも通常のメタデータ条件を適用し、本文条件は共通グループ生成に従う。OCR実行失敗・部分処理は `OcrWarning` へ伝える。
+- `assets/ocr/manifest.json` と圧縮分割資産がPP-OCRv6-small配布の正本。`EmbeddedOcrRuntime` が遅延展開・整合性検査・Host通常終了時の回収を所有し、`OcrWorkerService` は隔離Python子プロセスの終了を所有する。開発用の隣接Filunest探索はしない。再生成は `tools/Prepare-OcrBundle.py`。生成済みPython bytecodeや個人端末パスを含めない。ライセンスは `docs/DEPENDENCIES.md` とEXEに埋め込む `THIRD-PARTY-NOTICES.txt` を同期する。PDF NuGetは公式 `PdfPig 0.1.16`。
+- 回帰の追加項目は `RegressionTestSuite.Review.cs`、実EXEのOCR・部分走査・DTO検証は `App.xaml.cs` の `--test-ipc`。生成移行スクリプトの実行試験には許可済みPowerShell 7を使い、実行ポリシーを変更・回避しない。

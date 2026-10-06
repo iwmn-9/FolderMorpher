@@ -75,6 +75,17 @@ public partial class HostService
     {
         return Task.Run(() =>
         {
+            var unavailable = new List<string>();
+            var live = FindLiveScanNode(targetPath);
+            if (live != null)
+            {
+                var pending = new Stack<FileItemNode>(); pending.Push(live);
+                while (pending.TryPop(out var item))
+                {
+                    if (!string.IsNullOrEmpty(item.ErrorMessage)) unavailable.Add(item.FullPath);
+                    foreach (var child in item.Children) if (child.IsDirectory) pending.Push(child);
+                }
+            }
             var rows = visibleRows.Select(dto => new FileItemNode(dto.FullPath, dto.Name, dto.SizeBytes, dto.IsDirectory, dto.LastModified)
             {
                 Parent = dto.IsRoot ? null : new FileItemNode(),
@@ -84,7 +95,7 @@ public partial class HostService
             }).ToList();
             if (outputPath.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
             {
-                new ExcelReportService().ExportStorageScanResult(outputPath, targetPath, rows);
+                new ExcelReportService().ExportStorageScanResult(outputPath, targetPath, rows, unavailable);
             }
             else if (outputPath.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
             {
@@ -95,6 +106,11 @@ public partial class HostService
                     CsvCell(row.IsRoot ? "―" : $"{row.Percentage:F1}%"), CsvCell(row.FileCount.ToString()),
                     CsvCell(row.FolderCount.ToString()), CsvCell(row.LastModified?.ToString("yyyy/MM/dd HH:mm") ?? "")
                 })));
+                if (unavailable.Count > 0)
+                {
+                    lines.Add("Coverage,Partial scan; unknown folders are not empty folders");
+                    lines.AddRange(unavailable.Select(path => "Unavailable," + CsvCell(path)));
+                }
                 File.WriteAllLines(outputPath, lines, new UTF8Encoding(true));
             }
             else throw new ArgumentException("Storage export must be .xlsx or .csv", nameof(outputPath));

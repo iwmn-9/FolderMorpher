@@ -15,6 +15,7 @@ namespace FolderMorpher.Services.Testing
     {
         public static async Task TestDomain_SearchStudioAsync()
         {
+            await TestReviewEncodingAndOcrAsync();
             var searchEngine = new SearchEngineService();
 
             // -------------------------------------------------------------

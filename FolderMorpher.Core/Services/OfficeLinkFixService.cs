@@ -232,16 +232,14 @@ namespace FolderMorpher.Services
                                     content = reader.ReadToEnd();
                                 }
 
-                                if (content.Contains(item.FoundPattern, StringComparison.OrdinalIgnoreCase))
+                                var document = OfficeLinkDocument.Parse(content);
+                                if (OfficeLinkDocument.Replace(document, item.FoundPattern, item.TargetReplacement) > 0)
                                 {
-                                    // 大文字小文字を保持しながら置換
-                                    string updated = content.Replace(item.FoundPattern, item.TargetReplacement, StringComparison.OrdinalIgnoreCase);
-
-                                    // エントリを上書き再書き込み
+                                    string entryName = entry.FullName;
                                     entry.Delete();
-                                    var newEntry = zip.CreateEntry(entry.FullName, CompressionLevel.Optimal);
-                                    using var writer = new StreamWriter(newEntry.Open(), Encoding.UTF8);
-                                    writer.Write(updated);
+                                    var newEntry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
+                                    using var writer = new StreamWriter(newEntry.Open(), new UTF8Encoding(false));
+                                    document.Save(writer, System.Xml.Linq.SaveOptions.DisableFormatting);
                                     modified = true;
                                 }
                             }
@@ -262,22 +260,13 @@ namespace FolderMorpher.Services
                                 throw new InvalidOperationException("更新後のOfficeファイルが空です。");
                             }
 
-                            // Sol指摘: 目的のリンクが正しく新パスに置換されているかを意味的に検証
                             bool semanticVerified = false;
-                            foreach (var verifyEntry in verifyZip.Entries.Where(e =>
-                                e.FullName.Contains("externalLink", StringComparison.OrdinalIgnoreCase) ||
-                                e.FullName.Contains("worksheets", StringComparison.OrdinalIgnoreCase) ||
-                                e.FullName.Contains("externalReferences", StringComparison.OrdinalIgnoreCase) ||
-                                e.FullName.Contains("_rels", StringComparison.OrdinalIgnoreCase) ||
-                                e.FullName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase)))
+                            foreach (var verifyEntry in verifyZip.Entries.Where(e => e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase)))
                             {
                                 using var reader = new StreamReader(verifyEntry.Open(), Encoding.UTF8);
-                                string content = reader.ReadToEnd();
-                                if (content.Contains(item.TargetReplacement, StringComparison.OrdinalIgnoreCase))
-                                {
+                                var document = OfficeLinkDocument.Parse(reader.ReadToEnd());
+                                if (OfficeLinkDocument.Values(document).Any(v => v.Contains(item.TargetReplacement, StringComparison.OrdinalIgnoreCase)))
                                     semanticVerified = true;
-                                    break;
-                                }
                             }
 
                             if (!semanticVerified)
@@ -395,7 +384,7 @@ namespace FolderMorpher.Services
                 using var stream = entry.Open();
                 using var reader = new StreamReader(stream, Encoding.UTF8);
                 string text = reader.ReadToEnd();
-                return text.Contains(pattern, StringComparison.OrdinalIgnoreCase);
+                return OfficeLinkDocument.Values(OfficeLinkDocument.Parse(text)).Any(v => v.Contains(pattern, StringComparison.OrdinalIgnoreCase));
             }
             catch { return false; }
         }

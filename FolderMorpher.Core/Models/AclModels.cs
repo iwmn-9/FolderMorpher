@@ -15,6 +15,9 @@ namespace AstraSize.Models
 
     public class AclEntry
     {
+        public string Sid { get; set; } = string.Empty;
+        public InheritanceFlags InheritanceFlags { get; set; }
+        public PropagationFlags PropagationFlags { get; set; }
         public string Identity { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
         public FileSystemRights Rights { get; set; }

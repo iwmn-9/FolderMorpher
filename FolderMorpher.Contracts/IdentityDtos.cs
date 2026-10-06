@@ -16,6 +16,7 @@ public sealed class AdOuNodeDto
 
 public sealed class AdPrincipalDto
 {
+    public string Sid { get; set; } = string.Empty;
     public string AccountName { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public int PrincipalType { get; set; }
@@ -68,6 +69,7 @@ public sealed class EffectiveAccessReportDto
     public int TotalFoldersScanned { get; set; }
     public int FullControlCount { get; set; }
     public int ModifyCount { get; set; }
+    public int CustomCount { get; set; }
     public int ReadOnlyCount { get; set; }
     public int EnclaveCount { get; set; }
     public int ExplicitBoundaryCount { get; set; }

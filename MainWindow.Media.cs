@@ -128,6 +128,12 @@ namespace AstraSize
 
             int maxDim = int.TryParse(MediaMaxDimTextBox.Text, out var md) ? md : 2560;
             int quality = int.TryParse(MediaQualityTextBox.Text, out var q) ? q : 85;
+            var validatedOptions = new MediaOptimizeOptions { MaxDimension = maxDim, JpegQuality = quality };
+            if (validatedOptions.ValidationError is string inputError)
+            {
+                AppDialog.Show(inputError, UiText("設定エラー", "Invalid settings"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             int excludedCount = _lastMediaImages.Count(i => i.IsExcluded);
 
             _lastMediaTargets = targets;

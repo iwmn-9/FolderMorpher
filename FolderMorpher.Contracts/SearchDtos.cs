@@ -43,6 +43,7 @@ public sealed class SearchResultDto
 
 public sealed class SearchProgressDto
 {
+        public string OcrWarning { get; set; } = string.Empty;
     public bool IsCached { get; set; }
     public int HitCount { get; set; }
     public int ScannedCount { get; set; }

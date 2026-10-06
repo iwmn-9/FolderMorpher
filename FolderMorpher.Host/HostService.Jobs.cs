@@ -19,6 +19,7 @@ public partial class HostService
         public HostJobState State = HostJobState.Running;
         public string ProgressText = string.Empty;
         public int HitCount;
+        public string OcrWarning = string.Empty;
         public int ScannedCount;
         public int ContentProcessedCount;
         public int DiscoveredDirectories;
@@ -118,7 +119,7 @@ public partial class HostService
                     Kind = Kind,
                     State = State,
                     ProgressText = ProgressText,
-                    HitCount = HitCount,
+                    OcrWarning = OcrWarning, HitCount = HitCount,
                     ScannedCount = ScannedCount,
                     ContentProcessedCount = ContentProcessedCount,
                     DiscoveredDirectories = DiscoveredDirectories,
@@ -192,6 +193,7 @@ public partial class HostService
                         {
                             job.ProgressText = report.CurrentPath;
                             job.HitCount = report.HitCount;
+                            if (!string.IsNullOrEmpty(report.OcrWarning)) job.OcrWarning = report.OcrWarning;
                             job.ScannedCount = report.ScannedCount;
                             job.ContentProcessedCount = report.ContentProcessedCount;
                             job.DiscoveredDirectories = report.DiscoveredDirectories;
@@ -209,8 +211,8 @@ public partial class HostService
                     lock (job.Gate)
                     {
                         job.SearchResults = results;
-                        job.HitCount = results.Count;
-                        job.TotalHitBytes = results.Sum(item => item.SizeBytes);
+                        job.HitCount = Math.Max(job.HitCount, results.Count);
+                        job.TotalHitBytes = Math.Max(job.TotalHitBytes, results.Sum(item => item.SizeBytes));
                     }
                     break;
                 case HostJobKind.AuditScan:

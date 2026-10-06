@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -29,6 +29,7 @@ namespace FolderMorpher.Services.Testing
             await TestUniversalPlanFirstAndMutationVerifyAsync();
             await TestArchitecturalUnificationAsync();
             await TestMigrationPackageAndWavePlanningAsync();
+            await TestReviewMigrationExecutionAsync();
         }
 
         public static void TestSimulationAclRobocopyAndEffectiveAccessInheritOnly()
@@ -607,7 +608,7 @@ namespace FolderMorpher.Services.Testing
                 {
                     var entry = zip.CreateEntry("xl/externalLinks/_rels/externalLink1.xml.rels");
                     using var writer = new StreamWriter(entry.Open(), System.Text.Encoding.UTF8);
-                    writer.Write("<Relationships><Relationship Target=\"file:///\\\\oldserver\\share\\data.xlsx\" /></Relationships>");
+                    writer.Write("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship TargetMode=\"External\" Target=\"file:///\\\\oldserver\\share\\data.xlsx\" /></Relationships>");
                 }
 
                 var officeItems = new List<OfficeLinkItem>
@@ -991,30 +992,15 @@ namespace FolderMorpher.Services.Testing
                 // Sales の 01_Baseline_Sync.bat の内容検証 (/XD で子孫 Archive2024 が除外されていること、/COPY:DAT, /MT:16, %~dp0, exit /b 1, 遅延展開無効化)
                 string salesBaselineBat = Path.Combine(packageDir, "Wave01_Sales", "01_Baseline_Sync.bat");
                 string salesBatContent = File.ReadAllText(salesBaselineBat, System.Text.Encoding.UTF8);
-                if (!salesBatContent.Contains("/XD \"\\\\OldServer\\Share\\SalesHQ\\Archive2024\""))
-                {
-                    throw new InvalidOperationException($"Robocopy多重コピー防止欠陥: 子孫マッピング Archive2024 が /XD に含まれていません！ 内容:\n{salesBatContent}");
-                }
-                if (!salesBatContent.Contains("/COPY:DAT"))
-                {
-                    throw new InvalidOperationException("Robocopy転送モード欠陥: /COPY:DAT が指定されていません。");
-                }
-                if (!salesBatContent.Contains("/MT:16"))
-                {
-                    throw new InvalidOperationException("Robocopyスレッド数欠陥: /MT:16 が指定されていません。");
-                }
-                if (!salesBatContent.Contains("set LOG_DIR=%~dp0..\\Logs"))
-                {
-                    throw new InvalidOperationException("Robocopyログパス欠陥: %~dp0 によるスクリプト相対パス指定になっていません。");
-                }
-                if (salesBatContent.Contains("EnableDelayedExpansion"))
-                {
-                    throw new InvalidOperationException("Robocopyスクリプト堅牢性欠陥: 感嘆符(!)を含むパスを破壊する EnableDelayedExpansion が残っています。");
-                }
-                if (!salesBatContent.Contains("exit /b 1"))
-                {
-                    throw new InvalidOperationException("Robocopyエラー伝播欠陥: 失敗時に exit /b 1 を呼んでいません。");
-                }
+                var resolvedPlan = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(packageDir, "MigrationPlan.json")));
+                var transferUnits = resolvedPlan.RootElement.GetProperty("Units").EnumerateArray().ToList();
+                if (!transferUnits.Any(u => u.GetProperty("ExcludedSources").EnumerateArray().Any(e => e.GetString() == @"\\OldServer\Share\SalesHQ\Archive2024")))
+                    throw new InvalidOperationException("Resolved plan omitted a descendant source exclusion.");
+                string runnerText = File.ReadAllText(Path.Combine(packageDir, "MigrationRunner.ps1"));
+                if (!runnerText.Contains("/COPY:DAT") || !runnerText.Contains("/XD") || runnerText.Contains("'/MIR'") ||
+                    !salesBatContent.Contains("-PlanPath") || !salesBatContent.Contains("exit /b %errorlevel%") ||
+                    salesBatContent.Contains("EnableDelayedExpansion"))
+                    throw new InvalidOperationException("Plan-based batch lost transfer flags, error propagation or safe command parsing.");
 
                 // 3. TargetRoot 未入力時の例外安全テスト (Sol指摘: 勝手に仮定先へ出力する重大事故を防止)
                 bool emptyTargetBlocked = false;

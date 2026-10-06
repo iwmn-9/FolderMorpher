@@ -302,7 +302,7 @@ namespace AstraSize
             }
         }
 
-        private static async Task<(List<FolderMorpher.Contracts.SearchResultDto> Results, int DeniedFolders, int UnreadFiles)> RunSearchJobAsync(
+        private static async Task<(List<FolderMorpher.Contracts.SearchResultDto> Results, int DeniedFolders, int UnreadFiles, int TotalHits, long TotalBytes, string OcrWarning)> RunSearchJobAsync(
             string targetFolder,
             SearchQuery query,
             IProgress<FolderMorpher.Contracts.SearchProgressDto> progress,
@@ -322,7 +322,7 @@ namespace AstraSize
                 {
                     IsCached = cached,
                     CurrentPath = job.ProgressText,
-                    HitCount = job.HitCount,
+                    OcrWarning = job.OcrWarning, HitCount = job.HitCount,
                     ScannedCount = job.ScannedCount,
                     ContentProcessedCount = job.ContentProcessedCount,
                     DiscoveredDirectories = job.DiscoveredDirectories,
@@ -336,7 +336,7 @@ namespace AstraSize
                 ct,
                 onSearchBatch);
             return (status.SearchResults ?? throw new InvalidOperationException("検索結果がHostから返されませんでした。"),
-                status.AccessDeniedFolders, status.UnreadFiles);
+                status.AccessDeniedFolders, status.UnreadFiles, status.HitCount, status.TotalHitBytes, status.OcrWarning);
         }
 
         #endregion
@@ -523,7 +523,7 @@ namespace AstraSize
                         {
                             SetSearchResults(treeResults);
                             long totalBytes = _searchResults.Sum(h => h.SizeBytes);
-                            UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
+                            UpdateSearchKpi(cachedOutcome.TotalHits, cachedOutcome.TotalBytes, sw.Elapsed);
 
                             if (SearchStatusText != null)
                             {
@@ -548,12 +548,13 @@ namespace AstraSize
                             // 完了後は今回のLive結果だけが正本。消失した行や古い属性を残さない。
                             SetSearchResults(liveHits);
                             long totalBytes = _searchResults.Sum(h => h.SizeBytes);
-                            UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
+                            UpdateSearchKpi(liveOutcome.TotalHits, liveOutcome.TotalBytes, sw.Elapsed);
 
                             if (SearchStatusText != null)
                             {
-                                SearchStatusText.Text = Strings.SearchLiveComplete(_searchResults.Count,
-                                    sw.ElapsedMilliseconds) + FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles);
+                                SearchStatusText.Text = Strings.SearchLiveComplete(liveOutcome.TotalHits,
+                                    sw.ElapsedMilliseconds) + FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles) +
+                                    $" / 表示・retained {_searchResults.Count:N0} {liveOutcome.OcrWarning}";
                             }
                         }
                     }
@@ -585,13 +586,13 @@ namespace AstraSize
                     {
                         SetSearchResults(results);
                         long totalBytes = _searchResults.Sum(h => h.SizeBytes);
-                        UpdateSearchKpi(_searchResults.Count, totalBytes, sw.Elapsed);
+                        UpdateSearchKpi(liveOutcome.TotalHits, liveOutcome.TotalBytes, sw.Elapsed);
 
                         if (SearchStatusText != null)
                         {
                             SearchStatusText.Text = isJa
-                                ? $"🔍 ライブ走査完了: {_searchResults.Count:N0} 件ヒット ({sw.ElapsedMilliseconds} ms){FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles)}"
-                                : $"🔍 Live direct search complete: {_searchResults.Count:N0} hits ({sw.ElapsedMilliseconds} ms){FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles)}";
+                                ? $"🔍 ライブ走査完了: {liveOutcome.TotalHits:N0} 件ヒット / 表示 {_searchResults.Count:N0} 件 ({sw.ElapsedMilliseconds} ms){FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles)} {liveOutcome.OcrWarning}"
+                                : $"🔍 Live direct search complete: {liveOutcome.TotalHits:N0} hits / retained {_searchResults.Count:N0} ({sw.ElapsedMilliseconds} ms){FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles)} {liveOutcome.OcrWarning}";
                         }
                     }
                 }
@@ -712,11 +713,16 @@ namespace AstraSize
             }
         }
 
+        private int _totalSearchHits;
+        private long _totalSearchBytes;
+
         private void UpdateSearchKpi(int hitCount, long totalBytes, TimeSpan elapsed)
         {
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             if (SearchKpiHitCountText != null)
             {
+                _totalSearchHits = hitCount;
+                _totalSearchBytes = totalBytes;
                 SearchKpiHitCountText.Text = isJa ? $"{hitCount:N0} 件" : $"{hitCount:N0} items";
             }
             if (SearchKpiTotalSizeText != null)
@@ -1125,12 +1131,14 @@ namespace AstraSize
             bool isJa = LocalizationService.Instance.CurrentLanguage == AppLanguage.Japanese;
             if (SearchKpiHitCountText != null)
             {
-                SearchKpiHitCountText.Text = isJa ? $"{list.Count:N0} 件" : $"{list.Count:N0} items";
+                int total = Math.Max(_totalSearchHits, list.Count);
+                SearchKpiHitCountText.Text = isJa ? $"{total:N0} 件" : $"{total:N0} items";
+                SearchKpiHitCountText.ToolTip = isJa ? $"一覧に保持: {list.Count:N0} 件" : $"Retained in list: {list.Count:N0}";
             }
 
             if (SearchKpiTotalSizeText != null)
             {
-                long totalBytes = list.Sum(x => x.SizeBytes);
+                long totalBytes = Math.Max(_totalSearchBytes, list.Sum(x => x.SizeBytes));
                 SearchKpiTotalSizeText.Text = FormatHelper.FormatBytes(totalBytes);
             }
         }

@@ -54,7 +54,7 @@ internal static class SearchDtoMapper
 
     public static SearchProgressDto ToDto(SearchProgressReport report) => new()
     {
-        HitCount = report.HitCount, ScannedCount = report.ScannedCount,
+        OcrWarning = report.OcrWarning, HitCount = report.HitCount, ScannedCount = report.ScannedCount,
         ContentProcessedCount = report.ContentProcessedCount,
         DiscoveredDirectories = report.DiscoveredDirectories,
         ProcessedDirectories = report.ProcessedDirectories,

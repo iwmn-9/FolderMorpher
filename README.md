@@ -22,7 +22,7 @@ Settings, history, and metadata caches are written to the running computer. Clos
 
 - Windows x64 with a desktop: supported Windows 10/11 editions or Windows Server 2016 and later with Desktop Experience. See Microsoft's [.NET 10 supported OS list](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md) for edition and servicing requirements.
 - Search and standard storage scans work without administrator rights. Optional local NTFS MFT scanning is used only when the process already has the required privileges. Shares use the user's access permissions.
-- Office is unnecessary for Open XML files (`.docx`, `.xlsx`, `.pptx`). PDF extraction uses available Windows IFilters and a built-in fallback; some PDFs and protected files may not yield searchable text.
+- Office is unnecessary for Open XML files (`.docx`, `.xlsx`, `.pptx`). PDF extraction uses official PdfPig, with Windows IFilter and built-in fallbacks. Optional PP-OCRv6-small for images/scanned PDFs is included in the EXE; no separate Python installation or model download is needed. Protected files may not yield searchable text.
 - Video conversion batches require separately installed FFmpeg. FFmpeg is not bundled.
 
 ## Search
@@ -32,12 +32,14 @@ Settings, history, and metadata caches are written to the running computer. Clos
 - While typing, memory or the local TreeCache previews the previous scan. Search, Enter, and Refresh scan the originals, then replace the final list with verified live hits. There is **no persistent full-text search database**.
 - Direct traversal streams entries without keeping a second complete file list. Text scanning uses pooled buffers, an ASCII/UTF-8 fast path when applicable, and adaptive read sizes. Office reads text entries without expanding media assets.
 - The same search button becomes **Stop** during execution. Clear cancels the job; an empty query does not restart it. Cached previews are provisional. Final counts include deduplicated name and content hits verified during the live scan.
+- Total matches and retained rows are separate: the list retains up to 10,000 hits, while total count/bytes continue accumulating. OCR failures or limits appear in completion status.
 - Elapsed time and approximate remaining time appear with the result counts. Estimates initially say “Estimating” and report overruns. Inaccessible folders and detected content-read failures are reported at completion.
 
 ## Storage
 
 - Browse a size tree showing each item's share of the scanned root. Expansion retrieves one level of children instead of sending the entire tree to the GUI.
 - Standard local scans use batched enumeration and up to eight workers. UNC scans retain the shared enumeration limit of two. Metadata comes from enumeration instead of separate per-file queries.
+- Inaccessible branches remain unknown, never empty. Partial scans are labeled and retained locally without replacing complete history/cache; exports include unavailable scope.
 - Load previous metadata before a fresh scan and compare growth/reduction. Cached values are previous observations, not a guarantee that the source is unchanged.
 - Open **Details** for largest files and the selected folder's breakdown. History graphs are a separate action, keeping the main tree wide by default.
 - A low-space warning appears when the current user has at most 10% available at the selected location. Individual server folder quotas are not always exposed by Windows' free-space API.
@@ -91,3 +93,7 @@ dotnet publish ./FolderMorpher.csproj -c Release -r win-x64 --self-contained tru
 FolderMorpher source is **[MIT](LICENSE)**, copyright © 2026 iwmn-9. Bundled libraries and .NET retain their own licenses. Full texts, copyrights, and upstream notices are in **[THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)** and embedded in the EXE under **Settings → Licenses**.
 
 The [dependency review](docs/DEPENDENCIES.md) records MIT/Apache 2.0 dependencies, exact-version review, optional external tools, and the CI check for missing notices. Software is provided as-is under its licenses.
+
+## v1.0.1 review corrections
+
+See [implementation and verification results](docs/REVIEW_FIXES.md). Migration packages use a resolved JSON transfer plan and expected **union** of all sources, rather than sequential source mirrors. CUTOVER checks collisions before copying, verifies source stamps and destination type/size, then removes only planned extra entries. This is not full content-hash verification. Source writes must be frozen during cutover. Generated PowerShell respects the organization's execution policy; it does not bypass it. ACL identity is SID-based across selection, IPC, planning and application. Office repair edits structured external links/formulas and verifies XML before replacing the original.

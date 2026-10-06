@@ -198,6 +198,7 @@ namespace FolderMorpher.Models
     /// </summary>
     public class SearchProgressReport
     {
+        public string OcrWarning { get; set; } = string.Empty;
         public int HitCount { get; set; }
         public int ScannedCount { get; set; }
         public int ContentProcessedCount { get; set; }

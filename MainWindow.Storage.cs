@@ -383,6 +383,7 @@ namespace AstraSize
                     TotalFolders = scanResult.TotalFolders,
                     LargestFiles = scanResult.Top10Files.Select(FolderMorpher.HostClient.StorageNodeMapper.ToViewFile).ToList(),
                     ScanMode = scanResult.ScanMode,
+                    UnavailableFolders = scanResult.UnavailableFolders,
                     ElapsedSeconds = scanResult.Elapsed.TotalSeconds
                 };
                 root.CachedTopFiles = summary.LargestFiles;
@@ -447,6 +448,13 @@ namespace AstraSize
                 ScannedSizeTextBlock.Text = FileItemNode.FormatBytes(tab.RootNode.SizeBytes);
                 TotalFilesTextBlock.Text = UiText($"{tab.RootNode.FileCount:N0} ファイル / {tab.RootNode.FolderCount:N0} フォルダ",
                     $"{tab.RootNode.FileCount:N0} Files / {tab.RootNode.FolderCount:N0} Folders");
+
+                if (tab.Summary?.IsCompleteCoverage == false)
+                {
+                    TotalFilesTextBlock.Text += UiText($"  ⚠ 未確認 {tab.Summary.UnavailableFolders.Count:N0} フォルダー（部分走査）", $"  ⚠ {tab.Summary.UnavailableFolders.Count:N0} unavailable folders (partial scan)");
+                    TotalFilesTextBlock.ToolTip = string.Join(Environment.NewLine, tab.Summary.UnavailableFolders);
+                }
+                else TotalFilesTextBlock.ToolTip = null;
 
                 // 前回スキャンとの差分推移
                 if (tab.RootNode.DiffBytes.HasValue && tab.RootNode.DiffBytes.Value != 0)

@@ -22,7 +22,7 @@
 
 - デスクトップのあるWindows x64：サポート対象のWindows 10/11、またはDesktop ExperienceのあるWindows Server 2016以降。エディション・保守条件はMicrosoftの [.NET 10対応OS一覧](https://github.com/dotnet/core/blob/main/release-notes/10.0/supported-os.md) を参照してください。
 - 検索・通常の容量走査に管理者権限は不要です。ローカルNTFSのMFT走査は、実行プロセスに必要な権限が既にある場合だけ利用します。共有先は実行ユーザーのアクセス権で参照します。
-- Open XML形式（`.docx`、`.xlsx`、`.pptx`）の処理にOfficeは不要です。PDFは端末のWindows IFilterと内蔵フォールバックを利用し、形式や保護状態によって本文を抽出できない場合があります。
+- Open XML形式（`.docx`、`.xlsx`、`.pptx`）の処理にOfficeは不要です。PDFは公式PdfPigを主エンジンとし、Windows IFilterと内蔵フォールバックも利用し、形式や保護状態によって本文を抽出できない場合があります。
 - 動画変換バッチには別途FFmpegが必要です。EXEには同梱していません。
 
 ## 検索
@@ -91,3 +91,13 @@ dotnet publish ./FolderMorpher.csproj -c Release -r win-x64 --self-contained tru
 FolderMorpherのソースは **[MIT](LICENSE)**、著作権は © 2026 iwmn-9です。同梱ライブラリと.NETランタイムはそれぞれのライセンスを保持します。全文・著作権・上流NOTICEは **[THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)** にまとめ、EXEの **設定 → ライセンス** にも収録しています。
 
 [依存ライセンスの確認記録](docs/DEPENDENCIES.md) に、MIT/Apache 2.0の依存、使用版での確認手順、外部ツールとの区別、CIの表記漏れ検証を記載しています。ソフトウェアは各ライセンスの条件に従って現状有姿で提供します。
+
+## v1.0.1のレビュー対応
+
+[改善と検証の一覧](docs/REVIEW_FIXES.md)に結果を記載。PP-OCRv6-smallはEXE内の圧縮資産として同梱し、OCR使用時だけHostの一時領域へ展開する。Pythonの別途導入・モデルのネットワーク取得は不要。Host通常終了で回収し、強制終了・OS障害時の残存は保証しない。
+
+検索の総ヒット数・総容量と、一覧へ保持する上限1万件を分離。OCRにも同じ検索条件を適用し、実行失敗や処理制限を完了状態へ明示する。容量分析の未確認枝は空フォルダーにせず、部分走査として表示・記録・出力し、完全な前回キャッシュや推移履歴を上書きしない。
+
+移行パッケージは `MigrationPlan.json` の解決済み転送計画を使用する。全コピー元の統合期待一覧を先に確認し、衝突があればコピー前に停止する。CUTOVERはコピー成功、原本のサイズ・日時、宛先の種別・サイズを確認した後、計画した余剰対象だけを削除する。全文ハッシュ検証ではない。切替中は原本への書き込みを停止し、組織で許可されたPowerShell実行ポリシーを使用する。ポリシーの自動回避はしない。
+
+ACLの対象はSIDを保って選択・IPC・計画・適用する。Office修復はXMLの外部リンク・数式だけを書き換え、通常セルとVBAを保護して検証する。画像最適化は寸法・品質を検証し、Exif/ICC/XMPなどのコンテナ内メタデータとDACLを保持できなければ原本を残す。

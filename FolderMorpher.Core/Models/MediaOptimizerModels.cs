@@ -36,6 +36,15 @@ namespace FolderMorpher.Models
 
     public class MediaOptimizeOptions
     {
+        public string? ValidationError => MaxDimension < 64 || MaxDimension > 32768
+            ? "長辺は64～32768ピクセルで指定してください / Maximum dimension must be 64–32768 pixels."
+            : JpegQuality < 1 || JpegQuality > 100
+                ? "品質は1～100で指定してください / Quality must be 1–100." : null;
+        public void Validate()
+        {
+            if (ValidationError is string error) throw new ArgumentOutOfRangeException(nameof(MediaOptimizeOptions), error);
+        }
+
         public string TargetDirectory { get; set; } = string.Empty;
         public int MaxDimension { get; set; } = 2560; // 長辺最大ピクセル (2K相当)
         public int JpegQuality { get; set; } = 85;    // JPEG品質 (85% スイートスポット)

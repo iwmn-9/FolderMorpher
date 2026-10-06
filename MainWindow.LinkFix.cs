@@ -149,10 +149,26 @@ namespace AstraSize
                 var hostProgress = new Progress<string>(s => StatusTextBlock.Text = s);
                 var applyReq = new FolderMorpher.Contracts.LinkFixApplyRequestDto
                 {
-                    TargetShortcuts = _lastLinkFixTargets.Select(FolderMorpher.HostClient.LinkFixDtoMapper.ToDto).ToList()
+                    TargetShortcuts = _lastLinkFixTargets.Where(i => i.AssociatedOfficeItem == null).Select(FolderMorpher.HostClient.LinkFixDtoMapper.ToDto).ToList(),
+                    TargetOfficeLinks = _lastLinkFixTargets.Where(i => i.AssociatedOfficeItem != null).Select(i => FolderMorpher.HostClient.LinkFixDtoMapper.ToDto(i.AssociatedOfficeItem!)).ToList()
                 };
                 var applyRes = await host.RepairBrokenLinksAsync(applyReq, hostProgress, cts.Token);
                 var successCount = applyRes.RepairedCount;
+                foreach (var updated in applyRes.UpdatedShortcuts)
+                {
+                    var item = _lastLinkFixTargets.FirstOrDefault(i => string.Equals(i.FilePath, updated.FilePath, StringComparison.OrdinalIgnoreCase));
+                    if (item == null) continue;
+                    item.IsFixed = updated.IsFixed;
+                    item.Status = updated.Status;
+                }
+                foreach (var updated in applyRes.UpdatedOfficeLinks)
+                {
+                    var item = _lastLinkFixTargets.FirstOrDefault(i => string.Equals(i.FilePath, updated.FilePath, StringComparison.OrdinalIgnoreCase));
+                    if (item == null) continue;
+                    item.IsFixed = updated.IsFixed;
+                    item.Status = updated.Status;
+                    item.AssociatedOfficeItem = FolderMorpher.HostClient.LinkFixDtoMapper.ToViewItem(updated);
+                }
                 LinkItemsDataGrid.Items.Refresh();
                 LinkFixDiffModalOverlay.Visibility = Visibility.Collapsed;
 

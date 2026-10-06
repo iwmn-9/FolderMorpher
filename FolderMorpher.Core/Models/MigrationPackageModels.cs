@@ -6,6 +6,8 @@ using FolderMorpher.Services;
 
 namespace FolderMorpher.Models
 {
+    public sealed record MigrationCopyUnit(string Source, string Destination, List<string> ExcludedSources, int WaveNumber);
+
     /// <summary>
     /// 移行バッチの分割ポリシー
     /// </summary>
@@ -32,6 +34,7 @@ namespace FolderMorpher.Models
     /// </summary>
     public partial class MigrationWavePlan
     {
+        public List<MigrationCopyUnit> CopyUnits { get; set; } = new();
         public int WaveNumber { get; set; } = 1;
         public string WaveName { get; set; } = string.Empty;
         public List<SimFolderNode> TargetNodes { get; set; } = new();

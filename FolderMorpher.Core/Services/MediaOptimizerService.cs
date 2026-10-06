@@ -113,6 +113,7 @@ namespace FolderMorpher.Services
             IProgress<(string File, bool Success, string Msg)>? progress,
             CancellationToken ct)
         {
+            options.Validate();
             var summary = new MediaOptimizeSummary
             {
                 TotalImagesScanned = targets.Count
@@ -225,22 +226,6 @@ namespace FolderMorpher.Services
                     g.DrawImage(origImage, 0, 0, targetW, targetH);
                 }
 
-                // Exifメタデータの引き継ぎ (GDI+非互換プロパティはスキップし、主要メタデータを安全に継承)
-                int exifCopied = 0;
-                int exifSkipped = 0;
-                foreach (var prop in origImage.PropertyItems)
-                {
-                    try
-                    {
-                        resizedBmp.SetPropertyItem(prop);
-                        exifCopied++;
-                    }
-                    catch
-                    {
-                        exifSkipped++;
-                    }
-                }
-
                 SaveImageWithQuality(resizedBmp, outMs, isPng, quality);
             }
             else
@@ -253,7 +238,7 @@ namespace FolderMorpher.Services
                 SaveImageWithQuality(origImage, outMs, isPng, quality);
             }
 
-            byte[] optimizedBytes = outMs.ToArray();
+            byte[] optimizedBytes = ImageMetadataPreserver.Transfer(fileBytes, outMs.ToArray(), isPng);
 
             // もし最適化後の方が大きくなってしまった場合は上書きしない
             if (optimizedBytes.Length >= fileBytes.Length)
@@ -265,7 +250,7 @@ namespace FolderMorpher.Services
             using (var verifyMs = new MemoryStream(optimizedBytes))
             using (var verifyImg = Image.FromStream(verifyMs))
             {
-                if (verifyImg.Width == 0 || verifyImg.Height == 0)
+                if (verifyImg.Width != targetW || verifyImg.Height != targetH)
                 {
                     throw new InvalidOperationException("最適化後データの画像検証に失敗しました。ファイル破損防止のため上書きを中断しました。");
                 }

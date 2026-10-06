@@ -35,7 +35,7 @@ namespace FolderMorpher.Services.Testing
                     var xmlEntry = zip.CreateEntry("xl/externalLinks/_rels/externalLink1.xml.rels");
                     using (var writer = new StreamWriter(xmlEntry.Open(), Encoding.UTF8))
                     {
-                        writer.Write($"<Relationships><Relationship Target=\"file:///{oldServer}\\data.xlsx\" /></Relationships>");
+                        writer.Write($"<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship TargetMode=\"External\" Target=\"file:///{oldServer}\\data.xlsx\" /></Relationships>");
                     }
 
                     // 2. VBAマクロバイナリ (vbaProject.bin)

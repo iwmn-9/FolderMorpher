@@ -1,0 +1,3 @@
+
+# Upstream legal texts are preserved verbatim, including whitespace.
+THIRD-PARTY-NOTICES.txt -whitespace

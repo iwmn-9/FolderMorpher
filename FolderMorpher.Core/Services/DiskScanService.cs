@@ -83,6 +83,7 @@ namespace AstraSize.Services
                     throw new DirectoryNotFoundException($"指定されたパスが見つかりません: {targetPath}");
                 }
 
+                var unavailableFolders = new ConcurrentBag<string>();
                 int filesScanned = 0;
                 long bytesScanned = 0;
                 long lastProgressTime = 0;
@@ -183,6 +184,7 @@ namespace AstraSize.Services
                                 if (!ok)
                                 {
                                     node.ErrorMessage = error ?? "アクセス拒否";
+                                    unavailableFolders.Add(currentPath);
                                     continue;
                                 }
 
@@ -337,6 +339,7 @@ namespace AstraSize.Services
 
                 var summary = new ScanSummary
                 {
+                    UnavailableFolders = unavailableFolders.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToList(),
                     TargetPath = cleanTargetPath,
                     TotalBytes = rootNode.Size,
                     TotalFiles = rootNode.FileCount,

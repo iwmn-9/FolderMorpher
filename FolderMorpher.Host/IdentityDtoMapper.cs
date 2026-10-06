@@ -18,7 +18,7 @@ internal static class IdentityDtoMapper
 
     public static AdPrincipalDto ToDto(AdPrincipalItem item) => new()
     {
-        AccountName = item.AccountName, DisplayName = item.DisplayName,
+        Sid = item.Sid, AccountName = item.AccountName, DisplayName = item.DisplayName,
         PrincipalType = (int)item.PrincipalType,
         Domain = item.Domain, Description = item.Description
     };
@@ -37,7 +37,7 @@ internal static class IdentityDtoMapper
         TotalFoldersScanned = report.TotalFoldersScanned,
         FullControlCount = report.FullControlCount,
         ModifyCount = report.ModifyCount,
-        ReadOnlyCount = report.ReadOnlyCount,
+        ReadOnlyCount = report.ReadOnlyCount, CustomCount = report.CustomCount,
         EnclaveCount = report.EnclaveCount,
         ExplicitBoundaryCount = report.ExplicitBoundaryCount,
         ResolutionMode = (int)report.ResolutionMode,
@@ -58,7 +58,7 @@ internal static class IdentityDtoMapper
         TotalFoldersScanned = dto.TotalFoldersScanned,
         FullControlCount = dto.FullControlCount,
         ModifyCount = dto.ModifyCount,
-        ReadOnlyCount = dto.ReadOnlyCount,
+        ReadOnlyCount = dto.ReadOnlyCount, CustomCount = dto.CustomCount,
         EnclaveCount = dto.EnclaveCount,
         ExplicitBoundaryCount = dto.ExplicitBoundaryCount,
         ResolutionMode = (EffectiveAccessResolutionMode)dto.ResolutionMode,

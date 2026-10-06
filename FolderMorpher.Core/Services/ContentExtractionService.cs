@@ -220,7 +220,13 @@ namespace FolderMorpher.Services
             try
             {
                 byte[] head = new byte[(int)Math.Min(4096L, Math.Max(0L, stream.Length - origPos))];
-                int bytesRead = stream.Read(head, 0, head.Length);
+                int bytesRead = 0;
+                while (bytesRead < head.Length)
+                {
+                    int n = stream.Read(head, bytesRead, head.Length - bytesRead);
+                    if (n == 0) break;
+                    bytesRead += n;
+                }
                 stream.Position = origPos;
 
                 if (bytesRead >= 2)
@@ -258,7 +264,9 @@ namespace FolderMorpher.Services
                 try
                 {
                     var strictUtf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
-                    strictUtf8.GetString(head, 0, bytesRead);
+                    var decoder = strictUtf8.GetDecoder();
+                    decoder.Convert(head.AsSpan(0, bytesRead), new char[4096],
+                        flush: origPos + bytesRead >= stream.Length, out _, out _, out _);
                     if (!hasNonAscii)
                     {
                         // 先頭4KBがすべてASCII（0x00〜0x7F）の場合、後半にCP932文字が存在し得る（暫定判定）

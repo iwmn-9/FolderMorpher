@@ -404,13 +404,20 @@ namespace FolderMorpher.Services
             workbook.SaveAs(outputPath);
         }
 
-        public void ExportStorageScanResult(string outputPath, string targetPath, IEnumerable<AstraSize.Models.FileItemNode> items)
+        public void ExportStorageScanResult(string outputPath, string targetPath, IEnumerable<AstraSize.Models.FileItemNode> items, IReadOnlyList<string>? unavailableFolders = null)
         {
             using var wb = new XLWorkbook();
             var ws = wb.Worksheets.Add("容量分析結果");
             ws.ShowGridLines = true;
 
             // Title
+            if (unavailableFolders?.Count > 0)
+            {
+                var coverage = wb.Worksheets.Add("未確認範囲");
+                coverage.Cell(1, 1).Value = "部分走査 / Partial scan: unknown folders are not empty folders";
+                for (int i = 0; i < unavailableFolders.Count; i++) coverage.Cell(i + 2, 1).Value = unavailableFolders[i];
+                ws.Cell("B4").Value = $"部分走査 / Partial scan: {unavailableFolders.Count:N0} unavailable folders";
+            }
             ws.Cell("B2").Value = "FolderMorpher — 容量分析レポート";
             ws.Cell("B2").Style.Font.Bold = true;
             ws.Cell("B2").Style.Font.FontSize = 15;
@@ -808,7 +815,7 @@ namespace FolderMorpher.Services
                 ("Phase 2", "2-2", "中間転送ログ確認", "Logs\\Delta_*.log", "Phase 2完了直後", "エラーなく追いついていることを確認", "未着手"),
                 ("本番切替", "3-1", "業務終了確認 & 利用者ログオフ促進", "社内アナウンス / 連絡網", "切替当日 業務終了時刻", "旧共有へのアクセスが停止していること", "未着手"),
                 ("本番切替", "3-2", "旧共有の安全停止 (Freeze & Lock)", "各Wave\\03_PreCutover_Freeze_Guide.md 参照", "切替当日 業務停止直後", "共有権限またはNTFS拒否により旧フォルダーへの書き込みが停止していること", "未着手"),
-                ("Phase 4", "4-1", "最終カットオーバー同期 (/MIR) 実行", "各Wave\\04_Final_Cutover_Mirror.bat", "切替当日 旧共有停止後", "完全同期完了。旧環境の最終差分・削除がミラー反映されること", "未着手"),
+                ("Phase 4", "4-1", "最終カットオーバー同期 (統合期待一覧) 実行", "各Wave\\04_Final_Cutover_Mirror.bat", "切替当日 旧共有停止後", "全コピー元確認・統合期待一覧コピー・計画外対象削除を検証すること", "未着手"),
                 ("Phase 4", "4-2", "最終転送ログ確認", "Logs\\Cutover_*.log", "Phase 4完了直後", "Robocopy終了コード正常。重大エラーがないこと", "未着手"),
                 ("検証", "5-1", "新環境共有の導通・権限・書き込み検証", "クライアントPC実機テスト", "切替当日 夜間", "各部署のテストアカウントで想定通りアクセス・保存できること", "未着手"),
                 ("完了", "6-1", "新環境サービスイン アナウンス", "全社通知メール / チャット", "切替翌営業日 始業前", "新共有パスでの業務開始案内", "未着手"),
@@ -824,7 +831,7 @@ namespace FolderMorpher.Services
                 ("Phase 2", "2-2", "Review Delta Logs", "Logs\\Delta_*.log", "Immediately after Phase 2", "Verify delta synchronization completed without errors", "Not Started"),
                 ("Cutover", "3-1", "Confirm Business Close & User Logoff", "Internal Notification", "Cutover Day - Business End", "Ensure no active users are editing files", "Not Started"),
                 ("Cutover", "3-2", "Freeze Old Share (Read-Only Lock)", "Refer to Each Wave\\03_PreCutover_Freeze_Guide.md", "Cutover Day - Business End", "Verify write operations are blocked on old shares", "Not Started"),
-                ("Phase 4", "4-1", "Execute Final Cutover Mirror (/MIR)", "Each Wave\\04_Final_Cutover_Mirror.bat", "Cutover Day - After Share Lock", "Exact mirror completed within minutes/hours", "Not Started"),
+                ("Phase 4", "4-1", "Execute Final Cutover (Union Plan)", "Each Wave\\04_Final_Cutover_Mirror.bat", "Cutover Day - After Share Lock", "All sources checked; expected union copied; planned extra entries removed", "Not Started"),
                 ("Phase 4", "4-2", "Review Final Cutover Logs", "Logs\\Cutover_*.log", "Immediately after Phase 4", "Robocopy exit code normal", "Not Started"),
                 ("Verify", "5-1", "Verify New Share Access & Permissions", "Client PC Testing", "Cutover Night", "Test users verify read/write access per department", "Not Started"),
                 ("Complete", "6-1", "Service-In Announcement", "Company-wide Email / Chat", "Next Business Day - Before Opening", "Users resume work using the new file server UNC", "Not Started"),

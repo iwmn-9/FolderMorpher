@@ -117,10 +117,16 @@ public partial class HostService
         {
             if (string.IsNullOrWhiteSpace(request.FolderPath) || string.IsNullOrWhiteSpace(request.ExpectedOriginalSddl))
                 throw new ArgumentException("ACL preparation requires a folder and its original SDDL.");
+            var originals = request.OriginalEntries.Select(AclDtoMapper.ToCore).ToList();
+            var current = request.CurrentEntries.Select(AclDtoMapper.ToCore).ToList();
+            foreach (var entry in originals.Concat(current))
+            {
+                if (string.IsNullOrWhiteSpace(entry.Sid))
+                    entry.Sid = (string.IsNullOrWhiteSpace(entry.AccountName) ? throw new ArgumentException("ACL identity missing.") : new System.Security.Principal.NTAccount(entry.AccountName).Translate(typeof(System.Security.Principal.SecurityIdentifier))).Value;
+            }
             var plan = _aclService.BuildChangePlan(
                 request.FolderPath,
-                request.OriginalEntries.Select(AclDtoMapper.ToCore).ToList(),
-                request.CurrentEntries.Select(AclDtoMapper.ToCore).ToList(),
+                originals, current,
                 request.InheritanceAfter,
                 request.InheritanceBefore,
                 request.ExpectedOriginalSddl);

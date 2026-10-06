@@ -125,6 +125,8 @@ namespace FolderMorpher.Host
             } : null;
         });
 
+        private static bool ContainsScanError(FileItemNode node) => !string.IsNullOrEmpty(node.ErrorMessage) || node.Children.Any(ContainsScanError);
+
         public async Task<StorageScanResultDto> ScanStorageAsync(StorageScanRequestDto request, IProgress<StorageScanProgressDto>? progress, CancellationToken ct)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -155,12 +157,12 @@ namespace FolderMorpher.Host
 
                 try
                 {
-                    var previousRoot = FindLiveScanNode(request.TargetPath);
-                    if (previousRoot != null)
+                    var previousRoot = summary.IsCompleteCoverage ? FindLiveScanNode(request.TargetPath) : null;
+                    if (previousRoot != null && !ContainsScanError(previousRoot))
                     {
                         _storageHistory.ApplyTreeDiff(rootNode, previousRoot);
                     }
-                    else
+                    else if (summary.IsCompleteCoverage)
                     {
                         // Check shared JSON freshness without materializing the old SQLite tree.
                         var cachedBranch = await _storageHistory.LoadTreeCacheBranchAsync(request.TargetPath, request.TargetPath);
@@ -184,14 +186,32 @@ namespace FolderMorpher.Host
                 result.TotalFolders = rootNode.FolderCount;
                 result.Top10Files = summary.LargestFiles?.Select(StorageDtoMapper.ToDto).ToList() ?? new();
                 result.ScanMode = summary.ScanMode;
+                result.IsCompleteCoverage = summary.IsCompleteCoverage;
+                result.UnavailableFolders = summary.UnavailableFolders;
 
                 // DB キャッシュへの自動非同期永続化（トラッキング付き）
                 var persistenceTask = Task.Run(async () =>
                 {
                     try
                     {
-                        await _storageHistory.SaveTreeCacheAsync(rootNode);
-                        await _storageHistory.SaveSnapshotAsync(rootNode);
+                        if (summary.IsCompleteCoverage)
+                        {
+                            await _storageHistory.SaveTreeCacheAsync(rootNode);
+                            await _storageHistory.SaveSnapshotAsync(rootNode);
+                        }
+                        else
+                        {
+                            var testId = Environment.GetEnvironmentVariable("FOLDERMORPHER_TEST_IPC_ID");
+                            var directory = !string.IsNullOrEmpty(testId)
+                                ? Path.Combine(Path.GetTempPath(), "FolderMorpher_IpcPartial_" + testId)
+                                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FolderMorpher", "PartialScans");
+                            Directory.CreateDirectory(directory);
+                            string key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(PathCanonicalizer.Normalize(request.TargetPath))));
+                            string output = Path.Combine(directory, key + ".json");
+                            string temporary = output + ".tmp";
+                            await File.WriteAllTextAsync(temporary, System.Text.Json.JsonSerializer.Serialize(result));
+                            File.Move(temporary, output, overwrite: true);
+                        }
                         PruneLiveScanRoots();
                     }
                     catch (Exception ex)
@@ -261,6 +281,7 @@ namespace FolderMorpher.Host
 
         public async Task<List<ScanSnapshotDto>> GetStorageHistoryAsync(string targetPath)
         {
+            if (_pendingPersistenceTasks.TryGetValue(targetPath, out var pending)) await pending;
             var history = await _storageHistory.GetHistoryForPathAsync(targetPath);
             return history.Select(snapshot => new ScanSnapshotDto
             {
@@ -641,7 +662,9 @@ namespace FolderMorpher.Host
                 var fixProgress = progress != null 
                     ? new Progress<(string Path, bool Success)>(p => progress.Report($"修復中: {p.Path}"))
                     : null;
-                int repaired = await _linkFixService.ExecuteFixAsync(request.TargetShortcuts.Select(LinkFixDtoMapper.ToCore).ToList(), fixProgress, ct);
+                var items = request.TargetShortcuts.Select(LinkFixDtoMapper.ToCore).ToList();
+                int repaired = await _linkFixService.ExecuteFixAsync(items, fixProgress, ct);
+                result.UpdatedShortcuts = items.Select(LinkFixDtoMapper.ToDto).ToList();
                 result.RepairedCount += repaired;
             }
 
@@ -650,10 +673,13 @@ namespace FolderMorpher.Host
                 var offProgress = progress != null 
                     ? new Progress<(string File, bool Success, string Msg)>(p => progress.Report(p.Msg))
                     : null;
-                int repaired = await _officeLinkFixService.ExecuteOfficeFixAsync(request.TargetOfficeLinks.Select(LinkFixDtoMapper.ToCore).ToList(), offProgress, ct);
+                var items = request.TargetOfficeLinks.Select(LinkFixDtoMapper.ToCore).ToList();
+                int repaired = await _officeLinkFixService.ExecuteOfficeFixAsync(items, offProgress, ct);
+                result.UpdatedOfficeLinks = items.Select(LinkFixDtoMapper.ToDto).ToList();
                 result.RepairedCount += repaired;
             }
 
+            result.FailedCount = request.TargetShortcuts.Count + request.TargetOfficeLinks.Count - result.RepairedCount;
             return result;
         }
 

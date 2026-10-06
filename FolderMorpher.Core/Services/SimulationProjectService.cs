@@ -373,7 +373,7 @@ namespace AstraSize.Services
                                         {
                                             try
                                             {
-                                                var id = new NTAccount(entry.AccountName);
+                                                var id = AclService.ResolveIdentity(entry);
                                                 var rule = new FileSystemAccessRule(
                                                     id,
                                                     entry.Rights,
@@ -471,6 +471,9 @@ namespace AstraSize.Services
         /// </summary>
         public string GenerateRobocopyScript(IEnumerable<SimFolderNode> rootNodes, string targetRoot, bool copyAcl = false, int threads = 16)
         {
+            var roots = rootNodes.ToList();
+            var allSources = new List<string>();
+            foreach (var root in roots) { allSources.AddRange(root.MappedSourcePaths); CollectDescendantSources(root, allSources); }
             var copyFlags = copyAcl ? "/COPYALL" : "/COPY:DAT";
             var modeDesc = copyAcl
                 ? "旧環境ACL完全維持モード (/COPYALL: 旧環境のアクセス権をそのまま移行先に引き継ぎます)"
@@ -478,10 +481,11 @@ namespace AstraSize.Services
 
             var sb = new StringBuilder();
             sb.AppendLine("@echo off");
+            sb.AppendLine("setlocal DisableDelayedExpansion");
             sb.AppendLine("chcp 65001 > nul");
             sb.AppendLine("echo ==================================================================");
             sb.AppendLine("echo   FolderMorpher - High Performance Robocopy Batch");
-            sb.AppendLine($"echo   Target Root   : {targetRoot}");
+            sb.AppendLine("echo   Target Root: see robocopy commands below");
             sb.AppendLine($"echo   Transfer Mode : {modeDesc}");
             sb.AppendLine($"echo   Generated     : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sb.AppendLine("echo ==================================================================");
@@ -522,7 +526,7 @@ namespace AstraSize.Services
                 var targetFolder = Path.Combine(currentTarget, node.Name);
 
                 var descendantSources = new List<string>();
-                CollectDescendantSources(node, descendantSources);
+                descendantSources.AddRange(allSources);
 
                 foreach (var src in node.MappedSourcePaths)
                 {
@@ -539,7 +543,7 @@ namespace AstraSize.Services
                         ? " /XD " + string.Join(" ", excludedDirs.Select(d => ScriptEscaper.EscapeBatPath(d)))
                         : "";
 
-                    sb.AppendLine($"echo [移行実行] {escSrc} ➔ {escDst}");
+                    sb.AppendLine("echo Migration transfer");
                     sb.AppendLine($"robocopy {escSrc} {escDst} /E {copyFlags} /DCOPY:DAT /R:2 /W:3 /MT:{threads} /NP /TEE{xdParam} /LOG+:\"%TEMP%\\FolderMorpher_Robocopy_{DateTime.Now:yyyyMMdd}.log\"");
                     sb.AppendLine();
                 }
@@ -550,7 +554,7 @@ namespace AstraSize.Services
                 }
             }
 
-            foreach (var r in rootNodes)
+            foreach (var r in roots)
             {
                 AppendRoboNode(r, targetRoot);
             }
@@ -593,7 +597,7 @@ namespace AstraSize.Services
     }
     foreach ($r in $Rules) {
         try {
-            $account = New-Object System.Security.Principal.NTAccount($r.Account)
+            $account = if ($r.Account -match '^S-1-') { New-Object System.Security.Principal.SecurityIdentifier($r.Account) } else { (New-Object System.Security.Principal.NTAccount($r.Account)).Translate([System.Security.Principal.SecurityIdentifier]) }
             $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
                 $account,
                 [System.Security.AccessControl.FileSystemRights]$r.Rights,
@@ -603,7 +607,7 @@ namespace AstraSize.Services
             )
             $acl.AddAccessRule($rule)
         } catch {
-            Write-Warning ""ACL entry failed for $($r.Account) on ${Path}: $_""
+            throw ""ACL entry failed for $($r.Account) on ${Path}: $_""
         }
     }
     $item.SetAccessControl($acl)
@@ -652,7 +656,7 @@ namespace AstraSize.Services
                     var accTypeStr = acl.AccessType == AccessControlType.Deny ? "Deny" : "Allow";
                     var comment = $"{acl.AccessType} {acl.FormattedRights}";
 
-                    ruleItems.Add($"        [pscustomobject]@{{ Account = \"{ScriptEscaper.EscapePowerShellString(acl.AccountName)}\"; Rights = {rightsInt}; Inheritance = {inhInt}; Propagation = {propInt}; AccessType = \"{accTypeStr}\" }} # {comment}");
+                    ruleItems.Add($"        [pscustomobject]@{{ Account = \"{ScriptEscaper.EscapePowerShellString(string.IsNullOrWhiteSpace(acl.Sid) ? acl.AccountName : acl.Sid)}\"; Rights = {rightsInt}; Inheritance = {inhInt}; Propagation = {propInt}; AccessType = \"{accTypeStr}\" }} # {comment}");
                 }
 
                 sb.AppendLine($"Set-FolderMorpherAcl -Path {pathVar} -Inherit {inheritParam} -Rules @(");

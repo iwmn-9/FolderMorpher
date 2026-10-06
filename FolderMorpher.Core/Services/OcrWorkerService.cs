@@ -53,7 +53,9 @@ namespace FolderMorpher.Services
                     return !string.IsNullOrEmpty(_cachedOcrDir) && !string.IsNullOrEmpty(_cachedPythonExe);
                 }
 
-                _cachedOcrDir = ResolveOcrDirectory();
+                try { _cachedOcrDir = ResolveOcrDirectory(); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+                { _cachedOcrDir = null; }
                 if (!string.IsNullOrEmpty(_cachedOcrDir))
                 {
                     _cachedPythonExe = ResolvePythonExecutable(_cachedOcrDir);
@@ -101,18 +103,7 @@ namespace FolderMorpher.Services
                 return Path.GetFullPath(localOcr);
             }
 
-            // 4. 開発環境フォールバック (..\Filunest\release\ocr)
-            try
-            {
-                string devPath = Path.GetFullPath(Path.Combine(appDir, "..", "..", "..", "..", "Filunest", "release", "ocr"));
-                if (Directory.Exists(devPath) && IsValidOcrDir(devPath))
-                {
-                    return devPath;
-                }
-            }
-            catch { }
-
-            return null;
+            return EmbeddedOcrRuntime.Prepare();
         }
 
         private static bool IsValidOcrDir(string dir)
@@ -191,9 +182,13 @@ namespace FolderMorpher.Services
         /// <summary>
         /// クエリ条件とOCR結果を照合し、マッチした場合は抜粋スニペットを生成する
         /// </summary>
+        public static bool TryMatchOcrDocument(OcrDocumentResult doc, SearchQuery query, out string? snippet, out int page)
+            => TryMatchOcrDocument(doc, query, null, out snippet, out page);
+
         public static bool TryMatchOcrDocument(
             OcrDocumentResult doc,
             SearchQuery query,
+            SearchResultItem? candidate,
             out string? matchedSnippet,
             out int matchedPage)
         {
@@ -202,69 +197,15 @@ namespace FolderMorpher.Services
 
             if (!doc.Success || doc.Pages.Count == 0) return false;
 
-            // 検索キーワードの特定
-            var searchTerms = new List<string>();
-            if (!string.IsNullOrWhiteSpace(query.ContentKeyword))
-            {
-                searchTerms.Add(query.ContentKeyword.Trim());
-            }
-            if (query.SearchContentMode && query.Keywords.Count > 0)
-            {
-                searchTerms.AddRange(query.Keywords);
-            }
-            if (query.ExactPhrases.Count > 0)
-            {
-                searchTerms.AddRange(query.ExactPhrases);
-            }
-
-            if (searchTerms.Count == 0 && query.CompiledRegex == null)
-            {
-                return false;
-            }
-
+            var groups = SearchEngineService.GetRequiredContentGroups(candidate ?? new SearchResultItem(), query);
+            if (groups.Count == 0) return false;
             foreach (var page in doc.Pages)
             {
-                bool pageMatches = false;
-                string? snippetForPage = null;
-
-                if (query.CompiledRegex != null)
-                {
-                    var m = query.CompiledRegex.Match(page.FullText);
-                    if (m.Success)
-                    {
-                        pageMatches = true;
-                        snippetForPage = Extract3LineWindowSnippet(page.Lines, m.Value);
-                    }
-                }
-                else
-                {
-                    // AND 条件判定：すべての searchTerms がページ内に含まれるか
-                    bool allMatched = true;
-                    string? firstFoundTerm = null;
-
-                    foreach (var term in searchTerms)
-                    {
-                        if (page.FullText.IndexOf(term, StringComparison.OrdinalIgnoreCase) < 0)
-                        {
-                            allMatched = false;
-                            break;
-                        }
-                        firstFoundTerm ??= term;
-                    }
-
-                    if (allMatched && firstFoundTerm != null)
-                    {
-                        pageMatches = true;
-                        snippetForPage = Extract3LineWindowSnippet(page.Lines, firstFoundTerm);
-                    }
-                }
-
-                if (pageMatches)
-                {
-                    matchedPage = page.PageNumber;
-                    matchedSnippet = snippetForPage ?? (page.Lines.Count > 0 ? page.Lines[0] : string.Empty);
-                    return true;
-                }
+                if (!groups.All(group => group.Any(term => page.FullText.Contains(term, StringComparison.OrdinalIgnoreCase)))) continue;
+                string term = groups.SelectMany(g => g).First(t => page.FullText.Contains(t, StringComparison.OrdinalIgnoreCase));
+                matchedPage = page.PageNumber;
+                matchedSnippet = Extract3LineWindowSnippet(page.Lines, term);
+                return true;
             }
 
             return false;
@@ -340,7 +281,7 @@ namespace FolderMorpher.Services
                 var psi = new ProcessStartInfo
                 {
                     FileName = _pythonExe,
-                    Arguments = $"\"{workerScript}\"",
+                    Arguments = $"-I -B \"{workerScript}\"",
                     WorkingDirectory = _ocrDir,
                     UseShellExecute = false,
                     RedirectStandardInput = true,
@@ -354,6 +295,7 @@ namespace FolderMorpher.Services
                 _process = Process.Start(psi);
                 if (_process == null) return false;
 
+                _ = _process.StandardError.ReadToEndAsync(ct);
                 _stdin = _process.StandardInput;
                 _stdout = _process.StandardOutput;
 
@@ -365,8 +307,10 @@ namespace FolderMorpher.Services
                     string? line = await _stdout.ReadLineAsync(timeoutCts.Token);
                     if (line == null) break;
 
+                    if (line.Length > 4 * 1024 * 1024) throw new IOException("OCR response exceeded page limit.");
                     line = line.Trim();
-                    if (line.Contains("\"kind\":\"ready\"") || line.Contains("\"kind\": \"ready\""))
+                    using var ready = JsonDocument.Parse(line);
+                    if (ready.RootElement.TryGetProperty("kind", out var kind) && kind.GetString() == "ready")
                     {
                         return true;
                     }
@@ -396,6 +340,7 @@ namespace FolderMorpher.Services
                 var pages = new List<OcrWorkerService.OcrPageInfo>();
                 string? warningMessage = null;
 
+                bool completed = false;
                 // {"path": "..."} を送信
                 string reqJson = JsonSerializer.Serialize(new { path = filePath });
                 await _stdin.WriteLineAsync(reqJson);
@@ -414,6 +359,7 @@ namespace FolderMorpher.Services
                         return new OcrWorkerService.OcrDocumentResult(filePath, false, pages, "OCRワーカーが応答途中で終了しました");
                     }
 
+                    if (line.Length > 4 * 1024 * 1024) throw new IOException("OCR response exceeded page limit.");
                     line = line.Trim();
                     if (string.IsNullOrEmpty(line)) continue;
 
@@ -425,6 +371,7 @@ namespace FolderMorpher.Services
 
                         if (kind == "done")
                         {
+                            completed = true;
                             break;
                         }
                         else if (kind == "warning")
@@ -461,12 +408,14 @@ namespace FolderMorpher.Services
                     }
                     catch
                     {
-                        // JSONパース失敗時は無視
+                        throw new IOException("Invalid OCR JSON response.");
                     }
                 }
 
+                if (!completed) { KillProcessSafe(); throw new IOException("OCR response incomplete."); }
                 return new OcrWorkerService.OcrDocumentResult(filePath, true, pages, warningMessage);
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { KillProcessSafe(); throw; }
             catch (Exception ex)
             {
                 KillProcessSafe();

@@ -83,6 +83,8 @@ namespace AstraSize.Services
                 {
                     node.Entries.Add(new AclEntry
                     {
+                        Sid = ((SecurityIdentifier)rule.IdentityReference.Translate(typeof(SecurityIdentifier))).Value,
+                        InheritanceFlags = rule.InheritanceFlags, PropagationFlags = rule.PropagationFlags,
                         Identity = rule.IdentityReference.Value,
                         DisplayName = rule.IdentityReference.Value,
                         Rights = rule.FileSystemRights,
@@ -122,6 +124,12 @@ namespace AstraSize.Services
         }
 
         // Export Access Matrix Ledger (Excel / CSV)
+        internal static SecurityIdentifier ResolveIdentity(SimAclEntry entry)
+        {
+            if (!string.IsNullOrWhiteSpace(entry.Sid)) return new SecurityIdentifier(entry.Sid);
+            return (SecurityIdentifier)new NTAccount(entry.AccountName).Translate(typeof(SecurityIdentifier));
+        }
+
         public string GenerateMatrixCsv(FolderAclNode rootNode)
         {
             var allFolders = new List<FolderAclNode>();
@@ -132,46 +140,14 @@ namespace AstraSize.Services
             }
             Flatten(rootNode);
 
-            // Collect all unique identities
-            var allIdentities = allFolders
-                .SelectMany(f => f.Entries.Select(e => e.Identity))
-                .Distinct()
-                .OrderBy(id => id)
-                .ToList();
-
-            var sb = new StringBuilder();
-            sb.Append('\uFEFF'); // UTF-8 BOM for Excel
-
-            // Header row
-            sb.Append("フォルダパス,フォルダ名,継承設定");
-            foreach (var id in allIdentities)
-            {
-                sb.Append($",\"{id.Replace("\"", "\"\"")}\"");
-            }
-            sb.AppendLine();
-
-            // Data rows
-            foreach (var f in allFolders)
-            {
-                sb.Append($"\"{f.Path.Replace("\"", "\"\"")}\",");
-                sb.Append($"\"{f.Name.Replace("\"", "\"\"")}\",");
-                sb.Append(f.AreAccessRulesProtected ? "固有設定(継承無効)" : "親から継承中");
-
-                foreach (var id in allIdentities)
-                {
-                    var entry = f.Entries.FirstOrDefault(e => e.Identity.Equals(id, StringComparison.OrdinalIgnoreCase));
-                    if (entry != null)
-                    {
-                        string mark = $"{entry.FormattedRights}{(entry.IsInherited ? " (継承)" : "")}";
-                        sb.Append($",\"{mark}\"");
-                    }
-                    else
-                    {
-                        sb.Append(",\"-\"");
-                    }
-                }
-                sb.AppendLine();
-            }
+            static string Csv(object value) => "\"" + value.ToString()!.Replace("\"", "\"\"") + "\"";
+            var sb = new StringBuilder("\uFEFFPath,Folder,Protected,SID,Identity,AccessType,Rights,RightsBits,Inherited,InheritanceFlags,PropagationFlags\r\n");
+            foreach (var folder in allFolders)
+                foreach (var entry in folder.Entries)
+                    sb.AppendLine(string.Join(",", new object[] { folder.Path, folder.Name,
+                        folder.AreAccessRulesProtected, entry.Sid, entry.Identity, entry.AccessType,
+                        entry.Rights, (int)entry.Rights, entry.IsInherited, entry.InheritanceFlags,
+                        entry.PropagationFlags }.Select(Csv)));
 
             return sb.ToString();
         }
@@ -431,14 +407,14 @@ namespace AstraSize.Services
 
             foreach (var entry in denyEntries)
             {
-                var identity = new NTAccount(entry.AccountName);
+                var identity = ResolveIdentity(entry);
                 var rule = new FileSystemAccessRule(identity, entry.Rights, entry.InheritanceFlags, entry.PropagationFlags, AccessControlType.Deny);
                 sec.AddAccessRule(rule);
             }
 
             foreach (var entry in allowEntries)
             {
-                var identity = new NTAccount(entry.AccountName);
+                var identity = ResolveIdentity(entry);
                 var rule = new FileSystemAccessRule(identity, entry.Rights, entry.InheritanceFlags, entry.PropagationFlags, AccessControlType.Allow);
                 sec.AddAccessRule(rule);
             }
@@ -617,7 +593,7 @@ namespace AstraSize.Services
             // 変更ACEの旧ルール削除
             foreach (var (oldEntry, _) in plan.Modified)
             {
-                var identity = new NTAccount(oldEntry.AccountName);
+                var identity = ResolveIdentity(oldEntry);
                 var rule = new FileSystemAccessRule(identity, oldEntry.Rights, oldEntry.InheritanceFlags, oldEntry.PropagationFlags, oldEntry.AccessType);
                 sec.RemoveAccessRuleSpecific(rule);
             }
@@ -625,7 +601,7 @@ namespace AstraSize.Services
             // 削除ACEのピンポイント削除
             foreach (var entry in plan.Removed)
             {
-                var identity = new NTAccount(entry.AccountName);
+                var identity = ResolveIdentity(entry);
                 var rule = new FileSystemAccessRule(identity, entry.Rights, entry.InheritanceFlags, entry.PropagationFlags, entry.AccessType);
                 sec.RemoveAccessRuleSpecific(rule);
             }
@@ -634,7 +610,7 @@ namespace AstraSize.Services
             foreach (var (oldEntry, newEntry) in plan.Modified)
             {
                 var accName = oldEntry.AccountName.Contains('\\') ? oldEntry.AccountName : newEntry.AccountName;
-                var identity = new NTAccount(accName);
+                var identity = ResolveIdentity(newEntry);
                 var rule = new FileSystemAccessRule(identity, newEntry.Rights, newEntry.InheritanceFlags, newEntry.PropagationFlags, newEntry.AccessType);
                 sec.AddAccessRule(rule);
             }
@@ -642,7 +618,7 @@ namespace AstraSize.Services
             // 追加ACEのピンポイント追加
             foreach (var entry in plan.Added)
             {
-                var identity = new NTAccount(entry.AccountName);
+                var identity = ResolveIdentity(entry);
                 var rule = new FileSystemAccessRule(identity, entry.Rights, entry.InheritanceFlags, entry.PropagationFlags, entry.AccessType);
                 sec.AddAccessRule(rule);
             }

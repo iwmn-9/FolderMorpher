@@ -34,6 +34,9 @@ public sealed class HostJobRequestDto
 
 public sealed class HostJobStatusDto
 {
+    public string OcrWarning { get; set; } = string.Empty;
+    public int RetainedCount => SearchResults?.Count ?? 0;
+    public bool ResultsTruncated => State == HostJobState.Completed && HitCount > RetainedCount;
     public Guid JobId { get; set; }
     public HostJobKind Kind { get; set; }
     public HostJobState State { get; set; }

@@ -16,7 +16,8 @@ namespace FolderMorpher.Models
         Read = 1,
         ReadAndExecute = 2,
         Modify = 3,
-        FullControl = 4
+        FullControl = 4,
+        Custom = 5
     }
 
     /// <summary>
@@ -74,6 +75,7 @@ namespace FolderMorpher.Models
             EffectivePermissionLevel.Modify => Strings.SecModify,
             EffectivePermissionLevel.ReadAndExecute => Strings.SecReadExecute,
             EffectivePermissionLevel.Read => Strings.SecRead,
+            EffectivePermissionLevel.Custom => $"{(LocalizationService.Instance.CurrentLanguage == AppLanguage.English ? "Custom" : "特殊")} ({AllowedRights})",
             _ => Strings.RevRightsNone
         };
 
@@ -145,6 +147,7 @@ namespace FolderMorpher.Models
         public int FullControlCount { get; set; } = 0;
         public int ModifyCount { get; set; } = 0;
         public int ReadOnlyCount { get; set; } = 0;
+        public int CustomCount { get; set; } = 0;
         public int EnclaveCount { get; set; } = 0;
         public int SeveredCount => SeveredFolders.Count;
         public int UnavailableCount => UnavailableFolders.Count;

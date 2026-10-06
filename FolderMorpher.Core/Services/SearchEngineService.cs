@@ -91,8 +91,12 @@ namespace FolderMorpher.Services
             return await Task.Run(async () =>
             {
                 var sw = Stopwatch.StartNew();
+                string ocrWarning = string.Empty;
                 var results = new List<SearchResultItem>();
                 int scannedCount = 0;
+                int totalNameHits = 0, contentHitCount = 0, ocrHitCount = 0;
+                long totalMatchedBytes = 0;
+                var allHitPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var candidates = new List<SearchResultItem>();
                 var ocrCandidates = new List<SearchResultItem>();
 
@@ -104,7 +108,7 @@ namespace FolderMorpher.Services
                     scannedCount++;
 
                     string nodeExt = node.IsDirectory ? string.Empty : Path.GetExtension(node.Name).ToLowerInvariant();
-                    if (query.IncludeOcr && !node.IsDirectory && OcrWorkerService.IsSupportedOcrExtension(nodeExt))
+                    if (query.IncludeOcr && !node.IsDirectory && OcrWorkerService.IsSupportedOcrExtension(nodeExt) && IsMatchBasic(node, query, out _, out bool ocrNeedsDeepCheck) && ocrNeedsDeepCheck)
                     {
                         ocrCandidates.Add(new SearchResultItem
                         {
@@ -140,6 +144,9 @@ namespace FolderMorpher.Services
                         }
                         else
                         {
+                            totalNameHits++;
+                            totalMatchedBytes += item.SizeBytes;
+
                             if (results.Count < MaxRetainedResults)
                             {
                                 results.Add(item);
@@ -173,17 +180,20 @@ namespace FolderMorpher.Services
                         ct,
                         batchYield,
                         sw,
-                        initialHitCount: results.Count,
-                        initialTotalBytes: results.Sum(r => r.SizeBytes),
+                        initialHitCount: totalNameHits + contentHitCount,
+                        initialTotalBytes: totalMatchedBytes,
                         scannedCount: scannedCount);
-                    results.AddRange(contentResults);
+                    contentHitCount = contentResults.Count;
+                    totalMatchedBytes += contentResults.Sum(i => i.SizeBytes);
+                    if (query.IncludeOcr) allHitPaths.UnionWith(contentResults.Where(i => OcrWorkerService.IsSupportedOcrExtension(i.Extension)).Select(i => i.FullPath));
+                    results.AddRange(contentResults.Take(Math.Max(0, MaxRetainedResults - results.Count)));
                 }
 
                 // ★ ADR 144: 第2ロケット（遅延OCR走査）
                 // 通常検索（第1ロケット）を先行返却後、未ヒットの画像・PDFに対してOCR遅延走査を実行
                 if (query.IncludeOcr && ocrCandidates.Count > 0)
                 {
-                    var existingHitPaths = new HashSet<string>(results.Select(r => r.FullPath), StringComparer.OrdinalIgnoreCase);
+                    var existingHitPaths = allHitPaths;
                     var ocrHits = await ExecuteOcrStageAsync(
                         ocrCandidates,
                         existingHitPaths,
@@ -193,17 +203,20 @@ namespace FolderMorpher.Services
                         ct,
                         sw,
                         initialScannedCount: scannedCount,
-                        initialHitCount: results.Count,
-                        initialTotalBytes: results.Sum(r => r.SizeBytes));
-                    results.AddRange(ocrHits);
+                        initialHitCount: totalNameHits + contentHitCount,
+                        initialTotalBytes: totalMatchedBytes, recordWarning: w => ocrWarning = w);
+                    ocrHitCount = ocrHits.Count;
+                    totalMatchedBytes += ocrHits.Sum(i => i.SizeBytes);
+                    results.AddRange(ocrHits.Take(Math.Max(0, MaxRetainedResults - results.Count)));
                 }
 
                 sw.Stop();
                 progress?.Report(new SearchProgressReport
                 {
-                    HitCount = results.Count,
+                    OcrWarning = ocrWarning,
+                    HitCount = totalNameHits + contentHitCount + ocrHitCount,
                     ScannedCount = scannedCount,
-                    TotalHitBytes = results.Sum(r => r.SizeBytes),
+                    TotalHitBytes = totalMatchedBytes,
                     Elapsed = sw.Elapsed,
                     IsCompleted = true
                 });
@@ -227,6 +240,7 @@ namespace FolderMorpher.Services
             return await Task.Run(async () =>
             {
                 var sw = Stopwatch.StartNew();
+                string ocrWarning = string.Empty;
                 var results = new List<SearchResultItem>();
                 var currentBatch = new List<SearchResultItem>();
                 var batchLock = new object();
@@ -358,7 +372,7 @@ namespace FolderMorpher.Services
                     if (query.IncludeOcr && !isEntryDir)
                     {
                         string entryExt = Path.GetExtension(entry.Name).ToLowerInvariant();
-                        if (OcrWorkerService.IsSupportedOcrExtension(entryExt))
+                        if (OcrWorkerService.IsSupportedOcrExtension(entryExt) && IsMatchEntry(entry, query, out _, out _))
                         {
                             ocrCandidates.Add(new SearchResultItem
                             {
@@ -574,11 +588,11 @@ namespace FolderMorpher.Services
                         sw,
                         initialScannedCount: scannedCount,
                         initialHitCount: Volatile.Read(ref hitCount),
-                        initialTotalBytes: Interlocked.Read(ref totalHitBytes));
+                        initialTotalBytes: Interlocked.Read(ref totalHitBytes), recordWarning: w => ocrWarning = w);
 
                     lock (batchLock)
                     {
-                        results.AddRange(ocrHits);
+                        results.AddRange(ocrHits.Take(Math.Max(0, MaxRetainedResults - results.Count)));
                     }
                     Interlocked.Add(ref hitCount, ocrHits.Count);
                     Interlocked.Add(ref totalHitBytes, ocrHits.Sum(h => h.SizeBytes));
@@ -595,6 +609,7 @@ namespace FolderMorpher.Services
                 var (finalDiscovered, finalCompleted) = DirectoryProgress();
                 progress?.Report(new SearchProgressReport
                 {
+                    OcrWarning = ocrWarning,
                     HitCount = Volatile.Read(ref hitCount),
                     ScannedCount = scannedCount,
                     ContentProcessedCount = Volatile.Read(ref deepProcessed),
@@ -804,7 +819,7 @@ namespace FolderMorpher.Services
                 else
                 {
                     // 不足キーワードがある、またはcontent:必須条件がある場合は本文抽出対応拡張子のみ候補へ
-                    if (!ContentExtractionService.SupportedExtensions.Contains(ext)) return false;
+                    if (!ContentExtractionService.SupportedExtensions.Contains(ext) && !(query.IncludeOcr && OcrWorkerService.IsSupportedOcrExtension(ext))) return false;
 
                     needsDeepCheck = true;
                     reason = "Candidate for Content";
@@ -824,7 +839,7 @@ namespace FolderMorpher.Services
                 }
                 else if (hasMandatoryContent)
                 {
-                    isDeepTarget = ContentExtractionService.SupportedExtensions.Contains(ext);
+                    isDeepTarget = ContentExtractionService.SupportedExtensions.Contains(ext) || (query.IncludeOcr && OcrWorkerService.IsSupportedOcrExtension(ext));
                 }
 
                 if (!isDeepTarget) return false;
@@ -1091,20 +1106,9 @@ namespace FolderMorpher.Services
         /// 【ADR 91】巨大ファイルでProbe未ヒット時は allowDeferred=true なら (false, true) を返し、後回しにする。
         /// 【ADR 95】クエリ単位で共有された QuerySearchContext を使用し、検索機械のファイル毎再生成を根絶。
         /// </summary>
-        private static async Task<(bool isHit, bool isDeferred)> InspectContentItemAsync(
-            SearchResultItem item,
-            SearchQuery query,
-            bool hasOfficeLinkReq,
-            string? officeLinkKeyword,
-            CancellationToken token,
-            bool allowDeferred = true,
-            QuerySearchContext? sharedContext = null,
-            Action<double>? reportIoElapsed = null,
-            bool skipCompletedProbe = false)
+        internal static List<List<string>> GetRequiredContentGroups(SearchResultItem item, SearchQuery query)
         {
-            string ext = Path.GetExtension(item.FullPath).ToLowerInvariant();
 
-            // ファイル名/パスに含まれていない未充足グループを特定
             List<List<string>> requiredGroups = new();
 
             // 1. content: キーワードは本文検査に絶対必須
@@ -1147,6 +1151,24 @@ namespace FolderMorpher.Services
                     }
                 }
             }
+
+            return requiredGroups;
+        }
+
+        private static async Task<(bool isHit, bool isDeferred)> InspectContentItemAsync(
+            SearchResultItem item,
+            SearchQuery query,
+            bool hasOfficeLinkReq,
+            string? officeLinkKeyword,
+            CancellationToken token,
+            bool allowDeferred = true,
+            QuerySearchContext? sharedContext = null,
+            Action<double>? reportIoElapsed = null,
+            bool skipCompletedProbe = false)
+        {
+            string ext = Path.GetExtension(item.FullPath).ToLowerInvariant();
+
+            var requiredGroups = GetRequiredContentGroups(item, query);
 
             // 不足グループが0件なら、名前/パスで既に完全一致しているので本文走査不要で即合格
             if (requiredGroups.Count == 0 && !hasOfficeLinkReq)
@@ -1286,41 +1308,14 @@ namespace FolderMorpher.Services
                 using var fs = ContentExtractionService.OpenBufferedReadStream(filePath);
                 using var zip = new ZipArchive(fs, ZipArchiveMode.Read, false);
 
-                foreach (var entry in zip.Entries)
+                foreach (var entry in zip.Entries.Where(e => e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase)))
                 {
-                    string entryName = entry.FullName.ToLowerInvariant();
-                    if (!entryName.Contains("externallink") &&
-                        !entryName.Contains("externalreferences") &&
-                        !entryName.Contains("_rels") &&
-                        !entryName.EndsWith(".rels") &&
-                        !entryName.Contains("worksheets")) continue;
-
-                    using var stream = entry.Open();
-                    using var reader = new StreamReader(stream, Encoding.UTF8);
-                    string text = reader.ReadToEnd();
-
-                    if (string.IsNullOrEmpty(keyword))
+                    using var reader = new StreamReader(entry.Open(), Encoding.UTF8);
+                    foreach (string value in OfficeLinkDocument.Values(OfficeLinkDocument.Parse(reader.ReadToEnd())))
                     {
-                        if (text.Contains("TargetMode=\"External\"", StringComparison.OrdinalIgnoreCase) ||
-                            text.Contains("http://", StringComparison.OrdinalIgnoreCase) ||
-                            text.Contains("https://", StringComparison.OrdinalIgnoreCase) ||
-                            text.Contains(@"\\", StringComparison.OrdinalIgnoreCase) ||
-                            entryName.Contains("externallink"))
-                        {
-                            var match = Regex.Match(text, @"(?:Target=""([^""]+)""|TargetMode=""External""[^>]*>|(\\\\[a-zA-Z0-9._$-]+\\[^""<\s]+))", RegexOptions.IgnoreCase);
-                            snippet = match.Success ? match.Groups[1].Value : "Office External Link Detected";
-                            if (string.IsNullOrWhiteSpace(snippet)) snippet = "Office External Link";
-                            return true;
-                        }
-                    }
-                    else
-                    {
-                        int idx = text.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
-                        if (idx >= 0)
-                        {
-                            snippet = ContentExtractionService.ExtractSnippet(text, idx, keyword.Length);
-                            return true;
-                        }
+                        if (!string.IsNullOrEmpty(keyword) && !value.Contains(keyword, StringComparison.OrdinalIgnoreCase)) continue;
+                        snippet = value;
+                        return true;
                     }
                 }
             }
@@ -1342,18 +1337,19 @@ namespace FolderMorpher.Services
             Stopwatch sw,
             int initialScannedCount,
             int initialHitCount,
-            long initialTotalBytes)
+            long initialTotalBytes, Action<string>? recordWarning = null)
         {
             var ocrHits = new List<SearchResultItem>();
+            if (query.HasOfficeLinkOnly || !string.IsNullOrWhiteSpace(query.OfficeLinkKeyword)) return ocrHits;
             var remainingCandidates = ocrCandidates
                 .Where(c => !existingHitPaths.Contains(c.FullPath))
                 .ToList();
 
             if (remainingCandidates.Count == 0) return ocrHits;
-            if (!OcrWorkerService.IsEnvironmentAvailable()) return ocrHits;
+            if (!OcrWorkerService.IsEnvironmentAvailable()) { recordWarning?.Invoke("OCR未実行 / OCR unavailable"); return ocrHits; }
 
             await using var ocrClient = await OcrWorkerService.TryCreateClientAsync(ct);
-            if (ocrClient == null) return ocrHits;
+            if (ocrClient == null) { recordWarning?.Invoke("OCR起動失敗 / OCR startup failed"); return ocrHits; }
 
             var currentBatch = new List<SearchResultItem>();
             int hitCount = initialHitCount;
@@ -1368,7 +1364,9 @@ namespace FolderMorpher.Services
                 try
                 {
                     var docResult = await ocrClient.ProcessFileAsync(candidate.FullPath, ct);
-                    if (OcrWorkerService.TryMatchOcrDocument(docResult, query, out string? snippet, out int matchedPage))
+                    if (!docResult.Success || !string.IsNullOrEmpty(docResult.Warning))
+                        recordWarning?.Invoke("OCR一部未確認 / OCR incomplete: " + docResult.Warning);
+                    if (OcrWorkerService.TryMatchOcrDocument(docResult, query, candidate, out string? snippet, out int matchedPage))
                     {
                         var hitItem = new SearchResultItem
                         {

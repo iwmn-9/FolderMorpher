@@ -658,7 +658,7 @@ namespace AstraSize
                                 }
                             }, testCts.Token);
                             if (!File.Exists(diffPath)) throw new InvalidOperationException("Migration diff export failed.");
-                            project.RootFolders[0].MappedSourcePaths.Add(testRoot);
+                            project.RootFolders[0].MappedSourcePaths.Add(sourceChildPath);
                             var packageOptions = new FolderMorpher.Contracts.MigrationPackageOptionsDto
                             {
                                 OutputDirectory = testRoot,
@@ -734,6 +734,60 @@ namespace AstraSize
                                 throw new InvalidOperationException("Effective Access DTO roundtrip failed.");
                             await host.ReleaseJobAsync(effectiveJobId);
                             Console.WriteLine("[TEST-IPC] Effective Access Host Job: SUCCESS");
+                            var ocrImage = Path.Combine(testRoot, "ocr-invoice.png");
+                            using (var image = new System.Drawing.Bitmap(1000, 220))
+                            using (var graphics = System.Drawing.Graphics.FromImage(image))
+                            using (var font = new System.Drawing.Font("Arial", 48))
+                            {
+                                graphics.Clear(System.Drawing.Color.White);
+                                graphics.DrawString("INVOICE 2026 ALPHA", font, System.Drawing.Brushes.Black, 30, 65);
+                                image.Save(ocrImage, System.Drawing.Imaging.ImageFormat.Png);
+                            }
+                            using var ocrCts = new System.Threading.CancellationTokenSource(TimeSpan.FromMinutes(2));
+                            var ocrHits = await host.SearchAsync(testRoot, new FolderMorpher.Contracts.SearchQueryDto
+                            {
+                                ContentKeyword = "INVOICE", IncludeOcr = true, Extensions = new() { ".png" }
+                            }, null, ocrCts.Token);
+                            if (ocrHits.Count != 1 || !ocrHits[0].IsOcrEstimated)
+                                throw new InvalidOperationException("Embedded OCR did not roundtrip through the published Host.");
+                            var filteredOcr = await host.SearchAsync(testRoot, new FolderMorpher.Contracts.SearchQueryDto
+                            {
+                                ContentKeyword = "INVOICE", IncludeOcr = true, Extensions = new() { ".txt" }
+                            }, null, ocrCts.Token);
+                            if (filteredOcr.Count != 0) throw new InvalidOperationException("OCR bypassed extension filters.");
+                            Console.WriteLine("[TEST-IPC] Embedded OCR inference and filters: SUCCESS");
+                            var baselineHistory = await host.GetStorageHistoryAsync(testRoot);
+                            var blockedPath = Path.Combine(testRoot, "unavailable-branch");
+                            Directory.CreateDirectory(blockedPath);
+                            var blockedDirectory = new DirectoryInfo(blockedPath);
+                            var originalAcl = System.IO.FileSystemAclExtensions.GetAccessControl(blockedDirectory);
+                            try
+                            {
+                                var blockedAcl = System.IO.FileSystemAclExtensions.GetAccessControl(blockedDirectory);
+                                blockedAcl.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+                                    System.Security.Principal.WindowsIdentity.GetCurrent().User!, System.Security.AccessControl.FileSystemRights.ListDirectory,
+                                    System.Security.AccessControl.AccessControlType.Deny));
+                                System.IO.FileSystemAclExtensions.SetAccessControl(blockedDirectory, blockedAcl);
+                                var partial = await host.ScanStorageAsync(new FolderMorpher.Contracts.StorageScanRequestDto { TargetPath = testRoot }, null, ocrCts.Token);
+                                if (partial.IsCompleteCoverage || !partial.UnavailableFolders.Contains(blockedPath))
+                                    throw new InvalidOperationException("Unavailable storage branch was reported as complete.");
+                                var afterPartial = await host.GetStorageHistoryAsync(testRoot);
+                                if (afterPartial.Count != baselineHistory.Count)
+                                    throw new InvalidOperationException("Partial storage scan overwrote complete history.");
+                                var coverageCsv = Path.Combine(testRoot, "partial-export.csv");
+                                await host.ExportStorageScanAsync(coverageCsv, testRoot, new() { partial.RootNode! }, ocrCts.Token);
+                                if (!File.ReadAllText(coverageCsv).Contains(blockedPath))
+                                    throw new InvalidOperationException("Partial storage export lost unavailable scope.");
+                            }
+                            finally
+                            {
+                                var restoreAcl = new System.Security.AccessControl.DirectorySecurity();
+                                restoreAcl.SetSecurityDescriptorSddlForm(originalAcl.GetSecurityDescriptorSddlForm(System.Security.AccessControl.AccessControlSections.Access), System.Security.AccessControl.AccessControlSections.Access);
+                                System.IO.FileSystemAclExtensions.SetAccessControl(blockedDirectory, restoreAcl);
+                            }
+                            Console.WriteLine("[TEST-IPC] Partial storage coverage/history/export: SUCCESS");
+
+
                         }
                         finally
                         {
@@ -752,6 +806,8 @@ namespace AstraSize
                         Console.Out.Flush();
                         FolderMorpher.HostClient.FolderMorpherHostClient.Instance.Dispose();
                         DeleteIpcTestDatabase(testDbPath);
+                        var partialDirectory = Path.Combine(Path.GetTempPath(), "FolderMorpher_IpcPartial_" + testId);
+                        if (Directory.Exists(partialDirectory)) Directory.Delete(partialDirectory, true);
                         if (File.Exists(testSettingsPath)) File.Delete(testSettingsPath);
                         Environment.Exit(pong ? 0 : 1);
                     }

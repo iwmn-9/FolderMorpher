@@ -11,12 +11,17 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="..\assets\ocr\*" LogicalName="FolderMorpher.Ocr.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Services\MigrationRunner.ps1" LogicalName="FolderMorpher.MigrationRunner.ps1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.105.1" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
     <PackageReference Include="System.Data.OleDb" Version="10.0.12" />
     <PackageReference Include="System.DirectoryServices" Version="10.0.12" />
     <PackageReference Include="System.Drawing.Common" Version="10.0.12" />
-    <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
   </ItemGroup>
 
 </Project>
