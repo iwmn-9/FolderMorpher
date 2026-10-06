@@ -47,11 +47,15 @@ namespace FolderMorpher.Services
 
                 var destinationAcl = new FileInfo(destinationPath).GetAccessControl(AccessControlSections.Access);
                 string expectedDacl = destinationAcl.GetSecurityDescriptorSddlForm(AccessControlSections.Access);
-                var replacementAcl = new FileSecurity();
-                replacementAcl.SetSecurityDescriptorSddlForm(expectedDacl, AccessControlSections.Access);
-                new FileInfo(tempPath).SetAccessControl(replacementAcl);
                 string temporaryDacl = new FileInfo(tempPath).GetAccessControl(AccessControlSections.Access).GetSecurityDescriptorSddlForm(AccessControlSections.Access);
-                if (!string.Equals(expectedDacl, temporaryDacl, StringComparison.Ordinal))
+                if (!HasEquivalentDacl(expectedDacl, temporaryDacl))
+                {
+                    var replacementAcl = new FileSecurity();
+                    replacementAcl.SetSecurityDescriptorSddlForm(expectedDacl, AccessControlSections.Access);
+                    new FileInfo(tempPath).SetAccessControl(replacementAcl);
+                    temporaryDacl = new FileInfo(tempPath).GetAccessControl(AccessControlSections.Access).GetSecurityDescriptorSddlForm(AccessControlSections.Access);
+                }
+                if (!HasEquivalentDacl(expectedDacl, temporaryDacl))
                     throw new IOException("Replacement DACL could not be preserved; original retained.");
 
                 // 2. Atomic File.Replace (same volume / local filesystem)
@@ -113,6 +117,23 @@ namespace FolderMorpher.Services
                     try { File.Delete(tempPath); } catch { }
                 }
             }
+        }
+
+        internal static bool HasEquivalentDacl(string expected, string actual)
+        {
+            var left = new RawSecurityDescriptor(expected);
+            var right = new RawSecurityDescriptor(actual);
+            // Windows may update its auto-inheritance bookkeeping when setting an ACL.
+            // Preserve protection, null-vs-empty, and every ACE byte in its original order.
+            const ControlFlags relevant = ControlFlags.DiscretionaryAclPresent | ControlFlags.DiscretionaryAclProtected;
+            if ((left.ControlFlags & relevant) != (right.ControlFlags & relevant)) return false;
+            if (left.DiscretionaryAcl == null || right.DiscretionaryAcl == null)
+                return left.DiscretionaryAcl == null && right.DiscretionaryAcl == null;
+            var leftBytes = new byte[left.DiscretionaryAcl.BinaryLength];
+            var rightBytes = new byte[right.DiscretionaryAcl.BinaryLength];
+            left.DiscretionaryAcl.GetBinaryForm(leftBytes, 0);
+            right.DiscretionaryAcl.GetBinaryForm(rightBytes, 0);
+            return leftBytes.AsSpan().SequenceEqual(rightBytes);
         }
     }
 

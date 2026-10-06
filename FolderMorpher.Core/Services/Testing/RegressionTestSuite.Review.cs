@@ -19,6 +19,12 @@ public static partial class RegressionTestSuite
 
     private static void TestReviewOfficeXmlAndMediaOptions()
     {
+        RequireReview(SafeFileReplace.HasEquivalentDacl("D:(A;;FR;;;WD)", "D:AI(A;;FR;;;WD)"), "Auto-inheritance bookkeeping was treated as an access change.");
+        RequireReview(!SafeFileReplace.HasEquivalentDacl("D:(A;;FR;;;WD)", "D:P(A;;FR;;;WD)") &&
+            !SafeFileReplace.HasEquivalentDacl("D:(A;;FR;;;WD)", "D:(A;;FW;;;WD)") &&
+            !SafeFileReplace.HasEquivalentDacl("D:(A;;FR;;;WD)", "D:(A;ID;FR;;;WD)") &&
+            !SafeFileReplace.HasEquivalentDacl("D:(D;;FW;;;WD)(A;;FR;;;WD)", "D:(A;;FR;;;WD)(D;;FW;;;WD)") &&
+            !SafeFileReplace.HasEquivalentDacl("D:NO_ACCESS_CONTROL", "D:"), "Replacement DACL comparison ignored a security difference.");
         RequireReview(EffectiveAccessService.DeterminePermissionLevel(System.Security.AccessControl.FileSystemRights.WriteData) == EffectivePermissionLevel.Custom &&
             EffectiveAccessService.DeterminePermissionLevel(System.Security.AccessControl.FileSystemRights.Delete) == EffectivePermissionLevel.Custom, "Custom access was omitted.");
         foreach (int dimension in new[] { -1, 0, 63, 32769 })

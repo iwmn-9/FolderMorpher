@@ -170,7 +170,7 @@ Copy-Item ./dist/FolderMorpher.exe "G:\マイドライブ\FolderMorpher\FolderCl
 
 - 移行の正本は `MigrationCopyPlan` が解決する `MigrationCopyUnit` と `MigrationPlan.json`。全ソース包含から除外を決め、親の残余単位でルート直下ファイルを保持する。実行は埋込テンプレート `MigrationRunner.ps1` のCheck→Commit→Verify。N:1のCUTOVERをソース別 `/MIR` へ戻さない。構造衝突・内容衝突・再解析点・原本変更・コピー失敗で削除を止める。生成物は `LinkRepairMappings.csv` とJSON検証記録も含む。通常検証は宛先種別・サイズと原本サイズ・日時で、全文ハッシュ保証ではない。
 - ACLの選択対象は `AdPrincipalItem.Sid` → `AdPrincipalDto.Sid` → `SimAclEntry.Sid` を維持する。Hostの実行計画で旧名前だけのACEもSIDへ固定する。適用時に名前だけで別主体へ解決し直さない。CSVはACE単位でSID・Allow/Deny・全rights bits・継承/伝播範囲を出す。
-- Officeリンクの検出・検索・修復は `OfficeLinkDocument` の構造解釈を共用する。通常セル・XML名前空間を外部リンクと解釈しない。画像は `ImageMetadataPreserver` がコンテナ内メタデータを保持・照合し、`SafeFileReplace` が元DACLを一時ファイルへ設定・検証する。保持不能時に成功扱いで上書きしない。
+- Officeリンクの検出・検索・修復は `OfficeLinkDocument` の構造解釈を共用する。通常セル・XML名前空間を外部リンクと解釈しない。画像は `ImageMetadataPreserver` がコンテナ内メタデータを保持・照合し、`SafeFileReplace.HasEquivalentDacl` が元DACLと一時ファイルのACEバイト列・順序・継承保護を検証し、差がある時だけ設定する。自動継承管理フラグAI/ARの変化は権限差と区別する。保持不能時に成功扱いで上書きしない。
 - 部分容量走査は `ScanSummary.UnavailableFolders/IsCompleteCoverage` が正本。完全キャッシュ・履歴へ混ぜず、ローカルの部分観測、画面、CSV/Excelへ未知範囲を保つ。
 - 検索の総件数・総容量と上限1万件の保持一覧を区別する。Host DTOの総数を保持件数で上書きしない。OCR候補にも通常のメタデータ条件を適用し、本文条件は共通グループ生成に従う。OCR実行失敗・部分処理は `OcrWarning` へ伝える。
 - `assets/ocr/manifest.json` と圧縮分割資産がPP-OCRv6-small配布の正本。`EmbeddedOcrRuntime` が遅延展開・整合性検査・Host通常終了時の回収を所有し、`OcrWorkerService` は隔離Python子プロセスの終了を所有する。開発用の隣接Filunest探索はしない。再生成は `tools/Prepare-OcrBundle.py`。生成済みPython bytecodeや個人端末パスを含めない。ライセンスは `docs/DEPENDENCIES.md` とEXEに埋め込む `THIRD-PARTY-NOTICES.txt` を同期する。PDF NuGetは公式 `PdfPig 0.1.16`。

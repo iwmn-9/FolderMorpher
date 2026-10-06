@@ -94,6 +94,6 @@ FolderMorpher source is **[MIT](LICENSE)**, copyright © 2026 iwmn-9. Bundled li
 
 The [dependency review](docs/DEPENDENCIES.md) records MIT/Apache 2.0 dependencies, exact-version review, optional external tools, and the CI check for missing notices. Software is provided as-is under its licenses.
 
-## v1.0.1 review corrections
+## v1.0.2 review corrections
 
 See [implementation and verification results](docs/REVIEW_FIXES.md). Migration packages use a resolved JSON transfer plan and expected **union** of all sources, rather than sequential source mirrors. CUTOVER checks collisions before copying, verifies source stamps and destination type/size, then removes only planned extra entries. This is not full content-hash verification. Source writes must be frozen during cutover. Generated PowerShell respects the organization's execution policy; it does not bypass it. ACL identity is SID-based across selection, IPC, planning and application. Office repair edits structured external links/formulas and verifies XML before replacing the original.
