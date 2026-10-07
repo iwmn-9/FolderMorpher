@@ -150,10 +150,12 @@ namespace FolderMorpher.Services
                             if (results.Count < MaxRetainedResults)
                             {
                                 results.Add(item);
+                                if (query.IncludeOcr) allHitPaths.Add(item.FullPath);
                                 if (batchYield != null)
                                 {
                                     currentBatch.Add(item);
-                                    if (currentBatch.Count >= 50)
+                                    int threshold = results.Count <= 3 ? 1 : (results.Count <= 30 ? 5 : 25);
+                                    if (currentBatch.Count >= threshold)
                                     {
                                         batchYield.Report(currentBatch.ToList());
                                         currentBatch.Clear();
@@ -853,10 +855,23 @@ namespace FolderMorpher.Services
             else
             {
                 // 純粋な名前・属性検索
-                if (!MatchesKeywordGroups(name, fullPath, query)) return false;
-                needsDeepCheck = false;
-                if (string.IsNullOrEmpty(reason)) reason = "Match";
-                return true;
+                bool nameMatched = MatchesKeywordGroups(name, fullPath, query);
+                if (nameMatched)
+                {
+                    needsDeepCheck = false;
+                    if (string.IsNullOrEmpty(reason)) reason = "Match";
+                    return true;
+                }
+
+                // OCRが有効で名前不一致の場合、画像・PDFならOCR第2ロケットの候補として深層検査へ回す
+                if (query.IncludeOcr && !isDir && OcrWorkerService.IsSupportedOcrExtension(ext))
+                {
+                    needsDeepCheck = true;
+                    reason = "Candidate for OCR";
+                    return true;
+                }
+
+                return false;
             }
         }
 
@@ -1135,7 +1150,7 @@ namespace FolderMorpher.Services
                 }
             }
 
-            if (query.SearchContentMode)
+            if (query.SearchContentMode || query.IncludeOcr)
             {
                 foreach (var grp in groups)
                 {
@@ -1399,7 +1414,8 @@ namespace FolderMorpher.Services
                             {
                                 ocrHits.Add(hitItem);
                                 currentBatch.Add(hitItem);
-                                if (currentBatch.Count >= 5)
+                                int threshold = ocrHits.Count <= 3 ? 1 : (ocrHits.Count <= 10 ? 2 : 5);
+                                if (currentBatch.Count >= threshold)
                                 {
                                     batchYield?.Report(currentBatch.ToList());
                                     currentBatch.Clear();

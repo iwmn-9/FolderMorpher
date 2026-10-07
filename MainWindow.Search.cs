@@ -469,16 +469,20 @@ namespace AstraSize
                     }
                 }
 
-                if (addedOrUpdated && (lastBatchUpdate.ElapsedMilliseconds > 150 || _allSearchResults.Count <= 20))
+                if (addedOrUpdated && (lastBatchUpdate.ElapsedMilliseconds > 80 || _allSearchResults.Count <= 20))
                 {
                     lastBatchUpdate.Restart();
-                    ApplyFilterAndSort();
-                    long totalBytes = _searchResults.Sum(h => h.SizeBytes);
-                    UpdateSearchKpi(_searchResults.Count, totalBytes, searchTotalSw.Elapsed);
-                    if (SearchStatusText != null && query.HasDeepFileIoRequirement)
+                    Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        SearchStatusText.Text = Strings.SearchPartialHits(_searchResults.Count);
-                    }
+                        if (currentGen != Volatile.Read(ref _searchGeneration)) return;
+                        ApplyFilterAndSort();
+                        long totalBytes = _searchResults.Sum(h => h.SizeBytes);
+                        UpdateSearchKpi(_searchResults.Count, totalBytes, searchTotalSw.Elapsed);
+                        if (SearchStatusText != null && query.HasDeepFileIoRequirement)
+                        {
+                            SearchStatusText.Text = Strings.SearchPartialHits(_searchResults.Count);
+                        }
+                    }), DispatcherPriority.Background);
                 }
             }
 

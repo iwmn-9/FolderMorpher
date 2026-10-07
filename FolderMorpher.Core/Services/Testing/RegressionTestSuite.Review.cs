@@ -139,6 +139,14 @@ public static partial class RegressionTestSuite
                 query.SearchContentMode = true;
                 RequireReview(!OcrWorkerService.TryMatchOcrDocument(result, query, out _, out _), "OCR AND requirement bypassed.");
 
+                // Verification: IncludeOcr true with SearchContentMode false (user toggles OCR checkbox without checking Content checkbox)
+                var ocrOnlyQuery = SearchQueryParser.Parse("INVOICE");
+                ocrOnlyQuery.SearchContentMode = false;
+                ocrOnlyQuery.IncludeOcr = true;
+                RequireReview(OcrWorkerService.TryMatchOcrDocument(result, ocrOnlyQuery, out string? ocrOnlySnippet, out _),
+                    "OCR failed to match keyword when SearchContentMode is false but IncludeOcr is true.");
+                RequireReview(ocrOnlySnippet != null && ocrOnlySnippet.Contains("INVOICE"), "Unexpected OCR-only snippet.");
+
                 // Cross-page AND query test: ALPHA on page 1, BETA on page 2
                 var multiPageDoc = new OcrWorkerService.OcrDocumentResult(
                     "dummy.pdf",

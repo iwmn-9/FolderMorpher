@@ -21,17 +21,26 @@ public static class HostJobClient
             {
                 ct.ThrowIfCancellationRequested();
                 service = await FolderMorpherHostClient.Instance.GetServiceAsync(ct);
+                bool hadBatches = false;
                 if (onSearchBatch != null && request.Kind is (HostJobKind.Search or HostJobKind.CachedSearch))
                 {
                     var batch = await service.GetSearchJobResultsAsync(jobId, searchSequence, 256);
                     searchSequence = batch.NextSequence;
-                    if (batch.Results.Count > 0) onSearchBatch(batch.Results);
+                    if (batch.Results.Count > 0)
+                    {
+                        hadBatches = true;
+                        onSearchBatch(batch.Results);
+                    }
                 }
                 if (onAuditBatch != null && request.Kind == HostJobKind.AuditScan)
                 {
                     var batch = await service.GetAuditJobResultsAsync(jobId, auditSequence, 256);
                     auditSequence = batch.NextSequence;
-                    if (batch.Results.Count > 0) onAuditBatch(batch.Results);
+                    if (batch.Results.Count > 0)
+                    {
+                        hadBatches = true;
+                        onAuditBatch(batch.Results);
+                    }
                 }
                 var status = await service.GetJobStatusAsync(jobId);
                 ct.ThrowIfCancellationRequested();
@@ -48,7 +57,10 @@ public static class HostJobClient
                         await ReleaseBestEffortAsync(service, jobId);
                         throw new InvalidOperationException(status.Error ?? "Host job failed.");
                 }
-                await Task.Delay(250, ct);
+                if (!hadBatches)
+                {
+                    await Task.Delay(60, ct);
+                }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
