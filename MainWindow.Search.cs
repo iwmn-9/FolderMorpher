@@ -55,8 +55,8 @@ namespace AstraSize
                 SearchIncludeFoldersCheckBox.Unchecked += (s, e) => ExecuteSearch(isIncremental: false);
             }
 
-            // ★ 本文検索トグル: チェック変更時に勝手に重い検索を走らせず、Enterキーまたは検索実行操作時に反映する
-            // （チェックを入れた途端に検索が走り出す不快感を解消）
+            // ★ 本文検索・OCRトグル: 詳細オプションパネル内に隠し、Enterキーまたは検索実行ボタン押下で実行する
+            // （チェック変更時に勝手に走らせない）
 
             // 検索履歴ポップアップの外側クリックを検知して閉じる
             this.PreviewMouseDown += (s, e) =>
@@ -69,6 +69,15 @@ namespace AstraSize
                 }
                 SearchHistoryPopup.IsOpen = false;
             };
+        }
+
+        private void SearchAdvancedOptionsToggleButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (SearchAdvancedOptionsPanel != null)
+            {
+                bool isVisible = SearchAdvancedOptionsPanel.Visibility == Visibility.Visible;
+                SearchAdvancedOptionsPanel.Visibility = isVisible ? Visibility.Collapsed : Visibility.Visible;
+            }
         }
 
         private void SearchRefreshButton_Click(object sender, RoutedEventArgs e)
@@ -510,46 +519,78 @@ namespace AstraSize
 
                 if (hasScannedTree)
                 {
-                    // 前回の走査情報で先行表示。最新の原本を確認した結果とは区別する。
-                    var treeResults = new List<SearchResultItem>();
-                    if (string.IsNullOrEmpty(query.ContentKeyword) &&
-                        !query.HasOfficeLinkOnly &&
-                        string.IsNullOrEmpty(query.OfficeLinkKeyword))
+                    // ★ 本文走査・OCR等のI/Oを伴う探索の場合:
+                    // キャッシュで名前だけ検索して完了表示した直後にLive本文探索を再実行すると、
+                    // ユーザーから見て「検索が2回始まってループしている」ように見えるため、
+                    // 1回のジョブで最初からストリーミング表示を行う。
+                    if (!query.HasDeepFileIoRequirement)
                     {
-                        var nameOnlyQuery = query.Clone();
-                        nameOnlyQuery.SearchContentMode = false;
-                        nameOnlyQuery.ContentKeyword = string.Empty;
-
-                        var cachedOutcome = await RunSearchJobAsync(targetFolder, nameOnlyQuery, progress, ReceiveBatch, cached: true, ct);
-                        treeResults = cachedOutcome.Results
-                            .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
-                        if (currentGen == Volatile.Read(ref _searchGeneration))
+                        var treeResults = new List<SearchResultItem>();
+                        if (string.IsNullOrEmpty(query.ContentKeyword) &&
+                            !query.HasOfficeLinkOnly &&
+                            string.IsNullOrEmpty(query.OfficeLinkKeyword))
                         {
-                            SetSearchResults(treeResults);
-                            long totalBytes = _searchResults.Sum(h => h.SizeBytes);
-                            UpdateSearchKpi(cachedOutcome.TotalHits, cachedOutcome.TotalBytes, sw.Elapsed);
+                            var nameOnlyQuery = query.Clone();
+                            nameOnlyQuery.SearchContentMode = false;
+                            nameOnlyQuery.ContentKeyword = string.Empty;
 
+                            var cachedOutcome = await RunSearchJobAsync(targetFolder, nameOnlyQuery, progress, ReceiveBatch, cached: true, ct);
+                            treeResults = cachedOutcome.Results
+                                .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
+                            if (currentGen == Volatile.Read(ref _searchGeneration))
+                            {
+                                SetSearchResults(treeResults);
+                                long totalBytes = _searchResults.Sum(h => h.SizeBytes);
+                                UpdateSearchKpi(cachedOutcome.TotalHits, cachedOutcome.TotalBytes, sw.Elapsed);
+
+                                if (SearchStatusText != null)
+                                {
+                                    SearchStatusText.Text = Strings.SearchSnapshotStatus(_searchResults.Count, forceLive);
+                                }
+                            }
+                        }
+
+                        if (forceLive && hasTarget)
+                        {
+                            ct.ThrowIfCancellationRequested();
+                            scanEta = BeginScanEta("search-name", targetFolder, scopedRoots.Sum(root => (long)root.FileCount));
+                            var liveOutcome = await RunSearchJobAsync(targetFolder, query, progress, ReceiveBatch, cached: false, ct);
+                            liveSearchCompleted = true;
+                            var liveHits = liveOutcome.Results
+                                .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
+                            if (currentGen == Volatile.Read(ref _searchGeneration))
+                            {
+                                SetSearchResults(liveHits);
+                                long totalBytes = _searchResults.Sum(h => h.SizeBytes);
+                                UpdateSearchKpi(liveOutcome.TotalHits, liveOutcome.TotalBytes, sw.Elapsed);
+
+                                if (SearchStatusText != null)
+                                {
+                                    SearchStatusText.Text = Strings.SearchLiveComplete(liveOutcome.TotalHits,
+                                        sw.ElapsedMilliseconds) + FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles) +
+                                        $" / 表示・retained {_searchResults.Count:N0} {liveOutcome.OcrWarning}";
+                                }
+                            }
+                        }
+                        else if (currentGen == Volatile.Read(ref _searchGeneration))
+                        {
                             if (SearchStatusText != null)
                             {
-                                SearchStatusText.Text = Strings.SearchSnapshotStatus(_searchResults.Count,
-                                    forceLive || query.HasDeepFileIoRequirement);
+                                SearchStatusText.Text = Strings.SearchSnapshotStatus(_searchResults.Count, false);
                             }
                         }
                     }
-
-                    if ((forceLive || query.HasDeepFileIoRequirement) && hasTarget)
+                    else if (hasTarget)
                     {
+                        // 本文・OCR検索: 1回の一貫した走査ジョブとして実行（2重走査の防止）
                         ct.ThrowIfCancellationRequested();
-                        // 手動検索と本文・Officeリンク条件は、キャッシュがあっても原本を確認する。
-                        scanEta = BeginScanEta(query.HasDeepFileIoRequirement ? "search-content" : "search-name",
-                            targetFolder, scopedRoots.Sum(root => (long)root.FileCount));
+                        scanEta = BeginScanEta("search-content", targetFolder, scopedRoots.Sum(root => (long)root.FileCount));
                         var liveOutcome = await RunSearchJobAsync(targetFolder, query, progress, ReceiveBatch, cached: false, ct);
                         liveSearchCompleted = true;
                         var liveHits = liveOutcome.Results
                             .Select(FolderMorpher.HostClient.SearchDtoMapper.ToViewItem).ToList();
                         if (currentGen == Volatile.Read(ref _searchGeneration))
                         {
-                            // 完了後は今回のLive結果だけが正本。消失した行や古い属性を残さない。
                             SetSearchResults(liveHits);
                             long totalBytes = _searchResults.Sum(h => h.SizeBytes);
                             UpdateSearchKpi(liveOutcome.TotalHits, liveOutcome.TotalBytes, sw.Elapsed);
@@ -560,13 +601,6 @@ namespace AstraSize
                                     sw.ElapsedMilliseconds) + FormatSearchCoverage(liveOutcome.DeniedFolders, liveOutcome.UnreadFiles) +
                                     $" / 表示・retained {_searchResults.Count:N0} {liveOutcome.OcrWarning}";
                             }
-                        }
-                    }
-                    else if (!query.HasDeepFileIoRequirement && currentGen == Volatile.Read(ref _searchGeneration))
-                    {
-                        if (SearchStatusText != null)
-                        {
-                            SearchStatusText.Text = Strings.SearchSnapshotStatus(_searchResults.Count, false);
                         }
                     }
                 }

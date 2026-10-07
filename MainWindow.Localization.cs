@@ -565,6 +565,11 @@ namespace AstraSize
             if (SearchHistoryHeaderTitle != null) SearchHistoryHeaderTitle.Text = isJa ? "検索履歴" : "Search History";
             if (SearchHistoryClearAllButton != null) SearchHistoryClearAllButton.Content = isJa ? "すべて消去" : "Clear all";
             if (SearchIncludeFoldersCheckBox != null) SearchIncludeFoldersCheckBox.Content = Strings.SearchIncludeFoldersCheck;
+            if (SearchAdvancedOptionsToggleButton != null)
+            {
+                SearchAdvancedOptionsToggleButton.Content = Strings.SearchAdvancedOptions;
+                SearchAdvancedOptionsToggleButton.ToolTip = Strings.SearchAdvancedOptionsToolTip;
+            }
             if (SearchContentCheckBox != null) SearchContentCheckBox.Content = Strings.SearchContentCheck;
             if (SearchIncludeOcrCheckBox != null)
             {

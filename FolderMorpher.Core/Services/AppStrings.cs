@@ -447,6 +447,10 @@ namespace FolderMorpher.Services
         public static string SearchScopeIndexed => IsJa ? "📑 インデックス検索" : "📑 Indexed (FTS5)";
         public static string SearchBuildIndex => IsJa ? "⚡ インデックス更新" : "⚡ Update Index";
         public static string SearchIncludeFoldersCheck => IsJa ? "📁 フォルダも含める" : "📁 Include Folders";
+        public static string SearchAdvancedOptions => IsJa ? "⚙️ 詳細オプション" : "⚙️ Advanced Options";
+        public static string SearchAdvancedOptionsToolTip => IsJa
+            ? "本文検索やOCRなどの高度な検索設定を展開・折りたたみます"
+            : "Expand or collapse advanced options (Content search, OCR)";
         public static string SearchContentCheck => IsJa ? "📄 本文も検索" : "📄 Search Content";
         public static string SearchIncludeOcrCheck => IsJa ? "🖼️ OCRを含む" : "🖼️ Include OCR";
         public static string SearchIncludeOcrToolTip => IsJa

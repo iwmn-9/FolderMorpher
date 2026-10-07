@@ -1730,25 +1730,42 @@
                                 </Border>
                             </Popup>
                         </Grid>
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,12,0,0" VerticalAlignment="Center">
-                            <Button x:Name="SearchExecuteButton" Content="🔍 検索" Height="38" MinWidth="100" Padding="17,0"
-                                    Style="{StaticResource FluentButtonPrimary}" Click="SearchExecuteButton_Click"
-                                    ToolTip="検索を実行 (Enterキーでも実行可能)"/>
-                            <Button x:Name="SearchClearButton" Content="✕ クリア" Height="38" Padding="15,0" Margin="8,0,0,0"
-                                    Style="{StaticResource FluentButtonSecondary}" Click="SearchClearButton_Click"
-                                    ToolTip="入力内容と結果をクリア"/>
-                            <Button x:Name="SearchRefreshButton" Content="↻  更新" Height="38" Padding="15,0" Margin="8,0,0,0" Style="{StaticResource FluentButtonSecondary}" Click="SearchRefreshButton_Click" ToolTip="検索結果を更新"/>
-                            <Border Width="1" Height="22" Background="#DCE5F0" Margin="18,0" VerticalAlignment="Center"/>
+                        <Grid Grid.Row="1" Margin="0,12,0,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button x:Name="SearchExecuteButton" Content="🔍 検索" Height="38" MinWidth="100" Padding="17,0"
+                                        Style="{StaticResource FluentButtonPrimary}" Click="SearchExecuteButton_Click"
+                                        ToolTip="検索を実行 (Enterキーでも実行可能)"/>
+                                <Button x:Name="SearchClearButton" Content="✕ クリア" Height="38" Padding="15,0" Margin="8,0,0,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchClearButton_Click"
+                                        ToolTip="入力内容と結果をクリア"/>
+                                <Button x:Name="SearchRefreshButton" Content="↻  更新" Height="38" Padding="15,0" Margin="8,0,0,0" Style="{StaticResource FluentButtonSecondary}" Click="SearchRefreshButton_Click" ToolTip="検索結果を更新"/>
+                                <Border Width="1" Height="22" Background="#DCE5F0" Margin="18,0" VerticalAlignment="Center"/>
                                 <CheckBox x:Name="SearchIncludeFoldersCheckBox" Content="📁 フォルダも含める"
                                           FontSize="13" Foreground="#52657F" FontWeight="Medium" VerticalAlignment="Center" Margin="0,0,18,0"
                                           ToolTip="検索結果にフォルダーも含めます"/>
-                                <CheckBox x:Name="SearchContentCheckBox" Content="📄 本文も検索"
-                                          FontSize="13" Foreground="#285AA7" FontWeight="SemiBold" VerticalAlignment="Center"
-                                          ToolTip="ファイル本文（Office/PDF/テキスト等）も探索します"/>
-                                <CheckBox x:Name="SearchIncludeOcrCheckBox" Content="🖼️ OCRを含む"
-                                          FontSize="13" Foreground="#285AA7" FontWeight="Medium" VerticalAlignment="Center" Margin="18,0,0,0"
-                                          ToolTip="画像・画像PDF内の文字をPP-OCRv6で遅延探索します（初期OFF）"/>
-                        </StackPanel>
+                                <Border Width="1" Height="22" Background="#DCE5F0" Margin="0,0,18,0" VerticalAlignment="Center"/>
+                                <Button x:Name="SearchAdvancedOptionsToggleButton" Content="⚙️ 詳細オプション" Height="32" Padding="12,0"
+                                        Style="{StaticResource FluentButtonSecondary}" Click="SearchAdvancedOptionsToggleButton_Click"
+                                        ToolTip="本文検索やOCRなどの高度な検索設定を展開・折りたたみます"/>
+                            </StackPanel>
+                            <!-- Advanced Options Collapsible Panel (本文・OCR) -->
+                            <Border x:Name="SearchAdvancedOptionsPanel" Grid.Row="1" Visibility="Collapsed" Margin="0,10,0,0"
+                                    Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="14,10">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="高度な探索:" FontSize="12" FontWeight="SemiBold" Foreground="#475569" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                    <CheckBox x:Name="SearchContentCheckBox" Content="📄 本文も検索"
+                                              FontSize="13" Foreground="#285AA7" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,20,0"
+                                              ToolTip="ファイル本文（Office/PDF/テキスト等）も探索します"/>
+                                    <CheckBox x:Name="SearchIncludeOcrCheckBox" Content="🖼️ OCRを含む"
+                                              FontSize="13" Foreground="#285AA7" FontWeight="Medium" VerticalAlignment="Center"
+                                              ToolTip="画像・画像PDF内の文字をPP-OCRv6で遅延探索します（初期OFF）"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
                         <StackPanel Visibility="Collapsed">
                             <TextBlock x:Name="SearchTargetFolderLabel" Text="対象フォルダー:"/>
                             <TextBox x:Name="SearchDirectTargetTextBox"/>
