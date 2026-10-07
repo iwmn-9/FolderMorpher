@@ -923,20 +923,23 @@ namespace FolderMorpher.Services
 
             void EmitHit(SearchResultItem hit)
             {
-                matched.Add(hit);
                 Interlocked.Increment(ref currentHitCount);
                 Interlocked.Add(ref currentTotalBytes, hit.SizeBytes);
 
-                if (batchYield != null)
+                lock (batchLock)
                 {
-                    lock (batchLock)
+                    if (matched.Count < MaxRetainedResults)
                     {
-                        progressiveBatch.Add(hit);
-                        int threshold = matched.Count <= 3 ? 1 : 5;
-                        if (progressiveBatch.Count >= threshold)
+                        matched.Add(hit);
+                        if (batchYield != null)
                         {
-                            batchYield.Report(progressiveBatch.ToList());
-                            progressiveBatch.Clear();
+                            progressiveBatch.Add(hit);
+                            int threshold = matched.Count <= 3 ? 1 : 5;
+                            if (progressiveBatch.Count >= threshold)
+                            {
+                                batchYield.Report(progressiveBatch.ToList());
+                                progressiveBatch.Clear();
+                            }
                         }
                     }
                 }
@@ -1350,72 +1353,98 @@ namespace FolderMorpher.Services
             if (remainingCandidates.Count == 0) return ocrHits;
             if (!OcrWorkerService.IsEnvironmentAvailable()) { recordWarning?.Invoke("OCR未実行 / OCR unavailable"); return ocrHits; }
 
-            await using var ocrClient = await OcrWorkerService.TryCreateClientAsync(ct);
+            var ocrClient = await OcrWorkerService.TryCreateClientAsync(ct);
             if (ocrClient == null) { recordWarning?.Invoke("OCR起動失敗 / OCR startup failed"); return ocrHits; }
 
             var currentBatch = new List<SearchResultItem>();
             int hitCount = initialHitCount;
             long totalHitBytes = initialTotalBytes;
             int processedOcr = 0;
+            int restartCount = 0;
+            const int maxRestarts = 3;
 
-            foreach (var candidate in remainingCandidates)
+            try
             {
-                if (ct.IsCancellationRequested) break;
-                processedOcr++;
-
-                try
+                foreach (var candidate in remainingCandidates)
                 {
-                    var docResult = await ocrClient.ProcessFileAsync(candidate.FullPath, ct);
-                    if (!docResult.Success || !string.IsNullOrEmpty(docResult.Warning))
-                        recordWarning?.Invoke("OCR一部未確認 / OCR incomplete: " + docResult.Warning);
-                    if (OcrWorkerService.TryMatchOcrDocument(docResult, query, candidate, out string? snippet, out int matchedPage))
+                    if (ct.IsCancellationRequested) break;
+                    processedOcr++;
+
+                    try
                     {
-                        var hitItem = new SearchResultItem
+                        var docResult = await ocrClient.ProcessFileAsync(candidate.FullPath, ct);
+                        if (!docResult.Success || !string.IsNullOrEmpty(docResult.Warning))
+                            recordWarning?.Invoke("OCR一部未確認 / OCR incomplete: " + docResult.Warning);
+                        if (OcrWorkerService.TryMatchOcrDocument(docResult, query, candidate, out string? snippet, out int matchedPage))
                         {
-                            Name = candidate.Name,
-                            FullPath = candidate.FullPath,
-                            DirectoryPath = candidate.DirectoryPath,
-                            SizeBytes = candidate.SizeBytes,
-                            LastWriteTime = candidate.LastWriteTime,
-                            CreationTime = candidate.CreationTime,
-                            Extension = candidate.Extension,
-                            IsDirectory = false,
-                            IsOcrEstimated = true,
-                            ContentSnippet = $"[OCR推定 p.{matchedPage}] {snippet}",
-                            MatchedReason = "OCR推定本文一致"
-                        };
+                            var hitItem = new SearchResultItem
+                            {
+                                Name = candidate.Name,
+                                FullPath = candidate.FullPath,
+                                DirectoryPath = candidate.DirectoryPath,
+                                SizeBytes = candidate.SizeBytes,
+                                LastWriteTime = candidate.LastWriteTime,
+                                CreationTime = candidate.CreationTime,
+                                Extension = candidate.Extension,
+                                IsDirectory = false,
+                                IsOcrEstimated = true,
+                                ContentSnippet = $"[OCR推定 p.{matchedPage}] {snippet}",
+                                MatchedReason = "OCR推定本文一致"
+                            };
 
-                        ocrHits.Add(hitItem);
-                        currentBatch.Add(hitItem);
-                        hitCount++;
-                        totalHitBytes += hitItem.SizeBytes;
+                            hitCount++;
+                            totalHitBytes += hitItem.SizeBytes;
 
-                        if (currentBatch.Count >= 5)
-                        {
-                            batchYield?.Report(currentBatch.ToList());
-                            currentBatch.Clear();
+                            if (ocrHits.Count < MaxRetainedResults)
+                            {
+                                ocrHits.Add(hitItem);
+                                currentBatch.Add(hitItem);
+                                if (currentBatch.Count >= 5)
+                                {
+                                    batchYield?.Report(currentBatch.ToList());
+                                    currentBatch.Clear();
+                                }
+                            }
                         }
                     }
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                catch
-                {
-                    // 個別ファイルのOCRエラーはスキップ
-                }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        recordWarning?.Invoke($"OCR処理失敗 ({candidate.Name}): {ex.Message}");
+                        if (restartCount < maxRestarts)
+                        {
+                            restartCount++;
+                            try
+                            {
+                                await ocrClient.DisposeAsync();
+                                ocrClient = await OcrWorkerService.TryCreateClientAsync(ct);
+                                if (ocrClient == null) break;
+                            }
+                            catch
+                            {
+                                break;
+                            }
+                        }
+                    }
 
-                progress?.Report(new SearchProgressReport
-                {
+                    progress?.Report(new SearchProgressReport
+                    {
                     HitCount = hitCount,
                     ScannedCount = initialScannedCount,
                     ContentProcessedCount = processedOcr,
                     TotalHitBytes = totalHitBytes,
                     CurrentPath = candidate.FullPath,
-                    Elapsed = sw.Elapsed,
-                    IsCompleted = false
-                });
+                        Elapsed = sw.Elapsed,
+                        IsCompleted = false
+                    });
+                }
+            }
+            finally
+            {
+                if (ocrClient != null) await ocrClient.DisposeAsync();
             }
 
             if (currentBatch.Count > 0)

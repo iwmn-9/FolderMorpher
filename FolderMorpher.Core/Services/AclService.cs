@@ -95,11 +95,14 @@ namespace AstraSize.Services
             }
             catch (Exception ex)
             {
+                node.IsAccessDenied = true;
+                node.ErrorMessage = ex.Message;
                 node.Entries.Add(new AclEntry
                 {
-                    Identity = "SYSTEM",
+                    Identity = "[UNAVAILABLE]",
                     DisplayName = $"[読み取り失敗: {ex.Message}]",
-                    Rights = FileSystemRights.Read,
+                    Rights = 0,
+                    AccessType = AccessControlType.Deny,
                     IsInherited = false
                 });
             }
@@ -143,11 +146,33 @@ namespace AstraSize.Services
             static string Csv(object value) => "\"" + value.ToString()!.Replace("\"", "\"\"") + "\"";
             var sb = new StringBuilder("\uFEFFPath,Folder,Protected,SID,Identity,AccessType,Rights,RightsBits,Inherited,InheritanceFlags,PropagationFlags\r\n");
             foreach (var folder in allFolders)
+            {
+                if (folder.IsAccessDenied)
+                {
+                    sb.AppendLine(string.Join(",", new object[] {
+                        folder.Path, folder.Name, folder.AreAccessRulesProtected,
+                        "", "[UNAVAILABLE]", "Error", folder.ErrorMessage ?? "AccessDenied",
+                        0, false, "None", "None"
+                    }.Select(Csv)));
+                    continue;
+                }
                 foreach (var entry in folder.Entries)
+                {
+                    if (entry.Identity == "[UNAVAILABLE]")
+                    {
+                        sb.AppendLine(string.Join(",", new object[] {
+                            folder.Path, folder.Name, folder.AreAccessRulesProtected,
+                            "", "[UNAVAILABLE]", "Error", entry.DisplayName,
+                            0, false, "None", "None"
+                        }.Select(Csv)));
+                        continue;
+                    }
                     sb.AppendLine(string.Join(",", new object[] { folder.Path, folder.Name,
                         folder.AreAccessRulesProtected, entry.Sid, entry.Identity, entry.AccessType,
                         entry.Rights, (int)entry.Rights, entry.IsInherited, entry.InheritanceFlags,
                         entry.PropagationFlags }.Select(Csv)));
+                }
+            }
 
             return sb.ToString();
         }

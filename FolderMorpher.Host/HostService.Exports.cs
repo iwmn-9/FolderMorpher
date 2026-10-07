@@ -47,6 +47,14 @@ public partial class HostService
                     }
                 }
                 sheet.Columns().AdjustToContents();
+                if (items.Count >= SearchEngineService.MaxRetainedResults)
+                {
+                    var noticeRow = items.Count + 3;
+                    var noticeCell = sheet.Cell(noticeRow, 1);
+                    noticeCell.Value = $"[注意] 表示・出力上限 ({SearchEngineService.MaxRetainedResults:N0}件) に達したため打ち切られました。実際のヒット数はこれより多い可能性があります。";
+                    noticeCell.Style.Font.Bold = true;
+                    noticeCell.Style.Font.FontColor = XLColor.FromArgb(185, 28, 28);
+                }
                 ct.ThrowIfCancellationRequested();
                 book.SaveAs(outputPath);
             }
@@ -65,6 +73,10 @@ public partial class HostService
                         CsvCell(item.HasSnippet ? item.ContentSnippet! : item.MatchedReason), CsvCell(item.FullPath)
                     }));
                 }
+                if (items.Count >= SearchEngineService.MaxRetainedResults)
+                {
+                    rows.Add($"# Notice,Results truncated at {SearchEngineService.MaxRetainedResults} items cap; live matches may exceed this limit.");
+                }
                 File.WriteAllLines(outputPath, rows, new UTF8Encoding(true));
             }
             else throw new ArgumentException("Search export must be .xlsx or .csv", nameof(outputPath));
@@ -75,7 +87,7 @@ public partial class HostService
     {
         return Task.Run(() =>
         {
-            var unavailable = new List<string>();
+            var unavailable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var live = FindLiveScanNode(targetPath);
             if (live != null)
             {
@@ -86,16 +98,23 @@ public partial class HostService
                     foreach (var child in item.Children) if (child.IsDirectory) pending.Push(child);
                 }
             }
+            // Preserve unreadable rows even if live scan is no longer in host memory
+            foreach (var dto in visibleRows)
+            {
+                if (!string.IsNullOrEmpty(dto.ErrorMessage)) unavailable.Add(dto.FullPath);
+            }
+
             var rows = visibleRows.Select(dto => new FileItemNode(dto.FullPath, dto.Name, dto.SizeBytes, dto.IsDirectory, dto.LastModified)
             {
                 Parent = dto.IsRoot ? null : new FileItemNode(),
                 Percentage = dto.PercentageOfRoot,
                 FileCount = dto.FileCount,
-                FolderCount = dto.FolderCount
+                FolderCount = dto.FolderCount,
+                ErrorMessage = dto.ErrorMessage
             }).ToList();
             if (outputPath.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
             {
-                new ExcelReportService().ExportStorageScanResult(outputPath, targetPath, rows, unavailable);
+                new ExcelReportService().ExportStorageScanResult(outputPath, targetPath, rows, unavailable.ToList());
             }
             else if (outputPath.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
             {

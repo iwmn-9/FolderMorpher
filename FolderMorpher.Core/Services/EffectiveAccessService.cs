@@ -746,6 +746,18 @@ namespace FolderMorpher.Services
             }
         }
 
+        private const FileSystemRights WriteOrDeleteOrChangeRights =
+            FileSystemRights.WriteData |
+            FileSystemRights.CreateFiles |
+            FileSystemRights.CreateDirectories |
+            FileSystemRights.WriteExtendedAttributes |
+            FileSystemRights.WriteAttributes |
+            FileSystemRights.Write |
+            FileSystemRights.Delete |
+            FileSystemRights.DeleteSubdirectoriesAndFiles |
+            FileSystemRights.ChangePermissions |
+            FileSystemRights.TakeOwnership;
+
         public static EffectivePermissionLevel DeterminePermissionLevel(FileSystemRights rights)
         {
             if ((rights & FileSystemRights.FullControl) == FileSystemRights.FullControl)
@@ -753,6 +765,10 @@ namespace FolderMorpher.Services
 
             if ((rights & FileSystemRights.Modify) == FileSystemRights.Modify)
                 return EffectivePermissionLevel.Modify;
+
+            // 書き込み・削除・変更権限が一部でも含まれている場合、ReadAndExecuteやReadに格下げせずCustomとする
+            if ((rights & WriteOrDeleteOrChangeRights) != 0)
+                return EffectivePermissionLevel.Custom;
 
             if ((rights & FileSystemRights.ReadAndExecute) == FileSystemRights.ReadAndExecute)
                 return EffectivePermissionLevel.ReadAndExecute;

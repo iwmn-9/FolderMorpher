@@ -186,6 +186,15 @@ namespace FolderMorpher.Services
         private static long OptimizeSingleImage(string filePath, int maxDimension, int quality, FileVersionStamp expectedStamp = default)
         {
             byte[] fileBytes = File.ReadAllBytes(filePath);
+            string ext = Path.GetExtension(filePath).ToLowerInvariant();
+            bool isPng = ext == ".png";
+
+            // Motion Photo 保護: 埋め込み動画を含む JPEG は原本保全のためスキップ
+            if (!isPng && ImageMetadataPreserver.IsMotionPhoto(fileBytes))
+            {
+                return fileBytes.Length;
+            }
+
             using var ms = new MemoryStream(fileBytes);
             using var origImage = Image.FromStream(ms);
 
@@ -204,8 +213,6 @@ namespace FolderMorpher.Services
                 needsResize = true;
             }
 
-            string ext = Path.GetExtension(filePath).ToLowerInvariant();
-            bool isPng = ext == ".png";
 
             using var outMs = new MemoryStream();
 

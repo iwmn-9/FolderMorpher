@@ -33,6 +33,28 @@ internal static class MigrationCopyPlan
         return result.DistinctBy(u => (u.Source.ToUpperInvariant(), u.Destination.ToUpperInvariant())).ToList();
     }
 
+    internal static List<string> ResolvePlannedDirectories(IEnumerable<SimFolderNode> roots, string targetRoot)
+    {
+        string fullTargetRoot = Path.GetFullPath(targetRoot).TrimEnd('\\', '/');
+        var planned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var node in Flatten(roots))
+        {
+            var names = new Stack<string>();
+            for (var current = node; current != null; current = current.Parent)
+            {
+                if (string.IsNullOrWhiteSpace(current.Name) || current.Name is "." or ".." || current.Name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                    throw new InvalidOperationException("Invalid destination folder name.");
+                names.Push(current.Name);
+            }
+            string destination = Path.GetFullPath(Path.Combine(new[] { fullTargetRoot }.Concat(names).ToArray()));
+            for (string? dir = destination; !string.IsNullOrEmpty(dir) && !string.Equals(dir.TrimEnd('\\', '/'), fullTargetRoot, StringComparison.OrdinalIgnoreCase); dir = Path.GetDirectoryName(dir))
+            {
+                planned.Add(dir);
+            }
+        }
+        return planned.OrderBy(p => p.Length).ToList();
+    }
+
     internal static bool IsWithin(string parent, string child) => child.StartsWith(parent.TrimEnd('\\', '/') + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 
     private static IEnumerable<SimFolderNode> Flatten(IEnumerable<SimFolderNode> roots)

@@ -20,6 +20,26 @@ $selected = @{}
 function Within([string]$parent, [string]$child) {
     return $child.StartsWith($parent.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)
 }
+function Add-Expected {
+    param([string]$Path, [bool]$IsDirectory, [string]$Source = $null, [long]$Length = 0, [long]$Modified = 0, [int]$WaveNum = 0)
+    $normalized = [IO.Path]::GetFullPath($Path)
+    if ($expected.ContainsKey($normalized)) {
+        $existing = $expected[$normalized]
+        if ([bool]$existing.Directory -ne $IsDirectory) {
+            throw "File/directory collision in migration plan for path: $normalized"
+        }
+        if (!$IsDirectory -and $existing.Source -and $Source -and ($existing.Source -ne $Source)) {
+            if ($existing.Length -ne $Length -or
+                (Get-FileHash -LiteralPath $existing.Source -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash) {
+                throw "Conflicting source files map to the same destination: $normalized"
+            }
+        }
+        return
+    }
+    $entry = @{ Directory=$IsDirectory; Source=$Source; Length=$Length; Modified=$Modified }
+    $expected[$normalized] = $entry
+    if ($WaveNum -eq $Wave) { $selected[$normalized] = $entry }
+}
 function Children([string]$root, [string[]]$excludes=@()) {
     # Enumerate only ordinary directories; never follow junctions into another scope.
     $stack = New-Object 'System.Collections.Generic.Stack[string]'
@@ -34,10 +54,21 @@ function Children([string]$root, [string[]]$excludes=@()) {
     }
 }
 # Check builds the complete union before writing anything. Unreadable sources abort.
+if ($plan.PlannedDirectories) {
+    foreach ($dir in $plan.PlannedDirectories) {
+        if (![string]::IsNullOrWhiteSpace($dir)) { Add-Expected -Path $dir -IsDirectory $true }
+    }
+}
 foreach ($unit in $units) {
     $source = Get-Item -LiteralPath $unit.Source -Force
     if (!$source.PSIsContainer -or ($source.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Invalid source directory.' }
-    $expected[$unit.Destination] = @{ Directory=$true }
+    # Protect all ancestor directories leading to unit destination
+    $p = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($unit.Destination).TrimEnd('\'))
+    while ($p) {
+        Add-Expected -Path $p -IsDirectory $true
+        $p = [IO.Path]::GetDirectoryName($p.TrimEnd('\'))
+    }
+    Add-Expected -Path $unit.Destination -IsDirectory $true -WaveNum $unit.WaveNumber
     foreach ($item in Children $unit.Source @($unit.ExcludedSources)) {
         $excluded = $false
         foreach ($exclude in $unit.ExcludedSources) {
@@ -46,16 +77,7 @@ foreach ($unit in $units) {
         if ($excluded) { continue }
         $relative = $item.FullName.Substring($unit.Source.TrimEnd('\').Length).TrimStart('\')
         $destination = Join-Path $unit.Destination $relative
-        if ($expected.ContainsKey($destination)) {
-            $old = $expected[$destination]
-            if ([bool]$old.Directory -ne [bool]$item.PSIsContainer) { throw 'File/directory collision in migration plan.' }
-            if (!$item.PSIsContainer -and ($old.Length -ne $item.Length -or
-                (Get-FileHash -LiteralPath $old.Source -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash)) {
-                throw 'Conflicting source files map to the same destination; resolve the collision before migration.'
-            }
-        }
-        $expected[$destination] = @{Directory=[bool]$item.PSIsContainer; Source=$item.FullName; Length=$item.Length; Modified=$item.LastWriteTimeUtc.Ticks}
-        if ($unit.WaveNumber -eq $Wave) { $selected[$destination]=$expected[$destination] }
+        Add-Expected -Path $destination -IsDirectory ([bool]$item.PSIsContainer) -Source $item.FullName -Length $item.Length -Modified $item.LastWriteTimeUtc.Ticks -WaveNum $unit.WaveNumber
     }
 }
 $active = @($units | Where-Object { $_.WaveNumber -eq $Wave })
@@ -71,8 +93,9 @@ if ($Mode -eq 'CUTOVER') {
                 if ($other.Destination -ne $unit.Destination -and (Within $unit.Destination $other.Destination) -and
                     ($item.FullName -eq $other.Destination -or (Within $other.Destination $item.FullName))) { $protected=$true; break }
             }
-            if (!$protected -and !$expected.ContainsKey($item.FullName)) {
-                $deletions[$item.FullName]=@{Directory=[bool]$item.PSIsContainer; Length=$item.Length; Modified=$item.LastWriteTimeUtc.Ticks}
+            $normItem = [IO.Path]::GetFullPath($item.FullName)
+            if (!$protected -and !$expected.ContainsKey($normItem)) {
+                $deletions[$normItem]=@{Directory=[bool]$item.PSIsContainer; Length=$item.Length; Modified=$item.LastWriteTimeUtc.Ticks}
             }
         }
     }

@@ -26,7 +26,10 @@ public static partial class RegressionTestSuite
             !SafeFileReplace.HasEquivalentDacl("D:(D;;FW;;;WD)(A;;FR;;;WD)", "D:(A;;FR;;;WD)(D;;FW;;;WD)") &&
             !SafeFileReplace.HasEquivalentDacl("D:NO_ACCESS_CONTROL", "D:"), "Replacement DACL comparison ignored a security difference.");
         RequireReview(EffectiveAccessService.DeterminePermissionLevel(System.Security.AccessControl.FileSystemRights.WriteData) == EffectivePermissionLevel.Custom &&
-            EffectiveAccessService.DeterminePermissionLevel(System.Security.AccessControl.FileSystemRights.Delete) == EffectivePermissionLevel.Custom, "Custom access was omitted.");
+            EffectiveAccessService.DeterminePermissionLevel(System.Security.AccessControl.FileSystemRights.Delete) == EffectivePermissionLevel.Custom &&
+            EffectiveAccessService.DeterminePermissionLevel(System.Security.AccessControl.FileSystemRights.Read | System.Security.AccessControl.FileSystemRights.Delete) == EffectivePermissionLevel.Custom &&
+            EffectiveAccessService.DeterminePermissionLevel(System.Security.AccessControl.FileSystemRights.Read | System.Security.AccessControl.FileSystemRights.WriteData) == EffectivePermissionLevel.Custom,
+            "Mixed read and write/delete rights were falsely classified as ReadOnly.");
         foreach (int dimension in new[] { -1, 0, 63, 32769 })
         {
             bool rejected = false;
@@ -49,12 +52,45 @@ public static partial class RegressionTestSuite
             RequireReview(File.ReadAllText(original) == "after" && System.IO.FileSystemAclExtensions.GetAccessControl(new FileInfo(original)).GetSecurityDescriptorSddlForm(System.Security.AccessControl.AccessControlSections.Access) == expected, "Replacement changed the protected DACL.");
         }
         finally { SafeDeleteDirectory(fixture); }
+
+        // Motion Photo guard
+        var mockMotionPhotoList = new List<byte> { 0xFF, 0xD8, 0xFF, 0xE1 };
+        mockMotionPhotoList.AddRange(Encoding.ASCII.GetBytes(new string('A', 100) + "<GCamera:MotionPhoto>1</GCamera:MotionPhoto>" + new string('B', 1000)));
+        byte[] mockMotionPhoto = mockMotionPhotoList.ToArray();
+        RequireReview(ImageMetadataPreserver.IsMotionPhoto(mockMotionPhoto), "Motion Photo signature was not detected.");
+        bool motionPhotoThrew = false;
+        try { ImageMetadataPreserver.Transfer(mockMotionPhoto, new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 }, false); }
+        catch (IOException) { motionPhotoThrew = true; }
+        RequireReview(motionPhotoThrew, "Motion Photo was not guarded from overwriting.");
+
+        // ACL CSV unreadable separation
+        var unreadableFolder = new FolderAclNode
+        {
+            Path = @"C:\Locked",
+            Name = "Locked",
+            IsAccessDenied = true,
+            ErrorMessage = "Access is denied"
+        };
+        string csvOutput = new AstraSize.Services.AclService().GenerateMatrixCsv(unreadableFolder);
+        RequireReview(csvOutput.Contains("[UNAVAILABLE]") && !csvOutput.Contains("SYSTEM,Allow"), "Unreadable ACL folder appeared as SYSTEM allow in CSV.");
+
+        // Office link & formula tests
         var xml = OfficeLinkDocument.Parse("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship TargetMode=\"External\" Target=\"file:///old/book.xlsx\" /></Relationships>");
         RequireReview(OfficeLinkDocument.Replace(xml, "/old/", "/new&amp/日本語/") == 1, "External link not updated.");
         RequireReview(OfficeLinkDocument.Values(OfficeLinkDocument.Parse(xml.ToString())).Single().Contains("/new&amp/日本語/"), "XML escaping changed the replacement value.");
         var cells = OfficeLinkDocument.Parse("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><c><v>file:///old/book.xlsx</v></c><f>'file:///old/[book.xlsx]Sheet1'!A1</f></worksheet>");
         RequireReview(OfficeLinkDocument.Replace(cells, "/old/", "/new/") == 1 && cells.Descendants().Single(e => e.Name.LocalName == "v").Value.Contains("/old/"), "Normal cell text was modified as a link.");
         RequireReview(!OfficeLinkDocument.Values(OfficeLinkDocument.Parse("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"/>")).Any(), "XML namespace falsely classified as a link.");
+
+        // Structured table reference should NOT be treated as external link
+        var tableCells = OfficeLinkDocument.Parse("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><f>SUM(Table1[Amount])</f></worksheet>");
+        RequireReview(!OfficeLinkDocument.Values(tableCells).Any(), "Internal table reference Table1[Amount] was falsely classified as external link.");
+
+        // Formula apostrophe escaping
+        var apostropheFormula = OfficeLinkDocument.Parse("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><f>'C:\\Old\\[book.xlsx]Sheet1'!A1</f></worksheet>");
+        RequireReview(OfficeLinkDocument.Replace(apostropheFormula, @"C:\Old", @"C:\O'Brien") == 1, "Formula path replacement with apostrophe failed.");
+        string updatedFormula = apostropheFormula.Descendants().Single(e => e.Name.LocalName == "f").Value;
+        RequireReview(updatedFormula == @"'C:\O''Brien\[book.xlsx]Sheet1'!A1", "Formula apostrophe was not properly escaped as '': " + updatedFormula);
     }
 
     private static async Task TestReviewEncodingAndOcrAsync()
@@ -102,6 +138,22 @@ public static partial class RegressionTestSuite
                 query = SearchQueryParser.Parse("INVOICE missing");
                 query.SearchContentMode = true;
                 RequireReview(!OcrWorkerService.TryMatchOcrDocument(result, query, out _, out _), "OCR AND requirement bypassed.");
+
+                // Cross-page AND query test: ALPHA on page 1, BETA on page 2
+                var multiPageDoc = new OcrWorkerService.OcrDocumentResult(
+                    "dummy.pdf",
+                    true,
+                    new List<OcrWorkerService.OcrPageInfo>
+                    {
+                        new(1, "FIRST PAGE WITH ALPHA KEYWORD", new[] { "FIRST PAGE WITH ALPHA KEYWORD" }),
+                        new(2, "SECOND PAGE WITH BETA KEYWORD", new[] { "SECOND PAGE WITH BETA KEYWORD" })
+                    },
+                    null);
+                var andQuery = SearchQueryParser.Parse("ALPHA BETA");
+                andQuery.SearchContentMode = true;
+                RequireReview(OcrWorkerService.TryMatchOcrDocument(multiPageDoc, andQuery, out string? crossPageSnippet, out int crossPageNum),
+                    "OCR cross-page AND matching failed to find terms distributed across pages.");
+                RequireReview(!string.IsNullOrEmpty(crossPageSnippet) && crossPageNum == 1, "Unexpected cross-page snippet or page number.");
             }
             finally
             {
@@ -133,17 +185,33 @@ public static partial class RegressionTestSuite
             string runner = Path.Combine(root, "MigrationRunner.ps1");
             using (var resource = typeof(MigrationPackageService).Assembly.GetManifestResourceStream("FolderMorpher.MigrationRunner.ps1")!)
             using (var output = File.Create(runner)) await resource.CopyToAsync(output);
+            string emptyDesigned = Path.Combine(target, "EmptyDesigned");
+            Directory.CreateDirectory(emptyDesigned);
             string plan = Path.Combine(root, "MigrationPlan.json");
             var units = new[] {
                 new MigrationCopyUnit(first, target, new List<string> { moved }, 1),
                 new MigrationCopyUnit(second, target, new List<string>(), 1),
                 new MigrationCopyUnit(moved, relocated, new List<string>(), 2)
             };
-            File.WriteAllText(plan, JsonSerializer.Serialize(new { Units = units, Threads = 2, CopyAcl = false }));
+            File.WriteAllText(plan, JsonSerializer.Serialize(new {
+                Units = units,
+                PlannedDirectories = new[] { emptyDesigned, target, Path.GetDirectoryName(relocated)! },
+                Threads = 2,
+                CopyAcl = false
+            }));
+            string psExe = "powershell.exe";
+            try
+            {
+                using var test = Process.Start(new ProcessStartInfo("where.exe", "pwsh.exe") { UseShellExecute = false, CreateNoWindow = true });
+                test?.WaitForExit(2000);
+                if (test?.ExitCode == 0) psExe = "pwsh.exe";
+            }
+            catch { }
+
             async Task<int> Execute(int wave, bool dry = false)
             {
-                var start = new ProcessStartInfo("pwsh.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
-                foreach (string arg in new[] { "-NoProfile", "-File", runner, "-PlanPath", plan, "-Wave", wave.ToString(), "-Mode", "CUTOVER" }) start.ArgumentList.Add(arg);
+                var start = new ProcessStartInfo(psExe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+                foreach (string arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", runner, "-PlanPath", plan, "-Wave", wave.ToString(), "-Mode", "CUTOVER" }) start.ArgumentList.Add(arg);
                 if (dry) start.ArgumentList.Add("-DryRun");
                 using var process = Process.Start(start)!;
                 var stdout = process.StandardOutput.ReadToEndAsync();
@@ -160,13 +228,20 @@ public static partial class RegressionTestSuite
             RequireReview(await Execute(2) == 0 && await Execute(1) == 0, "N:1 cutover failed.");
             RequireReview(File.ReadAllText(Path.Combine(target, "root.txt")) == "root-direct" && File.ReadAllText(Path.Combine(target, "second.txt")) == "second-source", "N:1 union or root-direct files lost.");
             RequireReview(File.Exists(Path.Combine(relocated, "child.txt")) && !Directory.Exists(Path.Combine(target, "moved")) && !File.Exists(Path.Combine(target, "obsolete.txt")), "Moved child copied twice or another wave deleted.");
+            RequireReview(Directory.Exists(emptyDesigned), "Designed empty folder was deleted by cutover.");
             File.WriteAllText(Path.Combine(second, "root.txt"), "conflicting-content");
             File.WriteAllText(Path.Combine(target, "keep-on-failure.txt"), "keep");
             RequireReview(await Execute(1) != 0 && File.Exists(Path.Combine(target, "keep-on-failure.txt")) && File.ReadAllText(Path.Combine(target, "root.txt")) == "root-direct", "Collision did not abort before writes/removals.");
             var parent = new SimFolderNode { Name = "Root" };
             parent.MappedSourcePaths.Add(first);
+            var childEmpty = new SimFolderNode { Name = "EmptyFolder", Parent = parent };
+            parent.Children.Add(childEmpty);
             foreach (string name in new[] { "A", "B" }) parent.Children.Add(new SimFolderNode { Name = name, Parent = parent });
-            var waves = new MigrationPackageService().PlanWaves(new[] { parent }, new MigrationPackageOptions { Policy = MigrationSplitPolicy.ByTopLevelFolder, TargetRoot = Path.Combine(root, "split-target") });
+            var packageTarget = Path.Combine(root, "pkg-target");
+            var pkgDir = await new MigrationPackageService().GeneratePackageAsync(new[] { parent }, new MigrationPackageOptions { Policy = MigrationSplitPolicy.ByTopLevelFolder, TargetRoot = packageTarget, OutputDirectory = root });
+            string pkgPlanJson = File.ReadAllText(Path.Combine(pkgDir, "MigrationPlan.json"));
+            RequireReview(pkgPlanJson.Contains("EmptyFolder") && pkgPlanJson.Contains("PlannedDirectories"), "Planned empty folder missing in generated MigrationPlan.json.");
+            var waves = new MigrationPackageService().PlanWaves(new[] { parent }, new MigrationPackageOptions { Policy = MigrationSplitPolicy.ByTopLevelFolder, TargetRoot = packageTarget });
             RequireReview(waves.SelectMany(w => w.CopyUnits).Any(u => u.Source == first), "Wave splitting discarded parent source mapping.");
         }
         finally { SafeDeleteDirectory(root); }

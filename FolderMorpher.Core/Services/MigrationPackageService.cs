@@ -219,9 +219,13 @@ namespace FolderMorpher.Services
 
                 using (var runner = typeof(MigrationPackageService).Assembly.GetManifestResourceStream("FolderMorpher.MigrationRunner.ps1")!)
                 using (var output = File.Create(Path.Combine(packageDir, "MigrationRunner.ps1"))) runner.CopyTo(output);
+                var plannedDirs = MigrationCopyPlan.ResolvePlannedDirectories(rootNodes, targetRoot);
                 File.WriteAllText(Path.Combine(packageDir, "MigrationPlan.json"), System.Text.Json.JsonSerializer.Serialize(new
                 {
-                    Units = wavePlans.SelectMany(w => w.CopyUnits), Threads = Math.Clamp(options.Threads, 1, 32), options.CopyAcl
+                    Units = wavePlans.SelectMany(w => w.CopyUnits),
+                    PlannedDirectories = plannedDirs,
+                    Threads = Math.Clamp(options.Threads, 1, 32),
+                    options.CopyAcl
                 }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
 
                 progress?.Report("移行バッチ群を生成中...");

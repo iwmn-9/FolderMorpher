@@ -10,6 +10,8 @@ internal static class ImageMetadataPreserver
 
     internal static byte[] Transfer(byte[] original, byte[] encoded, bool png)
     {
+        if (!png && IsMotionPhoto(original))
+            throw new IOException("Motion Photo contains embedded video stream; original retained.");
         var oldParts = png ? PngParts(original) : JpegParts(original);
         var newParts = png ? PngParts(encoded) : JpegParts(encoded);
         bool Metadata(Part part) => png ? IsPngMetadata(part.Kind) : part.Kind == "metadata";
@@ -87,5 +89,37 @@ internal static class ImageMetadataPreserver
             parts.Add(new(marker is >= 224 and <= 239 or 254 ? "metadata" : "image", data.AsSpan(start, offset - start).ToArray()));
         }
         throw new IOException("Incomplete JPEG container.");
+    }
+
+    internal static bool IsMotionPhoto(byte[] data)
+    {
+        if (data.Length < 1024 || data[0] != 0xff || data[1] != 0xd8) return false;
+
+        // 1. Text/XMP markers
+        string text = Encoding.ASCII.GetString(data.AsSpan(0, Math.Min(data.Length, 65536)));
+        if (text.Contains("MotionPhoto", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("MicroVideo", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // 2. Check for embedded MP4 ftyp container within file
+        ReadOnlySpan<byte> ftyp = "ftyp"u8;
+        int searchStart = Math.Max(0, data.Length - 1024 * 1024 * 30);
+        int index = data.AsSpan(searchStart).IndexOf(ftyp);
+        if (index >= 0)
+        {
+            int absIndex = searchStart + index;
+            if (absIndex >= 4)
+            {
+                uint boxSize = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(absIndex - 4, 4));
+                if (boxSize >= 8 && boxSize <= 1024 * 1024)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

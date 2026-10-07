@@ -66,6 +66,8 @@ namespace AstraSize.Models
         public bool AreAccessRulesProtected { get; set; } // true if inheritance disabled
         public List<AclEntry> Entries { get; set; } = new();
         public List<FolderAclNode> Children { get; set; } = new();
+        public bool IsAccessDenied { get; set; }
+        public string? ErrorMessage { get; set; }
 
         public string InheritanceBadge
         {

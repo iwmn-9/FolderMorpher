@@ -146,6 +146,7 @@ namespace AstraSize.Services.Mft
                 long lastProgressTime = 0;
                 long totalMftRecords = extents.Sum(extent => extent.ClusterCount) * bytesPerCluster / bytesPerRecord;
 
+                bool hasReadErrors = false;
                 foreach (var extent in extents)
                 {
                     ct.ThrowIfCancellationRequested();
@@ -156,6 +157,7 @@ namespace AstraSize.Services.Mft
 
                     if (!NativeMethods.SetFilePointerEx(hVolume, extentOffset, out _, 0))
                     {
+                        hasReadErrors = true;
                         continue;
                     }
 
@@ -166,6 +168,7 @@ namespace AstraSize.Services.Mft
                         uint toRead = (uint)Math.Min(readChunkBytes, totalExtentBytes - bytesReadInExtent);
                         if (!NativeMethods.ReadFile(hVolume, chunkBuffer, toRead, out uint actualRead, IntPtr.Zero) || actualRead == 0)
                         {
+                            if (bytesReadInExtent < totalExtentBytes) hasReadErrors = true;
                             break;
                         }
 
@@ -402,6 +405,10 @@ namespace AstraSize.Services.Mft
                 }
 
                 var rootWpfNode = ConvertToFileItemNode(targetRootNode, cleanTargetPath, 0, null);
+                if (hasReadErrors)
+                {
+                    rootWpfNode.ErrorMessage = "MFT読取エラー: 一部のクラスタの読取に失敗しました（不完全走査）";
+                }
                 DiskScanService.CalculatePercentages(rootWpfNode, rootWpfNode.Size > 0 ? rootWpfNode.Size : 1);
 
                 stopwatch.Stop();

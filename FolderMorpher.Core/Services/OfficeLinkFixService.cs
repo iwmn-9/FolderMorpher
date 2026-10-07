@@ -261,11 +261,14 @@ namespace FolderMorpher.Services
                             }
 
                             bool semanticVerified = false;
+                            string targetEscaped = item.TargetReplacement.Replace("'", "''");
                             foreach (var verifyEntry in verifyZip.Entries.Where(e => e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) || e.FullName.EndsWith(".rels", StringComparison.OrdinalIgnoreCase)))
                             {
                                 using var reader = new StreamReader(verifyEntry.Open(), Encoding.UTF8);
                                 var document = OfficeLinkDocument.Parse(reader.ReadToEnd());
-                                if (OfficeLinkDocument.Values(document).Any(v => v.Contains(item.TargetReplacement, StringComparison.OrdinalIgnoreCase)))
+                                if (OfficeLinkDocument.Values(document).Any(v =>
+                                    v.Contains(item.TargetReplacement, StringComparison.OrdinalIgnoreCase) ||
+                                    v.Contains(targetEscaped, StringComparison.OrdinalIgnoreCase)))
                                     semanticVerified = true;
                             }
 

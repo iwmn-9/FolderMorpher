@@ -199,13 +199,33 @@ namespace FolderMorpher.Services
 
             var groups = SearchEngineService.GetRequiredContentGroups(candidate ?? new SearchResultItem(), query);
             if (groups.Count == 0) return false;
+            // 1. Check document-wide match: all query groups must match across document pages
+            bool documentMatches = groups.All(group =>
+                group.Any(term => doc.Pages.Any(p => p.FullText.Contains(term, StringComparison.OrdinalIgnoreCase))));
+            if (!documentMatches) return false;
+
+            // 2. Prefer a single page that satisfies all groups
             foreach (var page in doc.Pages)
             {
-                if (!groups.All(group => group.Any(term => page.FullText.Contains(term, StringComparison.OrdinalIgnoreCase)))) continue;
-                string term = groups.SelectMany(g => g).First(t => page.FullText.Contains(t, StringComparison.OrdinalIgnoreCase));
-                matchedPage = page.PageNumber;
-                matchedSnippet = Extract3LineWindowSnippet(page.Lines, term);
-                return true;
+                if (groups.All(group => group.Any(term => page.FullText.Contains(term, StringComparison.OrdinalIgnoreCase))))
+                {
+                    string term = groups.SelectMany(g => g).First(t => page.FullText.Contains(t, StringComparison.OrdinalIgnoreCase));
+                    matchedPage = page.PageNumber;
+                    matchedSnippet = Extract3LineWindowSnippet(page.Lines, term);
+                    return true;
+                }
+            }
+
+            // 3. Across-pages match: snippet from the first matching page
+            foreach (var page in doc.Pages)
+            {
+                var matchedTerm = groups.SelectMany(g => g).FirstOrDefault(t => page.FullText.Contains(t, StringComparison.OrdinalIgnoreCase));
+                if (matchedTerm != null)
+                {
+                    matchedPage = page.PageNumber;
+                    matchedSnippet = Extract3LineWindowSnippet(page.Lines, matchedTerm);
+                    return true;
+                }
             }
 
             return false;
